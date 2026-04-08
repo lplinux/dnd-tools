@@ -5,11 +5,10 @@ LABEL description="D&D Campaign Tools – NPC sheets, item cards, PDF viewer, ca
 
 WORKDIR /app
 
-RUN npm version
-
 # Install dependencies first (cached layer)
-COPY package.json package-lock.json* ./
-RUN npm ci --omit=dev
+COPY package.json ./
+RUN  --mount=type=secret,id=npmrc,target=/root/.npmrc \
+  npm install --omit=dev 
 
 # Copy application source
 COPY app.js ./
