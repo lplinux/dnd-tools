@@ -1,0 +1,423 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PDF Viewer</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: Arial, sans-serif;
+            display: flex;
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        .sidebar {
+            width: 300px;
+            background: #2c3e50;
+            color: white;
+            padding: 20px;
+            overflow-y: auto;
+            transition: margin-left 0.3s ease;
+            flex-shrink: 0;
+        }
+
+        .sidebar.hidden {
+            margin-left: -300px;
+        }
+
+        .sidebar h2 {
+            margin-bottom: 20px;
+            font-size: 1.5em;
+        }
+
+        .search-box {
+            width: 100%;
+            padding: 10px;
+            margin-bottom: 20px;
+            border: none;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+
+        .pdf-list {
+            list-style: none;
+        }
+
+        .pdf-item {
+            padding: 12px;
+            margin-bottom: 8px;
+            background: #34495e;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: background 0.2s;
+            word-break: break-word;
+        }
+
+        .pdf-item:hover {
+            background: #4a5f7f;
+        }
+
+        .pdf-item.active {
+            background: #3498db;
+        }
+
+        .viewer {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            background: #ecf0f1;
+            min-width: 0;
+        }
+
+        .viewer-header {
+            background: white;
+            padding: 15px 20px;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+
+        .viewer-header h3 {
+            color: #2c3e50;
+            flex: 1;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .header-buttons {
+            display: flex;
+            gap: 10px;
+            flex-shrink: 0;
+        }
+
+        .btn {
+            padding: 8px 16px;
+            background: #3498db;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: background 0.2s;
+            white-space: nowrap;
+        }
+
+        .btn:hover {
+            background: #2980b9;
+        }
+
+        .btn:disabled {
+            background: #bdc3c7;
+            cursor: not-allowed;
+        }
+
+        .btn-secondary {
+            background: #95a5a6;
+        }
+
+        .btn-secondary:hover {
+            background: #7f8c8d;
+        }
+
+        .pdf-container {
+            flex: 1;
+            padding: 20px;
+            overflow: auto;
+        }
+
+        iframe {
+            width: 100%;
+            height: 100%;
+            border: none;
+            background: white;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+        }
+
+        .no-pdf {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            height: 100%;
+            color: #7f8c8d;
+            font-size: 1.2em;
+        }
+
+        .error {
+            color: #e74c3c;
+            padding: 20px;
+            background: #fadbd8;
+            border-radius: 4px;
+            margin: 10px 0;
+        }
+
+        .error strong {
+            display: block;
+            margin-bottom: 10px;
+            font-size: 1.1em;
+        }
+
+        .error-details {
+            font-size: 0.9em;
+            margin-top: 10px;
+            padding: 10px;
+            background: rgba(0, 0, 0, 0.1);
+            border-radius: 4px;
+            font-family: monospace;
+            white-space: pre-wrap;
+        }
+
+        /* Overlay styles */
+        .overlay {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.95);
+            z-index: 1000;
+            padding: 20px;
+        }
+
+        .overlay.active {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .overlay-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+            color: white;
+        }
+
+        .overlay-header h3 {
+            color: white;
+            font-size: 1.2em;
+        }
+
+        .close-btn {
+            background: #e74c3c;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+            transition: background 0.2s;
+        }
+
+        .close-btn:hover {
+            background: #c0392b;
+        }
+
+        .overlay-content {
+            flex: 1;
+            background: white;
+            border-radius: 4px;
+            overflow: hidden;
+        }
+
+        .overlay-content iframe {
+            width: 100%;
+            height: 100%;
+            box-shadow: none;
+        }
+
+        /* Icon styles for buttons */
+        .btn-icon {
+            display: inline-block;
+            margin-right: 5px;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="sidebar" id="sidebar">
+        <h2>PDF Files</h2>
+        <input type="text" class="search-box" id="searchBox" placeholder="Search PDFs...">
+        <ul class="pdf-list" id="pdfList"></ul>
+    </div>
+
+    <div class="viewer">
+        <div class="viewer-header">
+            <button class="btn btn-secondary" id="toggleSidebar" onclick="toggleSidebar()">
+                <span class="btn-icon">☰</span><span id="toggleText">Hide Search</span>
+            </button>
+            <h3 id="currentPdf">Select a PDF to view</h3>
+            <div class="header-buttons">
+                <button class="btn" id="fullscreenBtn" onclick="openFullscreen()" disabled>
+                    <span class="btn-icon">⛶</span>Fullscreen
+                </button>
+            </div>
+        </div>
+        <div class="pdf-container" id="pdfContainer">
+            <div class="no-pdf">No PDF selected</div>
+        </div>
+    </div>
+
+    <!-- Fullscreen Overlay -->
+    <div class="overlay" id="overlay">
+        <div class="overlay-header">
+            <h3 id="overlayTitle">PDF Viewer</h3>
+            <button class="close-btn" onclick="closeFullscreen()">
+                <span class="btn-icon">✕</span> Close
+            </button>
+        </div>
+        <div class="overlay-content" id="overlayContent">
+        </div>
+    </div>
+
+    <script>
+        let allPdfs = [];
+        let currentPdfFilename = null;
+
+        // Load PDF list
+        async function loadPdfs() {
+            try {
+                console.log('Fetching PDF list from /api/pdfs...');
+                const response = await fetch('/api/pdfs');
+
+                console.log('Response status:', response.status);
+                console.log('Response ok:', response.ok);
+
+                if (!response.ok) {
+                    const errorData = await response.json();
+                    console.error('Server error:', errorData);
+
+                    document.getElementById('pdfList').innerHTML =
+                        `<li class="error">
+              <strong>Error loading PDFs</strong>
+              ${errorData.error || 'Unknown error'}
+              ${errorData.details ? `<div class="error-details">Details: ${errorData.details}</div>` : ''}
+              ${errorData.path ? `<div class="error-details">Path: ${errorData.path}</div>` : ''}
+              ${errorData.suggestion ? `<div class="error-details">Suggestion: ${errorData.suggestion}</div>` : ''}
+            </li>`;
+                    return;
+                }
+
+                allPdfs = await response.json();
+                console.log('PDFs loaded:', allPdfs);
+                displayPdfs(allPdfs);
+
+            } catch (error) {
+                console.error('Fetch error:', error);
+                document.getElementById('pdfList').innerHTML =
+                    `<li class="error">
+            <strong>Error loading PDFs</strong>
+            ${error.message}
+            <div class="error-details">Check the browser console (F12) and server logs for more details.</div>
+          </li>`;
+            }
+        }
+
+        // Display PDFs in the list
+        function displayPdfs(pdfs) {
+            const list = document.getElementById('pdfList');
+            if (pdfs.length === 0) {
+                list.innerHTML = '<li class="pdf-item">No PDFs found in the folder</li>';
+                return;
+            }
+
+            list.innerHTML = pdfs.map(pdf =>
+                `<li class="pdf-item" onclick="loadPdf('${pdf.replace(/'/g, "\\'")}')">${pdf}</li>`
+            ).join('');
+        }
+
+        // Load and display a PDF
+        function loadPdf(filename) {
+            console.log('Loading PDF:', filename);
+            const container = document.getElementById('pdfContainer');
+            const header = document.getElementById('currentPdf');
+            const fullscreenBtn = document.getElementById('fullscreenBtn');
+
+            currentPdfFilename = filename;
+
+            container.innerHTML = `<iframe src="/pdfs/${encodeURIComponent(filename)}"></iframe>`;
+            header.textContent = filename;
+            header.title = filename; // Show full name on hover
+
+            // Enable fullscreen button
+            fullscreenBtn.disabled = false;
+
+            // Highlight selected item
+            document.querySelectorAll('.pdf-item').forEach(item => {
+                item.classList.remove('active');
+                if (item.textContent === filename) {
+                    item.classList.add('active');
+                }
+            });
+        }
+
+        // Toggle sidebar visibility
+        function toggleSidebar() {
+            const sidebar = document.getElementById('sidebar');
+            const toggleText = document.getElementById('toggleText');
+
+            sidebar.classList.toggle('hidden');
+
+            if (sidebar.classList.contains('hidden')) {
+                toggleText.textContent = 'Show Search';
+            } else {
+                toggleText.textContent = 'Hide Search';
+            }
+        }
+
+        // Open fullscreen overlay
+        function openFullscreen() {
+            if (!currentPdfFilename) return;
+
+            const overlay = document.getElementById('overlay');
+            const overlayContent = document.getElementById('overlayContent');
+            const overlayTitle = document.getElementById('overlayTitle');
+
+            overlayTitle.textContent = currentPdfFilename;
+            overlayContent.innerHTML = `<iframe src="/pdfs/${encodeURIComponent(currentPdfFilename)}"></iframe>`;
+            overlay.classList.add('active');
+
+            // Prevent body scroll when overlay is open
+            document.body.style.overflow = 'hidden';
+        }
+
+        // Close fullscreen overlay
+        function closeFullscreen() {
+            const overlay = document.getElementById('overlay');
+            overlay.classList.remove('active');
+
+            // Restore body scroll
+            document.body.style.overflow = '';
+        }
+
+        // Close overlay with Escape key
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') {
+                closeFullscreen();
+            }
+        });
+
+        // Search functionality
+        document.getElementById('searchBox').addEventListener('input', (e) => {
+            const search = e.target.value.toLowerCase();
+            const filtered = allPdfs.filter(pdf =>
+                pdf.toLowerCase().includes(search)
+            );
+            displayPdfs(filtered);
+        });
+
+        // Initialize
+        loadPdfs();
+    </script>
+</body>
+
+</html>

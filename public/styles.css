@@ -1,0 +1,537 @@
+body {
+  font-family: Arial, sans-serif;
+  margin: 20px;
+  background-color: #f4f4f4;
+}
+
+.sheet-container {
+  max-width: 650px;
+  background: white;
+  padding: 20px;
+  border-radius: 10px;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+}
+
+.field {
+  margin-bottom: 1px;
+}
+
+label {
+  display: block;
+  font-weight: bold;
+}
+
+input[type="text"], textarea[type="block"] {
+  width: 100%;
+  margin-top: 5px;
+  border: 1px solid #ccc;
+  border-radius: 5px;
+}
+
+textarea[type="text"] {
+  width: 100%;
+  margin-top: 0px;
+  margin-bottom: 5px;
+  border: none;
+}
+
+textarea {
+  overflow: hidden; /* Prevents scrollbars from appearing */
+  resize: none; /* Disables manual resizing by the user */
+}
+
+textarea.spell-text {
+  padding: 0px;
+}
+
+.header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 20px;
+}
+
+.header .details {
+  font-size: 0.9em;
+  color: #555;
+}
+
+.header .name-class-container {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+
+.name-class-container h3 {
+  margin: 0;
+}
+
+.name-class-container input {
+  width: auto;
+  padding: 8px;
+  border: 1px solid #ccc;
+  border-radius: 5px;
+  font-size: 1em;
+}
+
+.header .spells-container {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+
+.spells-container h3 {
+  margin: 0;
+}
+
+.spells-container input {
+  width: auto;
+  padding: 8px;
+  border: 1px solid #ccc;
+  border-radius: 5px;
+  font-size: 1em;
+}
+
+#name-title {
+  border: none;
+  outline: none;
+  font-size: 1.5em;
+  font-weight: bold;
+  width: 315px;
+  background: none;
+  color: inherit;
+}
+
+#name-title:focus {
+  outline: none;
+}
+
+#class-title {
+  border: none;
+  outline: none;
+  font-size: 1.2em;
+  font-weight: normal;
+  width: 140px;
+  background: none;
+  color: inherit;
+}
+
+#class-title:focus {
+  outline: none;
+}
+
+#level-input {
+  border: none;
+  outline: none;
+  font-size: 2em;
+  font-weight: bold;
+  background: none;
+  color: inherit;
+}
+
+#level-input:focus {
+  outline: none;
+}
+
+#cr-input {
+  border: none;
+  outline: none;
+  font-size: 2em;
+  font-weight: bold;
+  background: none;
+  color: inherit;
+}
+
+#cr-input:focus {
+  outline: none;
+}
+
+#spells-input {
+  border: none;
+  outline: none;
+  font-size: 2em;
+  font-weight: bold;
+  background: none;
+  color: inherit;
+  width: 75px;
+}
+
+#spells-input:focus {
+  outline: none;
+}
+
+#npc-detail {
+  border: none;
+  outline: none;
+  font-size: 1.1em;
+  font-weight: bold;
+  width: 100%;
+  background: none;
+  color: inherit;
+}
+
+#npc-detail:focus {
+  outline: none;
+}
+
+.level-box {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  align-items: flex-start;
+  width: 100px;
+  height: auto;
+  border: 2px solid #000;
+  padding: 0px 5px 0px;
+  font-size: 1em;
+  font-weight: bold;
+  margin: 0px;
+}
+
+.level-box div {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  width: 100%;
+  gap: 5px;
+}
+
+.level-box input {
+  border: none;
+  outline: none;
+  text-align: right;
+  width: 40px;
+  background: none;
+  font-weight: bold;
+}
+
+.level-box input:focus {
+  outline: none;
+}
+
+.separator {
+  border-top: 2px solid #ccc;
+  margin: 20px 0;
+}
+
+.columns {
+  display: flex;
+  gap: 20px;
+  position: relative;
+}
+
+.vertical-separator {
+  position: absolute;
+  right: 320px;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background-color: #ccc;
+}
+
+.horizontal-separator {
+  border-top: 2px solid #ccc;
+  margin-bottom: 20px;
+  margin-top: 20px;
+}
+
+.column {
+  flex: 1;
+}
+
+.left-column {
+  flex: 0 0 50%;
+}
+
+.left-column .sub-columns {
+  display: flex;
+  gap: 10px;
+}
+
+.right-column {
+  flex: 0 0 auto;
+}
+
+.left-column textarea {
+  width: 300px; /* Fixed width for left-column textareas */
+  height: auto; /* Allow height to adjust based on content */
+  resize: none; /* Disable manual resizing */
+  box-sizing: border-box; /* Include padding and border in width */
+}
+
+.right-column textarea {
+  width: 300px; /* Fixed width for right-column textareas */
+  height: auto; /* Allow height to adjust based on content */
+  resize: none; /* Disable manual resizing */
+  box-sizing: border-box; /* Include padding and border in width */
+}
+
+.horizontal-separator {
+  width: 100%; /* Full width separator */
+  height: 1px; /* Thin horizontal line */
+  background-color: #ccc; /* Light gray color */
+  margin: 20px 0; /* Add spacing above and below the separator */
+}
+
+.right-column h3 {
+  line-height: 0.5em;
+  margin: 0px 0px 5px 0px;
+  padding: 0px 0px 5px 0px;
+  text-align: center;
+}
+
+.right-column h4 {
+  font-size: 0.6em;
+  text-align: center;
+}
+
+.right-column .sub-columns {
+  display: flex;
+  gap: 10px;
+}
+
+.sub-columns .sub-column {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.left-column .sub-columns .sub-column .field {
+  display: flex; /* Align items in a row */
+  align-items: center; /* Vertically align items */
+  justify-content: space-between; /* Space out the label and input */
+  margin: 0px 5px; /* Reduce vertical margins */
+  padding: 0; /* Remove padding */
+  gap: 10px; /* Add spacing between elements */
+  width: auto; /* Ensure the field doesn't stretch unnecessarily */
+  box-sizing: border-box; /* Include padding and border in width */
+  font-size: 12px;
+  font-weight: bold;
+}
+
+.left-column .sub-columns .sub-column .field input{
+  margin: 0px; /* Reduce vertical margins */
+}
+
+.right-column .sub-columns .sub-column .field {
+  display: grid; /* Use grid layout for consistent spacing */
+  grid-template-columns: 20px 22px 22px 22px; /* Fixed widths for label and inputs */
+  align-items: center; /* Vertically align items */
+  gap: 10px; /* Fixed spacing between elements */
+}
+
+.right-column .sub-columns .sub-column .field label {
+  text-align: right; /* Align labels to the right */
+  font-size: 0.6em; /* Ensure consistent label size */
+  white-space: nowrap; /* Prevent labels from wrapping */
+}
+
+.sub-columns .sub-column .inner-header {
+  font-size: 0.8em;
+  text-align: right;
+  margin: 0px 0px;
+}
+
+.sub-columns .sub-column .field input {
+  width: 10px; /* Automatically adjust width based on content */
+  min-width: 30px; /* Set a minimum width */
+  max-width: 100px; /* Set a maximum width */
+  text-align: right; /* Center the text */
+  padding: 2px; /* Reduce padding */
+  font-size: 16px; /* Default font size */
+  border: 1px solid #ccc; /* Add a border */
+  border-radius: 3px; /* Optional: Add rounded corners */
+  box-sizing: border-box; /* Include padding in width calculation */
+}
+
+.sub-columns .sub-column .field input::placeholder {
+  font-size: 0.9em;
+}
+
+.subline-input {
+  width: 50px; /* Fixed width for inputs */
+  text-align: center; /* Center the text */
+  font-size: 16px; /* Consistent font size */
+  padding: 2px; /* Reduce padding */
+  border: 1px solid #ccc; /* Add a border for visibility */
+  border-radius: 3px; /* Optional: Add rounded corners */
+  box-sizing: border-box; /* Include padding in the width */
+}
+
+.caster-type-dropdown-container {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  margin-top: 0;
+}
+
+.caster-type-dropdown-container select {
+  width: auto;
+  padding: 8px;
+  border: none;
+  outline: none;
+  scroll-behavior: smooth;
+  -webkit-appearance: none;
+  font-size: 15px;
+}
+
+.selected-class-dropdown-container {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  margin-top: 0;
+}
+
+.selected-class-dropdown-container select {
+  width: auto;
+  padding: 8px;
+  border: none;
+  outline: none;
+  scroll-behavior: smooth;
+  -webkit-appearance: none;
+  font-size: 1.2em;
+}
+
+.spell-list {
+  display: grid;
+  grid-template-columns: 1fr 6fr 1fr;
+  gap: 10px;
+  margin-top: 20px;
+}
+
+.spell-list-row {
+  display: contents;
+}
+
+.spell-level {
+  font-weight: bold;
+  font-size: 12px;
+  text-align: center;
+  padding: 5px;
+  display: flex;
+  align-items: center; /* Vertically align text */
+  justify-content: center;
+  width: 75px;
+}
+
+.spell-text {
+  width: 100%;
+  resize: none;
+  border: 1px solid #ccc;
+  font-size: 12px;
+  line-height: 1.2em;
+  height: auto; /* Adjust height to fit text size */
+}
+
+.spell-checkboxes {
+  display: flex;
+  justify-content: left;
+  align-items: center; /* Vertically align checkboxes */
+  height: 100%; /* Ensure alignment within the row */
+}
+
+.spell-checkboxes input[type="checkbox"] {
+  margin: 30 0px;
+}
+
+/* Print-specific styles */
+@media print {
+  @page {
+    size: A4 portrait;
+    margin: 10mm; /* Add margins for better printing layout */
+  }
+
+  .sheet-container {
+    width: 100%; /* Ensure the container fits within the page */
+    padding: 10px; /* Reduce padding for better fit */
+    box-shadow: none; /* Remove shadow for printing */
+    border: 1px solid #000; /* Add a border for clarity */
+    margin-bottom: 20px; /* Add spacing between containers on new pages */
+  }
+
+  .columns {
+    flex-wrap: wrap; /* Allow columns to wrap for better fit */
+  }
+
+  .left-column, .right-column {
+    flex: 1 1 45%; /* Ensure columns take full width if needed */
+  }
+
+  .horizontal-separator {
+    margin: 10px 0; /* Reduce spacing for printing */
+  }
+
+  .vertical-separator {
+    position: absolute;
+    right: 320px; /* Adjust position to align with content */
+    top: 0;
+    bottom: 0;
+    width: 2px; /* Fixed width for visibility */
+    height: 100%; /* Stretch to match the height of the container */
+    background-color: #000; /* Solid black color for visibility */
+    display: block; /* Ensure it is displayed */
+  }
+
+  textarea {
+    width: 90%; /* Ensure textareas fit within the container */
+    height: auto; /* Adjust height to fit content */
+    overflow: hidden; /* Prevent scrollbars */
+    resize: none; /* Disable resizing */
+    border: 1px solid #000; /* Add a border for visibility */
+    font-size: 10px; /* Adjust font size for printing */
+  }
+}
+
+/* New styles for updated IDs and classes */
+.character-name, #name-title {
+  font-size: 1.5em;
+  font-weight: bold;
+  width: 325px;
+}
+
+.character-class, #class-title {
+  font-size: 1.2em;
+  font-weight: normal;
+  width: 140px;
+}
+
+.character-details, #npc-detail {
+  font-size: 1em;
+  font-weight: bold;
+  width: 355px;
+}
+
+.caster-type, #caster-type-dropdown-menu {
+  width: auto;
+  padding: 8px;
+}
+
+.character-level, #level-input,
+.character-cr, #cr-input {
+  font-size: 2em;
+  font-weight: bold;
+}
+
+.character-hp, .character-ac, .character-speed, .character-prof, #character-input {
+  font-size: 2em;
+  font-weight: bold;
+  width: 75px;
+  border: none;
+  outline: none;
+  background: none;
+  color: inherit;
+}
+
+.stat-str-score, .stat-str-mod, .stat-str-st,
+.stat-dex-score, .stat-dex-mod, .stat-dex-st,
+.stat-con-score, .stat-con-mod, .stat-con-st,
+.stat-int-score, .stat-int-mod, .stat-int-st,
+.stat-wis-score, .stat-wis-mod, .stat-wis-st,
+.stat-cha-score, .stat-cha-mod, .stat-cha-st,
+.subline-input {
+  width: 50px;
+  text-align: center;
+  font-size: 16px;
+  border: 1px solid #ccc;
+  border-radius: 3px;
+}

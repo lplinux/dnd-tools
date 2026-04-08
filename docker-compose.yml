@@ -1,0 +1,15 @@
+services:
+  dnd-tools:
+    build: .
+    image: dnd-tools:latest
+    container_name: dnd-tools
+    restart: unless-stopped
+    ports:
+      - "3080:3080"
+    volumes:
+      # Mount your local pdfs/ folder into the container (read-only).
+      # Create the folder first: mkdir -p ./pdfs
+      - ./pdfs:/app/pdfs:ro
+    # Uncomment to override the port (also change app.js PORT constant):
+    # environment:
+    #   - PORT=8080

@@ -1,0 +1,297 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Multi-Profile Split View</title>
+  <style>
+    body {
+      margin: 0;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      background: #000;
+    }
+    #container {
+      flex: 1;
+      display: grid;
+      gap: 2px;
+    }
+    iframe {
+      width: 100%;
+      height: 100%;
+      border: none;
+    }
+    #controls {
+      position: fixed;
+      top: 5px;
+      left: 5px;
+      background: rgba(255, 255, 255, 0.9);
+      padding: 8px;
+      border-radius: 6px;
+      z-index: 1000;
+      transition: all 0.3s ease;
+    }
+    #controls.hidden {
+      transform: translateY(-120%);
+      opacity: 0;
+      pointer-events: none;
+    }
+    #controls input {
+      width: 240px;
+      margin-bottom: 4px;
+    }
+    #toggleBtn {
+      position: fixed;
+      top: 5px;
+      right: 5px;
+      z-index: 1001;
+      background: #222;
+      color: #fff;
+      border: none;
+      padding: 6px 10px;
+      border-radius: 6px;
+      cursor: pointer;
+    }
+    #shortcutHint {
+      font-size: 12px;
+      margin-top: 6px;
+      color: #333;
+    }
+  </style>
+</head>
+<body>
+  <button id="toggleBtn" onclick="toggleControls()">Hide/Show</button>
+
+  <div id="controls">
+    <!-- Profile Management -->
+    <div>
+      <label>Profile: </label>
+      <select id="profileSelect" onchange="changeProfile()"></select>
+      <button onclick="newProfile()">➕</button>
+      <button onclick="deleteProfile()">🗑</button>
+    </div>
+    <!-- Layout Selection -->
+    <div>
+      <label>Layout: </label>
+      <select id="layoutSelect" onchange="changeLayout()">
+        <option value="4">4 Iframes (2x2)</option>
+        <option value="3a">3 Iframes (1 vertical + 2 stacked)</option>
+        <option value="3b">3 Iframes (1 horizontal + 2 stacked)</option>
+      </select>
+    </div>
+    <!-- URL Inputs -->
+    <div id="inputs">
+      <div>
+        <input type="text" id="url1" placeholder="Enter URL 1">
+        <button onclick="loadURL(1)">Load</button>
+      </div>
+      <div>
+        <input type="text" id="url2" placeholder="Enter URL 2">
+        <button onclick="loadURL(2)">Load</button>
+      </div>
+      <div>
+        <input type="text" id="url3" placeholder="Enter URL 3">
+        <button onclick="loadURL(3)">Load</button>
+      </div>
+      <div id="input4">
+        <input type="text" id="url4" placeholder="Enter URL 4">
+        <button onclick="loadURL(4)">Load</button>
+      </div>
+    </div>
+    <div id="shortcutHint">
+      🔑 Shortcuts: Ctrl/⌘+1 = 4 Iframes, Ctrl/⌘+2 = 3a, Ctrl/⌘+3 = 3b
+    </div>
+  </div>
+
+  <div id="container">
+    <iframe id="frame1"></iframe>
+    <iframe id="frame2"></iframe>
+    <iframe id="frame3"></iframe>
+    <iframe id="frame4"></iframe>
+  </div>
+
+  <script>
+    let currentProfile = "default";
+
+    function getProfiles() {
+      return JSON.parse(localStorage.getItem("profiles") || "{}");
+    }
+
+    function saveProfiles(profiles) {
+      localStorage.setItem("profiles", JSON.stringify(profiles));
+    }
+
+    function loadProfile(profileName) {
+      const profiles = getProfiles();
+      const data = profiles[profileName] || { layout: "4", urls: ["", "", "", ""] };
+
+      // Set inputs & iframes
+      for (let i = 1; i <= 4; i++) {
+        const input = document.getElementById("url" + i);
+        const frame = document.getElementById("frame" + i);
+        const url = data.urls[i - 1];
+        input.value = url || "";
+        frame.src = url || "";
+      }
+
+      // Set layout
+      document.getElementById("layoutSelect").value = data.layout;
+      changeLayout();
+
+      currentProfile = profileName;
+    }
+
+    function saveProfile() {
+      const profiles = getProfiles();
+      const urls = [];
+      for (let i = 1; i <= 4; i++) {
+        urls.push(document.getElementById("url" + i).value);
+      }
+      profiles[currentProfile] = {
+        layout: document.getElementById("layoutSelect").value,
+        urls: urls
+      };
+      saveProfiles(profiles);
+    }
+
+    function populateProfileSelect() {
+      const select = document.getElementById("profileSelect");
+      const profiles = getProfiles();
+      select.innerHTML = "";
+      Object.keys(profiles).forEach(p => {
+        const opt = document.createElement("option");
+        opt.value = p;
+        opt.textContent = p;
+        if (p === currentProfile) opt.selected = true;
+        select.appendChild(opt);
+      });
+    }
+
+    function newProfile() {
+      const name = prompt("Enter new profile name:");
+      if (!name) return;
+      const profiles = getProfiles();
+      if (profiles[name]) {
+        alert("Profile already exists!");
+        return;
+      }
+      profiles[name] = { layout: "4", urls: ["", "", "", ""] };
+      saveProfiles(profiles);
+      currentProfile = name;
+      populateProfileSelect();
+      loadProfile(name);
+    }
+
+    function deleteProfile() {
+      if (!confirm("Delete profile '" + currentProfile + "'?")) return;
+      const profiles = getProfiles();
+      delete profiles[currentProfile];
+      saveProfiles(profiles);
+      const remaining = Object.keys(profiles);
+      if (remaining.length > 0) {
+        currentProfile = remaining[0];
+        loadProfile(currentProfile);
+      } else {
+        currentProfile = "default";
+        profiles[currentProfile] = { layout: "4", urls: ["", "", "", ""] };
+        saveProfiles(profiles);
+        loadProfile(currentProfile);
+      }
+      populateProfileSelect();
+    }
+
+    function changeProfile() {
+      const select = document.getElementById("profileSelect");
+      const profile = select.value;
+      saveProfile(); // save before switching
+      loadProfile(profile);
+    }
+
+    function loadURL(n) {
+      const input = document.getElementById("url" + n);
+      const frame = document.getElementById("frame" + n);
+      let url = input.value.trim();
+      if (!url.startsWith("http://") && !url.startsWith("https://")) {
+        url = "https://" + url;
+      }
+      frame.src = url;
+      input.value = url;
+      saveProfile();
+    }
+
+    function changeLayout() {
+      const layout = document.getElementById("layoutSelect").value;
+      const container = document.getElementById("container");
+      const input4 = document.getElementById("input4");
+      const f1 = document.getElementById("frame1");
+      const f2 = document.getElementById("frame2");
+      const f3 = document.getElementById("frame3");
+      const f4 = document.getElementById("frame4");
+
+      // Reset
+      [f1, f2, f3, f4].forEach(f => {
+        f.style.display = "block";
+        f.style.gridRow = "";
+        f.style.gridColumn = "";
+      });
+      input4.style.display = "block";
+
+      if (layout === "4") {
+        container.style.gridTemplateColumns = "1fr 1fr";
+        container.style.gridTemplateRows = "1fr 1fr";
+        container.append(f1, f2, f3, f4);
+      } else if (layout === "3a") {
+        container.style.gridTemplateColumns = "2fr 1fr";
+        container.style.gridTemplateRows = "1fr 1fr";
+        container.append(f1, f2, f3);
+        f4.style.display = "none";
+        input4.style.display = "none";
+        f1.style.gridRow = "1 / span 2";
+      } else if (layout === "3b") {
+        container.style.gridTemplateColumns = "1fr 1fr";
+        container.style.gridTemplateRows = "2fr 1fr";
+        container.append(f1, f2, f3);
+        f4.style.display = "none";
+        input4.style.display = "none";
+        f1.style.gridColumn = "1 / span 2";
+      }
+
+      saveProfile();
+    }
+
+    function toggleControls() {
+      document.getElementById("controls").classList.toggle("hidden");
+    }
+
+    function setupShortcuts() {
+      document.addEventListener("keydown", (e) => {
+        if (e.ctrlKey || e.metaKey) {
+          if (e.key === "1") {
+            document.getElementById("layoutSelect").value = "4";
+            changeLayout();
+          } else if (e.key === "2") {
+            document.getElementById("layoutSelect").value = "3a";
+            changeLayout();
+          } else if (e.key === "3") {
+            document.getElementById("layoutSelect").value = "3b";
+            changeLayout();
+          }
+        }
+      });
+    }
+
+    window.onload = function() {
+      const profiles = getProfiles();
+      if (!profiles["default"]) {
+        profiles["default"] = { layout: "4", urls: ["", "", "", ""] };
+        saveProfiles(profiles);
+      }
+      currentProfile = Object.keys(profiles)[0];
+      populateProfileSelect();
+      loadProfile(currentProfile);
+      setupShortcuts();
+    }
+  </script>
+</body>
+</html>
+

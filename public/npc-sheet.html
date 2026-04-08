@@ -1,0 +1,293 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>D&D NPC Character Sheet</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+
+<body>
+  <div class="sheet-container">
+    <div class="header">
+      <div>
+        <div class="name-class-container">
+          <input type="text" id="name-title" class="character-name" placeholder="Character Name">
+          <div class="selected-class-dropdown-container">
+            <select id="selected-class-dropdown-menu" class="selected-class">
+              <option value="none" selected>Class</option>
+              <option value="artificer">Artificer</option>
+              <option value="barbarian">Barbarian</option>
+              <option value="bard">Bard</option>
+              <option value="cleric">Cleric</option>
+              <option value="druid">Druid</option>
+              <option value="fighter">Fighter</option>
+              <option value="monk">Monk</option>
+              <option value="paladin">Paladin</option>
+              <option value="ranger">Ranger</option>
+              <option value="rogue">Rogue</option>
+              <option value="sorcerer">Sorcerer</option>
+              <option value="warlock">Warlock</option>
+              <option value="wizard">Wizard</option>
+            </select>
+          </div>
+        </div>
+        <div class="caster-type-dropdown-container">
+          <input type="text" id="npc-detail" class="character-details" placeholder="Sex, Race, Alignment">
+          <label for="caster-type-dropdown-menu" style="width: 60px;">Caster&#10;&#13;Type:</label>
+          <select id="caster-type-dropdown-menu" class="caster-type">
+            <option value="none" selected>None</option>
+            <option value="full">Full Caster</option>
+            <option value="half">Half Caster</option>
+            <option value="third">Third Caster</option>
+            <option value="warlock">Warlock</option>
+          </select>
+        </div>
+      </div>
+      <div class="level-box">
+        <div>
+          <span>Level</span><input type="text" id="level-input" class="character-level" placeholder="0">
+        </div>
+        <div>
+          <span>CR</span><input type="text" id="cr-input" class="character-cr" placeholder="0">
+        </div>
+      </div>
+    </div>
+    <div class="separator"></div>
+    <div class="columns">
+      <div class="column left-column">
+        <div class="sub-columns">
+          <div class="sub-column">
+            <div class="field">
+              <span>HP</span><input type="text" id="character-input" class="character-hp" placeholder="0">
+            </div>
+            <div class="field">
+              <span>AC</span><input type="text" id="character-input" class="character-ac" placeholder="0">
+            </div>
+            <div class="field">
+              <span>Speed</span><input type="text" id="character-input" class="character-speed" placeholder="0">
+
+            </div>
+            <div class="field">
+              <span>Prof.</span><input type="text" id="character-input" class="character-prof" placeholder="0">
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="vertical-separator"></div>
+      <div class="column right-column">
+        <h3>Stats</h3>
+        <div class="sub-columns">
+          <div class="sub-column">
+            <div class="inner-header">Score | Mod | ST</div>
+            <div class="field">
+              <label for="sub1-line1">STR</label>
+              <input type="text" id="sub1-line1" class="subline-input stat-str-score" placeholder="" maxlength="3">
+              <input type="text" id="sub2-line1" class="subline-input stat-str-mod" placeholder="" maxlength="3">
+              <input type="text" id="sub3-line1" class="subline-input stat-str-st" placeholder="" maxlength="3">
+            </div>
+            <div class="field">
+              <label for="sub1-line2">DEX</label>
+              <input type="text" id="sub1-line2" class="subline-input stat-dex-score" placeholder="" maxlength="3">
+              <input type="text" id="sub2-line2" class="subline-input stat-dex-mod" placeholder="" maxlength="3">
+              <input type="text" id="sub3-line2" class="subline-input stat-dex-st" placeholder="" maxlength="3">
+            </div>
+            <div class="field">
+              <label for="sub1-line3">CON</label>
+              <input type="text" id="sub1-line3" class="subline-input stat-con-score" placeholder="" maxlength="3">
+              <input type="text" id="sub2-line3" class="subline-input stat-con-mod" placeholder="" maxlength="3">
+              <input type="text" id="sub3-line3" class="subline-input stat-con-st" placeholder="" maxlength="3">
+            </div>
+          </div>
+          <div class="sub-column">
+            <div class="inner-header">Score | Mod | ST</div>
+            <div class="field">
+              <label for="sub2-line1">INT</label>
+              <input type="text" id="sub1-line1" class="subline-input stat-int-score" placeholder="" maxlength="3">
+              <input type="text" id="sub2-line1" class="subline-input stat-int-mod" placeholder="" maxlength="3">
+              <input type="text" id="sub3-line1" class="subline-input stat-int-st" placeholder="" maxlength="3">
+            </div>
+            <div class="field">
+              <label for="sub2-line2">WIS</label>
+              <input type="text" id="sub1-line2" class="subline-input stat-wis-score" placeholder="" maxlength="3">
+              <input type="text" id="sub2-line2" class="subline-input stat-wis-mod" placeholder="" maxlength="3">
+              <input type="text" id="sub3-line2" class="subline-input stat-wis-st" placeholder="" maxlength="3">
+            </div>
+            <div class="field">
+              <label for="sub2-line3">CHA</label>
+              <input type="text" id="sub1-line3" class="subline-input stat-cha-score" placeholder="" maxlength="3">
+              <input type="text" id="sub2-line3" class="subline-input stat-cha-mod" placeholder="" maxlength="3">
+              <input type="text" id="sub3-line3" class="subline-input stat-cha-st" placeholder="" maxlength="3">
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="horizontal-separator"></div>
+    <div class="columns">
+      <div class="column left-column">
+        <div class="field">
+          <label for="description">Skills Prof.</label>
+          <textarea id="description" rows="1" type="text" placeholder="Skills Prof..."></textarea>
+          <label for="description">Damage Resistances</label>
+          <textarea id="description" rows="1" type="text" placeholder="Damage Resistances..."></textarea>
+          <label for="description">Damage Immunities</label>
+          <textarea id="description" rows="1" type="text" placeholder="Damage Immunities..."></textarea>
+          <label for="description">Condition Immunities</label>
+          <textarea id="description" rows="1" type="text" placeholder="Condition Immunities..."></textarea>
+          <label for="description">Skills / Traits</label>
+          <textarea id="description" rows="4" type="block"
+            placeholder="Special Skills, personality traits, etc."></textarea>
+        </div>
+      </div>
+      <div class="column right-column">
+        <div class="vertical-separator"></div>
+        <div class="field">
+          <label for="description">Features</label>
+          <textarea id="description" rows="4" type="block" placeholder="List of Features"></textarea>
+        </div>
+      </div>
+    </div>
+    <div class="horizontal-separator"></div>
+    <div class="columns">
+      <div class="column left-column">
+        <div class="field">
+          <label for="description">Actions</label>
+          <textarea id="description" rows="4" type="block" placeholder="List of Actions..."></textarea>
+        </div>
+      </div>
+      <div class="column right-column">
+        <div class="vertical-separator"></div>
+        <div class="field">
+          <label for="description">Legendary Actions</label>
+          <textarea id="description" rows="4" type="block" placeholder="List of Legendary Actions..."></textarea>
+        </div>
+        <div class="field">Legendary Resistances
+          <input type="checkbox" id="resistance-1">
+          <input type="checkbox" id="resistance-2">
+          <input type="checkbox" id="resistance-3">
+        </div>
+      </div>
+    </div>
+    <div class="horizontal-separator"></div>
+    <div class="spells-container" style="display: none;">
+      <div style="display: flex; align-items: center; gap: 10px;">
+        <h3>Spells:</h3>
+        <div class="dropdown-container">
+          <select id="dropdown-menu">
+            <option value="" disabled selected hidden>Spellcasting Ability</option>
+            <option value="charisma">Charisma</option>
+            <option value="intelligence">Intelligence</option>
+            <option value="wisdom">Wisdom</option>
+          </select>
+        </div>
+        <span>Spell Mod</span><input type="text" id="spells-input" placeholder="+0">
+        <span>Spell DC</span><input type="text" id="spells-input" placeholder="0">
+      </div>
+      <div class="spell-list">
+        <div class="spell-list-row" style="display: none;">
+          <div class="spell-level">Cantrip</div>
+          <textarea class="spell-text"></textarea>
+          <div class="spell-checkboxes">
+          </div>
+        </div>
+        <div class="spell-list-row" style="display: none;">
+          <div class="spell-level">1st Level</div>
+          <textarea class="spell-text"></textarea>
+          <div class="spell-checkboxes">
+            <input type="checkbox" id="level1-1">
+            <input type="checkbox" id="level1-2">
+            <input type="checkbox" id="level1-3">
+            <input type="checkbox" id="level1-4">
+          </div>
+        </div>
+        <div class="spell-list-row" style="display: none;">
+          <div class="spell-level">2nd Level</div>
+          <textarea class="spell-text"></textarea>
+          <div class="spell-checkboxes">
+            <input type="checkbox" id="level2-1">
+            <input type="checkbox" id="level2-2">
+            <input type="checkbox" id="level2-3">
+          </div>
+        </div>
+        <div class="spell-list-row" style="display: none;">
+          <div class="spell-level">3rd Level</div>
+          <textarea class="spell-text"></textarea>
+          <div class="spell-checkboxes">
+            <input type="checkbox" id="level3-1">
+            <input type="checkbox" id="level3-2">
+            <input type="checkbox" id="level3-3">
+          </div>
+        </div>
+        <div class="spell-list-row" style="display: none;">
+          <div class="spell-level">4th Level</div>
+          <textarea class="spell-text"></textarea>
+          <div class="spell-checkboxes">
+            <input type="checkbox" id="level4-1">
+            <input type="checkbox" id="level4-2">
+            <input type="checkbox" id="level4-3">
+          </div>
+        </div>
+        <div class="spell-list-row" style="display: none;">
+          <div class="spell-level">5th Level</div>
+          <textarea class="spell-text"></textarea>
+          <div class="spell-checkboxes">
+            <input type="checkbox" id="level5-1">
+            <input type="checkbox" id="level5-2">
+            <input type="checkbox" id="level5-3">
+          </div>
+        </div>
+        <div class="spell-list-row" style="display: none;">
+          <div class="spell-level">6th Level</div>
+          <textarea class="spell-text"></textarea>
+          <div class="spell-checkboxes">
+            <input type="checkbox" id="level6-1">
+            <input type="checkbox" id="level6-2">
+          </div>
+        </div>
+        <div class="spell-list-row" style="display: none;">
+          <div class="spell-level">7th Level</div>
+          <textarea class="spell-text"></textarea>
+          <div class="spell-checkboxes">
+            <input type="checkbox" id="level7-1">
+            <input type="checkbox" id="level7-2">
+          </div>
+        </div>
+        <div class="spell-list-row" style="display: none;">
+          <div class="spell-level">8th Level</div>
+          <textarea class="spell-text"></textarea>
+          <div class="spell-checkboxes">
+            <input type="checkbox" id="level8-1">
+          </div>
+        </div>
+        <div class="spell-list-row" style="display: none;">
+          <div class="spell-level">9th Level</div>
+          <textarea class="spell-text"></textarea>
+          <div class="spell-checkboxes">
+            <input type="checkbox" id="level9-1">
+          </div>
+        </div>
+      </div>
+      <div class="horizontal-separator"></div>
+    </div>
+    <div class="columns">
+      <div class="column left-column">
+        <div class="field">
+          <label for="description">Special Abilities</label>
+          <textarea id="description" rows="4" type="block" placeholder="Special Abilities"></textarea>
+        </div>
+      </div>
+      <div class="column right-column">
+        <div class="vertical-separator"></div>
+        <div class="field">
+          <label for="description">Lair Actions</label>
+          <textarea id="description" rows="4" type="block" placeholder="Lair Actions"></textarea>
+        </div>
+      </div>
+    </div>
+  </div>
+  <script src="scripts.js"></script>
+</body>
+
+</html>

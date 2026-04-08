@@ -1,0 +1,479 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Item Card Creator</title>
+    <style>
+        body {
+            font-family: 'Papyrus', fantasy;
+            background-color: #f4f1e0;
+            color: #5a4636;
+            margin: 0;
+            padding: 20px;
+        }
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+        }
+        .form-section, .preview-section {
+            background: #fff8dc;
+            border: 2px solid #d2b48c;
+            border-radius: 10px;
+            padding: 20px;
+            margin-bottom: 20px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+        .form-section h2, .preview-section h2 {
+            text-align: left;
+            margin-bottom: 10px;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+        }
+        input, textarea, select {
+            width: 95%;
+            padding: 10px;
+            margin-bottom: 15px;
+            border: 1px solid #d2b48c;
+            border-radius: 5px;
+            font-family: 'Papyrus', fantasy;
+        }
+        #item-attunement, #item-special-abilities {
+            width: auto;
+            height: auto;
+            margin-left: 5px;
+        }
+        .card-back {
+            position: relative;
+            border: 2px solid #5a4636;
+            border-radius: 10px;
+            width: 550px;
+            height: 630px;
+            background: url('images/item-card-second-page.png') no-repeat center;
+            background-size: cover;
+            font-family: 'Papyrus', fantasy;
+            font-size: 22px;
+            color: #3c2e1e;
+            overflow: hidden; /* Ensure the overlay stays within bounds */
+        }
+        .card-back h3 {
+            margin: 35px 25px 0px;
+        }
+        .card-back .description {
+            width: 90%;
+            font-size: 16px; /* Adjust font size for better readability */
+            text-align: justify;
+            line-height: 1.4; /* Adjust line height for better spacing */
+            white-space: pre-wrap;
+        }
+        .card-back .attunement-star {
+            position: absolute;
+            bottom: 60px;
+            right: 20px;
+            width: 80px;
+            height: 80px;
+            display: none; /* Hidden by default */
+            background: transparent; /* Explicitly set background to transparent */
+            border: none; /* Remove any border */
+        }
+        .card-back::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(255, 255, 255, 0.2); /* Default overlay */
+            pointer-events: none;
+            z-index: 1;
+            transition: background 0.3s ease;
+        }
+
+        .card-back.rarity-common::before {
+            background: rgba(169, 169, 169, 0.2); /* Gray for Common */
+        }
+
+        .card-back.rarity-uncommon::before {
+            background: rgba(60, 179, 113, 0.2); /* Green for Uncommon */
+        }
+
+        .card-back.rarity-rare::before {
+            background: rgba(65, 105, 225, 0.2); /* Blue for Rare */
+        }
+
+        .card-back.rarity-very-rare::before {
+            background: rgba(138, 43, 226, 0.2); /* Purple for Very Rare */
+        }
+
+        .card-back.rarity-legendary::before {
+            background: rgba(255, 215, 0, 0.2); /* Gold for Legendary */
+        }
+        .preview-card {
+            position: relative;
+            border: 2px solid #5a4636;
+            border-radius: 10px;
+            width: 550px;
+            height: 630px;
+            background: url('images/item-card-front-big.png') no-repeat center;
+            background-size: contain;
+            font-family: 'Papyrus', fantasy;
+            font-size: 22px;
+            color: #3c2e1e;
+            overflow: hidden; /* Ensure the overlay stays within bounds */
+        }
+
+        .preview-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(255, 255, 255, 0.2); /* Default overlay */
+            pointer-events: none; /* Ensure it doesn't interfere with interactions */
+            z-index: 1; /* Place it above the background but below content */
+            transition: background 0.3s ease; /* Smooth transition for color changes */
+        }
+        .preview-card.rarity-common::before {
+            background: rgba(169, 169, 169, 0.2); /* Gray for Common */
+        }
+
+        .preview-card.rarity-uncommon::before {
+            background: rgba(60, 179, 113, 0.2); /* Green for Uncommon */
+        }
+
+        .preview-card.rarity-rare::before {
+            background: rgba(65, 105, 225, 0.2); /* Blue for Rare */
+        }
+
+        .preview-card.rarity-very-rare::before {
+            background: rgba(138, 43, 226, 0.2); /* Purple for Very Rare */
+        }
+
+        .preview-card.rarity-legendary::before {
+            background: rgba(255, 215, 0, 0.2); /* Gold for Legendary */
+        }
+
+        .preview-card > * {
+            position: relative;
+            z-index: 2; /* Ensure content is above the overlay */
+        }
+
+        .preview-card p {
+            font-size: 18px;
+            text-align: left;
+            margin: 0 0 10px 10px;
+        }
+        .preview-card h2 {
+            font-size: 20px;
+            text-align: left;
+            font-weight: bold;
+            margin: 0;
+        }
+        .preview-card h3, .title, .description, .input-group {
+            position: absolute;
+            width: 80%;
+            left: 50%;
+            transform: translateX(-50%);
+            text-align: center;
+            padding: 0px;
+        }
+        .preview-card h3 {
+            font-size: 34px;
+            margin: 10px 0px;
+        }
+        .preview-card .description {
+            top: 80px;
+            left: 390px;
+            width: 260px;
+            height: auto;
+            max-height: 500px;
+            font-size: 17px; /* Adjust font size for better readability */
+            text-align: left;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            line-height: 1.4; /* Adjust line height for better spacing */
+            overflow-wrap: break-word; /* Ensure long words break properly */
+            word-wrap: break-word; /* Fallback for older browsers */
+            white-space: pre-wrap;
+        }
+        .preview-card .input-group {
+            top: 120px;
+            left: 130px;
+            width: 190px;
+            height: 440px;
+            font-size: 18px; /* Set a fixed font size for better readability */
+            font-weight: bold;
+            display: flex;
+            flex-direction: column;
+        }
+        .consumable-uses-preview {
+            position: absolute; /* Position it relative to the input-group */
+            bottom: 0; /* Align it to the bottom of the input-group */
+            left: 0;
+            width: 100%; /* Make it span the full width of the input-group */
+            text-align: center; /* Center the content horizontally */
+            padding: 10px 0; /* Add some padding for spacing */
+        }
+        button {
+            background-color: #d2b48c;
+            color: #5a4636;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-family: 'Papyrus', fantasy;
+        }
+        button:hover {
+            background-color: #c0a080;
+        }
+        .form-row {
+            display: flex;
+            justify-content: space-between;
+            gap: 10px;
+        }
+        .form-row > div {
+            flex: 1;
+        }
+        .form-row > div label {
+            margin-bottom: 5px;
+        }
+    </style>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+</head>
+<body>
+    <div class="container">
+        <div class="form-section">
+            <h2>Create Your Item Card</h2>
+            <form id="item-form">
+                <div class="form-row">
+                    <div>
+                        <label for="item-type">Item Type</label>
+                        <select id="item-type" onchange="toggleWeaponFields()" required>
+                            <option value="" disabled selected>Select item type</option>
+                            <option value="Weapon">Weapon</option>
+                            <option value="Artifact">Artifact</option>
+                            <option value="Consumable">Consumable</option>
+                            <option value="Equipment">Equipment</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label for="item-rarity">Rarity</label>
+                        <select id="item-rarity" required>
+                            <option value="" disabled selected>Select rarity</option>
+                            <option value="Common">Common</option>
+                            <option value="Uncommon">Uncommon</option>
+                            <option value="Rare">Rare</option>
+                            <option value="Very Rare">Very Rare</option>
+                            <option value="Legendary">Legendary</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label for="item-attunement">
+                            Requires Attunement<input type="checkbox" id="item-attunement">
+                        </label>
+                    </div>
+                    <div>
+                        <label for="item-special-abilities">
+                            Special Abilities<input type="checkbox" id="item-special-abilities">
+                        </label>
+                    </div>
+                </div>
+                <label for="item-name">Item Name</label>
+                <input type="text" id="item-name" placeholder="Enter item name" required>
+                
+                <label for="item-description">Description</label>
+                <textarea id="item-description" rows="4" placeholder="Enter item description" required></textarea>
+                
+                <div id="weapon-fields" style="display: none;">
+                    <label for="item-damage">Damage</label>
+                    <input type="text" id="item-damage" placeholder="Enter damage (e.g., 1d8)" required>
+                    <label for="item-damage-type">Damage Type</label>
+                    <input type="text" id="item-damage-type" placeholder="Enter damage type (e.g., Slashing)" required>
+                    <label for="item-properties">Properties</label>
+                    <input type="text" id="item-properties" placeholder="Enter weapon properties (e.g., Light, Finesse)">
+                </div>
+
+                <div id="general-properties" style="display: none;">
+                    <label for="general-item-properties">Properties</label>
+                    <input type="text" id="general-item-properties" placeholder="Enter item properties">
+                </div>
+
+                <div id="consumable-uses" style="display: none;">
+                    <label for="item-uses">Uses</label>
+                    <input type="number" id="item-uses" placeholder="Enter number of uses" min="1">
+                </div>
+
+                <div id="special-abilities-fields" style="display: none;">
+                    <label for="item-special-abilities-description">Special Abilities Description</label>
+                    <textarea id="item-special-abilities-description" rows="4" placeholder="Enter special abilities description"></textarea>
+                </div>
+
+                <button type="button" onclick="generatePreview()">Generate Preview</button>
+                <button type="button" id="generate-image-button">Generate Image</button>
+            </form>
+        </div>
+        <div class="preview-section">
+            <h2>Item Card Preview</h2>
+            <div id="card-front" class="preview-card">
+                <h3>Item Name</h3>
+                <div class="input-group">
+                    <p>Details</p>
+                </div>
+                <div class="description">This is a description placed in the lower scroll area.</div>
+            </div>
+            <div id="card-back" class="card-back" style="display: none;">
+                <h3>Special Abilities</h3>
+                <div class="description">This is where special abilities will be displayed.</div>
+                <img id="attunement-star" class="attunement-star" src="images/attunement.png" alt="Attunement Star">
+            </div>
+        </div>
+    </div>
+    <script>
+        function toggleWeaponFields() {
+            const itemType = document.getElementById('item-type').value;
+            const weaponFields = document.getElementById('weapon-fields');
+            const generalProperties = document.getElementById('general-properties');
+            const consumableUses = document.getElementById('consumable-uses');
+
+            if (itemType === 'Weapon') {
+                weaponFields.style.display = 'block';
+                generalProperties.style.display = 'none';
+                consumableUses.style.display = 'none';
+            } else if (itemType === 'Artifact' || itemType === 'Equipment') {
+                weaponFields.style.display = 'none';
+                generalProperties.style.display = 'block';
+                consumableUses.style.display = 'none';
+            } else if (itemType === 'Consumable') {
+                weaponFields.style.display = 'none';
+                generalProperties.style.display = 'block';
+                consumableUses.style.display = 'block';
+            } else {
+                weaponFields.style.display = 'none';
+                generalProperties.style.display = 'none';
+                consumableUses.style.display = 'none';
+            }
+        }
+
+        document.getElementById('item-special-abilities').addEventListener('change', function () {
+            const specialAbilitiesFields = document.getElementById('special-abilities-fields');
+            specialAbilitiesFields.style.display = this.checked ? 'block' : 'none';
+        });
+
+        function generatePreview() {
+            const name = document.getElementById('item-name').value;
+            const description = document.getElementById('item-description')?.value || '';
+            const rarity = document.getElementById('item-rarity').value.toLowerCase().replace(' ', '-');
+            const type = document.getElementById('item-type').value;
+            const attunement = document.getElementById('item-attunement').checked;
+            const specialAbilities = document.getElementById('item-special-abilities').checked;
+            const specialAbilitiesDescription = document.getElementById('item-special-abilities-description').value;
+            const uses = document.getElementById('item-uses')?.value || '';
+
+            let additionalFields = '';
+            if (type === 'Weapon') {
+                const damage = document.getElementById('item-damage').value;
+                const damageType = document.getElementById('item-damage-type').value;
+                const properties = document.getElementById('item-properties').value;
+                additionalFields = `
+                    <h2 style="margin: 0 10px 0 0;">Damage:</h2> <p>${damage}</p>
+                    <h2 style="margin: 0 10px 0 0;">Damage Type:</h2> <p>${damageType}</p>
+                    <h2 style="margin: 0 10px 0 0;">Properties:</h2> <p>${properties}</p>
+                `;
+            } else if (type === 'Artifact' || type === 'Equipment') {
+                const properties = document.getElementById('general-item-properties').value;
+                additionalFields = `
+                    <h2 style="margin: 0 10px 0 0;">Properties:</h2> <p>${properties}</p>
+                `;
+            } else if (type === 'Consumable') {
+                const properties = document.getElementById('general-item-properties').value;
+                const usesCount = parseInt(uses, 10) || 0;
+                const usesCircles = Array.from({ length: usesCount }, () => '<span style="display: inline-block; width: 15px; height: 15px; margin: 0 5px; border: 2px solid #5a4636; border-radius: 50%;"></span>').join('');
+                additionalFields = `
+                    <h2 style="margin: 0 10px 0 0;">Properties:</h2> <p>${properties}</p>
+                    <div class="consumable-uses-preview">
+                    <h2 style="margin: 0 10px 0 0;">Uses:</h2> <div>${usesCircles}</div>
+                    </div>
+                `;
+            }
+
+            const cardFront = document.getElementById('card-front');
+            const cardBack = document.getElementById('card-back');
+
+            cardFront.querySelector('h3').textContent = name;
+            cardFront.querySelector('.description').textContent = description;
+
+            const inputGroup = cardFront.querySelector('.input-group');
+            inputGroup.innerHTML = additionalFields;
+
+            // Update the rarity class for the color overlay
+            cardFront.className = `preview-card rarity-${rarity}`;
+            cardBack.className = `card-back rarity-${rarity}`;
+
+            // Show or hide the attunement star
+            const attunementStar = document.getElementById('attunement-star');
+            if (attunement) {
+                attunementStar.style.display = 'block';
+            } else {
+                attunementStar.style.display = 'none';
+            }
+
+            // Show or hide the card back for special abilities
+            if (specialAbilities) {
+                cardBack.style.display = 'block';
+                cardBack.querySelector('.description').textContent = specialAbilitiesDescription;
+            } else {
+                cardBack.style.display = 'none';
+            }
+        }
+
+        document.getElementById('generate-image-button').addEventListener('click', function () {
+            const cardFront = document.getElementById('card-front');
+            const cardBack = document.getElementById('card-back');
+
+            // Create a wrapper div to combine both card-front and card-back
+            const wrapper = document.createElement('div');
+            wrapper.style.display = 'inline-block'; // Ensure both cards are displayed side by side
+            wrapper.style.backgroundColor = '#fff'; // Set a white background for the combined image
+            wrapper.style.padding = '10px'; // Add padding around the cards
+
+            // Clone the card-front and card-back elements
+            const clonedCardFront = cardFront.cloneNode(true);
+            const clonedCardBack = cardBack.cloneNode(true);
+
+            // Append the cloned elements to the wrapper
+            wrapper.appendChild(clonedCardFront);
+            if (cardBack.style.display !== 'none') {
+                wrapper.appendChild(clonedCardBack);
+            }
+
+            // Append the wrapper to the body temporarily (hidden)
+            wrapper.style.position = 'absolute';
+            wrapper.style.top = '-9999px';
+            document.body.appendChild(wrapper);
+
+            // Use html2canvas to capture the wrapper
+            html2canvas(wrapper).then(canvas => {
+                // Convert the canvas to an image
+                const image = canvas.toDataURL('image/png');
+                const name = document.getElementById('item-name').value.toLowerCase().replace(' ', '-');
+                const rarity = document.getElementById('item-rarity').value.toLowerCase().replace(' ', '-');
+
+                // Create a download link
+                const link = document.createElement('a');
+                link.href = image;
+                link.download = `${rarity}-${name}.png`; // Set the file name
+                link.click(); // Trigger the download
+
+                // Remove the wrapper from the DOM
+                document.body.removeChild(wrapper);
+            }).catch(error => {
+                console.error('Error generating image:', error);
+            });
+        });
+    </script>
+</body>
+</html>
