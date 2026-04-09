@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>⚔ D&D Campaign Tools</title>
+  <link
+    href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700&family=Crimson+Text:ital,wght@0,400;1,400&display=swap"
+    rel="stylesheet">
+  <style>
+    *,
+    *::before,
+    *::after {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0
+    }
+
+    :root {
+      --bg: #13100b;
+      --surface: #1e1810;
+      --surface2: #272015;
+      --border: #3d3220;
+      --border2: #554428;
+      --gold: #c9a84c;
+      --gold-dim: #7a6030;
+      --gold-glow: #e8c96a;
+      --text: #e8dcc0;
+      --text-dim: #a09070;
+      --text-muted: #6a5a40;
+      --fd: 'Cinzel', 'Georgia', serif;
+      --fb: 'Crimson Text', 'Georgia', serif;
+    }
+
+    html,
+    body {
+      height: 100%;
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--fb)
+    }
+
+    body {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: flex-start;
+      min-height: 100vh;
+      padding: 40px 20px
+    }
+
+    /* ornamental header */
+    .title-wrap {
+      text-align: center;
+      margin-bottom: 48px
+    }
+
+    .crest {
+      font-size: 2.8rem;
+      margin-bottom: 8px;
+      filter: drop-shadow(0 2px 8px rgba(200, 168, 76, .3))
+    }
+
+    h1 {
+      font-family: var(--fd);
+      font-size: 2rem;
+      letter-spacing: .12em;
+      color: var(--gold);
+      line-height: 1.15;
+      text-shadow: 0 2px 12px rgba(200, 168, 76, .2)
+    }
+
+    .subtitle {
+      font-family: var(--fb);
+      font-size: 1rem;
+      color: var(--text-muted);
+      margin-top: 8px;
+      font-style: italic;
+      letter-spacing: .04em
+    }
+
+    .divider {
+      width: 240px;
+      height: 1px;
+      background: linear-gradient(to right, transparent, var(--gold-dim), transparent);
+      margin: 18px auto 0
+    }
+
+    /* grid of cards */
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+      gap: 18px;
+      width: 100%;
+      max-width: 960px;
+    }
+
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 22px 20px 18px;
+      text-decoration: none;
+      color: inherit;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      transition: border-color .18s, transform .18s, box-shadow .18s;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .card::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(135deg, rgba(200, 168, 76, .04) 0%, transparent 60%);
+      pointer-events: none;
+    }
+
+    .card:hover {
+      border-color: var(--gold-dim);
+      transform: translateY(-2px);
+      box-shadow: 0 8px 24px rgba(0, 0, 0, .4);
+    }
+
+    .card:hover .card-icon {
+      transform: scale(1.12);
+    }
+
+    .card-icon {
+      font-size: 1.8rem;
+      transition: transform .18s;
+      line-height: 1
+    }
+
+    .card-name {
+      font-family: var(--fd);
+      font-size: .88rem;
+      letter-spacing: .1em;
+      color: var(--gold);
+      text-transform: uppercase;
+    }
+
+    .card-desc {
+      font-size: .9rem;
+      color: var(--text-dim);
+      line-height: 1.55;
+      font-style: italic;
+    }
+
+    .card-tag {
+      font-family: var(--fd);
+      font-size: .58rem;
+      letter-spacing: .1em;
+      text-transform: uppercase;
+      color: var(--text-muted);
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      padding: 2px 7px;
+      border-radius: 10px;
+      display: inline-block;
+      align-self: flex-start;
+      margin-top: auto;
+      padding-top: 6px;
+    }
+
+    footer {
+      margin-top: 56px;
+      font-size: .78rem;
+      color: var(--text-muted);
+      font-family: var(--fd);
+      letter-spacing: .07em;
+      text-align: center;
+    }
+
+    footer a {
+      color: var(--gold-dim);
+      text-decoration: none
+    }
+
+    footer a:hover {
+      color: var(--gold)
+    }
+  </style>
+</head>
+
+<body>
+
+  <div class="title-wrap">
+    <div class="crest">⚔</div>
+    <h1>D&amp;D Campaign Tools</h1>
+    <p class="subtitle">A collection of tools for tabletop RPG campaign management</p>
+    <div class="divider"></div>
+  </div>
+
+  <div class="grid">
+
+    <a class="card" href="/timeline">
+      <div class="card-icon">📜</div>
+      <div class="card-name">Campaign Timeline</div>
+      <div class="card-desc">Track events across the Calendar of Harptos or Gregorian time. Multiple profiles, player
+        lanes, durations, and a "Today" marker.</div>
+      <span class="card-tag">Planning · History</span>
+    </a>
+
+    <a class="card" href="/npc-sheet">
+      <div class="card-icon">🧙</div>
+      <div class="card-name">NPC Sheet</div>
+      <div class="card-desc">A fillable character sheet for non-player characters. Stats, spells, abilities, and class
+        selection in a printable layout.</div>
+      <span class="card-tag">Characters</span>
+    </a>
+
+    <a class="card" href="/item-cards">
+      <div class="card-icon">🗡️</div>
+      <div class="card-name">Item Cards</div>
+      <div class="card-desc">Create beautifully formatted magic item cards. Fill in properties, flavour text,
+        attunement, and special abilities.</div>
+      <span class="card-tag">Loot · Items</span>
+    </a>
+
+    <a class="card" href="/split-view">
+      <div class="card-icon">🪟</div>
+      <div class="card-name">Split View</div>
+      <div class="card-desc">Side-by-side reference pane — display two documents or notes simultaneously during a
+        session.</div>
+      <span class="card-tag">Reference</span>
+    </a>
+
+    <a class="card" href="/pdf-viewer">
+      <div class="card-icon">📖</div>
+      <div class="card-name">PDF Viewer</div>
+      <div class="card-desc">Browse and read PDF rulebooks, supplements, and adventure modules stored in the server's
+        pdfs/ folder.</div>
+      <span class="card-tag">Reference · Rules</span>
+    </a>
+
+  </div>
+
+  <footer>
+    Running locally · <a href="https://github.com/lplinux/dnd-tools" target="_blank">GitHub</a>
+  </footer>
+
+</body>
+
+</html>
