@@ -1,1287 +1,2295 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Campaign Timeline</title>
-<link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700&family=Crimson+Text:ital,wght@0,400;0,600;1,400&display=swap" rel="stylesheet">
-<style>
-*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
-/* ── THEME: DARK (default) ── */
-:root,[data-theme="dark"]{
-  --bg:#13100b;--surface:#1e1810;--surface2:#272015;--surface3:#302818;
-  --border:#3d3220;--border2:#554428;
-  --gold:#c9a84c;--gold-dim:#7a6030;--gold-glow:#e8c96a;
-  --special-bg:#1f1800;--special-fg:#f0d060;
-  --text:#e8dcc0;--text-dim:#a09070;--text-muted:#6a5a40;
-  --red:#a03028;--red-hover:#c03838;
-  --today:#ffffff;--today-bg:rgba(255,255,255,0.07);
-  --fd:'Cinzel','Georgia',serif;--fb:'Crimson Text','Georgia',serif;
-}
-/* ── THEME: LIGHT ── */
-[data-theme="light"]{
-  --bg:#f5f0e8;--surface:#fffdf7;--surface2:#f0ece0;--surface3:#e8e2d4;
-  --border:#d4c9b0;--border2:#b8a888;
-  --gold:#8b6914;--gold-dim:#a07820;--gold-glow:#c8920a;
-  --special-bg:#fff8e0;--special-fg:#8b6914;
-  --text:#2a2218;--text-dim:#5a4e38;--text-muted:#8a7a60;
-  --red:#c0392b;--red-hover:#a03020;
-  --today:#1a1a2e;--today-bg:rgba(0,0,0,0.06);
-  --fd:'Cinzel','Georgia',serif;--fb:'Crimson Text','Georgia',serif;
-}
-/* ── THEME: SLATE ── */
-[data-theme="slate"]{
-  --bg:#0d1117;--surface:#161b22;--surface2:#1c2128;--surface3:#22272e;
-  --border:#30363d;--border2:#444c56;
-  --gold:#58a6ff;--gold-dim:#1f6feb;--gold-glow:#79c0ff;
-  --special-bg:#0d1117;--special-fg:#ffa657;
-  --text:#c9d1d9;--text-dim:#8b949e;--text-muted:#484f58;
-  --red:#f85149;--red-hover:#ff7b72;
-  --today:#58a6ff;--today-bg:rgba(88,166,255,0.07);
-  --fd:'Cinzel','Georgia',serif;--fb:'Crimson Text','Georgia',serif;
-}
-html,body{height:100%;overflow:hidden}
-body{font-family:var(--fb);background:var(--bg);color:var(--text);font-size:15px;transition:background .2s,color .2s}
-/* theme switcher */
-.theme-sw{display:flex;gap:4px;align-items:center}
-.theme-sw button{width:18px;height:18px;border-radius:50%;border:2px solid transparent;cursor:pointer;transition:border-color .15s,transform .1s;flex-shrink:0}
-.theme-sw button:hover{transform:scale(1.2)}
-.theme-sw button.act{border-color:var(--gold)!important}
-.theme-sw button[data-t="dark"]{background:#272015;border-color:#554428}
-.theme-sw button[data-t="light"]{background:#f0ece0;border-color:#b8a888}
-.theme-sw button[data-t="slate"]{background:#1c2128;border-color:#444c56}
-/* hide-eye toggle */
-.eye-btn{background:none;border:none;cursor:pointer;padding:1px 3px;color:var(--text-muted);font-size:.8rem;line-height:1;transition:opacity .15s}
-.eye-btn:hover{color:var(--text)}
-.eye-btn.hidden-item{opacity:.4}
-.item-hidden{opacity:.45}
-/* ── APP SHELL ── */
-.app{height:100vh;display:flex;flex-direction:column}
-.app-header{
-  background:var(--surface);border-bottom:2px solid var(--gold-dim);
-  padding:7px 14px;display:flex;align-items:center;gap:10px;
-  flex-shrink:0;box-shadow:0 2px 12px rgba(0,0,0,.5)
-}
-.app-title{font-family:var(--fd);font-size:.95rem;color:var(--gold);letter-spacing:.08em;white-space:nowrap;flex-shrink:0}
-.app-title span{color:var(--text-dim);font-size:.7rem;margin-left:7px}
-/* search */
-.search-wrap{position:relative;flex:1;max-width:280px}
-.search-wrap input{width:100%;background:var(--surface2);border:1px solid var(--border2);color:var(--text);padding:5px 10px 5px 26px;border-radius:2px;font-family:var(--fb);font-size:.86rem;transition:border-color .15s}
-.search-wrap input:focus{outline:none;border-color:var(--gold-dim)}
-.search-wrap input::placeholder{color:var(--text-muted)}
-.si{position:absolute;left:7px;top:50%;transform:translateY(-50%);color:var(--text-muted);font-size:.7rem;pointer-events:none}
-.sr{position:absolute;top:calc(100% + 4px);left:0;right:0;background:var(--surface);border:1px solid var(--border2);border-radius:2px;box-shadow:0 8px 24px rgba(0,0,0,.7);z-index:500;display:none;max-height:280px;overflow-y:auto}
-.sr::-webkit-scrollbar{width:4px}.sr::-webkit-scrollbar-thumb{background:var(--border2)}
-.sri{padding:7px 11px;cursor:pointer;border-bottom:1px solid var(--border);transition:background .1s}
-.sri:last-child{border-bottom:none}.sri:hover{background:var(--surface2)}
-.sri-t{font-size:.86rem;color:var(--text)}.sri-m{font-size:.7rem;color:var(--text-muted);margin-top:2px;display:flex;align-items:center;gap:4px}
-.sr-empty{padding:9px 11px;font-size:.8rem;color:var(--text-muted);font-style:italic}
-/* header-right */
-.hdr-r{display:flex;align-items:center;gap:8px;flex-shrink:0;margin-left:auto}
-.zoom-row{display:flex;align-items:center;gap:4px;font-family:var(--fd);font-size:.65rem;color:var(--text-muted);letter-spacing:.05em}
-.zoom-row input[type=range]{width:66px;accent-color:var(--gold);cursor:pointer}
-.zoom-lbl{font-size:.6rem;color:var(--gold-dim);min-width:42px;text-align:right;letter-spacing:.06em}
-/* view toggle */
-.vt{display:flex;border:1px solid var(--border2);border-radius:2px;overflow:hidden}
-.vt button{padding:4px 9px;background:transparent;border:none;color:var(--text-muted);font-family:var(--fd);font-size:.6rem;letter-spacing:.06em;cursor:pointer;transition:all .15s;text-transform:uppercase}
-.vt button.active{background:var(--gold-dim);color:var(--bg)}
-.vt button:not(.active):hover{background:rgba(200,160,50,.08);color:var(--gold)}
-/* app body */
-.app-body{flex:1;display:flex;overflow:hidden}
-/* ── SIDEBAR ── */
-.sidebar{width:256px;flex-shrink:0;background:var(--surface);border-right:1px solid var(--border);display:flex;flex-direction:column;overflow-y:auto}
-.sidebar::-webkit-scrollbar{width:4px}.sidebar::-webkit-scrollbar-thumb{background:var(--border2);border-radius:2px}
-/* profile bar (sticky top) */
-.prof-bar{
-  padding:8px 12px;background:var(--surface2);border-bottom:2px solid var(--border2);
-  display:flex;align-items:center;gap:6px;flex-shrink:0;position:sticky;top:0;z-index:10
-}
-.prof-bar select{flex:1;background:var(--surface);border:1px solid var(--border2);color:var(--text);padding:4px 6px;border-radius:2px;font-family:var(--fb);font-size:.84rem}
-.prof-bar select option{background:var(--surface)}
-/* sections */
-.s-sec{border-bottom:1px solid var(--border)}
-.s-ttl{font-family:var(--fd);font-size:.6rem;letter-spacing:.12em;text-transform:uppercase;color:var(--gold-dim);padding:8px 13px 5px;display:flex;align-items:center;gap:6px;cursor:pointer;user-select:none;transition:color .15s}
-.s-ttl:hover{color:var(--gold)}.s-ttl::after{content:'';flex:1;height:1px;background:var(--border)}
-.s-arr{font-size:.52rem;transition:transform .2s;display:inline-block;color:var(--text-muted)}
-.s-arr.cl{transform:rotate(-90deg)}
-.s-bdg{font-size:.56rem;background:var(--border2);padding:1px 5px;border-radius:8px;color:var(--text-muted);font-family:var(--fd)}
-.s-body{overflow:hidden}.s-body.collapsed{display:none}
-.s-inner{padding:4px 13px 11px}
-/* form */
-.fr{margin-bottom:6px}
-.fr label{display:block;font-size:.68rem;color:var(--text-muted);margin-bottom:3px;font-family:var(--fd);letter-spacing:.05em}
-.fr input,.fr select,.fr textarea{width:100%;background:var(--surface2);border:1px solid var(--border);color:var(--text);padding:5px 7px;border-radius:2px;font-family:var(--fb);font-size:.86rem;transition:border-color .15s}
-.fr input:focus,.fr select:focus,.fr textarea:focus{outline:none;border-color:var(--gold-dim)}
-.fr select option{background:var(--surface2)}.fg{display:grid;grid-template-columns:1fr 1fr;gap:6px}
-/* player checks */
-.pchks{background:var(--surface2);border:1px solid var(--border);border-radius:2px;max-height:108px;overflow-y:auto;padding:2px 0}
-.pchks::-webkit-scrollbar{width:3px}.pchks::-webkit-scrollbar-thumb{background:var(--border2)}
-.pcl{display:flex;align-items:center;gap:7px;padding:4px 8px;cursor:pointer;font-size:.84rem;transition:background .1s}
-.pcl:hover{background:var(--surface3)}.pcl input[type=checkbox]{accent-color:var(--gold);cursor:pointer}
-/* buttons */
-.btn{padding:5px 10px;border:1px solid var(--border2);background:transparent;color:var(--text-dim);font-family:var(--fd);font-size:.67rem;letter-spacing:.06em;cursor:pointer;border-radius:2px;transition:all .15s;text-transform:uppercase}
-.btn:hover{border-color:var(--gold-dim);color:var(--gold);background:rgba(200,160,50,.06)}
-.btn.gld{border-color:var(--gold-dim);color:var(--gold-glow);background:rgba(200,160,50,.08)}
-.btn.gld:hover{background:var(--gold-dim);color:var(--bg)}
-.btn.full{width:100%}.btn.sm{padding:3px 7px;font-size:.6rem}
-.btn.dn{border-color:var(--red);color:var(--red)}.btn.dn:hover{background:var(--red);color:#fff;border-color:var(--red-hover)}
-/* player/loc items */
-.p-it{display:flex;align-items:center;gap:6px;padding:4px 6px;background:var(--surface2);border:1px solid var(--border);border-radius:2px;margin-bottom:4px}
-.p-dot{width:10px;height:10px;border-radius:50%;flex-shrink:0;border:1.5px solid rgba(255,255,255,.15)}
-.p-nm{flex:1;font-size:.84rem}
-.l-it{display:flex;align-items:center;justify-content:space-between;padding:4px 6px;background:var(--surface2);border:1px solid var(--border);border-radius:2px;margin-bottom:4px;font-size:.82rem;gap:4px}
-.l-it .drag-handle{cursor:grab;color:var(--text-muted);font-size:.75rem;flex-shrink:0;padding:0 2px}
-.l-it .drag-handle:active{cursor:grabbing}
-.empty-m{color:var(--text-muted);font-style:italic;font-size:.8rem;margin-bottom:6px}
-/* event sidebar items */
-.ev-li{padding:5px 7px;border:1px solid var(--border);border-radius:2px;margin-bottom:4px;background:var(--surface2);cursor:pointer;transition:border-color .15s,background .1s;display:flex;align-items:flex-start;gap:5px}
-.ev-li:hover{border-color:var(--gold-dim);background:var(--surface3)}
-.ev-li-body{flex:1;min-width:0}
-.ev-li-date{font-size:.64rem;color:var(--gold-dim);font-family:var(--fd);letter-spacing:.04em;margin-bottom:1px}
-.ev-li-title{font-size:.85rem;color:var(--text)}
-.ev-li-meta{display:flex;align-items:center;gap:3px;font-size:.7rem;color:var(--text-muted);margin-top:1px}
-/* ── TIMELINE AREA ── */
-.tl-area{flex:1;display:grid;grid-template-columns:160px 1fr;grid-template-rows:72px 1fr;overflow:hidden}
-.tl-corner{background:var(--surface);border-right:1px solid var(--border);border-bottom:2px solid var(--gold-dim);display:flex;align-items:center;justify-content:center;font-family:var(--fd);font-size:.56rem;color:var(--text-muted);letter-spacing:.1em;text-transform:uppercase}
-.tl-lw{background:var(--surface);border-bottom:2px solid var(--gold-dim);overflow:hidden;cursor:default}
-.tl-li{will-change:transform}
-.tl-dw{background:var(--surface);border-right:1px solid var(--border);overflow:hidden}
-.tl-di{will-change:transform}
-.tl-body{overflow:auto;background:var(--bg);position:relative;cursor:default}
-.tl-body::-webkit-scrollbar{width:8px;height:8px}.tl-body::-webkit-scrollbar-track{background:var(--surface)}.tl-body::-webkit-scrollbar-thumb{background:var(--border2);border-radius:4px}
-/* empty state */
-.es{display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;color:var(--text-muted);font-family:var(--fd);text-align:center;padding:30px;gap:10px}
-.es .g{font-size:2.2rem;opacity:.4}.es p{font-size:.76rem;letter-spacing:.08em;line-height:1.8;opacity:.7}
-/* ── TABLE VIEW ── */
-.tbl-wrap{flex:1;overflow:auto;padding:18px 22px;display:none}
-.tbl-wrap::-webkit-scrollbar{width:8px}.tbl-wrap::-webkit-scrollbar-thumb{background:var(--border2);border-radius:4px}
-.ev-table{width:100%;border-collapse:collapse;font-size:.88rem}
-.ev-table th{font-family:var(--fd);font-size:.62rem;letter-spacing:.1em;text-transform:uppercase;color:var(--gold-dim);padding:8px 12px;border-bottom:2px solid var(--gold-dim);text-align:left;background:var(--surface);white-space:nowrap}
-.ev-table td{padding:7px 12px;border-bottom:1px solid var(--border);vertical-align:top;color:var(--text-dim)}
-.ev-table td:first-child{white-space:nowrap;color:var(--text-muted);font-size:.82rem;font-family:var(--fd)}
-.ev-table td.ev-tit{color:var(--text);font-size:.92rem}
-.ev-table tr:hover td{background:var(--surface2)}
-.ev-table .pl-dots{display:flex;align-items:center;gap:4px;flex-wrap:wrap}
-/* ── TOOLTIP ── */
-#tip{position:fixed;background:var(--surface);border:1px solid var(--border2);border-radius:3px;padding:9px 12px;font-size:.8rem;pointer-events:none;z-index:900;max-width:220px;display:none;box-shadow:0 6px 20px rgba(0,0,0,.7)}
-#tip .tt{font-family:var(--fd);font-size:.86rem;color:var(--gold);margin-bottom:5px;letter-spacing:.04em}
-#tip .tl{color:var(--text-dim);font-size:.76rem;margin-top:2px;display:flex;gap:5px;align-items:center}
-#tip .tl b{color:var(--text);font-weight:400}
-#tip .td{margin-top:5px;font-style:italic;color:var(--text-dim);font-size:.76rem;border-top:1px solid var(--border);padding-top:4px}
-/* ── MODAL ── */
-.mbg{position:fixed;inset:0;background:rgba(0,0,0,.75);display:flex;align-items:center;justify-content:center;z-index:1000}
-.modal{background:var(--surface);border:1px solid var(--border2);border-radius:3px;padding:20px 22px;min-width:300px;max-width:420px;width:90vw;max-height:88vh;overflow-y:auto;box-shadow:0 10px 40px rgba(0,0,0,.8)}
-.modal::-webkit-scrollbar{width:4px}.modal::-webkit-scrollbar-thumb{background:var(--border2)}
-.modal h3{font-family:var(--fd);font-size:.92rem;color:var(--gold);letter-spacing:.06em;margin-bottom:14px;padding-bottom:7px;border-bottom:1px solid var(--border)}
-.ma{display:flex;gap:7px;margin-top:12px;justify-content:flex-end}
-.swatches{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:5px}
-.sw{width:23px;height:23px;border-radius:50%;cursor:pointer;border:2.5px solid transparent;transition:border-color .15s,transform .1s}
-.sw:hover{transform:scale(1.15)}.sw.act{border-color:white}
-.mpc{background:var(--surface2);border:1px solid var(--border);border-radius:2px;max-height:120px;overflow-y:auto;padding:3px 0;margin-top:3px}
-.mpc::-webkit-scrollbar{width:3px}.mpc::-webkit-scrollbar-thumb{background:var(--border2)}
-/* svg */
-svg text{user-select:none}
-.ev-g{cursor:pointer}
-/* drag ghost */
-.drag-ghost-circle{pointer-events:none;opacity:.7}
-/* col drag overlay */
-.col-drag-line{pointer-events:none}
-/* flash anim */
-@keyframes evflash{0%{stroke:white;stroke-width:5}50%{stroke:#f0d060;stroke-width:7}100%{stroke:transparent;stroke-width:2}}
-.evfl{animation:evflash 1s ease-out 2}
-/* location reorder in sidebar */
-.l-it.drag-over{border-color:var(--gold);background:var(--surface3)}
-</style>
-</head>
-<body>
-<div class="app">
-<!-- HEADER -->
-<div class="app-header">
-  <div class="app-title">⚔ Timeline <span id="cal-badge">Harptos</span></div>
-  <div class="search-wrap">
-    <span class="si">🔍</span>
-    <input id="srch" type="text" placeholder="Search events…" oninput="onSearch()" onkeydown="onSearchKey(event)" autocomplete="off">
-    <div class="sr" id="sr"></div>
-  </div>
-  <div class="hdr-r">
-    <div class="vt">
-      <button id="vt-graph" class="active" onclick="setView('graph')">Graph</button>
-      <button id="vt-table" onclick="setView('table')">Table</button>
-    </div>
-    <div class="zoom-row">
-      <button class="btn sm" onclick="fitAll()">Fit</button>
-      <input type="range" id="zoom" min="0" max="100" value="50" oninput="onZoomSlider(+this.value)">
-      <span class="zoom-lbl" id="zlbl">Month</span>
-    </div>
-    <button class="btn sm" onclick="exportData()">Export</button>
-    <button class="btn sm" onclick="importData()">Import</button>
-    <div class="theme-sw" title="Switch theme">
-      <button data-t="dark" onclick="setTheme('dark')" title="Dark"></button>
-      <button data-t="light" onclick="setTheme('light')" title="Light"></button>
-      <button data-t="slate" onclick="setTheme('slate')" title="Slate"></button>
-    </div>
-  </div>
-</div>
-
-<!-- BODY -->
-<div class="app-body">
-<!-- SIDEBAR -->
-<div class="sidebar">
-  <!-- Profile bar -->
-  <div class="prof-bar">
-    <select id="prof-sel" onchange="switchProfile(this.value)" title="Active timeline"></select>
-    <button class="btn sm gld" onclick="openModal('new-profile')" title="New timeline">+</button>
-    <button class="btn sm dn" onclick="deleteProfile()" title="Delete timeline">🗑</button>
-    <button class="btn sm" onclick="openModal('set-today')" title="Set 'today' marker" style="flex-shrink:0">📅</button>
-  </div>
-
-  <!-- Events list -->
-  <div class="s-sec">
-    <div class="s-ttl" onclick="toggleSec('events')">
-      <span class="s-arr" id="arr-events">▾</span>Events<span class="s-bdg" id="bdg-events">0</span>
-    </div>
-    <div class="s-body" id="sb-events">
-      <div class="s-inner"><div id="ev-list"></div></div>
-    </div>
-  </div>
-
-  <!-- New event -->
-  <div class="s-sec">
-    <div class="s-ttl" onclick="toggleSec('newev')">
-      <span class="s-arr" id="arr-newev">▾</span>New Event
-    </div>
-    <div class="s-body" id="sb-newev">
-      <div class="s-inner">
-        <div class="fr"><label>Title</label><input id="ev-title" type="text" placeholder="Event name…"></div>
-        <div class="fr"><label>Players</label><div class="pchks" id="ev-pchks"><div style="padding:5px 8px;font-size:.8rem;color:var(--text-muted);font-style:italic">Add players first</div></div></div>
-        <div class="fr"><label>Location</label><select id="ev-loc"></select></div>
-        <div class="fg">
-          <div class="fr"><label>Year</label><input id="ev-year" type="number" value="1492" min="1"></div>
-          <div class="fr"><label>Day</label><input id="ev-day" type="number" value="1" min="1" max="30"></div>
-        </div>
-        <div class="fr"><label id="ev-month-lbl">Month / Festival</label><select id="ev-month" onchange="onMonthChange()"></select></div>
-        <div class="fr"><label>Description</label><textarea id="ev-desc" rows="2" placeholder="Notes…"></textarea></div>
-        <div class="fr"><label>Duration <span style="color:var(--text-muted);font-size:.65rem">(1d, 3m, 2y — default 1d)</span></label><input id="ev-dur" type="text" value="1d" placeholder="1d"></div>
-        <button class="btn gld full" onclick="addEvent()">Add Event</button>
-      </div>
-    </div>
-  </div>
-
-  <!-- Players -->
-  <div class="s-sec">
-    <div class="s-ttl" onclick="toggleSec('players')">
-      <span class="s-arr" id="arr-players">▾</span>Players<span class="s-bdg" id="bdg-players">0</span>
-    </div>
-    <div class="s-body" id="sb-players">
-      <div class="s-inner">
-        <div id="pl-list"></div>
-        <button class="btn sm" onclick="openModal('add-player')">+ Add Player</button>
-      </div>
-    </div>
-  </div>
-
-  <!-- Locations -->
-  <div class="s-sec">
-    <div class="s-ttl" onclick="toggleSec('locs')">
-      <span class="s-arr" id="arr-locs">▾</span>Locations<span class="s-bdg" id="bdg-locs">0</span>
-    </div>
-    <div class="s-body" id="sb-locs">
-      <div class="s-inner">
-        <div id="loc-list"></div>
-        <button class="btn sm" onclick="openModal('add-location')">+ Add Location</button>
-      </div>
-    </div>
-  </div>
-</div><!-- /sidebar -->
-
-<!-- MAIN AREA -->
-<div class="tl-area" id="tl-area">
-  <div class="tl-corner">Date · Place</div>
-  <div class="tl-lw" id="tl-lw"><div class="tl-li" id="tl-li"><svg id="svg-loc" height="58"></svg></div></div>
-  <div class="tl-dw"><div class="tl-di" id="tl-di"><svg id="svg-dates" width="160"></svg></div></div>
-  <div class="tl-body" id="tl-body" onscroll="syncScroll(this)">
-    <div class="es" id="es"><div class="g">📜</div><p>Add players and locations<br>to begin your chronicle.</p></div>
-    <svg id="svg-body" style="display:none"></svg>
-  </div>
-</div>
-
-<!-- TABLE VIEW -->
-<div class="tbl-wrap" id="tbl-wrap">
-  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
-    <span style="font-family:var(--fd);font-size:.65rem;letter-spacing:.12em;text-transform:uppercase;color:var(--gold-dim)" id="tbl-count"></span>
-    <button class="btn sm gld" onclick="exportCSV()">⬇ Export CSV</button>
-  </div>
-  <table class="ev-table"><thead id="tbl-head"></thead><tbody id="tbl-body"></tbody></table>
-</div>
-
-</div><!-- /app-body -->
-</div><!-- /app -->
-
-<div id="tip"><div class="tt" id="t-ttl"></div><div class="tl">📍 <b id="t-loc"></b></div><div class="tl">📅 <b id="t-dt"></b></div><div class="tl">👤 <span id="t-pl"></span></div><div class="td" id="t-desc" style="display:none"></div></div>
-<div class="mbg" id="mbg" style="display:none" onclick="if(event.target===this)closeModal()"><div class="modal" id="mc"></div></div>
-
-<script>
-/* ════════════════════════════════════════
-   CALENDAR SYSTEMS
-════════════════════════════════════════ */
-const HARPTOS=[
-  {name:'Hammer',days:30,sd:1,sp:false},{name:'Midwinter',days:1,sd:31,sp:true},
-  {name:'Alturiak',days:30,sd:32,sp:false},{name:'Ches',days:30,sd:62,sp:false},
-  {name:'Tarsakh',days:30,sd:92,sp:false},{name:'Greengrass',days:1,sd:122,sp:true},
-  {name:'Mirtul',days:30,sd:123,sp:false},{name:'Kythorn',days:30,sd:153,sp:false},
-  {name:'Flamerule',days:30,sd:183,sp:false},{name:'Midsummer',days:1,sd:213,sp:true},
-  {name:'Eleasis',days:30,sd:214,sp:false},{name:'Eleint',days:30,sd:244,sp:false},
-  {name:'Highharvestide',days:1,sd:274,sp:true},{name:'Marpenoth',days:30,sd:275,sp:false},
-  {name:'Uktar',days:30,sd:305,sp:false},{name:'Feast of the Moon',days:1,sd:335,sp:true},
-  {name:'Nightal',days:30,sd:336,sp:false}
-];
-const GREG_MONTHS=['January','February','March','April','May','June','July','August','September','October','November','December'];
-const GREG_DAYS=[31,28,31,30,31,30,31,31,30,31,30,31];
-
-function isLeap(y){return(y%4===0&&y%100!==0)||y%400===0}
-function gregDaysInYear(y){return isLeap(y)?366:365}
-function gregMonthDays(m,y){return m===1?(isLeap(y)?29:28):GREG_DAYS[m]}
-
-function gregDayToMD(year,doy){
-  const feb=isLeap(year)?29:28;
-  const md=[31,feb,31,30,31,30,31,31,30,31,30,31];
-  let d=doy,m=0;while(m<11&&d>md[m]){d-=md[m];m++}
-  return{m,d}
-}
-function gregDoyFromMD(monthIdx,day,year){
-  const feb=isLeap(year)?29:28;const md=[31,feb,31,30,31,30,31,31,30,31,30,31];
-  let doy=day;for(let i=0;i<monthIdx;i++)doy+=md[i];return doy
-}
-
-// Absolute day (calendar-agnostic storage: just days from epoch)
-// Harptos: every year = 365 days (no leap). absDay = (year-1)*365 + doy - 1
-// Gregorian: proper leap years
-function absDay(year,doy){
-  if(currentCal()==='harptos') return(year-1)*365+doy-1;
-  const y=year-1;
-  return 365*y+Math.floor(y/4)-Math.floor(y/100)+Math.floor(y/400)+doy-1;
-}
-function fromAbsDay(abs){
-  if(currentCal()==='harptos'){
-    return{year:Math.floor(abs/365)+1,dayOfYear:(abs%365)+1};
-  }
-  // Gregorian: estimate then correct
-  let yr=Math.floor(abs/365.2425)+1;
-  while(absDay(yr+1,1)<=abs)yr++;
-  while(yr>1&&absDay(yr,1)>abs)yr--;
-  return{year:yr,dayOfYear:abs-absDay(yr,1)+1};
-}
-
-function harptDayToPeriod(doy){
-  for(const p of HARPTOS)if(doy>=p.sd&&doy<p.sd+p.days)return{period:p,dayInPeriod:doy-p.sd+1};
-  return null;
-}
-
-function formatDate(year,doy){
-  if(currentCal()==='harptos'){
-    const r=harptDayToPeriod(doy);if(!r)return`Day ${doy}, ${year} DR`;
-    return r.period.sp?`${r.period.name}, ${year} DR`:`${r.dayInPeriod} ${r.period.name}, ${year} DR`;
-  }else{
-    const{m,d}=gregDayToMD(year,doy);
-    return`${d} ${GREG_MONTHS[m]} ${year}`;
-  }
-}
-
-/* ════════════════════════════════════════
-   PROFILE MANAGEMENT
-════════════════════════════════════════ */
-const META_KEY='ht-profiles';
-let _profiles=[];      // [{id,name,calendarType}]
-let _activeId='';      // current profile id
-
-function loadProfiles(){
-  try{const s=localStorage.getItem(META_KEY);if(s){const d=JSON.parse(s);_profiles=d.profiles||[];_activeId=d.activeId||'';}}catch(_){}
-  if(!_profiles.length)_profiles=[];
-}
-function saveProfiles(){localStorage.setItem(META_KEY,JSON.stringify({profiles:_profiles,activeId:_activeId}));}
-function profileById(id){return _profiles.find(p=>p.id===id);}
-function currentProfile(){return profileById(_activeId);}
-function currentCal(){const p=currentProfile();return p?p.calendarType:'harptos';}
-
-function switchProfile(id){
-  _activeId=id;saveProfiles();
-  db=loadDB();
-  initMonthUI();renderAll();
-  document.getElementById('cal-badge').textContent=currentCal()==='harptos'?'Harptos':'Gregorian';
-}
-
-function createProfile(name,calendarType,playersRaw,locsRaw){
-  const id='p'+Date.now().toString(36);
-  _profiles.push({id,name,calendarType});
-  _activeId=id;saveProfiles();
-  // Init DB
-  const players=playersRaw.split(',').map(s=>s.trim()).filter(Boolean).map((nm,i)=>({id:'pl'+i+Date.now(),name:nm,color:PALETTE[i%PALETTE.length]}));
-  const locations=locsRaw.split(',').map(s=>s.trim()).filter(Boolean);
-  const locationOrder=[...locations];
-  db={players,locations,locationOrder,events:[]};
-  saveDB();
-  renderProfileSelect();
-  initMonthUI();renderAll();
-  document.getElementById('cal-badge').textContent=calendarType==='harptos'?'Harptos':'Gregorian';
-}
-
-function deleteProfile(){
-  if(_profiles.length<=1){alert('Cannot delete the only timeline.');return;}
-  const p=currentProfile();
-  if(!confirm(`Delete timeline "${p.name}"? All events will be lost.`))return;
-  localStorage.removeItem(dbKey());
-  _profiles=_profiles.filter(x=>x.id!==_activeId);
-  _activeId=_profiles[0].id;
-  saveProfiles();
-  db=loadDB();
-  renderProfileSelect();
-  initMonthUI();renderAll();
-  document.getElementById('cal-badge').textContent=currentCal()==='harptos'?'Harptos':'Gregorian';
-}
-
-function renderProfileSelect(){
-  const sel=document.getElementById('prof-sel');
-  sel.innerHTML=_profiles.map(p=>`<option value="${p.id}" ${p.id===_activeId?'selected':''}>${esc(p.name)}</option>`).join('');
-}
-
-/* ════════════════════════════════════════
-   DATABASE (per-profile)
-════════════════════════════════════════ */
-let db={players:[],locations:[],locationOrder:[],events:[]};
-
-function dbKey(){return'ht-db-'+_activeId;}
-function loadDB(){
-  let d={players:[],locations:[],locationOrder:[],events:[],todayAbs:null};
-  try{const s=localStorage.getItem(dbKey());if(s)d=JSON.parse(s);}catch(_){}
-  d.players=d.players||[];d.locations=d.locations||[];d.events=(d.events||[]).map(migrateEv);
-  d.locationOrder=d.locationOrder&&d.locationOrder.length?d.locationOrder:[...d.locations];
-  if(d.todayAbs===undefined)d.todayAbs=null;
-  return d;
-}
-function saveDB(){localStorage.setItem(dbKey(),JSON.stringify(db));}
-function uid(){return Date.now().toString(36)+Math.random().toString(36).slice(2,7);}
-function migrateEv(ev){
-  if(!ev.playerIds){ev.playerIds=ev.playerId?[ev.playerId]:[];delete ev.playerId;}
-  if(!ev.durationDays||ev.durationDays<1)ev.durationDays=1;
-  return ev;
-}
-function getPlayer(id){return db.players.find(p=>p.id===id);}
-function getPlayers(ev){return(ev.playerIds||[]).map(id=>getPlayer(id)).filter(Boolean);}
-function sortedPlayers(){return[...db.players].sort((a,b)=>a.name.localeCompare(b.name));}
-function sortedLocs(){return[...db.locations].sort((a,b)=>a.localeCompare(b));}
-function displayedLocs(){
-  const order=db.locationOrder||[];const all=db.locations;
-  const ordered=order.filter(l=>all.includes(l));const rest=all.filter(l=>!ordered.includes(l));
-  return[...ordered,...rest];
-}
-function sortedEvents(){return[...db.events].sort((a,b)=>absDay(a.year,a.dayOfYear)-absDay(b.year,b.dayOfYear));}
-
-/* ════════════════════════════════════════
-   UI STATE (visibility, theme, today)
-════════════════════════════════════════ */
-let _collapsed={events:true,newev:true,players:true,locs:true};
-let _view='graph';
-let _hiddenPlayers=new Set();
-let _hiddenLocs=new Set();
-let _theme='dark';
-// _todayAbs is now per-profile, stored in db.todayAbs
-
-function loadUIState(){
-  try{
-    const s=localStorage.getItem('ht-ui');
-    if(s){
-      const d=JSON.parse(s);
-      _collapsed={..._collapsed,...(d.collapsed||{})};
-      _view=d.view||'graph';
-      _hiddenPlayers=new Set(d.hiddenPlayers||[]);
-      _hiddenLocs=new Set(d.hiddenLocs||[]);
-      _theme=d.theme||'dark';
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Campaign Timeline</title>
+  <link
+    href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700&family=Crimson+Text:ital,wght@0,400;0,600;1,400&display=swap"
+    rel="stylesheet">
+  <style>
+    *,
+    *::before,
+    *::after {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0
     }
-  }catch(_){}
-}
-function saveUIState(){
-  localStorage.setItem('ht-ui',JSON.stringify({
-    collapsed:_collapsed,view:_view,
-    hiddenPlayers:[..._hiddenPlayers],hiddenLocs:[..._hiddenLocs],
-    theme:_theme
-  }));
-}
 
-function toggleSec(k){_collapsed[k]=!_collapsed[k];applySec(k);saveUIState();}
-function applySec(k){
-  const b=document.getElementById('sb-'+k),a=document.getElementById('arr-'+k);
-  if(!b)return;
-  b.classList.toggle('collapsed',!!_collapsed[k]);
-  if(a)a.classList.toggle('cl',!!_collapsed[k]);
-}
-function applyAllSecs(){for(const k of Object.keys(_collapsed))applySec(k);}
+    /* ── THEME: DARK (default) ── */
+    :root,
+    [data-theme="dark"] {
+      --bg: #13100b;
+      --surface: #1e1810;
+      --surface2: #272015;
+      --surface3: #302818;
+      --border: #3d3220;
+      --border2: #554428;
+      --gold: #c9a84c;
+      --gold-dim: #7a6030;
+      --gold-glow: #e8c96a;
+      --special-bg: #1f1800;
+      --special-fg: #f0d060;
+      --text: #e8dcc0;
+      --text-dim: #a09070;
+      --text-muted: #6a5a40;
+      --red: #a03028;
+      --red-hover: #c03838;
+      --today: #ffffff;
+      --today-bg: rgba(255, 255, 255, 0.07);
+      --fd: 'Cinzel', 'Georgia', serif;
+      --fb: 'Crimson Text', 'Georgia', serif;
+    }
 
-function setView(v){
-  _view=v;saveUIState();
-  document.getElementById('vt-graph').classList.toggle('active',v==='graph');
-  document.getElementById('vt-table').classList.toggle('active',v==='table');
-  document.getElementById('tl-area').style.display=v==='graph'?'':'none';
-  document.getElementById('tbl-wrap').style.display=v==='table'?'block':'none';
-  if(v==='table')renderTable();else renderTimeline();
-}
+    /* ── THEME: LIGHT ── */
+    [data-theme="light"] {
+      --bg: #f5f0e8;
+      --surface: #fffdf7;
+      --surface2: #f0ece0;
+      --surface3: #e8e2d4;
+      --border: #d4c9b0;
+      --border2: #b8a888;
+      --gold: #8b6914;
+      --gold-dim: #a07820;
+      --gold-glow: #c8920a;
+      --special-bg: #fff8e0;
+      --special-fg: #8b6914;
+      --text: #2a2218;
+      --text-dim: #5a4e38;
+      --text-muted: #8a7a60;
+      --red: #c0392b;
+      --red-hover: #a03020;
+      --today: #1a1a2e;
+      --today-bg: rgba(0, 0, 0, 0.06);
+      --fd: 'Cinzel', 'Georgia', serif;
+      --fb: 'Crimson Text', 'Georgia', serif;
+    }
 
-/* ── THEME ── */
-function setTheme(t){
-  _theme=t;
-  document.documentElement.setAttribute('data-theme',t);
-  document.querySelectorAll('.theme-sw button').forEach(b=>b.classList.toggle('act',b.dataset.t===t));
-  saveUIState();renderTimeline();
-}
+    /* ── THEME: SLATE ── */
+    [data-theme="slate"] {
+      --bg: #0d1117;
+      --surface: #161b22;
+      --surface2: #1c2128;
+      --surface3: #22272e;
+      --border: #30363d;
+      --border2: #444c56;
+      --gold: #58a6ff;
+      --gold-dim: #1f6feb;
+      --gold-glow: #79c0ff;
+      --special-bg: #0d1117;
+      --special-fg: #ffa657;
+      --text: #c9d1d9;
+      --text-dim: #8b949e;
+      --text-muted: #484f58;
+      --red: #f85149;
+      --red-hover: #ff7b72;
+      --today: #58a6ff;
+      --today-bg: rgba(88, 166, 255, 0.07);
+      --fd: 'Cinzel', 'Georgia', serif;
+      --fb: 'Crimson Text', 'Georgia', serif;
+    }
 
-/* ── VISIBILITY ── */
-function togglePlayerVis(id){
-  if(_hiddenPlayers.has(id))_hiddenPlayers.delete(id);else _hiddenPlayers.add(id);
-  saveUIState();renderSidebar();renderTimeline();
-}
-function toggleLocVis(name){
-  if(_hiddenLocs.has(name))_hiddenLocs.delete(name);else _hiddenLocs.add(name);
-  saveUIState();renderSidebar();renderTimeline();
-}
-function visibleLocs(){return displayedLocs().filter(l=>!_hiddenLocs.has(l));}
-function visiblePlayers(){return db.players.filter(p=>!_hiddenPlayers.has(p.id));}
+    html,
+    body {
+      height: 100%;
+      overflow: hidden
+    }
 
-/* ════════════════════════════════════════
-   ZOOM
-════════════════════════════════════════ */
-const MIN_PPD=0.0002,MAX_PPD=60;
-let PPD=1;
+    body {
+      font-family: var(--fb);
+      background: var(--bg);
+      color: var(--text);
+      font-size: 15px;
+      transition: background .2s, color .2s
+    }
 
-function sliderToPPD(v){return MIN_PPD*Math.pow(MAX_PPD/MIN_PPD,v/100);}
-function ppdToSlider(p){return Math.round(100*Math.log(p/MIN_PPD)/Math.log(MAX_PPD/MIN_PPD));}
-function granularity(){
-  if(PPD>=3)return'day';if(PPD>=0.1)return'month';
-  if(PPD>=0.01)return'year';if(PPD>=0.001)return'decade';
-  if(PPD>=0.0001)return'century';return'millennium';
-}
-function granLabel(){return{day:'Day',month:'Month',year:'Year',decade:'Decade',century:'Century',millennium:'Millennium'}[granularity()];}
-function onZoomSlider(v){PPD=sliderToPPD(v);document.getElementById('zlbl').textContent=granLabel();renderTimeline();}
-function fitAll(){
-  const body=document.getElementById('tl-body'),h=body.clientHeight||500;
-  if(!db.events.length){PPD=sliderToPPD(50);}else{
-    // First estimate using raw span
-    const visPlIds=new Set(visiblePlayers().map(p=>p.id));
-    const visLs=new Set(visibleLocs());
-    const visEvs=db.events.filter(e=>visLs.has(e.location)&&(e.playerIds||[]).some(id=>visPlIds.has(id)));
-    const abs=(visEvs.length?visEvs:db.events).map(e=>absDay(e.year,e.dayOfYear));
-    const span=Math.max(1,Math.max(...abs)-Math.min(...abs)+CLUS_PAD*2+1);
-    PPD=Math.max(MIN_PPD,Math.min(MAX_PPD,(h-60)/span));
-    // Second pass: rebuild segments and refine so compressed height fills viewport
-    buildSegments();
-    const sh=segTotalH();
-    if(sh>0)PPD=PPD*(h-20)/sh;
-    PPD=Math.max(MIN_PPD,Math.min(MAX_PPD,PPD));
-  }
-  document.getElementById('zoom').value=ppdToSlider(PPD);
-  document.getElementById('zlbl').textContent=granLabel();
-  renderTimeline();
-}
+    /* theme switcher */
+    .theme-sw {
+      display: flex;
+      gap: 4px;
+      align-items: center
+    }
 
-/* ════════════════════════════════════════
-   UTILITIES
-════════════════════════════════════════ */
-function esc(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
-function darken(hex,f){
-  let c=hex.replace('#','');if(c.length===3)c=c.split('').map(x=>x+x).join('');
-  return`rgb(${Math.max(0,parseInt(c.slice(0,2),16)-Math.round(255*f))},${Math.max(0,parseInt(c.slice(2,4),16)-Math.round(255*f))},${Math.max(0,parseInt(c.slice(4,6),16)-Math.round(255*f))})`;
-}
-function pieSlices(cx,cy,r,colors,strokeC){
-  const n=colors.length;
-  if(!n)return`<circle cx="${cx}" cy="${cy}" r="${r}" fill="var(--border2)" stroke="${strokeC}" stroke-width="2"/>`;
-  if(n===1)return`<circle cx="${cx}" cy="${cy}" r="${r}" fill="${colors[0]}" stroke="${strokeC}" stroke-width="2"/>`;
-  let d='';
-  for(let i=0;i<n;i++){
-    const a0=(i/n)*2*Math.PI-Math.PI/2,a1=((i+1)/n)*2*Math.PI-Math.PI/2;
-    const x0=cx+r*Math.cos(a0),y0=cy+r*Math.sin(a0),x1=cx+r*Math.cos(a1),y1=cy+r*Math.sin(a1);
-    const lg=(a1-a0>Math.PI)?1:0;
-    d+=`<path d="M${cx},${cy} L${x0.toFixed(1)},${y0.toFixed(1)} A${r},${r} 0 ${lg} 1 ${x1.toFixed(1)},${y1.toFixed(1)} Z" fill="${colors[i]}"/>`;
-  }
-  return d+`<circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="${strokeC}" stroke-width="2"/>`;
-}
+    .theme-sw button {
+      width: 18px;
+      height: 18px;
+      border-radius: 50%;
+      border: 2px solid transparent;
+      cursor: pointer;
+      transition: border-color .15s, transform .1s;
+      flex-shrink: 0
+    }
 
-const COL_W=130,HEADER_H=72,SIDE_W=160,R=11,GSPC=22,PAD=20;
-let _minA=0;
-let _dispLocs=[];
+    .theme-sw button:hover {
+      transform: scale(1.2)
+    }
 
-/* Duration helpers */
-function parseDuration(s){
-  if(!s||!s.trim())return 1;
-  const m=String(s).trim().match(/^(\d+(?:\.\d+)?)\s*([dDmMyY]?)$/);
-  if(!m)return 1;
-  const n=parseFloat(m[1]),unit=(m[2]||'d').toLowerCase();
-  if(unit==='y')return Math.max(1,Math.round(n*365));
-  if(unit==='m')return Math.max(1,Math.round(n*30));
-  return Math.max(1,Math.round(n));
-}
-function formatDuration(d){
-  if(!d||d<=1)return'1d';
-  if(d<30)return`${d}d`;
-  if(d<365){const m=Math.round(d/30);return`~${m}m`;}
-  const y=(d/365).toFixed(1);return`~${y}y`;
-}
+    .theme-sw button.act {
+      border-color: var(--gold) !important
+    }
 
-/* ════════════════════════════════════════
-   MONTH UI (calendar-aware form)
-════════════════════════════════════════ */
-function initMonthUI(){
-  const sel=document.getElementById('ev-month');
-  const lbl=document.getElementById('ev-month-lbl');
-  const dayInp=document.getElementById('ev-day');
-  if(currentCal()==='harptos'){
-    lbl.textContent='Month / Festival';
-    sel.innerHTML=HARPTOS.map((p,i)=>`<option value="${i}">${p.name}${p.sp?' ✦':''}</option>`).join('');
-    dayInp.disabled=false;
-    onMonthChange();
-  }else{
-    lbl.textContent='Month';
-    sel.innerHTML=GREG_MONTHS.map((m,i)=>`<option value="${i}">${m}</option>`).join('');
-    dayInp.disabled=false;dayInp.max=31;dayInp.value=1;
-  }
-}
-function onMonthChange(){
-  if(currentCal()!=='harptos')return;
-  const p=HARPTOS[+document.getElementById('ev-month').value];
-  const d=document.getElementById('ev-day');
-  if(p.sp){d.value=1;d.disabled=true;}else{d.disabled=false;}
-}
-function monthSelectOpts(calType,selectedMidx){
-  if(calType==='harptos')
-    return HARPTOS.map((p,i)=>`<option value="${i}" ${i===selectedMidx?'selected':''}>${p.name}${p.sp?' ✦':''}</option>`).join('');
-  return GREG_MONTHS.map((m,i)=>`<option value="${i}" ${i===selectedMidx?'selected':''}>${m}</option>`).join('');
-}
-function doyFromForm(midx,day,year,calType){
-  if(calType==='harptos'){const p=HARPTOS[midx];return p.sd+(p.sp?0:day-1);}
-  return gregDoyFromMD(midx,day,year);
-}
-function formMidxFromDoy(doy,year,calType){
-  if(calType==='harptos'){
-    for(let i=0;i<HARPTOS.length;i++){const p=HARPTOS[i];if(doy>=p.sd&&doy<p.sd+p.days)return{midx:i,day:doy-p.sd+1,special:p.sp};}
-    return{midx:0,day:1,special:false};
-  }else{
-    const{m,d}=gregDayToMD(year,doy);return{midx:m,day:d,special:false};
-  }
-}
+    .theme-sw button[data-t="dark"] {
+      background: #272015;
+      border-color: #554428
+    }
 
-/* ════════════════════════════════════════
-   SIDEBAR RENDER
-════════════════════════════════════════ */
-function renderSidebar(){
-  const sp=sortedPlayers(),sl=sortedLocs(),se=sortedEvents(),dl=displayedLocs();
-  document.getElementById('bdg-events').textContent=db.events.length;
-  document.getElementById('bdg-players').textContent=db.players.length;
-  document.getElementById('bdg-locs').textContent=db.locations.length;
+    .theme-sw button[data-t="light"] {
+      background: #f0ece0;
+      border-color: #b8a888
+    }
 
-  // Events list
-  document.getElementById('ev-list').innerHTML=se.length===0
-    ?`<div class="empty-m">No events yet.</div>`
-    :se.map(ev=>{
-        const pls=getPlayers(ev);
-        const dots=pls.map(p=>`<span style="width:7px;height:7px;border-radius:50%;background:${p.color};display:inline-block;flex-shrink:0"></span>`).join('');
-        const dur=ev.durationDays>1?`<span style="color:var(--gold-dim);font-size:.68rem;margin-left:4px">${formatDuration(ev.durationDays)}</span>`:'';
-        return`<div class="ev-li">
+    .theme-sw button[data-t="slate"] {
+      background: #1c2128;
+      border-color: #444c56
+    }
+
+    /* hide-eye toggle */
+    .eye-btn {
+      background: none;
+      border: none;
+      cursor: pointer;
+      padding: 1px 3px;
+      color: var(--text-muted);
+      font-size: .8rem;
+      line-height: 1;
+      transition: opacity .15s
+    }
+
+    .eye-btn:hover {
+      color: var(--text)
+    }
+
+    .eye-btn.hidden-item {
+      opacity: .4
+    }
+
+    .item-hidden {
+      opacity: .45
+    }
+
+    /* ── APP SHELL ── */
+    .app {
+      height: 100vh;
+      display: flex;
+      flex-direction: column
+    }
+
+    .app-header {
+      background: var(--surface);
+      border-bottom: 2px solid var(--gold-dim);
+      padding: 7px 14px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-shrink: 0;
+      box-shadow: 0 2px 12px rgba(0, 0, 0, .5)
+    }
+
+    .app-title {
+      font-family: var(--fd);
+      font-size: .95rem;
+      color: var(--gold);
+      letter-spacing: .08em;
+      white-space: nowrap;
+      flex-shrink: 0
+    }
+
+    .app-title span {
+      color: var(--text-dim);
+      font-size: .7rem;
+      margin-left: 7px
+    }
+
+    /* search */
+    .search-wrap {
+      position: relative;
+      flex: 1;
+      max-width: 280px
+    }
+
+    .search-wrap input {
+      width: 100%;
+      background: var(--surface2);
+      border: 1px solid var(--border2);
+      color: var(--text);
+      padding: 5px 10px 5px 26px;
+      border-radius: 2px;
+      font-family: var(--fb);
+      font-size: .86rem;
+      transition: border-color .15s
+    }
+
+    .search-wrap input:focus {
+      outline: none;
+      border-color: var(--gold-dim)
+    }
+
+    .search-wrap input::placeholder {
+      color: var(--text-muted)
+    }
+
+    .si {
+      position: absolute;
+      left: 7px;
+      top: 50%;
+      transform: translateY(-50%);
+      color: var(--text-muted);
+      font-size: .7rem;
+      pointer-events: none
+    }
+
+    .sr {
+      position: absolute;
+      top: calc(100% + 4px);
+      left: 0;
+      right: 0;
+      background: var(--surface);
+      border: 1px solid var(--border2);
+      border-radius: 2px;
+      box-shadow: 0 8px 24px rgba(0, 0, 0, .7);
+      z-index: 500;
+      display: none;
+      max-height: 280px;
+      overflow-y: auto
+    }
+
+    .sr::-webkit-scrollbar {
+      width: 4px
+    }
+
+    .sr::-webkit-scrollbar-thumb {
+      background: var(--border2)
+    }
+
+    .sri {
+      padding: 7px 11px;
+      cursor: pointer;
+      border-bottom: 1px solid var(--border);
+      transition: background .1s
+    }
+
+    .sri:last-child {
+      border-bottom: none
+    }
+
+    .sri:hover {
+      background: var(--surface2)
+    }
+
+    .sri-t {
+      font-size: .86rem;
+      color: var(--text)
+    }
+
+    .sri-m {
+      font-size: .7rem;
+      color: var(--text-muted);
+      margin-top: 2px;
+      display: flex;
+      align-items: center;
+      gap: 4px
+    }
+
+    .sr-empty {
+      padding: 9px 11px;
+      font-size: .8rem;
+      color: var(--text-muted);
+      font-style: italic
+    }
+
+    /* header-right */
+    .hdr-r {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-shrink: 0;
+      margin-left: auto
+    }
+
+    .zoom-row {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      font-family: var(--fd);
+      font-size: .65rem;
+      color: var(--text-muted);
+      letter-spacing: .05em
+    }
+
+    .zoom-row input[type=range] {
+      width: 66px;
+      accent-color: var(--gold);
+      cursor: pointer
+    }
+
+    .zoom-lbl {
+      font-size: .6rem;
+      color: var(--gold-dim);
+      min-width: 42px;
+      text-align: right;
+      letter-spacing: .06em
+    }
+
+    /* view toggle */
+    .vt {
+      display: flex;
+      border: 1px solid var(--border2);
+      border-radius: 2px;
+      overflow: hidden
+    }
+
+    .vt button {
+      padding: 4px 9px;
+      background: transparent;
+      border: none;
+      color: var(--text-muted);
+      font-family: var(--fd);
+      font-size: .6rem;
+      letter-spacing: .06em;
+      cursor: pointer;
+      transition: all .15s;
+      text-transform: uppercase
+    }
+
+    .vt button.active {
+      background: var(--gold-dim);
+      color: var(--bg)
+    }
+
+    .vt button:not(.active):hover {
+      background: rgba(200, 160, 50, .08);
+      color: var(--gold)
+    }
+
+    /* app body */
+    .app-body {
+      flex: 1;
+      display: flex;
+      overflow: hidden
+    }
+
+    /* ── SIDEBAR ── */
+    .sidebar {
+      width: 256px;
+      flex-shrink: 0;
+      background: var(--surface);
+      border-right: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      overflow-y: auto
+    }
+
+    .sidebar::-webkit-scrollbar {
+      width: 4px
+    }
+
+    .sidebar::-webkit-scrollbar-thumb {
+      background: var(--border2);
+      border-radius: 2px
+    }
+
+    /* profile bar (sticky top) */
+    .prof-bar {
+      padding: 8px 12px;
+      background: var(--surface2);
+      border-bottom: 2px solid var(--border2);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      flex-shrink: 0;
+      position: sticky;
+      top: 0;
+      z-index: 10
+    }
+
+    .prof-bar select {
+      flex: 1;
+      background: var(--surface);
+      border: 1px solid var(--border2);
+      color: var(--text);
+      padding: 4px 6px;
+      border-radius: 2px;
+      font-family: var(--fb);
+      font-size: .84rem
+    }
+
+    .prof-bar select option {
+      background: var(--surface)
+    }
+
+    /* sections */
+    .s-sec {
+      border-bottom: 1px solid var(--border)
+    }
+
+    .s-ttl {
+      font-family: var(--fd);
+      font-size: .6rem;
+      letter-spacing: .12em;
+      text-transform: uppercase;
+      color: var(--gold-dim);
+      padding: 8px 13px 5px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      cursor: pointer;
+      user-select: none;
+      transition: color .15s
+    }
+
+    .s-ttl:hover {
+      color: var(--gold)
+    }
+
+    .s-ttl::after {
+      content: '';
+      flex: 1;
+      height: 1px;
+      background: var(--border)
+    }
+
+    .s-arr {
+      font-size: .52rem;
+      transition: transform .2s;
+      display: inline-block;
+      color: var(--text-muted)
+    }
+
+    .s-arr.cl {
+      transform: rotate(-90deg)
+    }
+
+    .s-bdg {
+      font-size: .56rem;
+      background: var(--border2);
+      padding: 1px 5px;
+      border-radius: 8px;
+      color: var(--text-muted);
+      font-family: var(--fd)
+    }
+
+    .s-body {
+      overflow: hidden
+    }
+
+    .s-body.collapsed {
+      display: none
+    }
+
+    .s-inner {
+      padding: 4px 13px 11px
+    }
+
+    /* form */
+    .fr {
+      margin-bottom: 6px
+    }
+
+    .fr label {
+      display: block;
+      font-size: .68rem;
+      color: var(--text-muted);
+      margin-bottom: 3px;
+      font-family: var(--fd);
+      letter-spacing: .05em
+    }
+
+    .fr input,
+    .fr select,
+    .fr textarea {
+      width: 100%;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      color: var(--text);
+      padding: 5px 7px;
+      border-radius: 2px;
+      font-family: var(--fb);
+      font-size: .86rem;
+      transition: border-color .15s
+    }
+
+    .fr input:focus,
+    .fr select:focus,
+    .fr textarea:focus {
+      outline: none;
+      border-color: var(--gold-dim)
+    }
+
+    .fr select option {
+      background: var(--surface2)
+    }
+
+    .fg {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 6px
+    }
+
+    /* player checks */
+    .pchks {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 2px;
+      max-height: 100px;
+      overflow-y: auto;
+      padding: 2px 0
+    }
+
+    .pchks::-webkit-scrollbar {
+      width: 3px
+    }
+
+    .pchks::-webkit-scrollbar-thumb {
+      background: var(--border2)
+    }
+
+    .pcl {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 3px 8px;
+      cursor: pointer;
+      font-size: .82rem;
+      transition: background .1s;
+      white-space: nowrap
+    }
+
+    .pcl:hover {
+      background: var(--surface3)
+    }
+
+    .pcl input[type=checkbox] {
+      accent-color: var(--gold);
+      cursor: pointer;
+      flex-shrink: 0;
+      width: 12px;
+      height: 12px
+    }
+
+    /* buttons */
+    .btn {
+      padding: 5px 10px;
+      border: 1px solid var(--border2);
+      background: transparent;
+      color: var(--text-dim);
+      font-family: var(--fd);
+      font-size: .67rem;
+      letter-spacing: .06em;
+      cursor: pointer;
+      border-radius: 2px;
+      transition: all .15s;
+      text-transform: uppercase
+    }
+
+    .btn:hover {
+      border-color: var(--gold-dim);
+      color: var(--gold);
+      background: rgba(200, 160, 50, .06)
+    }
+
+    .btn.gld {
+      border-color: var(--gold-dim);
+      color: var(--gold-glow);
+      background: rgba(200, 160, 50, .08)
+    }
+
+    .btn.gld:hover {
+      background: var(--gold-dim);
+      color: var(--bg)
+    }
+
+    .btn.full {
+      width: 100%
+    }
+
+    .btn.sm {
+      padding: 3px 7px;
+      font-size: .6rem
+    }
+
+    .btn.dn {
+      border-color: var(--red);
+      color: var(--red)
+    }
+
+    .btn.dn:hover {
+      background: var(--red);
+      color: #fff;
+      border-color: var(--red-hover)
+    }
+
+    /* player/loc items */
+    .p-it {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 6px;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 2px;
+      margin-bottom: 4px
+    }
+
+    .p-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      flex-shrink: 0;
+      border: 1.5px solid rgba(255, 255, 255, .15)
+    }
+
+    .p-nm {
+      flex: 1;
+      font-size: .84rem
+    }
+
+    .l-it {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 4px 6px;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 2px;
+      margin-bottom: 4px;
+      font-size: .82rem;
+      gap: 4px
+    }
+
+    .l-it .drag-handle {
+      cursor: grab;
+      color: var(--text-muted);
+      font-size: .75rem;
+      flex-shrink: 0;
+      padding: 0 2px
+    }
+
+    .l-it .drag-handle:active {
+      cursor: grabbing
+    }
+
+    .empty-m {
+      color: var(--text-muted);
+      font-style: italic;
+      font-size: .8rem;
+      margin-bottom: 6px
+    }
+
+    /* event sidebar items */
+    .ev-li {
+      padding: 5px 7px;
+      border: 1px solid var(--border);
+      border-radius: 2px;
+      margin-bottom: 4px;
+      background: var(--surface2);
+      cursor: pointer;
+      transition: border-color .15s, background .1s;
+      display: flex;
+      align-items: flex-start;
+      gap: 5px
+    }
+
+    .ev-li:hover {
+      border-color: var(--gold-dim);
+      background: var(--surface3)
+    }
+
+    .ev-li-body {
+      flex: 1;
+      min-width: 0
+    }
+
+    .ev-li-date {
+      font-size: .64rem;
+      color: var(--gold-dim);
+      font-family: var(--fd);
+      letter-spacing: .04em;
+      margin-bottom: 1px
+    }
+
+    .ev-li-title {
+      font-size: .85rem;
+      color: var(--text)
+    }
+
+    .ev-li-meta {
+      display: flex;
+      align-items: center;
+      gap: 3px;
+      font-size: .7rem;
+      color: var(--text-muted);
+      margin-top: 1px
+    }
+
+    /* ── TIMELINE AREA ── */
+    .tl-area {
+      flex: 1;
+      display: grid;
+      grid-template-columns: 160px 1fr;
+      grid-template-rows: 72px 1fr;
+      overflow: hidden
+    }
+
+    .tl-corner {
+      background: var(--surface);
+      border-right: 1px solid var(--border);
+      border-bottom: 2px solid var(--gold-dim);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-family: var(--fd);
+      font-size: .56rem;
+      color: var(--text-muted);
+      letter-spacing: .1em;
+      text-transform: uppercase
+    }
+
+    .tl-lw {
+      background: var(--surface);
+      border-bottom: 2px solid var(--gold-dim);
+      overflow: hidden;
+      cursor: default
+    }
+
+    .tl-li {
+      will-change: transform
+    }
+
+    .tl-dw {
+      background: var(--surface);
+      border-right: 1px solid var(--border);
+      overflow: hidden
+    }
+
+    .tl-di {
+      will-change: transform
+    }
+
+    .tl-body {
+      overflow: auto;
+      background: var(--bg);
+      position: relative;
+      cursor: default
+    }
+
+    .tl-body::-webkit-scrollbar {
+      width: 8px;
+      height: 8px
+    }
+
+    .tl-body::-webkit-scrollbar-track {
+      background: var(--surface)
+    }
+
+    .tl-body::-webkit-scrollbar-thumb {
+      background: var(--border2);
+      border-radius: 4px
+    }
+
+    /* empty state */
+    .es {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      height: 100%;
+      color: var(--text-muted);
+      font-family: var(--fd);
+      text-align: center;
+      padding: 30px;
+      gap: 10px
+    }
+
+    .es .g {
+      font-size: 2.2rem;
+      opacity: .4
+    }
+
+    .es p {
+      font-size: .76rem;
+      letter-spacing: .08em;
+      line-height: 1.8;
+      opacity: .7
+    }
+
+    /* ── TABLE VIEW ── */
+    .tbl-wrap {
+      flex: 1;
+      overflow: auto;
+      padding: 18px 22px;
+      display: none
+    }
+
+    .tbl-wrap::-webkit-scrollbar {
+      width: 8px
+    }
+
+    .tbl-wrap::-webkit-scrollbar-thumb {
+      background: var(--border2);
+      border-radius: 4px
+    }
+
+    .ev-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: .88rem
+    }
+
+    .ev-table th {
+      font-family: var(--fd);
+      font-size: .62rem;
+      letter-spacing: .1em;
+      text-transform: uppercase;
+      color: var(--gold-dim);
+      padding: 8px 12px;
+      border-bottom: 2px solid var(--gold-dim);
+      text-align: left;
+      background: var(--surface);
+      white-space: nowrap
+    }
+
+    .ev-table td {
+      padding: 7px 12px;
+      border-bottom: 1px solid var(--border);
+      vertical-align: top;
+      color: var(--text-dim)
+    }
+
+    .ev-table td:first-child {
+      white-space: nowrap;
+      color: var(--text-muted);
+      font-size: .82rem;
+      font-family: var(--fd)
+    }
+
+    .ev-table td.ev-tit {
+      color: var(--text);
+      font-size: .92rem
+    }
+
+    .ev-table tr:hover td {
+      background: var(--surface2)
+    }
+
+    .ev-table .pl-dots {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      flex-wrap: wrap
+    }
+
+    /* ── TOOLTIP ── */
+    #tip {
+      position: fixed;
+      background: var(--surface);
+      border: 1px solid var(--border2);
+      border-radius: 3px;
+      padding: 9px 12px;
+      font-size: .8rem;
+      pointer-events: none;
+      z-index: 900;
+      max-width: 220px;
+      display: none;
+      box-shadow: 0 6px 20px rgba(0, 0, 0, .7)
+    }
+
+    #tip .tt {
+      font-family: var(--fd);
+      font-size: .86rem;
+      color: var(--gold);
+      margin-bottom: 5px;
+      letter-spacing: .04em
+    }
+
+    #tip .tl {
+      color: var(--text-dim);
+      font-size: .76rem;
+      margin-top: 2px;
+      display: flex;
+      gap: 5px;
+      align-items: center
+    }
+
+    #tip .tl b {
+      color: var(--text);
+      font-weight: 400
+    }
+
+    #tip .td {
+      margin-top: 5px;
+      font-style: italic;
+      color: var(--text-dim);
+      font-size: .76rem;
+      border-top: 1px solid var(--border);
+      padding-top: 4px
+    }
+
+    /* ── MODAL ── */
+    .mbg {
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, .75);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 1000
+    }
+
+    .modal {
+      background: var(--surface);
+      border: 1px solid var(--border2);
+      border-radius: 3px;
+      padding: 20px 22px;
+      min-width: 300px;
+      max-width: 420px;
+      width: 90vw;
+      max-height: 88vh;
+      overflow-y: auto;
+      box-shadow: 0 10px 40px rgba(0, 0, 0, .8)
+    }
+
+    .modal::-webkit-scrollbar {
+      width: 4px
+    }
+
+    .modal::-webkit-scrollbar-thumb {
+      background: var(--border2)
+    }
+
+    .modal h3 {
+      font-family: var(--fd);
+      font-size: .92rem;
+      color: var(--gold);
+      letter-spacing: .06em;
+      margin-bottom: 14px;
+      padding-bottom: 7px;
+      border-bottom: 1px solid var(--border)
+    }
+
+    .ma {
+      display: flex;
+      gap: 7px;
+      margin-top: 12px;
+      justify-content: flex-end
+    }
+
+    .swatches {
+      display: flex;
+      gap: 6px;
+      flex-wrap: wrap;
+      margin-bottom: 5px
+    }
+
+    .sw {
+      width: 23px;
+      height: 23px;
+      border-radius: 50%;
+      cursor: pointer;
+      border: 2.5px solid transparent;
+      transition: border-color .15s, transform .1s
+    }
+
+    .sw:hover {
+      transform: scale(1.15)
+    }
+
+    .sw.act {
+      border-color: white
+    }
+
+    .mpc {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 2px;
+      max-height: 120px;
+      overflow-y: auto;
+      padding: 3px 0;
+      margin-top: 3px
+    }
+
+    .mpc::-webkit-scrollbar {
+      width: 3px
+    }
+
+    .mpc::-webkit-scrollbar-thumb {
+      background: var(--border2)
+    }
+
+    /* svg */
+    svg text {
+      user-select: none
+    }
+
+    .ev-g {
+      cursor: pointer
+    }
+
+    /* drag ghost */
+    .drag-ghost-circle {
+      pointer-events: none;
+      opacity: .7
+    }
+
+    /* col drag overlay */
+    .col-drag-line {
+      pointer-events: none
+    }
+
+    /* flash anim */
+    @keyframes evflash {
+      0% {
+        stroke: white;
+        stroke-width: 5
+      }
+
+      50% {
+        stroke: #f0d060;
+        stroke-width: 7
+      }
+
+      100% {
+        stroke: transparent;
+        stroke-width: 2
+      }
+    }
+
+    .evfl {
+      animation: evflash 1s ease-out 2
+    }
+
+    /* location reorder in sidebar */
+    .l-it.drag-over {
+      border-color: var(--gold);
+      background: var(--surface3)
+    }
+  </style>
+</head>
+
+<body>
+  <div class="app">
+    <!-- HEADER -->
+    <div class="app-header">
+      <div class="app-title">⚔ Timeline <span id="cal-badge">Harptos</span></div>
+      <div class="search-wrap">
+        <span class="si">🔍</span>
+        <input id="srch" type="text" placeholder="Search events…" oninput="onSearch()" onkeydown="onSearchKey(event)"
+          autocomplete="off">
+        <div class="sr" id="sr"></div>
+      </div>
+      <div class="hdr-r">
+        <div class="vt">
+          <button id="vt-graph" class="active" onclick="setView('graph')">Graph</button>
+          <button id="vt-table" onclick="setView('table')">Table</button>
+        </div>
+        <div class="zoom-row">
+          <button class="btn sm" onclick="fitAll()">Fit</button>
+          <input type="range" id="zoom" min="0" max="100" value="50" oninput="onZoomSlider(+this.value)">
+          <span class="zoom-lbl" id="zlbl">Month</span>
+        </div>
+        <button class="btn sm" onclick="exportData()">Export</button>
+        <button class="btn sm" onclick="importData()">Import</button>
+        <div class="theme-sw" title="Switch theme">
+          <button data-t="dark" onclick="setTheme('dark')" title="Dark"></button>
+          <button data-t="light" onclick="setTheme('light')" title="Light"></button>
+          <button data-t="slate" onclick="setTheme('slate')" title="Slate"></button>
+        </div>
+      </div>
+    </div>
+
+    <!-- BODY -->
+    <div class="app-body">
+      <!-- SIDEBAR -->
+      <div class="sidebar">
+        <!-- Profile bar -->
+        <div class="prof-bar">
+          <select id="prof-sel" onchange="switchProfile(this.value)" title="Active timeline"></select>
+          <button class="btn sm gld" onclick="openModal('new-profile')" title="New timeline">+</button>
+          <button class="btn sm dn" onclick="deleteProfile()" title="Delete timeline">🗑</button>
+        </div>
+
+        <!-- Today marker -->
+        <div class="s-sec">
+          <div class="s-ttl" onclick="toggleSec('today')">
+            <span class="s-arr" id="arr-today">▾</span>Today Marker
+          </div>
+          <div class="s-body" id="sb-today">
+            <div class="s-inner" id="today-inner">
+              <!-- filled by renderTodaySection() -->
+            </div>
+          </div>
+        </div>
+
+        <!-- Events list -->
+        <div class="s-sec">
+          <div class="s-ttl" onclick="toggleSec('events')">
+            <span class="s-arr" id="arr-events">▾</span>Events<span class="s-bdg" id="bdg-events">0</span>
+          </div>
+          <div class="s-body" id="sb-events">
+            <div class="s-inner">
+              <div id="ev-list"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- New event -->
+        <div class="s-sec">
+          <div class="s-ttl" onclick="toggleSec('newev')">
+            <span class="s-arr" id="arr-newev">▾</span>New Event
+          </div>
+          <div class="s-body" id="sb-newev">
+            <div class="s-inner">
+              <div class="fr"><label>Title</label><input id="ev-title" type="text" placeholder="Event name…"></div>
+              <div class="fr"><label>Players</label>
+                <div class="pchks" id="ev-pchks">
+                  <div style="padding:5px 8px;font-size:.8rem;color:var(--text-muted);font-style:italic">Add players
+                    first</div>
+                </div>
+              </div>
+              <div class="fr"><label>Location</label><select id="ev-loc"></select></div>
+              <div class="fg">
+                <div class="fr"><label>Year</label><input id="ev-year" type="number" value="1492" min="1"></div>
+                <div class="fr"><label>Day</label><input id="ev-day" type="number" value="1" min="1" max="30"></div>
+              </div>
+              <div class="fr"><label id="ev-month-lbl">Month / Festival</label><select id="ev-month"
+                  onchange="onMonthChange()"></select></div>
+              <div class="fr"><label>Description</label><textarea id="ev-desc" rows="2" placeholder="Notes…"></textarea>
+              </div>
+              <div class="fr"><label>Duration <span style="color:var(--text-muted);font-size:.65rem">(1d, 3m, 2y —
+                    default 1d)</span></label><input id="ev-dur" type="text" value="1d" placeholder="1d"></div>
+              <button class="btn gld full" onclick="addEvent()">Add Event</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Players -->
+        <div class="s-sec">
+          <div class="s-ttl" onclick="toggleSec('players')">
+            <span class="s-arr" id="arr-players">▾</span>Players<span class="s-bdg" id="bdg-players">0</span>
+          </div>
+          <div class="s-body" id="sb-players">
+            <div class="s-inner">
+              <div id="pl-list"></div>
+              <button class="btn sm" onclick="openModal('add-player')">+ Add Player</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Locations -->
+        <div class="s-sec">
+          <div class="s-ttl" onclick="toggleSec('locs')">
+            <span class="s-arr" id="arr-locs">▾</span>Locations<span class="s-bdg" id="bdg-locs">0</span>
+          </div>
+          <div class="s-body" id="sb-locs">
+            <div class="s-inner">
+              <div id="loc-list"></div>
+              <button class="btn sm" onclick="openModal('add-location')">+ Add Location</button>
+            </div>
+          </div>
+        </div>
+      </div><!-- /sidebar -->
+
+      <!-- MAIN AREA -->
+      <div class="tl-area" id="tl-area">
+        <div class="tl-corner">Date · Place</div>
+        <div class="tl-lw" id="tl-lw">
+          <div class="tl-li" id="tl-li"><svg id="svg-loc" height="58"></svg></div>
+        </div>
+        <div class="tl-dw">
+          <div class="tl-di" id="tl-di"><svg id="svg-dates" width="160"></svg></div>
+        </div>
+        <div class="tl-body" id="tl-body" onscroll="syncScroll(this)">
+          <div class="es" id="es">
+            <div class="g">📜</div>
+            <p>Add players and locations<br>to begin your chronicle.</p>
+          </div>
+          <svg id="svg-body" style="display:none"></svg>
+        </div>
+      </div>
+
+      <!-- TABLE VIEW -->
+      <div class="tbl-wrap" id="tbl-wrap">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
+          <span
+            style="font-family:var(--fd);font-size:.65rem;letter-spacing:.12em;text-transform:uppercase;color:var(--gold-dim)"
+            id="tbl-count"></span>
+          <button class="btn sm gld" onclick="exportCSV()">⬇ Export CSV</button>
+        </div>
+        <table class="ev-table">
+          <thead id="tbl-head"></thead>
+          <tbody id="tbl-body"></tbody>
+        </table>
+      </div>
+
+    </div><!-- /app-body -->
+  </div><!-- /app -->
+
+  <div id="tip">
+    <div class="tt" id="t-ttl"></div>
+    <div class="tl">📍 <b id="t-loc"></b></div>
+    <div class="tl">📅 <b id="t-dt"></b></div>
+    <div class="tl">👤 <span id="t-pl"></span></div>
+    <div class="td" id="t-desc" style="display:none"></div>
+  </div>
+  <div class="mbg" id="mbg" style="display:none" onclick="if(event.target===this)closeModal()">
+    <div class="modal" id="mc"></div>
+  </div>
+
+  <script>
+    /* ════════════════════════════════════════
+       CALENDAR SYSTEMS
+    ════════════════════════════════════════ */
+    const HARPTOS = [
+      { name: 'Hammer', days: 30, sd: 1, sp: false }, { name: 'Midwinter', days: 1, sd: 31, sp: true },
+      { name: 'Alturiak', days: 30, sd: 32, sp: false }, { name: 'Ches', days: 30, sd: 62, sp: false },
+      { name: 'Tarsakh', days: 30, sd: 92, sp: false }, { name: 'Greengrass', days: 1, sd: 122, sp: true },
+      { name: 'Mirtul', days: 30, sd: 123, sp: false }, { name: 'Kythorn', days: 30, sd: 153, sp: false },
+      { name: 'Flamerule', days: 30, sd: 183, sp: false }, { name: 'Midsummer', days: 1, sd: 213, sp: true },
+      { name: 'Eleasis', days: 30, sd: 214, sp: false }, { name: 'Eleint', days: 30, sd: 244, sp: false },
+      { name: 'Highharvestide', days: 1, sd: 274, sp: true }, { name: 'Marpenoth', days: 30, sd: 275, sp: false },
+      { name: 'Uktar', days: 30, sd: 305, sp: false }, { name: 'Feast of the Moon', days: 1, sd: 335, sp: true },
+      { name: 'Nightal', days: 30, sd: 336, sp: false }
+    ];
+    const GREG_MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+    const GREG_DAYS = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+
+    function isLeap(y) { return (y % 4 === 0 && y % 100 !== 0) || y % 400 === 0 }
+    function gregDaysInYear(y) { return isLeap(y) ? 366 : 365 }
+    function gregMonthDays(m, y) { return m === 1 ? (isLeap(y) ? 29 : 28) : GREG_DAYS[m] }
+
+    function gregDayToMD(year, doy) {
+      const feb = isLeap(year) ? 29 : 28;
+      const md = [31, feb, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+      let d = doy, m = 0; while (m < 11 && d > md[m]) { d -= md[m]; m++ }
+      return { m, d }
+    }
+    function gregDoyFromMD(monthIdx, day, year) {
+      const feb = isLeap(year) ? 29 : 28; const md = [31, feb, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+      let doy = day; for (let i = 0; i < monthIdx; i++)doy += md[i]; return doy
+    }
+
+    // Absolute day (calendar-agnostic storage: just days from epoch)
+    // Harptos: every year = 365 days (no leap). absDay = (year-1)*365 + doy - 1
+    // Gregorian: proper leap years
+    function absDay(year, doy) {
+      if (currentCal() === 'harptos') return (year - 1) * 365 + doy - 1;
+      const y = year - 1;
+      return 365 * y + Math.floor(y / 4) - Math.floor(y / 100) + Math.floor(y / 400) + doy - 1;
+    }
+    function fromAbsDay(abs) {
+      if (currentCal() === 'harptos') {
+        return { year: Math.floor(abs / 365) + 1, dayOfYear: (abs % 365) + 1 };
+      }
+      // Gregorian: estimate then correct
+      let yr = Math.floor(abs / 365.2425) + 1;
+      while (absDay(yr + 1, 1) <= abs) yr++;
+      while (yr > 1 && absDay(yr, 1) > abs) yr--;
+      return { year: yr, dayOfYear: abs - absDay(yr, 1) + 1 };
+    }
+
+    function harptDayToPeriod(doy) {
+      for (const p of HARPTOS) if (doy >= p.sd && doy < p.sd + p.days) return { period: p, dayInPeriod: doy - p.sd + 1 };
+      return null;
+    }
+
+    function formatDate(year, doy) {
+      if (currentCal() === 'harptos') {
+        const r = harptDayToPeriod(doy); if (!r) return `Day ${doy}, ${year} DR`;
+        return r.period.sp ? `${r.period.name}, ${year} DR` : `${r.dayInPeriod} ${r.period.name}, ${year} DR`;
+      } else {
+        const { m, d } = gregDayToMD(year, doy);
+        return `${d} ${GREG_MONTHS[m]} ${year}`;
+      }
+    }
+
+    /* ════════════════════════════════════════
+       PROFILE MANAGEMENT
+    ════════════════════════════════════════ */
+    const META_KEY = 'ht-profiles';
+    let _profiles = [];      // [{id,name,calendarType}]
+    let _activeId = '';      // current profile id
+
+    function loadProfiles() {
+      try { const s = localStorage.getItem(META_KEY); if (s) { const d = JSON.parse(s); _profiles = d.profiles || []; _activeId = d.activeId || ''; } } catch (_) { }
+      if (!_profiles.length) _profiles = [];
+    }
+    function saveProfiles() { localStorage.setItem(META_KEY, JSON.stringify({ profiles: _profiles, activeId: _activeId })); }
+    function profileById(id) { return _profiles.find(p => p.id === id); }
+    function currentProfile() { return profileById(_activeId); }
+    function currentCal() { const p = currentProfile(); return p ? p.calendarType : 'harptos'; }
+
+    function switchProfile(id) {
+      _activeId = id; saveProfiles();
+      db = loadDB();
+      initMonthUI(); renderAll();
+      document.getElementById('cal-badge').textContent = currentCal() === 'harptos' ? 'Harptos' : 'Gregorian';
+    }
+
+    function createProfile(name, calendarType, playersRaw, locsRaw) {
+      const id = 'p' + Date.now().toString(36);
+      _profiles.push({ id, name, calendarType });
+      _activeId = id; saveProfiles();
+      // Init DB
+      const players = playersRaw.split(',').map(s => s.trim()).filter(Boolean).map((nm, i) => ({ id: 'pl' + i + Date.now(), name: nm, color: PALETTE[i % PALETTE.length] }));
+      const locations = locsRaw.split(',').map(s => s.trim()).filter(Boolean);
+      const locationOrder = [...locations];
+      db = { players, locations, locationOrder, events: [] };
+      saveDB();
+      renderProfileSelect();
+      initMonthUI(); renderAll();
+      document.getElementById('cal-badge').textContent = calendarType === 'harptos' ? 'Harptos' : 'Gregorian';
+    }
+
+    function deleteProfile() {
+      if (_profiles.length <= 1) { alert('Cannot delete the only timeline.'); return; }
+      const p = currentProfile();
+      if (!confirm(`Delete timeline "${p.name}"? All events will be lost.`)) return;
+      localStorage.removeItem(dbKey());
+      _profiles = _profiles.filter(x => x.id !== _activeId);
+      _activeId = _profiles[0].id;
+      saveProfiles();
+      db = loadDB();
+      renderProfileSelect();
+      initMonthUI(); renderAll();
+      document.getElementById('cal-badge').textContent = currentCal() === 'harptos' ? 'Harptos' : 'Gregorian';
+    }
+
+    function renderProfileSelect() {
+      const sel = document.getElementById('prof-sel');
+      sel.innerHTML = _profiles.map(p => `<option value="${p.id}" ${p.id === _activeId ? 'selected' : ''}>${esc(p.name)}</option>`).join('');
+    }
+
+    /* ════════════════════════════════════════
+       DATABASE (per-profile)
+    ════════════════════════════════════════ */
+    let db = { players: [], locations: [], locationOrder: [], events: [] };
+
+    function dbKey() { return 'ht-db-' + _activeId; }
+    function loadDB() {
+      let d = { players: [], locations: [], locationOrder: [], events: [], todayAbs: null };
+      try { const s = localStorage.getItem(dbKey()); if (s) d = JSON.parse(s); } catch (_) { }
+      d.players = d.players || []; d.locations = d.locations || []; d.events = (d.events || []).map(migrateEv);
+      d.locationOrder = d.locationOrder && d.locationOrder.length ? d.locationOrder : [...d.locations];
+      if (d.todayAbs === undefined) d.todayAbs = null;
+      return d;
+    }
+    function saveDB() { localStorage.setItem(dbKey(), JSON.stringify(db)); }
+    function uid() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 7); }
+    function migrateEv(ev) {
+      if (!ev.playerIds) { ev.playerIds = ev.playerId ? [ev.playerId] : []; delete ev.playerId; }
+      if (!ev.durationDays || ev.durationDays < 1) ev.durationDays = 1;
+      return ev;
+    }
+    function getPlayer(id) { return db.players.find(p => p.id === id); }
+    function getPlayers(ev) { return (ev.playerIds || []).map(id => getPlayer(id)).filter(Boolean); }
+    function sortedPlayers() { return [...db.players].sort((a, b) => a.name.localeCompare(b.name)); }
+    function sortedLocs() { return [...db.locations].sort((a, b) => a.localeCompare(b)); }
+    function displayedLocs() {
+      const order = db.locationOrder || []; const all = db.locations;
+      const ordered = order.filter(l => all.includes(l)); const rest = all.filter(l => !ordered.includes(l));
+      return [...ordered, ...rest];
+    }
+    function sortedEvents() { return [...db.events].sort((a, b) => absDay(a.year, a.dayOfYear) - absDay(b.year, b.dayOfYear)); }
+
+    /* ════════════════════════════════════════
+       UI STATE (visibility, theme, today)
+    ════════════════════════════════════════ */
+    let _collapsed = { events: true, newev: true, players: true, locs: true, today: true };
+    let _view = 'graph';
+    let _hiddenPlayers = new Set();
+    let _hiddenLocs = new Set();
+    let _theme = 'dark';
+    // _todayAbs is now per-profile, stored in db.todayAbs
+
+    function loadUIState() {
+      try {
+        const s = localStorage.getItem('ht-ui');
+        if (s) {
+          const d = JSON.parse(s);
+          _collapsed = { ..._collapsed, ...(d.collapsed || {}) };
+          _view = d.view || 'graph';
+          _hiddenPlayers = new Set(d.hiddenPlayers || []);
+          _hiddenLocs = new Set(d.hiddenLocs || []);
+          _theme = d.theme || 'dark';
+        }
+      } catch (_) { }
+    }
+    function saveUIState() {
+      localStorage.setItem('ht-ui', JSON.stringify({
+        collapsed: _collapsed, view: _view,
+        hiddenPlayers: [..._hiddenPlayers], hiddenLocs: [..._hiddenLocs],
+        theme: _theme
+      }));
+    }
+
+    function toggleSec(k) { _collapsed[k] = !_collapsed[k]; applySec(k); saveUIState(); }
+    function applySec(k) {
+      const b = document.getElementById('sb-' + k), a = document.getElementById('arr-' + k);
+      if (!b) return;
+      b.classList.toggle('collapsed', !!_collapsed[k]);
+      if (a) a.classList.toggle('cl', !!_collapsed[k]);
+    }
+    function applyAllSecs() { for (const k of Object.keys(_collapsed)) applySec(k); }
+
+    function setView(v) {
+      _view = v; saveUIState();
+      document.getElementById('vt-graph').classList.toggle('active', v === 'graph');
+      document.getElementById('vt-table').classList.toggle('active', v === 'table');
+      document.getElementById('tl-area').style.display = v === 'graph' ? '' : 'none';
+      document.getElementById('tbl-wrap').style.display = v === 'table' ? 'block' : 'none';
+      if (v === 'table') renderTable(); else renderTimeline();
+    }
+
+    /* ── THEME ── */
+    function setTheme(t) {
+      _theme = t;
+      document.documentElement.setAttribute('data-theme', t);
+      document.querySelectorAll('.theme-sw button').forEach(b => b.classList.toggle('act', b.dataset.t === t));
+      saveUIState(); renderTimeline();
+    }
+
+    /* ── VISIBILITY ── */
+    function togglePlayerVis(id) {
+      if (_hiddenPlayers.has(id)) _hiddenPlayers.delete(id); else _hiddenPlayers.add(id);
+      saveUIState(); renderSidebar(); renderTimeline();
+    }
+    function toggleLocVis(name) {
+      if (_hiddenLocs.has(name)) _hiddenLocs.delete(name); else _hiddenLocs.add(name);
+      saveUIState(); renderSidebar(); renderTimeline();
+    }
+    function visibleLocs() { return displayedLocs().filter(l => !_hiddenLocs.has(l)); }
+    function visiblePlayers() { return db.players.filter(p => !_hiddenPlayers.has(p.id)); }
+
+    /* ════════════════════════════════════════
+       ZOOM
+    ════════════════════════════════════════ */
+    const MIN_PPD = 0.0002, MAX_PPD = 60;
+    let PPD = 1;
+
+    function sliderToPPD(v) { return MIN_PPD * Math.pow(MAX_PPD / MIN_PPD, v / 100); }
+    function ppdToSlider(p) { return Math.round(100 * Math.log(p / MIN_PPD) / Math.log(MAX_PPD / MIN_PPD)); }
+    function granularity() {
+      if (PPD >= 3) return 'day'; if (PPD >= 0.1) return 'month';
+      if (PPD >= 0.01) return 'year'; if (PPD >= 0.001) return 'decade';
+      if (PPD >= 0.0001) return 'century'; return 'millennium';
+    }
+    function granLabel() { return { day: 'Day', month: 'Month', year: 'Year', decade: 'Decade', century: 'Century', millennium: 'Millennium' }[granularity()]; }
+    function onZoomSlider(v) { PPD = sliderToPPD(v); document.getElementById('zlbl').textContent = granLabel(); renderTimeline(); }
+    function fitAll() {
+      const body = document.getElementById('tl-body'), h = body.clientHeight || 500;
+      if (!db.events.length) { PPD = sliderToPPD(50); } else {
+        // First estimate using raw span
+        const visPlIds = new Set(visiblePlayers().map(p => p.id));
+        const visLs = new Set(visibleLocs());
+        const visEvs = db.events.filter(e => visLs.has(e.location) && (e.playerIds || []).some(id => visPlIds.has(id)));
+        const abs = (visEvs.length ? visEvs : db.events).map(e => absDay(e.year, e.dayOfYear));
+        const span = Math.max(1, Math.max(...abs) - Math.min(...abs) + CLUS_PAD * 2 + 1);
+        PPD = Math.max(MIN_PPD, Math.min(MAX_PPD, (h - 60) / span));
+        // Second pass: rebuild segments and refine so compressed height fills viewport
+        buildSegments();
+        const sh = segTotalH();
+        if (sh > 0) PPD = PPD * (h - 20) / sh;
+        PPD = Math.max(MIN_PPD, Math.min(MAX_PPD, PPD));
+      }
+      document.getElementById('zoom').value = ppdToSlider(PPD);
+      document.getElementById('zlbl').textContent = granLabel();
+      renderTimeline();
+    }
+
+    /* ════════════════════════════════════════
+       UTILITIES
+    ════════════════════════════════════════ */
+    function esc(s) { return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
+    function darken(hex, f) {
+      let c = hex.replace('#', ''); if (c.length === 3) c = c.split('').map(x => x + x).join('');
+      return `rgb(${Math.max(0, parseInt(c.slice(0, 2), 16) - Math.round(255 * f))},${Math.max(0, parseInt(c.slice(2, 4), 16) - Math.round(255 * f))},${Math.max(0, parseInt(c.slice(4, 6), 16) - Math.round(255 * f))})`;
+    }
+    function pieSlices(cx, cy, r, colors, strokeC) {
+      const n = colors.length;
+      if (!n) return `<circle cx="${cx}" cy="${cy}" r="${r}" fill="var(--border2)" stroke="${strokeC}" stroke-width="2"/>`;
+      if (n === 1) return `<circle cx="${cx}" cy="${cy}" r="${r}" fill="${colors[0]}" stroke="${strokeC}" stroke-width="2"/>`;
+      let d = '';
+      for (let i = 0; i < n; i++) {
+        const a0 = (i / n) * 2 * Math.PI - Math.PI / 2, a1 = ((i + 1) / n) * 2 * Math.PI - Math.PI / 2;
+        const x0 = cx + r * Math.cos(a0), y0 = cy + r * Math.sin(a0), x1 = cx + r * Math.cos(a1), y1 = cy + r * Math.sin(a1);
+        const lg = (a1 - a0 > Math.PI) ? 1 : 0;
+        d += `<path d="M${cx},${cy} L${x0.toFixed(1)},${y0.toFixed(1)} A${r},${r} 0 ${lg} 1 ${x1.toFixed(1)},${y1.toFixed(1)} Z" fill="${colors[i]}"/>`;
+      }
+      return d + `<circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="${strokeC}" stroke-width="2"/>`;
+    }
+
+    const COL_W = 130, HEADER_H = 72, SIDE_W = 160, R = 11, GSPC = 22, PAD = 20;
+    let _minA = 0;
+    let _dispLocs = [];
+
+    /* Duration helpers */
+    function parseDuration(s) {
+      if (!s || !s.trim()) return 1;
+      const m = String(s).trim().match(/^(\d+(?:\.\d+)?)\s*([dDmMyY]?)$/);
+      if (!m) return 1;
+      const n = parseFloat(m[1]), unit = (m[2] || 'd').toLowerCase();
+      if (unit === 'y') return Math.max(1, Math.round(n * 365));
+      if (unit === 'm') return Math.max(1, Math.round(n * 30));
+      return Math.max(1, Math.round(n));
+    }
+    function formatDuration(d) {
+      if (!d || d <= 1) return '1d';
+      if (d < 30) return `${d}d`;
+      if (d < 365) { const m = Math.round(d / 30); return `~${m}m`; }
+      const y = (d / 365).toFixed(1); return `~${y}y`;
+    }
+
+    /* ════════════════════════════════════════
+       MONTH UI (calendar-aware form)
+    ════════════════════════════════════════ */
+    function initMonthUI() {
+      const sel = document.getElementById('ev-month');
+      const lbl = document.getElementById('ev-month-lbl');
+      const dayInp = document.getElementById('ev-day');
+      if (currentCal() === 'harptos') {
+        lbl.textContent = 'Month / Festival';
+        sel.innerHTML = HARPTOS.map((p, i) => `<option value="${i}">${p.name}${p.sp ? ' ✦' : ''}</option>`).join('');
+        dayInp.disabled = false;
+        onMonthChange();
+      } else {
+        lbl.textContent = 'Month';
+        sel.innerHTML = GREG_MONTHS.map((m, i) => `<option value="${i}">${m}</option>`).join('');
+        dayInp.disabled = false; dayInp.max = 31; dayInp.value = 1;
+      }
+    }
+    function onMonthChange() {
+      if (currentCal() !== 'harptos') return;
+      const p = HARPTOS[+document.getElementById('ev-month').value];
+      const d = document.getElementById('ev-day');
+      if (p.sp) { d.value = 1; d.disabled = true; } else { d.disabled = false; }
+    }
+    function monthSelectOpts(calType, selectedMidx) {
+      if (calType === 'harptos')
+        return HARPTOS.map((p, i) => `<option value="${i}" ${i === selectedMidx ? 'selected' : ''}>${p.name}${p.sp ? ' ✦' : ''}</option>`).join('');
+      return GREG_MONTHS.map((m, i) => `<option value="${i}" ${i === selectedMidx ? 'selected' : ''}>${m}</option>`).join('');
+    }
+    function doyFromForm(midx, day, year, calType) {
+      if (calType === 'harptos') { const p = HARPTOS[midx]; return p.sd + (p.sp ? 0 : day - 1); }
+      return gregDoyFromMD(midx, day, year);
+    }
+    function formMidxFromDoy(doy, year, calType) {
+      if (calType === 'harptos') {
+        for (let i = 0; i < HARPTOS.length; i++) { const p = HARPTOS[i]; if (doy >= p.sd && doy < p.sd + p.days) return { midx: i, day: doy - p.sd + 1, special: p.sp }; }
+        return { midx: 0, day: 1, special: false };
+      } else {
+        const { m, d } = gregDayToMD(year, doy); return { midx: m, day: d, special: false };
+      }
+    }
+
+    /* ════════════════════════════════════════
+       SIDEBAR RENDER
+    ════════════════════════════════════════ */
+    function renderSidebar() {
+      const sp = sortedPlayers(), sl = sortedLocs(), se = sortedEvents(), dl = displayedLocs();
+      document.getElementById('bdg-events').textContent = db.events.length;
+      document.getElementById('bdg-players').textContent = db.players.length;
+      document.getElementById('bdg-locs').textContent = db.locations.length;
+
+      // Events list
+      document.getElementById('ev-list').innerHTML = se.length === 0
+        ? `<div class="empty-m">No events yet.</div>`
+        : se.map(ev => {
+          const pls = getPlayers(ev);
+          const dots = pls.map(p => `<span style="width:7px;height:7px;border-radius:50%;background:${p.color};display:inline-block;flex-shrink:0"></span>`).join('');
+          const dur = ev.durationDays > 1 ? `<span style="color:var(--gold-dim);font-size:.68rem;margin-left:4px">${formatDuration(ev.durationDays)}</span>` : '';
+          return `<div class="ev-li">
           <div class="ev-li-body" onclick="scrollToEvent('${ev.id}')">
-            <div class="ev-li-date">${esc(formatDate(ev.year,ev.dayOfYear))}${dur}</div>
+            <div class="ev-li-date">${esc(formatDate(ev.year, ev.dayOfYear))}${dur}</div>
             <div class="ev-li-title">${esc(ev.title)}</div>
             <div class="ev-li-meta">${dots}<span>📍 ${esc(ev.location)}</span></div>
           </div>
           <button class="btn sm dn" style="flex-shrink:0;margin-top:2px" onclick="quickDeleteEvent('${ev.id}')">✕</button>
         </div>`;
-      }).join('');
+        }).join('');
 
-  // Players — with eye toggle
-  document.getElementById('pl-list').innerHTML=sp.length===0
-    ?`<div class="empty-m">No players yet.</div>`
-    :sp.map(p=>{
-        const hidden=_hiddenPlayers.has(p.id);
-        return`<div class="p-it ${hidden?'item-hidden':''}">
+      // Players — with eye toggle
+      document.getElementById('pl-list').innerHTML = sp.length === 0
+        ? `<div class="empty-m">No players yet.</div>`
+        : sp.map(p => {
+          const hidden = _hiddenPlayers.has(p.id);
+          return `<div class="p-it ${hidden ? 'item-hidden' : ''}">
           <div class="p-dot" style="background:${p.color}"></div>
           <div class="p-nm">${esc(p.name)}</div>
-          <button class="eye-btn ${hidden?'hidden-item':''}" title="${hidden?'Show':'Hide'}" onclick="togglePlayerVis('${p.id}')">${hidden?'👁‍🗨':'👁'}</button>
+          <button class="eye-btn ${hidden ? 'hidden-item' : ''}" title="${hidden ? 'Show' : 'Hide'}" onclick="togglePlayerVis('${p.id}')">${hidden ? '👁‍🗨' : '👁'}</button>
           <button class="btn sm dn" onclick="removePlayer('${p.id}')">✕</button>
         </div>`;
-      }).join('');
+        }).join('');
 
-  // Locations — with eye toggle
-  document.getElementById('loc-list').innerHTML=dl.length===0
-    ?`<div class="empty-m">No locations yet.</div>`
-    :dl.map((l,i)=>{
-        const hidden=_hiddenLocs.has(l);
-        return`<div class="l-it ${hidden?'item-hidden':''}" draggable="true" data-loc="${esc(l)}" data-idx="${i}"
+      // Locations — with eye toggle
+      document.getElementById('loc-list').innerHTML = dl.length === 0
+        ? `<div class="empty-m">No locations yet.</div>`
+        : dl.map((l, i) => {
+          const hidden = _hiddenLocs.has(l);
+          return `<div class="l-it ${hidden ? 'item-hidden' : ''}" draggable="true" data-loc="${esc(l)}" data-idx="${i}"
           ondragstart="locDragStart(event,${i})" ondragover="locDragOver(event)" ondrop="locDrop(event,${i})" ondragleave="locDragLeave(event)">
           <span class="drag-handle" title="Drag to reorder">⠿</span>
           <span style="flex:1">${esc(l)}</span>
-          <button class="eye-btn ${hidden?'hidden-item':''}" title="${hidden?'Show':'Hide'}" onclick="toggleLocVis('${esc(l)}')">${hidden?'👁‍🗨':'👁'}</button>
+          <button class="eye-btn ${hidden ? 'hidden-item' : ''}" title="${hidden ? 'Show' : 'Hide'}" onclick="toggleLocVis('${esc(l)}')">${hidden ? '👁‍🗨' : '👁'}</button>
           <button class="btn sm dn" onclick="removeLocationByName('${esc(l)}')">✕</button>
         </div>`;
-      }).join('');
+        }).join('');
 
-  // Player checkboxes in form
-  const chk=document.getElementById('ev-pchks');
-  chk.innerHTML=sp.length===0
-    ?`<div style="padding:5px 8px;font-size:.8rem;color:var(--text-muted);font-style:italic">Add players first</div>`
-    :sp.map(p=>`<label class="pcl"><input type="checkbox" value="${p.id}"><span style="width:9px;height:9px;border-radius:50%;background:${p.color};display:inline-block;flex-shrink:0"></span>${esc(p.name)}</label>`).join('');
+      // Player checkboxes in form
+      const chk = document.getElementById('ev-pchks');
+      chk.innerHTML = sp.length === 0
+        ? `<div style="padding:5px 8px;font-size:.8rem;color:var(--text-muted);font-style:italic">Add players first</div>`
+        : sp.map(p => `<label class="pcl"><input type="checkbox" value="${p.id}"><span style="width:9px;height:9px;border-radius:50%;background:${p.color};display:inline-block;flex-shrink:0"></span>${esc(p.name)}</label>`).join('');
 
-  // Location select — always alphabetical
-  const lSel=document.getElementById('ev-loc');
-  lSel.innerHTML=sl.length===0
-    ?`<option value="">— add a location first —</option>`
-    :sl.map(l=>`<option value="${esc(l)}">${esc(l)}</option>`).join('');
+      // Location select — always alphabetical
+      const lSel = document.getElementById('ev-loc');
+      lSel.innerHTML = sl.length === 0
+        ? `<option value="">— add a location first —</option>`
+        : sl.map(l => `<option value="${esc(l)}">${esc(l)}</option>`).join('');
 
-  applyAllSecs();
-}
-
-/* ════════════════════════════════════════
-   LOCATION REORDER (sidebar HTML drag)
-════════════════════════════════════════ */
-let _locDragIdx=null;
-function locDragStart(e,idx){_locDragIdx=idx;e.dataTransfer.effectAllowed='move';}
-function locDragOver(e){e.preventDefault();e.dataTransfer.dropEffect='move';e.currentTarget.classList.add('drag-over');}
-function locDragLeave(e){e.currentTarget.classList.remove('drag-over');}
-function locDrop(e,targetIdx){
-  e.preventDefault();e.currentTarget.classList.remove('drag-over');
-  if(_locDragIdx===null||_locDragIdx===targetIdx){_locDragIdx=null;return;}
-  const dl=displayedLocs();
-  const moved=dl.splice(_locDragIdx,1)[0];
-  dl.splice(targetIdx,0,moved);
-  db.locationOrder=[...dl];
-  _locDragIdx=null;saveDB();renderAll();
-}
-
-/* ════════════════════════════════════════
-   SEGMENT-COMPRESSED Y AXIS
-   (gaps between event clusters are collapsed)
-════════════════════════════════════════ */
-const CLUS_PAD=15;  // days padding around each cluster
-const GAP_H=32;     // px height for a gap break
-const BOTTOM_PAD=80;// px extra at bottom so labels aren't clipped
-
-let _segments=[];
-
-function evEndAbs(ev){return absDay(ev.year,ev.dayOfYear)+(ev.durationDays||1)-1;}
-
-function buildSegments(){
-  if(!db.events.length){
-    const a=absDay(1492,1);_segments=[{minA:a,maxA:a+364,yStart:0}];return;
-  }
-  // Include both start and end of each event so long durations aren't clipped
-  const days=[];
-  db.events.forEach(e=>{
-    days.push(absDay(e.year,e.dayOfYear));
-    days.push(evEndAbs(e));
-  });
-  const uniqueDays=[...new Set(days)].sort((a,b)=>a-b);
-  const clusters=[];
-  let cur={min:uniqueDays[0]-CLUS_PAD,max:uniqueDays[0]+CLUS_PAD};
-  for(let i=1;i<uniqueDays.length;i++){
-    if(uniqueDays[i]-CLUS_PAD<=cur.max){cur.max=Math.max(cur.max,uniqueDays[i]+CLUS_PAD);}
-    else{clusters.push({...cur});cur={min:uniqueDays[i]-CLUS_PAD,max:uniqueDays[i]+CLUS_PAD};}
-  }
-  clusters.push(cur);
-  let y=0;
-  _segments=clusters.map((c,i)=>{
-    const seg={minA:Math.max(0,c.min),maxA:c.max,yStart:y};
-    y+=(c.max-c.min+1)*PPD;
-    if(i<clusters.length-1)y+=GAP_H;
-    return seg;
-  });
-}
-
-function segTotalH(){
-  if(!_segments.length)return 1;
-  const s=_segments[_segments.length-1];
-  return s.yStart+(s.maxA-s.minA+1)*PPD+BOTTOM_PAD;
-}
-
-function dayY(a){
-  for(const s of _segments){
-    if(a>=s.minA&&a<=s.maxA)return s.yStart+(a-s.minA)*PPD+PPD/2;
-  }
-  if(!_segments.length)return 0;
-  if(a<_segments[0].minA)return _segments[0].yStart;
-  const last=_segments[_segments.length-1];
-  return last.yStart+(last.maxA-last.minA+1)*PPD;
-}
-
-function yToAbsDay(y){
-  for(const s of _segments){
-    const sh=(s.maxA-s.minA+1)*PPD;
-    if(y>=s.yStart&&y<=s.yStart+sh)return s.minA+Math.round((y-s.yStart)/PPD);
-  }
-  for(let i=0;i<_segments.length-1;i++){
-    const s1=_segments[i],s2=_segments[i+1];
-    const s1end=s1.yStart+(s1.maxA-s1.minA+1)*PPD;
-    if(y>=s1end&&y<=s2.yStart){
-      const frac=(y-s1end)/(s2.yStart-s1end);
-      return Math.round(s1.maxA+frac*(s2.minA-s1.maxA));
+      applyAllSecs();
+      renderTodaySection();
     }
-  }
-  return _segments[_segments.length-1]?.maxA||0;
-}
 
-/* ════════════════════════════════════════
-   SVG TEXT WRAP HELPER
-════════════════════════════════════════ */
-function svgWrappedText(cx,centerY,text,maxChars,fontFamily,fontSize,fill,letterSpacing='0.5'){
-  const words=text.split(' ');
-  const lines=[];let cur='';
-  for(const w of words){
-    if(cur.length+w.length+(cur?1:0)>maxChars&&cur){lines.push(cur);cur=w;}
-    else{cur=cur?cur+' '+w:w;}
-  }
-  if(cur)lines.push(cur);
-  const lineH=fontSize*1.35;
-  const totalH=(lines.length-1)*lineH;
-  const y0=centerY-totalH/2;
-  return lines.map((l,i)=>
-    `<text x="${cx}" y="${y0+i*lineH}" text-anchor="middle" font-family="${fontFamily}" font-size="${fontSize}" fill="${fill}" letter-spacing="${letterSpacing}">${esc(l)}</text>`
-  ).join('');
-}
+    function renderTodaySection() {
+      const cal = currentCal();
+      const cur = db.todayAbs != null ? fromAbsDay(db.todayAbs) : null;
+      const label = cur ? formatDate(cur.year, cur.dayOfYear) : 'Not set';
+      document.getElementById('today-inner').innerHTML = `
+    <div style="font-size:.8rem;color:var(--text-muted);margin-bottom:8px">
+      ${cur
+          ? `<span style="color:var(--text)">${esc(label)}</span>`
+          : `<span style="font-style:italic">No marker set</span>`
+        }
+    </div>
+    <div style="display:flex;gap:6px">
+      <button class="btn sm gld" style="flex:1" onclick="openModal('set-today')">📅 Set date</button>
+      ${cur ? `<button class="btn sm dn" onclick="clearToday()">Clear</button>` : ''}
+    </div>`;
+    }
 
-/* ════════════════════════════════════════
-   DATE MARKS (per-segment, adaptive)
-════════════════════════════════════════ */
-function buildDateMarks(){
-  const marks=[];
-  for(const seg of _segments)marks.push(..._buildRangeMarks(seg.minA,seg.maxA));
-  return marks;
-}
+    /* ════════════════════════════════════════
+       LOCATION REORDER (sidebar HTML drag)
+    ════════════════════════════════════════ */
+    let _locDragIdx = null;
+    function locDragStart(e, idx) { _locDragIdx = idx; e.dataTransfer.effectAllowed = 'move'; }
+    function locDragOver(e) { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; e.currentTarget.classList.add('drag-over'); }
+    function locDragLeave(e) { e.currentTarget.classList.remove('drag-over'); }
+    function locDrop(e, targetIdx) {
+      e.preventDefault(); e.currentTarget.classList.remove('drag-over');
+      if (_locDragIdx === null || _locDragIdx === targetIdx) { _locDragIdx = null; return; }
+      const dl = displayedLocs();
+      const moved = dl.splice(_locDragIdx, 1)[0];
+      dl.splice(targetIdx, 0, moved);
+      db.locationOrder = [...dl];
+      _locDragIdx = null; saveDB(); renderAll();
+    }
 
-function _buildRangeMarks(minA,maxA){
-  const gran=granularity();const marks=[];const cal=currentCal();
-  if(gran==='day'){
-    for(let a=minA;a<=maxA;a++){
-      const{year,dayOfYear}=fromAbsDay(a);
-      if(dayOfYear===1)marks.push({a,label:`${year}${cal==='harptos'?' DR':''}`,type:'yearLabel'});
-      if(cal==='harptos'){
-        const r=harptDayToPeriod(dayOfYear);if(!r)continue;
-        const{period:p,dayInPeriod:di}=r;
-        if(di===1)marks.push({a,label:p.sp?`✦ ${p.name}`:p.name,type:p.sp?'special':'month'});
-        else marks.push({a,label:`${di}`,type:'day'});
-      }else{
-        const{m,d}=gregDayToMD(year,dayOfYear);
-        if(d===1)marks.push({a,label:GREG_MONTHS[m].slice(0,3),type:'month'});
-        else marks.push({a,label:`${d}`,type:'day'});
+    /* ════════════════════════════════════════
+       SEGMENT-COMPRESSED Y AXIS
+       (gaps between event clusters are collapsed)
+    ════════════════════════════════════════ */
+    const CLUS_PAD = 15;  // days padding around each cluster
+    const GAP_H = 32;     // px height for a gap break
+    const BOTTOM_PAD = 80;// px extra at bottom so labels aren't clipped
+
+    let _segments = [];
+
+    function evEndAbs(ev) { return absDay(ev.year, ev.dayOfYear) + (ev.durationDays || 1) - 1; }
+
+    function buildSegments() {
+      if (!db.events.length) {
+        const a = absDay(1492, 1); _segments = [{ minA: a, maxA: a + 364, yStart: 0 }]; return;
       }
-    }
-  }else if(gran==='month'){
-    const y0=fromAbsDay(minA).year,y1=fromAbsDay(maxA).year;
-    for(let yr=y0;yr<=y1+1;yr++){
-      marks.push({a:absDay(yr,1),label:`${yr}${cal==='harptos'?' DR':''}`,type:'yearLabel'});
-      if(cal==='harptos'){
-        for(const p of HARPTOS){const a=absDay(yr,p.sd);if(a<minA-400||a>maxA+400)continue;marks.push({a,label:p.sp?`✦ ${p.name}`:p.name,type:p.sp?'special':'month'});}
-      }else{
-        let doy=1;for(let m=0;m<12;m++){const a=absDay(yr,doy);if(a>=minA-400&&a<=maxA+400)marks.push({a,label:GREG_MONTHS[m],type:'month'});doy+=gregMonthDays(m,yr);}
+      // Include both start and end of each event so long durations aren't clipped
+      const days = [];
+      db.events.forEach(e => {
+        days.push(absDay(e.year, e.dayOfYear));
+        days.push(evEndAbs(e));
+      });
+      const uniqueDays = [...new Set(days)].sort((a, b) => a - b);
+      const clusters = [];
+      let cur = { min: uniqueDays[0] - CLUS_PAD, max: uniqueDays[0] + CLUS_PAD };
+      for (let i = 1; i < uniqueDays.length; i++) {
+        if (uniqueDays[i] - CLUS_PAD <= cur.max) { cur.max = Math.max(cur.max, uniqueDays[i] + CLUS_PAD); }
+        else { clusters.push({ ...cur }); cur = { min: uniqueDays[i] - CLUS_PAD, max: uniqueDays[i] + CLUS_PAD }; }
       }
+      clusters.push(cur);
+      let y = 0;
+      _segments = clusters.map((c, i) => {
+        const seg = { minA: Math.max(0, c.min), maxA: c.max, yStart: y };
+        y += (c.max - c.min + 1) * PPD;
+        if (i < clusters.length - 1) y += GAP_H;
+        return seg;
+      });
     }
-  }else if(gran==='year'){
-    const y0=fromAbsDay(minA).year,y1=fromAbsDay(maxA).year;
-    for(let yr=y0;yr<=y1+1;yr++)marks.push({a:absDay(yr,1),label:`${yr}${cal==='harptos'?' DR':''}`,type:yr%10===0?'decade':'year'});
-  }else if(gran==='decade'){
-    const y0=Math.floor(fromAbsDay(minA).year/10)*10,y1=Math.ceil(fromAbsDay(maxA).year/10)*10;
-    for(let yr=y0;yr<=y1;yr+=10)marks.push({a:absDay(yr,1),label:`${yr}${cal==='harptos'?'s DR':'s'}`,type:yr%100===0?'century':'decade'});
-  }else if(gran==='century'){
-    const y0=Math.floor(fromAbsDay(minA).year/100)*100,y1=Math.ceil(fromAbsDay(maxA).year/100)*100;
-    for(let yr=y0;yr<=y1;yr+=100)marks.push({a:absDay(yr,1),label:`${yr}${cal==='harptos'?' DR':''}`,type:yr%1000===0?'millennium':'century'});
-  }else{
-    const y0=Math.floor(fromAbsDay(minA).year/1000)*1000,y1=Math.ceil(fromAbsDay(maxA).year/1000)*1000;
-    for(let yr=y0;yr<=y1;yr+=1000)marks.push({a:absDay(yr,1),label:`${yr}${cal==='harptos'?' DR':''}`,type:'millennium'});
-  }
-  return marks;
-}
 
-/* ════════════════════════════════════════
-   TIMELINE RENDER
-════════════════════════════════════════ */
-function renderTimeline(){
-  if(_view!=='graph')return;
-  const svgB=document.getElementById('svg-body'),svgL=document.getElementById('svg-loc'),svgD=document.getElementById('svg-dates'),esEl=document.getElementById('es');
-  if(!db.locations.length||!db.players.length){esEl.style.display='flex';svgB.style.display='none';svgL.innerHTML='';svgD.innerHTML='';return;}
-  esEl.style.display='none';svgB.style.display='block';
-
-  // Respect visibility and only show locs with events
-  const locsWithEvents=new Set(db.events.map(e=>e.location));
-  const visPlIds=new Set(visiblePlayers().map(p=>p.id));
-  _dispLocs=visibleLocs().filter(l=>locsWithEvents.has(l));
-  if(!_dispLocs.length)_dispLocs=visibleLocs().length?visibleLocs():displayedLocs();
-
-  // Dynamic column width: fill the timeline area width divided by number of columns, min 90
-  const tlArea=document.getElementById('tl-area');
-  const availW=tlArea.clientWidth-SIDE_W-2;
-  const dynCOL=Math.max(90,Math.floor(availW/Math.max(1,_dispLocs.length)));
-  const locs=_dispLocs,totalW=Math.max(1,locs.length*dynCOL);
-
-  buildSegments();
-  const totalH=Math.max(1,segTotalH());
-
-  // Locations header
-  svgL.setAttribute('width',totalW);svgL.setAttribute('height',HEADER_H);
-  let lH=`<rect width="${totalW}" height="${HEADER_H}" fill="var(--surface)"/>`;
-  locs.forEach((l,i)=>{
-    const x=i*dynCOL,cx=x+dynCOL/2;
-    lH+=`<rect x="${x}" y="0" width="${dynCOL}" height="${HEADER_H}" fill="none" stroke="var(--border)" stroke-width="1"/>`;
-    // Full name, word-wrapped to fit column
-    const maxCh=Math.max(6,Math.floor(dynCOL/7.5));
-    lH+=svgWrappedText(cx,HEADER_H/2-4,l,maxCh,'Cinzel,Georgia,serif',11,'var(--gold)','0.5');
-    lH+=`<text x="${cx}" y="${HEADER_H-5}" text-anchor="middle" font-family="Cinzel,serif" font-size="8" fill="var(--text-muted)" opacity=".35">⠿</text>`;
-  });
-  svgL.innerHTML=lH;
-
-  // Dates sidebar
-  const marks=buildDateMarks();
-  svgD.setAttribute('width',SIDE_W);svgD.setAttribute('height',totalH);
-  let dH=`<rect width="${SIDE_W}" height="${totalH}" fill="var(--surface)"/>`;
-
-  // Gap markers in dates sidebar
-  for(let i=0;i<_segments.length-1;i++){
-    const s1=_segments[i],s2=_segments[i+1];
-    const gapY=s1.yStart+(s1.maxA-s1.minA+1)*PPD;
-    const gapH=s2.yStart-gapY;
-    const y1r=fromAbsDay(s1.maxA+1),y2r=fromAbsDay(Math.max(s1.maxA+1,s2.minA-1));
-    const gapLbl=y1r.year===y2r.year?`${y1r.year}`:`${y1r.year}–${y2r.year}`;
-    dH+=`<rect x="0" y="${gapY}" width="${SIDE_W}" height="${gapH}" fill="rgba(80,60,30,.25)"/>
-      <line x1="0" y1="${gapY+gapH/2}" x2="${SIDE_W}" y2="${gapY+gapH/2}" stroke="var(--gold-dim)" stroke-width="1" stroke-dasharray="4,3"/>
-      <text x="${SIDE_W/2}" y="${gapY+gapH/2+4}" text-anchor="middle" font-family="Cinzel,serif" font-size="8" fill="var(--gold-dim)">~ ${gapLbl} ~</text>`;
-  }
-
-  const seenYL=new Set();
-  for(const m of marks){
-    const y=dayY(m.a);if(y<-80||y>totalH+80)continue;
-    if(m.type==='yearLabel'){if(seenYL.has(m.a))continue;seenYL.add(m.a);dH+=`<text x="5" y="${Math.max(14,y-PPD*.4)}" font-family="Cinzel,serif" font-size="12" fill="var(--gold-dim)" opacity=".95" font-weight="600">${m.label}</text>`;}
-    else if(m.type==='special'){dH+=`<rect x="0" y="${y-PPD/2}" width="${SIDE_W}" height="${Math.max(PPD,2)}" fill="var(--special-bg)" opacity=".9"/><line x1="0" y1="${y-PPD/2}" x2="${SIDE_W}" y2="${y-PPD/2}" stroke="var(--gold-dim)" stroke-width="1.5"/><text x="${SIDE_W-5}" y="${y+5}" text-anchor="end" font-family="Cinzel,serif" font-size="12" fill="var(--special-fg)" font-style="italic">${esc(m.label)}</text>`;}
-    else if(m.type==='month'){dH+=`<line x1="0" y1="${y-PPD/2}" x2="${SIDE_W}" y2="${y-PPD/2}" stroke="var(--border)" stroke-width="1"/><text x="5" y="${y+6}" font-family="Cinzel,serif" font-size="13" fill="var(--text-dim)">${esc(m.label)}</text>`;}
-    else if(m.type==='year'){dH+=`<line x1="0" y1="${y}" x2="${SIDE_W}" y2="${y}" stroke="var(--border)" stroke-width=".8"/><text x="5" y="${y+5}" font-family="Cinzel,serif" font-size="12" fill="var(--text-dim)">${esc(m.label)}</text>`;}
-    else if(m.type==='decade'||m.type==='century'||m.type==='millennium'){const big=m.type==='millennium';const med=m.type==='century';dH+=`<line x1="0" y1="${y}" x2="${SIDE_W}" y2="${y}" stroke="${big?'var(--gold)':med?'var(--gold-dim)':'var(--border2)'}" stroke-width="${big?2.5:med?2:1.2}"/><text x="5" y="${y+6}" font-family="Cinzel,serif" font-size="${big?16:med?14:13}" fill="${big?'var(--gold)':med?'var(--gold-dim)':'var(--text-muted)'}" font-weight="${big||med?'600':'400'}">${esc(m.label)}</text>`;}
-    else if(m.type==='day'){dH+=`<text x="${SIDE_W-5}" y="${y+5}" text-anchor="end" font-family="Cinzel,serif" font-size="11" fill="var(--text-muted)" opacity=".65">${m.label}</text>`;}
-  }
-
-  // Today marker in sidebar
-  if(db.todayAbs!=null){
-    const ty=dayY(db.todayAbs);
-    if(ty>=0&&ty<=totalH)
-      dH+=`<rect x="0" y="${ty-12}" width="${SIDE_W}" height="22" fill="var(--today-bg)"/>
-        <line x1="0" y1="${ty}" x2="${SIDE_W}" y2="${ty}" stroke="var(--today)" stroke-width="2.5"/>
-        <text x="${SIDE_W-4}" y="${ty-4}" text-anchor="end" font-family="Cinzel,serif" font-size="10" fill="var(--today)" font-weight="700">TODAY</text>`;
-  }
-
-  svgD.innerHTML=dH;
-
-  // Body
-  svgB.setAttribute('width',totalW);svgB.setAttribute('height',totalH);
-  let h=`<rect width="${totalW}" height="${totalH}" fill="var(--bg)"/>`;
-  locs.forEach((_,i)=>{const x=i*dynCOL;if(i%2===1)h+=`<rect x="${x}" y="0" width="${dynCOL}" height="${totalH}" fill="rgba(128,100,50,.03)"/>`;h+=`<line x1="${x}" y1="0" x2="${x}" y2="${totalH}" stroke="var(--border)" stroke-width=".5" opacity=".6"/>`;});
-  h+=`<line x1="${totalW}" y1="0" x2="${totalW}" y2="${totalH}" stroke="var(--border)" stroke-width=".5" opacity=".6"/>`;
-
-  // Gap markers in body
-  for(let i=0;i<_segments.length-1;i++){
-    const s1=_segments[i],s2=_segments[i+1];
-    const gapY=s1.yStart+(s1.maxA-s1.minA+1)*PPD;
-    const gapH=s2.yStart-gapY;
-    h+=`<rect x="0" y="${gapY}" width="${totalW}" height="${gapH}" fill="rgba(80,60,30,.09)"/>
-      <line x1="0" y1="${gapY+gapH/2}" x2="${totalW}" y2="${gapY+gapH/2}" stroke="var(--gold-dim)" stroke-width=".8" stroke-dasharray="8,5" opacity=".35"/>`;
-  }
-
-  for(const m of marks){
-    if(m.type==='yearLabel'||m.type==='day')continue;const y=dayY(m.a);if(y<0||y>totalH)continue;
-    if(m.type==='special')h+=`<rect x="0" y="${y-PPD/2}" width="${totalW}" height="${Math.max(PPD,2)}" fill="rgba(200,160,20,.04)"/><line x1="0" y1="${y-PPD/2}" x2="${totalW}" y2="${y-PPD/2}" stroke="var(--gold-dim)" stroke-width=".8" opacity=".4"/>`;
-    else if(m.type==='month'||m.type==='year')h+=`<line x1="0" y1="${y-PPD/2}" x2="${totalW}" y2="${y-PPD/2}" stroke="var(--border)" stroke-width=".5" opacity=".35"/>`;
-    else if(m.type==='decade'||m.type==='century'||m.type==='millennium'){const big=m.type==='millennium';h+=`<line x1="0" y1="${y}" x2="${totalW}" y2="${y}" stroke="${big?'var(--gold-dim)':'var(--border2)'}" stroke-width="${big?1.2:.7}" opacity=".5"/>`;}
-  }
-
-  // Today line in body
-  if(db.todayAbs!=null){
-    const ty=dayY(db.todayAbs);
-    if(ty>=0&&ty<=totalH)
-      h+=`<rect x="0" y="${ty-14}" width="${totalW}" height="28" fill="var(--today-bg)"/>
-        <line x1="0" y1="${ty}" x2="${totalW}" y2="${ty}" stroke="var(--today)" stroke-width="2.5" opacity=".85"/>
-        <text x="8" y="${ty-5}" font-family="Cinzel,serif" font-size="10" fill="var(--today)" opacity=".8" font-weight="700">TODAY</text>`;
-  }
-
-  // Groups (keyed by start day)
-  const grouped={};
-  db.events.forEach(ev=>{if(!locs.includes(ev.location))return;const k=`${absDay(ev.year,ev.dayOfYear)}__${ev.location}`;if(!grouped[k])grouped[k]=[];grouped[k].push(ev);});
-  window._grouped=grouped;
-  function gOff(ev){const k=`${absDay(ev.year,ev.dayOfYear)}__${ev.location}`;const g=grouped[k]||[ev];const n=g.length,i=g.indexOf(ev);return(i-(n-1)/2)*GSPC;}
-  function evCX(ev){return(locs.indexOf(ev.location)*dynCOL+dynCOL/2)+gOff(ev);}
-  function evStartY(ev){return dayY(absDay(ev.year,ev.dayOfYear));}
-  function evEndY(ev){
-    const dur=ev.durationDays||1;
-    if(dur<=1)return evStartY(ev);
-    return dayY(absDay(ev.year,ev.dayOfYear))+(dur-1)*PPD;
-  }
-
-  // Duration bars (drawn first, behind circles)
-  db.events.forEach(ev=>{
-    if(!locs.includes(ev.location))return;
-    const pls=getPlayers(ev).filter(p=>!_hiddenPlayers.has(p.id));
-    if(!pls.length)return;
-    const dur=ev.durationDays||1;
-    const durPx=(dur-1)*PPD;
-    if(durPx<R*1.5)return; // too small to draw bar
-    const cx=evCX(ev),sy=evStartY(ev),barW=R*1.6;
-    const color=pls[0].color+'55'; // semi-transparent
-    h+=`<rect x="${cx-barW/2}" y="${sy}" width="${barW}" height="${durPx}"
-      fill="${pls[0].color}" opacity=".22" rx="${barW/2}"/>
-      <line x1="${cx}" y1="${sy+R}" x2="${cx}" y2="${sy+durPx}"
-        stroke="${pls[0].color}" stroke-width="2" opacity=".35"/>`;
-  });
-
-  // Connection lines (only visible players, start→next-start for instant events, end→next-start for duration events)
-  visiblePlayers().forEach(pl=>{
-    const pEvs=db.events.filter(e=>(e.playerIds||[]).includes(pl.id)&&locs.includes(e.location)).sort((a,b)=>absDay(a.year,a.dayOfYear)-absDay(b.year,b.dayOfYear));
-    for(let i=0;i<pEvs.length-1;i++){
-      const e1=pEvs[i],e2=pEvs[i+1];
-      const cx1=evCX(e1),cx2=evCX(e2);
-      const y1=evEndY(e1)+R,y2=evStartY(e2)-R;
-      if(y2<=y1)continue; // overlapping or same point, skip line
-      let path;if(Math.abs(cx1-cx2)<2)path=`M ${cx1},${y1} L ${cx2},${y2}`;else{const my=(y1+y2)/2;path=`M ${cx1},${y1} C ${cx1},${my} ${cx2},${my} ${cx2},${y2}`;}
-      h+=`<path class="pl-line" data-pid="${pl.id}" d="${path}" stroke="${pl.color}" stroke-width="2" fill="none" opacity=".42" stroke-linecap="round"/>`;
+    function segTotalH() {
+      if (!_segments.length) return 1;
+      const s = _segments[_segments.length - 1];
+      return s.yStart + (s.maxA - s.minA + 1) * PPD + BOTTOM_PAD;
     }
-  });
 
-  // Event circles (at start position)
-  db.events.forEach(ev=>{
-    if(!locs.includes(ev.location))return;
-    const pls=getPlayers(ev).filter(p=>!_hiddenPlayers.has(p.id));
-    if(!pls.length)return;
-    const cx=evCX(ev),cy=evStartY(ev);
-    const colors=pls.map(p=>p.color),strokeC=darken(colors[0],.35);
-    const label=pls.length===1?pls[0].name.slice(0,2).toUpperCase():`${pls.length}`;
-    const pids=(ev.playerIds||[]).join(',');
-    const dur=ev.durationDays||1;
-    // Small duration badge if > 1 day
-    const durBadge=dur>1?`<text x="${cx+R+2}" y="${cy-R+3}" font-family="Cinzel,serif" font-size="9" fill="var(--text-dim)" opacity=".8">${formatDuration(dur)}</text>`:'';
-    h+=`<g class="ev-g" data-eid="${ev.id}" data-pids="${esc(pids)}"
+    function dayY(a) {
+      for (const s of _segments) {
+        if (a >= s.minA && a <= s.maxA) return s.yStart + (a - s.minA) * PPD + PPD / 2;
+      }
+      if (!_segments.length) return 0;
+      if (a < _segments[0].minA) return _segments[0].yStart;
+      const last = _segments[_segments.length - 1];
+      return last.yStart + (last.maxA - last.minA + 1) * PPD;
+    }
+
+    function yToAbsDay(y) {
+      for (const s of _segments) {
+        const sh = (s.maxA - s.minA + 1) * PPD;
+        if (y >= s.yStart && y <= s.yStart + sh) return s.minA + Math.round((y - s.yStart) / PPD);
+      }
+      for (let i = 0; i < _segments.length - 1; i++) {
+        const s1 = _segments[i], s2 = _segments[i + 1];
+        const s1end = s1.yStart + (s1.maxA - s1.minA + 1) * PPD;
+        if (y >= s1end && y <= s2.yStart) {
+          const frac = (y - s1end) / (s2.yStart - s1end);
+          return Math.round(s1.maxA + frac * (s2.minA - s1.maxA));
+        }
+      }
+      return _segments[_segments.length - 1]?.maxA || 0;
+    }
+
+    /* ════════════════════════════════════════
+       SVG TEXT WRAP HELPER
+    ════════════════════════════════════════ */
+    function svgWrappedText(cx, centerY, text, maxChars, fontFamily, fontSize, fill, letterSpacing = '0.5') {
+      const words = text.split(' ');
+      const lines = []; let cur = '';
+      for (const w of words) {
+        if (cur.length + w.length + (cur ? 1 : 0) > maxChars && cur) { lines.push(cur); cur = w; }
+        else { cur = cur ? cur + ' ' + w : w; }
+      }
+      if (cur) lines.push(cur);
+      const lineH = fontSize * 1.35;
+      const totalH = (lines.length - 1) * lineH;
+      const y0 = centerY - totalH / 2;
+      return lines.map((l, i) =>
+        `<text x="${cx}" y="${y0 + i * lineH}" text-anchor="middle" font-family="${fontFamily}" font-size="${fontSize}" fill="${fill}" letter-spacing="${letterSpacing}">${esc(l)}</text>`
+      ).join('');
+    }
+
+    /* ════════════════════════════════════════
+       DATE MARKS (per-segment, adaptive)
+    ════════════════════════════════════════ */
+    function buildDateMarks() {
+      const marks = [];
+      for (const seg of _segments) marks.push(..._buildRangeMarks(seg.minA, seg.maxA));
+      return marks;
+    }
+
+    function _buildRangeMarks(minA, maxA) {
+      const gran = granularity(); const marks = []; const cal = currentCal();
+      if (gran === 'day') {
+        for (let a = minA; a <= maxA; a++) {
+          const { year, dayOfYear } = fromAbsDay(a);
+          if (dayOfYear === 1) marks.push({ a, label: `${year}${cal === 'harptos' ? ' DR' : ''}`, type: 'yearLabel' });
+          if (cal === 'harptos') {
+            const r = harptDayToPeriod(dayOfYear); if (!r) continue;
+            const { period: p, dayInPeriod: di } = r;
+            if (di === 1) marks.push({ a, label: p.sp ? `✦ ${p.name}` : p.name, type: p.sp ? 'special' : 'month' });
+            else marks.push({ a, label: `${di}`, type: 'day' });
+          } else {
+            const { m, d } = gregDayToMD(year, dayOfYear);
+            if (d === 1) marks.push({ a, label: GREG_MONTHS[m].slice(0, 3), type: 'month' });
+            else marks.push({ a, label: `${d}`, type: 'day' });
+          }
+        }
+      } else if (gran === 'month') {
+        const y0 = fromAbsDay(minA).year, y1 = fromAbsDay(maxA).year;
+        for (let yr = y0; yr <= y1 + 1; yr++) {
+          marks.push({ a: absDay(yr, 1), label: `${yr}${cal === 'harptos' ? ' DR' : ''}`, type: 'yearLabel' });
+          if (cal === 'harptos') {
+            for (const p of HARPTOS) { const a = absDay(yr, p.sd); if (a < minA - 400 || a > maxA + 400) continue; marks.push({ a, label: p.sp ? `✦ ${p.name}` : p.name, type: p.sp ? 'special' : 'month' }); }
+          } else {
+            let doy = 1; for (let m = 0; m < 12; m++) { const a = absDay(yr, doy); if (a >= minA - 400 && a <= maxA + 400) marks.push({ a, label: GREG_MONTHS[m], type: 'month' }); doy += gregMonthDays(m, yr); }
+          }
+        }
+      } else if (gran === 'year') {
+        const y0 = fromAbsDay(minA).year, y1 = fromAbsDay(maxA).year;
+        for (let yr = y0; yr <= y1 + 1; yr++)marks.push({ a: absDay(yr, 1), label: `${yr}${cal === 'harptos' ? ' DR' : ''}`, type: yr % 10 === 0 ? 'decade' : 'year' });
+      } else if (gran === 'decade') {
+        const y0 = Math.floor(fromAbsDay(minA).year / 10) * 10, y1 = Math.ceil(fromAbsDay(maxA).year / 10) * 10;
+        for (let yr = y0; yr <= y1; yr += 10)marks.push({ a: absDay(yr, 1), label: `${yr}${cal === 'harptos' ? 's DR' : 's'}`, type: yr % 100 === 0 ? 'century' : 'decade' });
+      } else if (gran === 'century') {
+        const y0 = Math.floor(fromAbsDay(minA).year / 100) * 100, y1 = Math.ceil(fromAbsDay(maxA).year / 100) * 100;
+        for (let yr = y0; yr <= y1; yr += 100)marks.push({ a: absDay(yr, 1), label: `${yr}${cal === 'harptos' ? ' DR' : ''}`, type: yr % 1000 === 0 ? 'millennium' : 'century' });
+      } else {
+        const y0 = Math.floor(fromAbsDay(minA).year / 1000) * 1000, y1 = Math.ceil(fromAbsDay(maxA).year / 1000) * 1000;
+        for (let yr = y0; yr <= y1; yr += 1000)marks.push({ a: absDay(yr, 1), label: `${yr}${cal === 'harptos' ? ' DR' : ''}`, type: 'millennium' });
+      }
+      return marks;
+    }
+
+    /* ════════════════════════════════════════
+       TIMELINE RENDER
+    ════════════════════════════════════════ */
+    function renderTimeline() {
+      if (_view !== 'graph') return;
+      const svgB = document.getElementById('svg-body'), svgL = document.getElementById('svg-loc'), svgD = document.getElementById('svg-dates'), esEl = document.getElementById('es');
+      if (!db.locations.length || !db.players.length) { esEl.style.display = 'flex'; svgB.style.display = 'none'; svgL.innerHTML = ''; svgD.innerHTML = ''; return; }
+      esEl.style.display = 'none'; svgB.style.display = 'block';
+
+      // Respect visibility and only show locs with events
+      const locsWithEvents = new Set(db.events.map(e => e.location));
+      const visPlIds = new Set(visiblePlayers().map(p => p.id));
+      _dispLocs = visibleLocs().filter(l => locsWithEvents.has(l));
+      if (!_dispLocs.length) _dispLocs = visibleLocs().length ? visibleLocs() : displayedLocs();
+
+      // Dynamic column width: fill the timeline area width divided by number of columns, min 90
+      const tlArea = document.getElementById('tl-area');
+      const availW = tlArea.clientWidth - SIDE_W - 2;
+      const dynCOL = Math.max(90, Math.floor(availW / Math.max(1, _dispLocs.length)));
+      const locs = _dispLocs, totalW = Math.max(1, locs.length * dynCOL);
+
+      buildSegments();
+      const totalH = Math.max(1, segTotalH());
+
+      // Locations header — resolve colors after C is defined (C defined below in dates section; define early)
+      const csEarly = getComputedStyle(document.documentElement);
+      const goldEarly = csEarly.getPropertyValue('--gold').trim() || '#c9a84c';
+      const borderEarly = csEarly.getPropertyValue('--border').trim() || '#3d3220';
+      const textMutedEarly = csEarly.getPropertyValue('--text-muted').trim() || '#6a5a40';
+      svgL.setAttribute('width', totalW); svgL.setAttribute('height', HEADER_H);
+      const surfaceEarly = csEarly.getPropertyValue('--surface').trim() || '#1e1810';
+      let lH = `<rect width="${totalW}" height="${HEADER_H}" fill="${surfaceEarly}"/>`;
+      locs.forEach((l, i) => {
+        const x = i * dynCOL, cx = x + dynCOL / 2;
+        lH += `<rect x="${x}" y="0" width="${dynCOL}" height="${HEADER_H}" fill="none" stroke="${borderEarly}" stroke-width="1"/>`;
+        const maxCh = Math.max(6, Math.floor(dynCOL / 7.5));
+        lH += svgWrappedText(cx, HEADER_H / 2 - 4, l, maxCh, 'Cinzel,Georgia,serif', 11, goldEarly, '0.5');
+        lH += `<text x="${cx}" y="${HEADER_H - 5}" text-anchor="middle" font-family="Cinzel,serif" font-size="8" fill="${textMutedEarly}" opacity=".35">⠿</text>`;
+      });
+      svgL.innerHTML = lH;
+
+      // Dates sidebar
+      const marks = buildDateMarks();
+      svgD.setAttribute('width', SIDE_W); svgD.setAttribute('height', totalH);
+      const goldDimEarly = csEarly.getPropertyValue('--gold-dim').trim() || '#7a6030';
+      let dH = `<rect width="${SIDE_W}" height="${totalH}" fill="${surfaceEarly}"/>`;
+
+      // Gap markers in dates sidebar
+      for (let i = 0; i < _segments.length - 1; i++) {
+        const s1 = _segments[i], s2 = _segments[i + 1];
+        const gapY = s1.yStart + (s1.maxA - s1.minA + 1) * PPD;
+        const gapH = s2.yStart - gapY;
+        const y1r = fromAbsDay(s1.maxA + 1), y2r = fromAbsDay(Math.max(s1.maxA + 1, s2.minA - 1));
+        const gapLbl = y1r.year === y2r.year ? `${y1r.year}` : `${y1r.year}–${y2r.year}`;
+        dH += `<rect x="0" y="${gapY}" width="${SIDE_W}" height="${gapH}" fill="rgba(80,60,30,.25)"/>
+      <line x1="0" y1="${gapY + gapH / 2}" x2="${SIDE_W}" y2="${gapY + gapH / 2}" stroke="${goldDimEarly}" stroke-width="1" stroke-dasharray="4,3"/>
+      <text x="${SIDE_W / 2}" y="${gapY + gapH / 2 + 5}" text-anchor="middle" font-family="Cinzel,serif" font-size="10" fill="${goldDimEarly}">~ ${gapLbl} ~</text>`;
+      }
+
+      // Resolve CSS vars at render time so SVG innerHTML always has literal colors
+      const cs = getComputedStyle(document.documentElement);
+      const C = {
+        surface: cs.getPropertyValue('--surface').trim() || '#1e1810',
+        border: cs.getPropertyValue('--border').trim() || '#3d3220',
+        border2: cs.getPropertyValue('--border2').trim() || '#554428',
+        gold: cs.getPropertyValue('--gold').trim() || '#c9a84c',
+        goldDim: cs.getPropertyValue('--gold-dim').trim() || '#7a6030',
+        specialBg: cs.getPropertyValue('--special-bg').trim() || '#1f1800',
+        specialFg: cs.getPropertyValue('--special-fg').trim() || '#f0d060',
+        text: cs.getPropertyValue('--text').trim() || '#e8dcc0',
+        textDim: cs.getPropertyValue('--text-dim').trim() || '#a09070',
+        textMuted: cs.getPropertyValue('--text-muted').trim() || '#6a5a40',
+        bg: cs.getPropertyValue('--bg').trim() || '#13100b',
+        today: cs.getPropertyValue('--today').trim() || '#ffffff',
+        todayBg: cs.getPropertyValue('--today-bg').trim() || 'rgba(255,255,255,0.07)',
+      };
+
+      const seenYL = new Set();
+      for (const m of marks) {
+        const y = dayY(m.a); if (y < -80 || y > totalH + 80) continue;
+        // Don't render labels inside gap bands
+        const inGap = _segments.length > 1 && !_segments.some(s => y >= s.yStart && y <= s.yStart + (s.maxA - s.minA + 1) * PPD + BOTTOM_PAD);
+        if (m.type === 'yearLabel') {
+          if (seenYL.has(m.a)) continue; seenYL.add(m.a);
+          const ly = Math.max(16, y - PPD * .5);
+          dH += `<text x="5" y="${ly}" font-family="Cinzel,serif" font-size="14" fill="${C.goldDim}" opacity=".95" font-weight="700">${m.label}</text>`;
+        } else if (m.type === 'special') {
+          dH += `<rect x="0" y="${y - Math.max(PPD, 2) / 2}" width="${SIDE_W}" height="${Math.max(PPD, 2)}" fill="${C.specialBg}" opacity=".9"/>
+        <line x1="0" y1="${y - Math.max(PPD, 2) / 2}" x2="${SIDE_W}" y2="${y - Math.max(PPD, 2) / 2}" stroke="${C.goldDim}" stroke-width="1.5"/>
+        <text x="${SIDE_W - 5}" y="${y + 5}" text-anchor="end" font-family="Cinzel,serif" font-size="13" fill="${C.specialFg}" font-style="italic">${esc(m.label)}</text>`;
+        } else if (m.type === 'month') {
+          dH += `<line x1="0" y1="${y - PPD / 2}" x2="${SIDE_W}" y2="${y - PPD / 2}" stroke="${C.border}" stroke-width="1"/>
+        <text x="5" y="${y + 6}" font-family="Cinzel,serif" font-size="14" fill="${C.textDim}">${esc(m.label)}</text>`;
+        } else if (m.type === 'year') {
+          dH += `<line x1="0" y1="${y}" x2="${SIDE_W}" y2="${y}" stroke="${C.border}" stroke-width=".8"/>
+        <text x="5" y="${y + 6}" font-family="Cinzel,serif" font-size="13" fill="${C.textDim}">${esc(m.label)}</text>`;
+        } else if (m.type === 'decade' || m.type === 'century' || m.type === 'millennium') {
+          const big = m.type === 'millennium', med = m.type === 'century';
+          dH += `<line x1="0" y1="${y}" x2="${SIDE_W}" y2="${y}" stroke="${big ? C.gold : med ? C.goldDim : C.border2}" stroke-width="${big ? 2.5 : med ? 2 : 1.2}"/>
+        <text x="5" y="${y + 6}" font-family="Cinzel,serif" font-size="${big ? 17 : med ? 15 : 14}" fill="${big ? C.gold : med ? C.goldDim : C.textMuted}" font-weight="${big || med ? '700' : '400'}">${esc(m.label)}</text>`;
+        } else if (m.type === 'day') {
+          dH += `<text x="${SIDE_W - 5}" y="${y + 5}" text-anchor="end" font-family="Cinzel,serif" font-size="12" fill="${C.textMuted}" opacity=".7">${m.label}</text>`;
+        }
+      }
+
+      // Today marker in sidebar
+      if (db.todayAbs != null) {
+        const ty = dayY(db.todayAbs);
+        if (ty >= 0 && ty <= totalH)
+          dH += `<rect x="0" y="${ty - 12}" width="${SIDE_W}" height="22" fill="${C.todayBg}"/>
+        <line x1="0" y1="${ty}" x2="${SIDE_W}" y2="${ty}" stroke="${C.today}" stroke-width="2.5"/>
+        <text x="${SIDE_W - 4}" y="${ty - 4}" text-anchor="end" font-family="Cinzel,serif" font-size="11" fill="${C.today}" font-weight="700">TODAY</text>`;
+      }
+
+      svgD.innerHTML = dH;
+
+      // Body
+      svgB.setAttribute('width', totalW); svgB.setAttribute('height', totalH);
+      let h = `<rect width="${totalW}" height="${totalH}" fill="${C.bg}"/>`;
+      locs.forEach((_, i) => { const x = i * dynCOL; if (i % 2 === 1) h += `<rect x="${x}" y="0" width="${dynCOL}" height="${totalH}" fill="rgba(128,100,50,.03)"/>`; h += `<line x1="${x}" y1="0" x2="${x}" y2="${totalH}" stroke="${C.border}" stroke-width=".5" opacity=".6"/>`; });
+      h += `<line x1="${totalW}" y1="0" x2="${totalW}" y2="${totalH}" stroke="${C.border}" stroke-width=".5" opacity=".6"/>`;
+
+      // Gap markers in body
+      for (let i = 0; i < _segments.length - 1; i++) {
+        const s1 = _segments[i], s2 = _segments[i + 1];
+        const gapY = s1.yStart + (s1.maxA - s1.minA + 1) * PPD;
+        const gapH = s2.yStart - gapY;
+        h += `<rect x="0" y="${gapY}" width="${totalW}" height="${gapH}" fill="rgba(80,60,30,.09)"/>
+      <line x1="0" y1="${gapY + gapH / 2}" x2="${totalW}" y2="${gapY + gapH / 2}" stroke="${C.goldDim}" stroke-width=".8" stroke-dasharray="8,5" opacity=".35"/>`;
+      }
+
+      for (const m of marks) {
+        if (m.type === 'yearLabel' || m.type === 'day') continue; const y = dayY(m.a); if (y < 0 || y > totalH) continue;
+        if (m.type === 'special') h += `<rect x="0" y="${y - PPD / 2}" width="${totalW}" height="${Math.max(PPD, 2)}" fill="rgba(200,160,20,.04)"/><line x1="0" y1="${y - PPD / 2}" x2="${totalW}" y2="${y - PPD / 2}" stroke="${C.goldDim}" stroke-width=".8" opacity=".4"/>`;
+        else if (m.type === 'month' || m.type === 'year') h += `<line x1="0" y1="${y - PPD / 2}" x2="${totalW}" y2="${y - PPD / 2}" stroke="${C.border}" stroke-width=".5" opacity=".35"/>`;
+        else if (m.type === 'decade' || m.type === 'century' || m.type === 'millennium') { const big = m.type === 'millennium'; h += `<line x1="0" y1="${y}" x2="${totalW}" y2="${y}" stroke="${big ? C.goldDim : C.border2}" stroke-width="${big ? 1.2 : .7}" opacity=".5"/>`; }
+      }
+
+      // Today line in body
+      if (db.todayAbs != null) {
+        const ty = dayY(db.todayAbs);
+        if (ty >= 0 && ty <= totalH)
+          h += `<rect x="0" y="${ty - 14}" width="${totalW}" height="28" fill="${C.todayBg}"/>
+        <line x1="0" y1="${ty}" x2="${totalW}" y2="${ty}" stroke="${C.today}" stroke-width="2.5" opacity=".85"/>
+        <text x="8" y="${ty - 5}" font-family="Cinzel,serif" font-size="11" fill="${C.today}" opacity=".8" font-weight="700">TODAY</text>`;
+      }
+
+      // Groups (keyed by start day)
+      const grouped = {};
+      db.events.forEach(ev => { if (!locs.includes(ev.location)) return; const k = `${absDay(ev.year, ev.dayOfYear)}__${ev.location}`; if (!grouped[k]) grouped[k] = []; grouped[k].push(ev); });
+      window._grouped = grouped;
+
+      // Per-player lane offset within a column so same-time events from different players don't overlap
+      // Lane index is determined by the player's position in sorted order within the column
+      const playerLaneMap = {}; // playerId -> lane index
+      {
+        const sp = visiblePlayers();
+        sp.forEach((p, i) => { playerLaneMap[p.id] = i; });
+      }
+      const numLanes = Math.max(1, visiblePlayers().length);
+      // Lane x-offset: spread lanes symmetrically within the column
+      function laneOff(pid) {
+        const idx = playerLaneMap[pid] ?? 0;
+        return (idx - (numLanes - 1) / 2) * GSPC;
+      }
+
+      // For events with multiple players, use the primary (first visible) player's lane
+      function evLanePid(ev) {
+        const vpl = getPlayers(ev).filter(p => !_hiddenPlayers.has(p.id));
+        return vpl.length ? vpl[0].id : null;
+      }
+      function evCX(ev) {
+        const pid = evLanePid(ev);
+        const off = pid !== null ? laneOff(pid) : 0;
+        return (locs.indexOf(ev.location) * dynCOL + dynCOL / 2) + off;
+      }
+      function evStartY(ev) { return dayY(absDay(ev.year, ev.dayOfYear)); }
+      function evEndY(ev) {
+        const dur = ev.durationDays || 1;
+        if (dur <= 1) return evStartY(ev);
+        // End abs day clamped to segment max so bar never leaves its segment
+        const startAbs = absDay(ev.year, ev.dayOfYear);
+        const endAbs = startAbs + dur - 1;
+        // Find which segment start belongs to and clamp end to that segment
+        let endY = evStartY(ev);
+        for (const s of _segments) {
+          if (startAbs >= s.minA && startAbs <= s.maxA) {
+            const clampedEnd = Math.min(endAbs, s.maxA);
+            endY = s.yStart + (clampedEnd - s.minA) * PPD + PPD / 2;
+            break;
+          }
+        }
+        return endY;
+      }
+
+      // Duration bars (drawn first, behind circles)
+      db.events.forEach(ev => {
+        if (!locs.includes(ev.location)) return;
+        const pls = getPlayers(ev).filter(p => !_hiddenPlayers.has(p.id));
+        if (!pls.length) return;
+        const dur = ev.durationDays || 1;
+        if (dur <= 1) return;
+        const sy = evStartY(ev), ey = evEndY(ev);
+        const durPx = ey - sy;
+        if (durPx < R * 1.2) return;
+        const cx = evCX(ev), barW = R * 1.4;
+        h += `<rect x="${cx - barW / 2}" y="${sy}" width="${barW}" height="${durPx}"
+      fill="${pls[0].color}" opacity=".2" rx="${barW / 2}"/>
+      <line x1="${cx}" y1="${sy + R}" x2="${cx}" y2="${ey}"
+        stroke="${pls[0].color}" stroke-width="1.8" opacity=".3"/>`;
+      });
+
+      // Connection lines (only visible players, connecting end→next-start)
+      visiblePlayers().forEach(pl => {
+        const pEvs = db.events.filter(e => (e.playerIds || []).includes(pl.id) && locs.includes(e.location)).sort((a, b) => absDay(a.year, a.dayOfYear) - absDay(b.year, b.dayOfYear));
+        for (let i = 0; i < pEvs.length - 1; i++) {
+          const e1 = pEvs[i], e2 = pEvs[i + 1];
+          const cx1 = evCX(e1), cx2 = evCX(e2);
+          const y1 = evEndY(e1) + R, y2 = evStartY(e2) - R;
+          if (y2 <= y1 + 2) continue;
+          let path; if (Math.abs(cx1 - cx2) < 2) path = `M ${cx1},${y1} L ${cx2},${y2}`; else { const my = (y1 + y2) / 2; path = `M ${cx1},${y1} C ${cx1},${my} ${cx2},${my} ${cx2},${y2}`; }
+          h += `<path class="pl-line" data-pid="${pl.id}" d="${path}" stroke="${pl.color}" stroke-width="2" fill="none" opacity=".42" stroke-linecap="round"/>`;
+        }
+      });
+
+      // Event circles (at start position)
+      db.events.forEach(ev => {
+        if (!locs.includes(ev.location)) return;
+        const pls = getPlayers(ev).filter(p => !_hiddenPlayers.has(p.id));
+        if (!pls.length) return;
+        const cx = evCX(ev), cy = evStartY(ev);
+        const colors = pls.map(p => p.color), strokeC = darken(colors[0], .35);
+        const label = pls.length === 1 ? pls[0].name.slice(0, 2).toUpperCase() : `${pls.length}`;
+        const pids = (ev.playerIds || []).join(',');
+        const dur = ev.durationDays || 1;
+        const durBadge = dur > 1 ? `<text x="${cx + R + 2}" y="${cy - R + 3}" font-family="Cinzel,serif" font-size="10" fill="var(--text-dim)" opacity=".85" pointer-events="none">${formatDuration(dur)}</text>` : '';
+        h += `<g class="ev-g" data-eid="${ev.id}" data-pids="${esc(pids)}"
       onmouseenter="onEvHover(event,'${ev.id}')" onmouseleave="onEvLeave()" onclick="onEvClick(event,'${ev.id}')">
-      <circle cx="${cx}" cy="${cy}" r="${R+6}" fill="transparent"/>
-      ${pieSlices(cx,cy,R,colors,strokeC)}
+      <circle cx="${cx}" cy="${cy}" r="${R + 6}" fill="transparent"/>
+      ${pieSlices(cx, cy, R, colors, strokeC)}
       <circle class="ev-ring" cx="${cx}" cy="${cy}" r="${R}" fill="none" stroke="transparent" stroke-width="2"/>
-      <text x="${cx}" y="${cy+4}" text-anchor="middle" font-family="Cinzel,serif" font-size="${pls.length===1?9:10}" fill="white" pointer-events="none" font-weight="600">${label}</text>
+      <text x="${cx}" y="${cy + 4}" text-anchor="middle" font-family="Cinzel,serif" font-size="${pls.length === 1 ? 10 : 11}" fill="white" pointer-events="none" font-weight="600">${label}</text>
       ${durBadge}
     </g>`;
-  });
-  svgB.innerHTML=h;
-}
+      });
+      svgB.innerHTML = h;
+    }
 
-/* ════════════════════════════════════════
-   TABLE RENDER
-════════════════════════════════════════ */
-function renderTable(){
-  const se=sortedEvents();
-  document.getElementById('tbl-count').textContent=`${se.length} event${se.length===1?'':'s'}`;
-  document.getElementById('tbl-head').innerHTML=`<tr>
+    /* ════════════════════════════════════════
+       TABLE RENDER
+    ════════════════════════════════════════ */
+    function renderTable() {
+      const se = sortedEvents();
+      document.getElementById('tbl-count').textContent = `${se.length} event${se.length === 1 ? '' : 's'}`;
+      document.getElementById('tbl-head').innerHTML = `<tr>
     <th>Date</th><th>Duration</th><th>Title</th><th>Location</th><th>Players</th><th>Description</th><th></th>
   </tr>`;
-  document.getElementById('tbl-body').innerHTML=se.length===0
-    ?`<tr><td colspan="7" style="text-align:center;color:var(--text-muted);font-style:italic;padding:24px">No events yet.</td></tr>`
-    :se.map(ev=>{
-        const pls=getPlayers(ev);
-        const dots=pls.map(p=>`<span style="display:inline-flex;align-items:center;gap:3px"><span style="width:8px;height:8px;border-radius:50%;background:${p.color};display:inline-block"></span><span style="color:${p.color}">${esc(p.name)}</span></span>`).join(' ');
-        return`<tr>
-          <td>${esc(formatDate(ev.year,ev.dayOfYear))}</td>
-          <td style="color:var(--gold-dim)">${ev.durationDays>1?formatDuration(ev.durationDays):'—'}</td>
+      document.getElementById('tbl-body').innerHTML = se.length === 0
+        ? `<tr><td colspan="7" style="text-align:center;color:var(--text-muted);font-style:italic;padding:24px">No events yet.</td></tr>`
+        : se.map(ev => {
+          const pls = getPlayers(ev);
+          const dots = pls.map(p => `<span style="display:inline-flex;align-items:center;gap:3px"><span style="width:8px;height:8px;border-radius:50%;background:${p.color};display:inline-block"></span><span style="color:${p.color}">${esc(p.name)}</span></span>`).join(' ');
+          return `<tr>
+          <td>${esc(formatDate(ev.year, ev.dayOfYear))}</td>
+          <td style="color:var(--gold-dim)">${ev.durationDays > 1 ? formatDuration(ev.durationDays) : '—'}</td>
           <td class="ev-tit">${esc(ev.title)}</td>
           <td>📍 ${esc(ev.location)}</td>
-          <td><div class="pl-dots">${dots||'<span style="color:var(--text-muted)">—</span>'}</div></td>
-          <td style="font-style:italic">${esc(ev.description||'')}</td>
+          <td><div class="pl-dots">${dots || '<span style="color:var(--text-muted)">—</span>'}</div></td>
+          <td style="font-style:italic">${esc(ev.description || '')}</td>
           <td style="white-space:nowrap">
             <button class="btn sm" onclick="editEvent('${ev.id}')" style="margin-right:4px">Edit</button>
             <button class="btn sm dn" onclick="quickDeleteEvent('${ev.id}')">✕</button>
           </td>
         </tr>`;
-      }).join('');
-}
+        }).join('');
+    }
 
-/* ════════════════════════════════════════
-   EVENT DRAG (move on timeline)
-════════════════════════════════════════ */
-let _evDrag=null;// {evId, startX, startY, hasMoved, ghostEl}
+    /* ════════════════════════════════════════
+       EVENT DRAG (move on timeline)
+    ════════════════════════════════════════ */
+    let _evDrag = null;// {evId, startX, startY, hasMoved, ghostEl}
 
-function initEvDrag(){
-  const tb=document.getElementById('tl-body');
-  tb.addEventListener('mousedown',evDragStart);
-  window.addEventListener('mousemove',evDragMove);
-  window.addEventListener('mouseup',evDragEnd);
-}
-function evDragStart(e){
-  const g=e.target.closest('.ev-g');if(!g)return;
-  e.preventDefault();
-  const wrapR=document.getElementById('tl-lw').getBoundingClientRect();
-  _evDrag={evId:g.dataset.eid,startX:e.clientX,startY:e.clientY,hasMoved:false,wrapR};
-}
-function evDragMove(e){
-  if(!_evDrag)return;
-  const dx=e.clientX-_evDrag.startX,dy=e.clientY-_evDrag.startY;
-  if(Math.abs(dx)>5||Math.abs(dy)>5)_evDrag.hasMoved=true;
-  if(!_evDrag.hasMoved)return;
-  onEvLeave(); // hide tooltip during drag
-  document.getElementById('tl-body').style.cursor='grabbing';
+    function initEvDrag() {
+      const tb = document.getElementById('tl-body');
+      tb.addEventListener('mousedown', evDragStart);
+      window.addEventListener('mousemove', evDragMove);
+      window.addEventListener('mouseup', evDragEnd);
+    }
+    function evDragStart(e) {
+      const g = e.target.closest('.ev-g'); if (!g) return;
+      e.preventDefault();
+      const wrapR = document.getElementById('tl-lw').getBoundingClientRect();
+      _evDrag = { evId: g.dataset.eid, startX: e.clientX, startY: e.clientY, hasMoved: false, wrapR };
+    }
+    function evDragMove(e) {
+      if (!_evDrag) return;
+      const dx = e.clientX - _evDrag.startX, dy = e.clientY - _evDrag.startY;
+      if (Math.abs(dx) > 5 || Math.abs(dy) > 5) _evDrag.hasMoved = true;
+      if (!_evDrag.hasMoved) return;
+      onEvLeave(); // hide tooltip during drag
+      document.getElementById('tl-body').style.cursor = 'grabbing';
 
-  const body=document.getElementById('tl-body');
-  const bodyR=body.getBoundingClientRect();
-  const svgX=e.clientX-bodyR.left+body.scrollLeft;
-  const svgY=e.clientY-bodyR.top+body.scrollTop;
+      const body = document.getElementById('tl-body');
+      const bodyR = body.getBoundingClientRect();
+      const svgX = e.clientX - bodyR.left + body.scrollLeft;
+      const svgY = e.clientY - bodyR.top + body.scrollTop;
 
-  // Ghost circle
-  const svgB=document.getElementById('svg-body');
-  let ghost=document.getElementById('drag-ghost');
-  if(!ghost){
-    ghost=document.createElementNS('http://www.w3.org/2000/svg','circle');
-    ghost.id='drag-ghost';ghost.classList.add('drag-ghost-circle');
-    ghost.setAttribute('r',R);ghost.setAttribute('fill','rgba(200,180,60,.5)');
-    ghost.setAttribute('stroke','white');ghost.setAttribute('stroke-width','2');
-    ghost.setAttribute('stroke-dasharray','4,2');
-    svgB.appendChild(ghost);
-  }
-  ghost.setAttribute('cx',svgX);ghost.setAttribute('cy',svgY);
+      // Ghost circle
+      const svgB = document.getElementById('svg-body');
+      let ghost = document.getElementById('drag-ghost');
+      if (!ghost) {
+        ghost = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+        ghost.id = 'drag-ghost'; ghost.classList.add('drag-ghost-circle');
+        ghost.setAttribute('r', R); ghost.setAttribute('fill', 'rgba(200,180,60,.5)');
+        ghost.setAttribute('stroke', 'white'); ghost.setAttribute('stroke-width', '2');
+        ghost.setAttribute('stroke-dasharray', '4,2');
+        svgB.appendChild(ghost);
+      }
+      ghost.setAttribute('cx', svgX); ghost.setAttribute('cy', svgY);
 
-  // Highlight target column
-  const svgBW=+svgB.getAttribute('width')||1;
-  const dynW=Math.max(1,svgBW/Math.max(1,_dispLocs.length));
-  const locIdx=Math.max(0,Math.min(_dispLocs.length-1,Math.floor(svgX/dynW)));
-  const colX=locIdx*dynW;
-  let hi=document.getElementById('drag-col-hi');
-  if(!hi){
-    hi=document.createElementNS('http://www.w3.org/2000/svg','rect');
-    hi.id='drag-col-hi';hi.classList.add('col-drag-line');
-    hi.setAttribute('fill','rgba(200,180,60,.07)');hi.setAttribute('stroke','var(--gold-dim)');hi.setAttribute('stroke-width','1');
-    hi.setAttribute('pointer-events','none');
-    svgB.appendChild(hi);
-  }
-  const totalH=+svgB.getAttribute('height');
-  hi.setAttribute('x',colX);hi.setAttribute('y',0);hi.setAttribute('width',dynW);hi.setAttribute('height',totalH);
-}
-function evDragEnd(e){
-  document.getElementById('tl-body').style.cursor='';
-  if(!_evDrag){return;}
-  const{evId,hasMoved}=_evDrag;
-  document.getElementById('drag-ghost')?.remove();
-  document.getElementById('drag-col-hi')?.remove();
-  if(hasMoved){
-    const body=document.getElementById('tl-body');
-    const bodyR=body.getBoundingClientRect();
-    const svgX=e.clientX-bodyR.left+body.scrollLeft;
-    const svgY=e.clientY-bodyR.top+body.scrollTop;
-    const svgBW2=+(document.getElementById('svg-body').getAttribute('width')||1);
-    const dynW2=Math.max(1,svgBW2/Math.max(1,_dispLocs.length));
-    const locIdx=Math.max(0,Math.min(_dispLocs.length-1,Math.floor(svgX/dynW2)));
-    const newLocation=_dispLocs[locIdx];
-    const newAbs=Math.max(0,yToAbsDay(svgY));
-    const{year,dayOfYear}=fromAbsDay(newAbs);
-    // Snap dayOfYear to valid range
-    const safeDoY=Math.max(1,Math.min(currentCal()==='harptos'?365:gregDaysInYear(year),dayOfYear));
-    const ev=db.events.find(x=>x.id===evId);
-    if(ev&&newLocation){ev.year=year;ev.dayOfYear=safeDoY;ev.location=newLocation;saveDB();renderAll();}
-  }
-  _evDrag=null;
-}
-function onEvClick(e,eid){if(_evDrag&&_evDrag.hasMoved)return;openEventModal(eid);}
+      // Highlight target column
+      const svgBW = +svgB.getAttribute('width') || 1;
+      const dynW = Math.max(1, svgBW / Math.max(1, _dispLocs.length));
+      const locIdx = Math.max(0, Math.min(_dispLocs.length - 1, Math.floor(svgX / dynW)));
+      const colX = locIdx * dynW;
+      let hi = document.getElementById('drag-col-hi');
+      if (!hi) {
+        hi = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+        hi.id = 'drag-col-hi'; hi.classList.add('col-drag-line');
+        hi.setAttribute('fill', 'rgba(200,180,60,.07)'); hi.setAttribute('stroke', 'var(--gold-dim)'); hi.setAttribute('stroke-width', '1');
+        hi.setAttribute('pointer-events', 'none');
+        svgB.appendChild(hi);
+      }
+      const totalH = +svgB.getAttribute('height');
+      hi.setAttribute('x', colX); hi.setAttribute('y', 0); hi.setAttribute('width', dynW); hi.setAttribute('height', totalH);
+    }
+    function evDragEnd(e) {
+      document.getElementById('tl-body').style.cursor = '';
+      if (!_evDrag) { return; }
+      const { evId, hasMoved } = _evDrag;
+      document.getElementById('drag-ghost')?.remove();
+      document.getElementById('drag-col-hi')?.remove();
+      if (hasMoved) {
+        const body = document.getElementById('tl-body');
+        const bodyR = body.getBoundingClientRect();
+        const svgX = e.clientX - bodyR.left + body.scrollLeft;
+        const svgY = e.clientY - bodyR.top + body.scrollTop;
+        const svgBW2 = +(document.getElementById('svg-body').getAttribute('width') || 1);
+        const dynW2 = Math.max(1, svgBW2 / Math.max(1, _dispLocs.length));
+        const locIdx = Math.max(0, Math.min(_dispLocs.length - 1, Math.floor(svgX / dynW2)));
+        const newLocation = _dispLocs[locIdx];
+        const newAbs = Math.max(0, yToAbsDay(svgY));
+        const { year, dayOfYear } = fromAbsDay(newAbs);
+        // Snap dayOfYear to valid range
+        const safeDoY = Math.max(1, Math.min(currentCal() === 'harptos' ? 365 : gregDaysInYear(year), dayOfYear));
+        const ev = db.events.find(x => x.id === evId);
+        if (ev && newLocation) { ev.year = year; ev.dayOfYear = safeDoY; ev.location = newLocation; saveDB(); renderAll(); }
+      }
+      _evDrag = null;
+    }
+    function onEvClick(e, eid) { if (_evDrag && _evDrag.hasMoved) return; openEventModal(eid); }
 
-/* ════════════════════════════════════════
-   SCROLL
-════════════════════════════════════════ */
-function syncScroll(el){
-  document.getElementById('tl-li').style.transform=`translateX(-${el.scrollLeft}px)`;
-  document.getElementById('tl-di').style.transform=`translateY(-${el.scrollTop}px)`;
-}
-function scrollToEvent(id){
-  const ev=db.events.find(e=>e.id===id);if(!ev)return;
-  if(_view==='table'){setView('graph');setTimeout(()=>scrollToEvent(id),100);return;}
-  const targetY=dayY(absDay(ev.year,ev.dayOfYear));
-  const body=document.getElementById('tl-body');
-  body.scrollTo({top:Math.max(0,targetY-body.clientHeight/2),behavior:'smooth'});
-  setTimeout(()=>flashEvent(id),450);
-}
-function flashEvent(id){
-  const el=document.querySelector(`.ev-g[data-eid="${id}"] .ev-ring`);if(!el)return;
-  el.classList.remove('evfl');void el.offsetWidth;
-  el.style.stroke='white';el.style.strokeWidth='3';el.classList.add('evfl');
-  setTimeout(()=>{el.classList.remove('evfl');el.style.stroke='transparent';el.style.strokeWidth='2';},2100);
-}
+    /* ════════════════════════════════════════
+       SCROLL
+    ════════════════════════════════════════ */
+    function syncScroll(el) {
+      document.getElementById('tl-li').style.transform = `translateX(-${el.scrollLeft}px)`;
+      document.getElementById('tl-di').style.transform = `translateY(-${el.scrollTop}px)`;
+    }
+    function scrollToEvent(id) {
+      const ev = db.events.find(e => e.id === id); if (!ev) return;
+      if (_view === 'table') { setView('graph'); setTimeout(() => scrollToEvent(id), 100); return; }
+      const targetY = dayY(absDay(ev.year, ev.dayOfYear));
+      const body = document.getElementById('tl-body');
+      body.scrollTo({ top: Math.max(0, targetY - body.clientHeight / 2), behavior: 'smooth' });
+      setTimeout(() => flashEvent(id), 450);
+    }
+    function flashEvent(id) {
+      const el = document.querySelector(`.ev-g[data-eid="${id}"] .ev-ring`); if (!el) return;
+      el.classList.remove('evfl'); void el.offsetWidth;
+      el.style.stroke = 'white'; el.style.strokeWidth = '3'; el.classList.add('evfl');
+      setTimeout(() => { el.classList.remove('evfl'); el.style.stroke = 'transparent'; el.style.strokeWidth = '2'; }, 2100);
+    }
 
-/* ════════════════════════════════════════
-   SEARCH
-════════════════════════════════════════ */
-function onSearch(){
-  const q=document.getElementById('srch').value.trim().toLowerCase();
-  const res=document.getElementById('sr');
-  if(!q){res.style.display='none';return;}
-  const matches=db.events.filter(ev=>{
-    const pn=getPlayers(ev).map(p=>p.name.toLowerCase()).join(' ');
-    return ev.title.toLowerCase().includes(q)||(ev.description||'').toLowerCase().includes(q)||ev.location.toLowerCase().includes(q)||pn.includes(q);
-  }).sort((a,b)=>absDay(a.year,a.dayOfYear)-absDay(b.year,b.dayOfYear));
-  res.innerHTML=matches.length===0
-    ?`<div class="sr-empty">No results for "${esc(q)}"</div>`
-    :matches.slice(0,10).map(ev=>{
-        const dots=getPlayers(ev).map(p=>`<span style="width:7px;height:7px;border-radius:50%;background:${p.color};display:inline-block"></span>`).join('');
-        return`<div class="sri" onclick="jumpToEvent('${ev.id}')"><div class="sri-t">${esc(ev.title)}</div><div class="sri-m">${dots}<span>${esc(ev.location)} · ${esc(formatDate(ev.year,ev.dayOfYear))}</span></div></div>`;
-      }).join('');
-  res.style.display='block';
-}
-function onSearchKey(e){if(e.key==='Escape')closeSearch();if(e.key==='Enter'){const f=document.querySelector('.sri');if(f)f.click();}}
-function closeSearch(){document.getElementById('sr').style.display='none';}
-function jumpToEvent(id){document.getElementById('srch').value='';closeSearch();if(_view==='table'){setView('graph');}scrollToEvent(id);}
-document.addEventListener('click',e=>{if(!e.target.closest('.search-wrap'))closeSearch();});
+    /* ════════════════════════════════════════
+       SEARCH
+    ════════════════════════════════════════ */
+    function onSearch() {
+      const q = document.getElementById('srch').value.trim().toLowerCase();
+      const res = document.getElementById('sr');
+      if (!q) { res.style.display = 'none'; return; }
+      const matches = db.events.filter(ev => {
+        const pn = getPlayers(ev).map(p => p.name.toLowerCase()).join(' ');
+        return ev.title.toLowerCase().includes(q) || (ev.description || '').toLowerCase().includes(q) || ev.location.toLowerCase().includes(q) || pn.includes(q);
+      }).sort((a, b) => absDay(a.year, a.dayOfYear) - absDay(b.year, b.dayOfYear));
+      res.innerHTML = matches.length === 0
+        ? `<div class="sr-empty">No results for "${esc(q)}"</div>`
+        : matches.slice(0, 10).map(ev => {
+          const dots = getPlayers(ev).map(p => `<span style="width:7px;height:7px;border-radius:50%;background:${p.color};display:inline-block"></span>`).join('');
+          return `<div class="sri" onclick="jumpToEvent('${ev.id}')"><div class="sri-t">${esc(ev.title)}</div><div class="sri-m">${dots}<span>${esc(ev.location)} · ${esc(formatDate(ev.year, ev.dayOfYear))}</span></div></div>`;
+        }).join('');
+      res.style.display = 'block';
+    }
+    function onSearchKey(e) { if (e.key === 'Escape') closeSearch(); if (e.key === 'Enter') { const f = document.querySelector('.sri'); if (f) f.click(); } }
+    function closeSearch() { document.getElementById('sr').style.display = 'none'; }
+    function jumpToEvent(id) { document.getElementById('srch').value = ''; closeSearch(); if (_view === 'table') { setView('graph'); } scrollToEvent(id); }
+    document.addEventListener('click', e => { if (!e.target.closest('.search-wrap')) closeSearch(); });
 
-/* ════════════════════════════════════════
-   TOOLTIP
-════════════════════════════════════════ */
-document.addEventListener('mousemove',e=>{
-  const tt=document.getElementById('tip');
-  if(tt.style.display!=='none'){
-    let x=e.clientX+14,y=e.clientY-10;const r=tt.getBoundingClientRect();
-    if(x+r.width>window.innerWidth-8)x=e.clientX-r.width-14;
-    if(y+r.height>window.innerHeight-8)y=e.clientY-r.height+10;
-    tt.style.left=x+'px';tt.style.top=y+'px';
-  }
-});
-function onEvHover(e,eid){
-  if(_evDrag&&_evDrag.hasMoved)return;
-  const ev=db.events.find(x=>x.id===eid);if(!ev)return;
-  const pls=getPlayers(ev);
-  document.getElementById('t-ttl').textContent=ev.title;
-  document.getElementById('t-loc').textContent=ev.location;
-  document.getElementById('t-dt').textContent=formatDate(ev.year,ev.dayOfYear)+(ev.durationDays>1?` → +${formatDuration(ev.durationDays)}`:'');
-  document.getElementById('t-pl').innerHTML=pls.length?pls.map(p=>`<span style="color:${p.color}">${esc(p.name)}</span>`).join(', '):'<span style="color:var(--text-muted)">—</span>';
-  const dd=document.getElementById('t-desc');dd.style.display=ev.description?.trim()?'':'none';dd.textContent=ev.description||'';
-  document.getElementById('tip').style.display='block';
-  const pids=new Set(ev.playerIds||[]);
-  document.querySelectorAll('.pl-line').forEach(el=>el.style.opacity=pids.has(el.dataset.pid)?'.85':'.05');
-  document.querySelectorAll('.ev-g').forEach(el=>{const ep=(el.dataset.pids||'').split(',').filter(Boolean);el.style.opacity=ep.some(id=>pids.has(id))?'1':'.15';});
-}
-function onEvLeave(){
-  document.getElementById('tip').style.display='none';
-  document.querySelectorAll('.pl-line').forEach(el=>el.style.opacity='');
-  document.querySelectorAll('.ev-g').forEach(el=>el.style.opacity='');
-}
+    /* ════════════════════════════════════════
+       TOOLTIP
+    ════════════════════════════════════════ */
+    document.addEventListener('mousemove', e => {
+      const tt = document.getElementById('tip');
+      if (tt.style.display !== 'none') {
+        let x = e.clientX + 14, y = e.clientY - 10; const r = tt.getBoundingClientRect();
+        if (x + r.width > window.innerWidth - 8) x = e.clientX - r.width - 14;
+        if (y + r.height > window.innerHeight - 8) y = e.clientY - r.height + 10;
+        tt.style.left = x + 'px'; tt.style.top = y + 'px';
+      }
+    });
+    function onEvHover(e, eid) {
+      if (_evDrag && _evDrag.hasMoved) return;
+      const ev = db.events.find(x => x.id === eid); if (!ev) return;
+      const pls = getPlayers(ev);
+      document.getElementById('t-ttl').textContent = ev.title;
+      document.getElementById('t-loc').textContent = ev.location;
+      document.getElementById('t-dt').textContent = formatDate(ev.year, ev.dayOfYear) + (ev.durationDays > 1 ? ` → +${formatDuration(ev.durationDays)}` : '');
+      document.getElementById('t-pl').innerHTML = pls.length ? pls.map(p => `<span style="color:${p.color}">${esc(p.name)}</span>`).join(', ') : '<span style="color:var(--text-muted)">—</span>';
+      const dd = document.getElementById('t-desc'); dd.style.display = ev.description?.trim() ? '' : 'none'; dd.textContent = ev.description || '';
+      document.getElementById('tip').style.display = 'block';
+      const pids = new Set(ev.playerIds || []);
+      document.querySelectorAll('.pl-line').forEach(el => el.style.opacity = pids.has(el.dataset.pid) ? '.85' : '.05');
+      document.querySelectorAll('.ev-g').forEach(el => { const ep = (el.dataset.pids || '').split(',').filter(Boolean); el.style.opacity = ep.some(id => pids.has(id)) ? '1' : '.15'; });
+    }
+    function onEvLeave() {
+      document.getElementById('tip').style.display = 'none';
+      document.querySelectorAll('.pl-line').forEach(el => el.style.opacity = '');
+      document.querySelectorAll('.ev-g').forEach(el => el.style.opacity = '');
+    }
 
-/* ════════════════════════════════════════
-   MODALS
-════════════════════════════════════════ */
-const PALETTE=['#c0392b','#e67e22','#d4ac0d','#27ae60','#16a085','#2980b9','#8e44ad','#e91e8c','#546e7a','#e74c3c','#f39c12','#1abc9c'];
-let _sc=PALETTE[0];
+    /* ════════════════════════════════════════
+       MODALS
+    ════════════════════════════════════════ */
+    const PALETTE = ['#c0392b', '#e67e22', '#d4ac0d', '#27ae60', '#16a085', '#2980b9', '#8e44ad', '#e91e8c', '#546e7a', '#e74c3c', '#f39c12', '#1abc9c'];
+    let _sc = PALETTE[0];
 
-function swHtml(cur){
-  return PALETTE.map(c=>`<div class="sw ${c===cur?'act':''}" style="background:${c}" onclick="pickColor('${c}')"></div>`).join('')+
-    `<input type="color" id="cc" value="${cur}" style="width:23px;height:23px;padding:0;border:none;cursor:pointer;border-radius:50%;overflow:hidden;background:none" oninput="pickColor(this.value)">`;
-}
-function pickColor(hex){_sc=hex;document.querySelectorAll('.sw').forEach(el=>el.classList.toggle('act',el.style.background===hex));const cc=document.getElementById('cc');if(cc)cc.value=hex;}
-function pchkHtml(selIds=[]){
-  const sp=sortedPlayers();
-  if(!sp.length)return`<div style="color:var(--text-muted);font-style:italic;font-size:.82rem;padding:6px">No players yet.</div>`;
-  return`<div class="mpc">`+sp.map(p=>`<label class="pcl"><input type="checkbox" value="${p.id}" ${selIds.includes(p.id)?'checked':''}><span style="width:9px;height:9px;border-radius:50%;background:${p.color};display:inline-block;flex-shrink:0"></span>${esc(p.name)}</label>`).join('')+`</div>`;
-}
+    function swHtml(cur) {
+      return PALETTE.map(c => `<div class="sw ${c === cur ? 'act' : ''}" style="background:${c}" onclick="pickColor('${c}')"></div>`).join('') +
+        `<input type="color" id="cc" value="${cur}" style="width:23px;height:23px;padding:0;border:none;cursor:pointer;border-radius:50%;overflow:hidden;background:none" oninput="pickColor(this.value)">`;
+    }
+    function pickColor(hex) { _sc = hex; document.querySelectorAll('.sw').forEach(el => el.classList.toggle('act', el.style.background === hex)); const cc = document.getElementById('cc'); if (cc) cc.value = hex; }
+    function pchkHtml(selIds = []) {
+      const sp = sortedPlayers();
+      if (!sp.length) return `<div style="color:var(--text-muted);font-style:italic;font-size:.82rem;padding:6px">No players yet.</div>`;
+      return `<div class="mpc">` + sp.map(p => `<label class="pcl"><input type="checkbox" value="${p.id}" ${selIds.includes(p.id) ? 'checked' : ''}><span style="width:9px;height:9px;border-radius:50%;background:${p.color};display:inline-block;flex-shrink:0"></span>${esc(p.name)}</label>`).join('') + `</div>`;
+    }
 
-function openModal(type,data){
-  const bg=document.getElementById('mbg'),box=document.getElementById('mc');
-  bg.style.display='flex';
-  const cal=currentCal();
+    function openModal(type, data) {
+      const bg = document.getElementById('mbg'), box = document.getElementById('mc');
+      bg.style.display = 'flex';
+      const cal = currentCal();
 
-  if(type==='new-profile'){
-    box.innerHTML=`<h3>New Timeline</h3>
+      if (type === 'new-profile') {
+        box.innerHTML = `<h3>New Timeline</h3>
       <div class="fr"><label>Name</label><input id="m-pname" type="text" placeholder="My Campaign…" autofocus></div>
       <div class="fr"><label>Calendar</label>
         <select id="m-pcal"><option value="harptos">Harptos (D&D Faerûn)</option><option value="gregorian">Gregorian</option></select></div>
@@ -1289,281 +2297,282 @@ function openModal(type,data){
       <div class="fr"><label>Locations (comma-separated, optional)</label><input id="m-plocs" type="text" placeholder="Waterdeep, Neverwinter"></div>
       <div class="ma"><button class="btn" onclick="closeModal()">Cancel</button><button class="btn gld" onclick="confirmNewProfile()">Create</button></div>`;
 
-  }else if(type==='add-player'){
-    _sc=PALETTE[db.players.length%PALETTE.length];
-    box.innerHTML=`<h3>Add Player</h3>
+      } else if (type === 'add-player') {
+        _sc = PALETTE[db.players.length % PALETTE.length];
+        box.innerHTML = `<h3>Add Player</h3>
       <div class="fr"><label>Name</label><input id="m-name" type="text" placeholder="Player name…" autofocus></div>
       <div class="fr"><label>Colour</label><div class="swatches">${swHtml(_sc)}</div></div>
       <div class="ma"><button class="btn" onclick="closeModal()">Cancel</button><button class="btn gld" onclick="confirmAddPlayer()">Add</button></div>`;
 
-  }else if(type==='add-location'){
-    box.innerHTML=`<h3>Add Location</h3>
+      } else if (type === 'add-location') {
+        box.innerHTML = `<h3>Add Location</h3>
       <div class="fr"><label>Name</label><input id="m-loc" type="text" placeholder="e.g. Waterdeep…" autofocus></div>
       <div class="ma"><button class="btn" onclick="closeModal()">Cancel</button><button class="btn gld" onclick="confirmAddLocation()">Add</button></div>`;
 
-  }else if(type==='view-event'){
-    const ev=data,pls=getPlayers(ev);
-    const pdots=pls.map(p=>`<span style="display:inline-flex;align-items:center;gap:4px;margin-right:6px"><span style="width:9px;height:9px;border-radius:50%;background:${p.color};display:inline-block"></span><span style="color:${p.color}">${esc(p.name)}</span></span>`).join('');
-    const dur=ev.durationDays>1?`<div>⏱ <span style="color:var(--text)">${formatDuration(ev.durationDays)} (${ev.durationDays} days)</span></div>`:'';
-    box.innerHTML=`<h3>${esc(ev.title)}</h3>
+      } else if (type === 'view-event') {
+        const ev = data, pls = getPlayers(ev);
+        const pdots = pls.map(p => `<span style="display:inline-flex;align-items:center;gap:4px;margin-right:6px"><span style="width:9px;height:9px;border-radius:50%;background:${p.color};display:inline-block"></span><span style="color:${p.color}">${esc(p.name)}</span></span>`).join('');
+        const dur = ev.durationDays > 1 ? `<div>⏱ <span style="color:var(--text)">${formatDuration(ev.durationDays)} (${ev.durationDays} days)</span></div>` : '';
+        box.innerHTML = `<h3>${esc(ev.title)}</h3>
       <div style="font-size:.88rem;line-height:2;color:var(--text-dim)">
-        <div>📅 <span style="color:var(--text)">${esc(formatDate(ev.year,ev.dayOfYear))}</span></div>
+        <div>📅 <span style="color:var(--text)">${esc(formatDate(ev.year, ev.dayOfYear))}</span></div>
         ${dur}
         <div>📍 <span style="color:var(--text)">${esc(ev.location)}</span></div>
-        <div>👤 ${pls.length?pdots:'<span style="color:var(--text-muted)">—</span>'}</div>
-        ${ev.description?`<div style="margin-top:8px;font-style:italic;color:var(--text)">"${esc(ev.description)}"</div>`:''}
+        <div>👤 ${pls.length ? pdots : '<span style="color:var(--text-muted)">—</span>'}</div>
+        ${ev.description ? `<div style="margin-top:8px;font-style:italic;color:var(--text)">"${esc(ev.description)}"</div>` : ''}
       </div>
       <div class="ma"><button class="btn dn" onclick="deleteEvent('${ev.id}')">Delete</button><button class="btn" onclick="editEvent('${ev.id}')">Edit</button><button class="btn gld" onclick="closeModal()">Close</button></div>`;
 
-  }else if(type==='edit-event'){
-    const ev=data;
-    const{midx,day,special}=formMidxFromDoy(ev.dayOfYear,ev.year,cal);
-    const sl=sortedLocs();
-    box.innerHTML=`<h3>Edit Event</h3>
+      } else if (type === 'edit-event') {
+        const ev = data;
+        const { midx, day, special } = formMidxFromDoy(ev.dayOfYear, ev.year, cal);
+        const sl = sortedLocs();
+        box.innerHTML = `<h3>Edit Event</h3>
       <div class="fr"><label>Title</label><input id="m-ev-t" type="text" value="${esc(ev.title)}"></div>
-      <div class="fr"><label>Players</label>${pchkHtml(ev.playerIds||[])}</div>
-      <div class="fr"><label>Location</label><select id="m-ev-l">${sl.map(l=>`<option value="${esc(l)}" ${l===ev.location?'selected':''}>${esc(l)}</option>`).join('')}</select></div>
+      <div class="fr"><label>Players</label>${pchkHtml(ev.playerIds || [])}</div>
+      <div class="fr"><label>Location</label><select id="m-ev-l">${sl.map(l => `<option value="${esc(l)}" ${l === ev.location ? 'selected' : ''}>${esc(l)}</option>`).join('')}</select></div>
       <div class="fg">
         <div class="fr"><label>Year</label><input id="m-ev-y" type="number" value="${ev.year}" min="1"></div>
-        <div class="fr"><label>Day</label><input id="m-ev-d" type="number" value="${day}" min="1" max="30" ${special?'disabled':''}></div>
+        <div class="fr"><label>Day</label><input id="m-ev-d" type="number" value="${day}" min="1" max="30" ${special ? 'disabled' : ''}></div>
       </div>
-      <div class="fr"><label>${cal==='harptos'?'Month / Festival':'Month'}</label>
-        <select id="m-ev-m" onchange="onEditMonth(this)">${monthSelectOpts(cal,midx)}</select></div>
+      <div class="fr"><label>${cal === 'harptos' ? 'Month / Festival' : 'Month'}</label>
+        <select id="m-ev-m" onchange="onEditMonth(this)">${monthSelectOpts(cal, midx)}</select></div>
       <div class="fr"><label>Duration <span style="color:var(--text-muted);font-size:.65rem">(1d, 3m, 2y)</span></label>
-        <input id="m-ev-dur" type="text" value="${ev.durationDays>1?formatDuration(ev.durationDays).replace('~',''):'1d'}"></div>
-      <div class="fr"><label>Description</label><textarea id="m-ev-desc" rows="2">${esc(ev.description||'')}</textarea></div>
+        <input id="m-ev-dur" type="text" value="${ev.durationDays > 1 ? formatDuration(ev.durationDays).replace('~', '') : '1d'}"></div>
+      <div class="fr"><label>Description</label><textarea id="m-ev-desc" rows="2">${esc(ev.description || '')}</textarea></div>
       <div class="ma"><button class="btn" onclick="openEventModal('${ev.id}')">Cancel</button><button class="btn gld" onclick="saveEditEvent('${ev.id}')">Save</button></div>`;
 
-  }else if(type==='set-today'){
-    const cal=currentCal();
-    const cur=db.todayAbs!=null?fromAbsDay(db.todayAbs):null;
-    const curRr=cur&&cal==='harptos'?harptDayToPeriod(cur.dayOfYear):null;
-    const curMidx=cur?(cal==='harptos'?(curRr?HARPTOS.indexOf(curRr.period):0):gregDayToMD(cur.year,cur.dayOfYear).m):0;
-    const curDay=cur?(cal==='harptos'?(curRr?curRr.dayInPeriod:1):gregDayToMD(cur.year,cur.dayOfYear).d):1;
-    box.innerHTML=`<h3>📅 Set "Today" Marker</h3>
+      } else if (type === 'set-today') {
+        const cal = currentCal();
+        const cur = db.todayAbs != null ? fromAbsDay(db.todayAbs) : null;
+        const curRr = cur && cal === 'harptos' ? harptDayToPeriod(cur.dayOfYear) : null;
+        const curMidx = cur ? (cal === 'harptos' ? (curRr ? HARPTOS.indexOf(curRr.period) : 0) : gregDayToMD(cur.year, cur.dayOfYear).m) : 0;
+        const curDay = cur ? (cal === 'harptos' ? (curRr ? curRr.dayInPeriod : 1) : gregDayToMD(cur.year, cur.dayOfYear).d) : 1;
+        box.innerHTML = `<h3>📅 Set "Today" Marker</h3>
       <p style="font-size:.84rem;color:var(--text-muted);margin-bottom:12px">A white line will mark this date on the timeline, separating past from future.</p>
       <div class="fg">
-        <div class="fr"><label>Year</label><input id="td-year" type="number" value="${cur?cur.year:1492}" min="1"></div>
-        <div class="fr"><label>Day</label><input id="td-day" type="number" value="${curDay}" min="1" max="30" ${curRr&&curRr.period.sp?'disabled':''}></div>
+        <div class="fr"><label>Year</label><input id="td-year" type="number" value="${cur ? cur.year : 1492}" min="1"></div>
+        <div class="fr"><label>Day</label><input id="td-day" type="number" value="${curDay}" min="1" max="30" ${curRr && curRr.period.sp ? 'disabled' : ''}></div>
       </div>
-      <div class="fr"><label>${cal==='harptos'?'Month / Festival':'Month'}</label>
-        <select id="td-month" onchange="onTodayMonthChange(this)">${monthSelectOpts(cal,curMidx)}</select></div>
+      <div class="fr"><label>${cal === 'harptos' ? 'Month / Festival' : 'Month'}</label>
+        <select id="td-month" onchange="onTodayMonthChange(this)">${monthSelectOpts(cal, curMidx)}</select></div>
       <div class="ma">
         <button class="btn dn" onclick="clearToday()">Clear marker</button>
         <button class="btn" onclick="closeModal()">Cancel</button>
         <button class="btn gld" onclick="confirmSetToday()">Set</button>
       </div>`;
-  }
-}
-function onEditMonth(sel){
-  if(currentCal()!=='harptos')return;
-  const p=HARPTOS[+sel.value];const d=document.getElementById('m-ev-d');
-  if(p.sp){d.value=1;d.disabled=true;}else d.disabled=false;
-}
-function onTodayMonthChange(sel){
-  if(currentCal()!=='harptos')return;
-  const p=HARPTOS[+sel.value];const d=document.getElementById('td-day');
-  if(p.sp){d.value=1;d.disabled=true;}else d.disabled=false;
-}
-function confirmSetToday(){
-  const cal=currentCal();
-  const year=+document.getElementById('td-year').value||1492;
-  const midx=+document.getElementById('td-month').value;
-  const day=+document.getElementById('td-day').value||1;
-  const doy=doyFromForm(midx,day,year,cal);
-  db.todayAbs=absDay(year,doy);
-  saveDB();closeModal();renderTimeline();
-}
-function clearToday(){db.todayAbs=null;saveDB();closeModal();renderTimeline();}
-function closeModal(){document.getElementById('mbg').style.display='none';}
-function openEventModal(id){const ev=db.events.find(e=>e.id===id);if(ev)openModal('view-event',ev);}
-function editEvent(id){const ev=db.events.find(e=>e.id===id);if(ev)openModal('edit-event',ev);}
+      }
+    }
+    function onEditMonth(sel) {
+      if (currentCal() !== 'harptos') return;
+      const p = HARPTOS[+sel.value]; const d = document.getElementById('m-ev-d');
+      if (p.sp) { d.value = 1; d.disabled = true; } else d.disabled = false;
+    }
+    function onTodayMonthChange(sel) {
+      if (currentCal() !== 'harptos') return;
+      const p = HARPTOS[+sel.value]; const d = document.getElementById('td-day');
+      if (p.sp) { d.value = 1; d.disabled = true; } else d.disabled = false;
+    }
+    function confirmSetToday() {
+      const cal = currentCal();
+      const year = +document.getElementById('td-year').value || 1492;
+      const midx = +document.getElementById('td-month').value;
+      const day = +document.getElementById('td-day').value || 1;
+      const doy = doyFromForm(midx, day, year, cal);
+      db.todayAbs = absDay(year, doy);
+      saveDB(); closeModal(); renderTimeline();
+    }
+    function clearToday() { db.todayAbs = null; saveDB(); closeModal(); renderTimeline(); }
+    function closeModal() { document.getElementById('mbg').style.display = 'none'; }
+    function openEventModal(id) { const ev = db.events.find(e => e.id === id); if (ev) openModal('view-event', ev); }
+    function editEvent(id) { const ev = db.events.find(e => e.id === id); if (ev) openModal('edit-event', ev); }
 
-/* ════════════════════════════════════════
-   MUTATIONS
-════════════════════════════════════════ */
-function confirmNewProfile(){
-  const name=document.getElementById('m-pname').value.trim();
-  if(!name){alert('Please enter a name.');return;}
-  const cal=document.getElementById('m-pcal').value;
-  const players=document.getElementById('m-pplayers').value;
-  const locs=document.getElementById('m-plocs').value;
-  closeModal();createProfile(name,cal,players,locs);
-}
-function confirmAddPlayer(){
-  const name=document.getElementById('m-name').value.trim();if(!name)return;
-  db.players.push({id:uid(),name,color:_sc});saveDB();closeModal();renderAll();
-}
-function confirmAddLocation(){
-  const loc=document.getElementById('m-loc').value.trim();
-  if(!loc||db.locations.includes(loc))return;
-  db.locations.push(loc);db.locationOrder.push(loc);saveDB();closeModal();renderAll();
-}
-function removePlayer(id){
-  if(!confirm('Remove this player?'))return;
-  db.players=db.players.filter(p=>p.id!==id);
-  db.events.forEach(ev=>{ev.playerIds=(ev.playerIds||[]).filter(pid=>pid!==id);});
-  saveDB();renderAll();
-}
-function removeLocationByName(loc){
-  const has=db.events.some(e=>e.location===loc);
-  if(has&&!confirm(`"${loc}" has events. Remove anyway?`))return;
-  db.locations=db.locations.filter(l=>l!==loc);
-  db.locationOrder=db.locationOrder.filter(l=>l!==loc);
-  saveDB();renderAll();
-}
-function addEvent(){
-  const title=document.getElementById('ev-title').value.trim();
-  const location=document.getElementById('ev-loc').value;
-  const year=+document.getElementById('ev-year').value;
-  const midx=+document.getElementById('ev-month').value;
-  const day=+document.getElementById('ev-day').value;
-  const desc=document.getElementById('ev-desc').value.trim();
-  const durRaw=document.getElementById('ev-dur').value.trim();
-  const playerIds=[...document.querySelectorAll('#ev-pchks input:checked')].map(i=>i.value);
-  if(!title){alert('Enter a title.');return;}if(!location){alert('Select a location.');return;}
-  if(!playerIds.length){alert('Select at least one player.');return;}if(!year){alert('Enter a year.');return;}
-  const dayOfYear=doyFromForm(midx,day,year,currentCal());
-  const durationDays=parseDuration(durRaw);
-  db.events.push({id:uid(),title,playerIds,location,year,dayOfYear,description:desc,durationDays});
-  saveDB();
-  document.getElementById('ev-title').value='';document.getElementById('ev-desc').value='';
-  document.getElementById('ev-dur').value='1d';
-  document.querySelectorAll('#ev-pchks input').forEach(i=>i.checked=false);
-  renderAll();
-  setTimeout(()=>{
-    const body=document.getElementById('tl-body');
-    const ty=dayY(absDay(year,dayOfYear));
-    body.scrollTo({top:Math.max(0,ty-body.clientHeight/2),behavior:'smooth'});
-  },80);
-}
-function quickDeleteEvent(id){
-  if(!confirm('Delete this event?'))return;
-  db.events=db.events.filter(e=>e.id!==id);saveDB();renderAll();
-}
-function deleteEvent(id){
-  if(!confirm('Delete this event from the chronicle?'))return;
-  db.events=db.events.filter(e=>e.id!==id);saveDB();closeModal();renderAll();
-}
-function saveEditEvent(id){
-  const ev=db.events.find(e=>e.id===id);if(!ev)return;
-  const midx=+document.getElementById('m-ev-m').value;
-  const day=+document.getElementById('m-ev-d').value;
-  const cal=currentCal();
-  const newPids=[...document.querySelectorAll('.mpc input:checked')].map(i=>i.value);
-  ev.title=document.getElementById('m-ev-t').value.trim()||ev.title;
-  ev.playerIds=newPids.length?newPids:ev.playerIds;
-  ev.location=document.getElementById('m-ev-l').value;
-  ev.year=+document.getElementById('m-ev-y').value||ev.year;
-  ev.dayOfYear=doyFromForm(midx,day,ev.year,cal);
-  ev.description=document.getElementById('m-ev-desc').value.trim();
-  ev.durationDays=parseDuration(document.getElementById('m-ev-dur').value);
-  saveDB();closeModal();renderAll();
-}
+    /* ════════════════════════════════════════
+       MUTATIONS
+    ════════════════════════════════════════ */
+    function confirmNewProfile() {
+      const name = document.getElementById('m-pname').value.trim();
+      if (!name) { alert('Please enter a name.'); return; }
+      const cal = document.getElementById('m-pcal').value;
+      const players = document.getElementById('m-pplayers').value;
+      const locs = document.getElementById('m-plocs').value;
+      closeModal(); createProfile(name, cal, players, locs);
+    }
+    function confirmAddPlayer() {
+      const name = document.getElementById('m-name').value.trim(); if (!name) return;
+      db.players.push({ id: uid(), name, color: _sc }); saveDB(); closeModal(); renderAll();
+    }
+    function confirmAddLocation() {
+      const loc = document.getElementById('m-loc').value.trim();
+      if (!loc || db.locations.includes(loc)) return;
+      db.locations.push(loc); db.locationOrder.push(loc); saveDB(); closeModal(); renderAll();
+    }
+    function removePlayer(id) {
+      if (!confirm('Remove this player?')) return;
+      db.players = db.players.filter(p => p.id !== id);
+      db.events.forEach(ev => { ev.playerIds = (ev.playerIds || []).filter(pid => pid !== id); });
+      saveDB(); renderAll();
+    }
+    function removeLocationByName(loc) {
+      const has = db.events.some(e => e.location === loc);
+      if (has && !confirm(`"${loc}" has events. Remove anyway?`)) return;
+      db.locations = db.locations.filter(l => l !== loc);
+      db.locationOrder = db.locationOrder.filter(l => l !== loc);
+      saveDB(); renderAll();
+    }
+    function addEvent() {
+      const title = document.getElementById('ev-title').value.trim();
+      const location = document.getElementById('ev-loc').value;
+      const year = +document.getElementById('ev-year').value;
+      const midx = +document.getElementById('ev-month').value;
+      const day = +document.getElementById('ev-day').value;
+      const desc = document.getElementById('ev-desc').value.trim();
+      const durRaw = document.getElementById('ev-dur').value.trim();
+      const playerIds = [...document.querySelectorAll('#ev-pchks input:checked')].map(i => i.value);
+      if (!title) { alert('Enter a title.'); return; } if (!location) { alert('Select a location.'); return; }
+      if (!playerIds.length) { alert('Select at least one player.'); return; } if (!year) { alert('Enter a year.'); return; }
+      const dayOfYear = doyFromForm(midx, day, year, currentCal());
+      const durationDays = parseDuration(durRaw);
+      db.events.push({ id: uid(), title, playerIds, location, year, dayOfYear, description: desc, durationDays });
+      saveDB();
+      document.getElementById('ev-title').value = ''; document.getElementById('ev-desc').value = '';
+      document.getElementById('ev-dur').value = '1d';
+      document.querySelectorAll('#ev-pchks input').forEach(i => i.checked = false);
+      renderAll();
+      setTimeout(() => {
+        const body = document.getElementById('tl-body');
+        const ty = dayY(absDay(year, dayOfYear));
+        body.scrollTo({ top: Math.max(0, ty - body.clientHeight / 2), behavior: 'smooth' });
+      }, 80);
+    }
+    function quickDeleteEvent(id) {
+      if (!confirm('Delete this event?')) return;
+      db.events = db.events.filter(e => e.id !== id); saveDB(); renderAll();
+    }
+    function deleteEvent(id) {
+      if (!confirm('Delete this event from the chronicle?')) return;
+      db.events = db.events.filter(e => e.id !== id); saveDB(); closeModal(); renderAll();
+    }
+    function saveEditEvent(id) {
+      const ev = db.events.find(e => e.id === id); if (!ev) return;
+      const midx = +document.getElementById('m-ev-m').value;
+      const day = +document.getElementById('m-ev-d').value;
+      const cal = currentCal();
+      const newPids = [...document.querySelectorAll('.mpc input:checked')].map(i => i.value);
+      ev.title = document.getElementById('m-ev-t').value.trim() || ev.title;
+      ev.playerIds = newPids.length ? newPids : ev.playerIds;
+      ev.location = document.getElementById('m-ev-l').value;
+      ev.year = +document.getElementById('m-ev-y').value || ev.year;
+      ev.dayOfYear = doyFromForm(midx, day, ev.year, cal);
+      ev.description = document.getElementById('m-ev-desc').value.trim();
+      ev.durationDays = parseDuration(document.getElementById('m-ev-dur').value);
+      saveDB(); closeModal(); renderAll();
+    }
 
-/* ════════════════════════════════════════
-   IMPORT / EXPORT
-════════════════════════════════════════ */
-function exportData(){
-  const p=currentProfile();
-  const a=document.createElement('a');
-  a.href=URL.createObjectURL(new Blob([JSON.stringify({profile:p,db},null,2)],{type:'application/json'}));
-  a.download=`${(p?.name||'timeline').replace(/[^a-z0-9]/gi,'-')}.json`;a.click();
-}
-function exportCSV(){
-  const se=sortedEvents();
-  const rows=[['Date','Year','Day of Year','Title','Location','Duration','Players','Description']];
-  se.forEach(ev=>{
-    const pNames=getPlayers(ev).map(p=>p.name).join('; ');
-    const csvCell=v=>'"'+String(v??'').replace(/"/g,'""')+'"';
-    rows.push([
-      csvCell(formatDate(ev.year,ev.dayOfYear)),
-      csvCell(ev.year),
-      csvCell(ev.dayOfYear),
-      csvCell(ev.title),
-      csvCell(ev.location),
-      csvCell(formatDuration(ev.durationDays||1)),
-      csvCell(pNames),
-      csvCell(ev.description||'')
-    ]);
-  });
-  const csv=rows.map(r=>r.join(',')).join('\r\n');
-  const p=currentProfile();
-  const a=document.createElement('a');
-  a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv'}));
-  a.download=`${(p?.name||'timeline').replace(/[^a-z0-9]/gi,'-')}-events.csv`;a.click();
-}
-function importData(){
-  const inp=document.createElement('input');inp.type='file';inp.accept='.json';
-  inp.onchange=e=>{
-    const f=e.target.files[0];if(!f)return;
-    const r=new FileReader();
-    r.onload=ev=>{
-      try{
-        const d=JSON.parse(ev.target.result);
-        // Support both old format (players/locations/events) and new (profile+db)
-        const data=d.db||d;
-        if(data.players&&data.locations&&data.events){
-          db=data;db.events=db.events.map(migrateEv);
-          if(!db.locationOrder||!db.locationOrder.length)db.locationOrder=[...db.locations];
-          saveDB();renderAll();
-        }else alert('Invalid file.');
-      }catch(err){alert('Parse error: '+err.message);}
-    };r.readAsText(f);
-  };inp.click();
-}
+    /* ════════════════════════════════════════
+       IMPORT / EXPORT
+    ════════════════════════════════════════ */
+    function exportData() {
+      const p = currentProfile();
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(new Blob([JSON.stringify({ profile: p, db }, null, 2)], { type: 'application/json' }));
+      a.download = `${(p?.name || 'timeline').replace(/[^a-z0-9]/gi, '-')}.json`; a.click();
+    }
+    function exportCSV() {
+      const se = sortedEvents();
+      const rows = [['Date', 'Year', 'Day of Year', 'Title', 'Location', 'Duration', 'Players', 'Description']];
+      se.forEach(ev => {
+        const pNames = getPlayers(ev).map(p => p.name).join('; ');
+        const csvCell = v => '"' + String(v ?? '').replace(/"/g, '""') + '"';
+        rows.push([
+          csvCell(formatDate(ev.year, ev.dayOfYear)),
+          csvCell(ev.year),
+          csvCell(ev.dayOfYear),
+          csvCell(ev.title),
+          csvCell(ev.location),
+          csvCell(formatDuration(ev.durationDays || 1)),
+          csvCell(pNames),
+          csvCell(ev.description || '')
+        ]);
+      });
+      const csv = rows.map(r => r.join(',')).join('\r\n');
+      const p = currentProfile();
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
+      a.download = `${(p?.name || 'timeline').replace(/[^a-z0-9]/gi, '-')}-events.csv`; a.click();
+    }
+    function importData() {
+      const inp = document.createElement('input'); inp.type = 'file'; inp.accept = '.json';
+      inp.onchange = e => {
+        const f = e.target.files[0]; if (!f) return;
+        const r = new FileReader();
+        r.onload = ev => {
+          try {
+            const d = JSON.parse(ev.target.result);
+            // Support both old format (players/locations/events) and new (profile+db)
+            const data = d.db || d;
+            if (data.players && data.locations && data.events) {
+              db = data; db.events = db.events.map(migrateEv);
+              if (!db.locationOrder || !db.locationOrder.length) db.locationOrder = [...db.locations];
+              saveDB(); renderAll();
+            } else alert('Invalid file.');
+          } catch (err) { alert('Parse error: ' + err.message); }
+        }; r.readAsText(f);
+      }; inp.click();
+    }
 
-/* ════════════════════════════════════════
-   INIT
-════════════════════════════════════════ */
-function renderAll(){renderSidebar();if(_view==='graph')renderTimeline();else renderTable();}
+    /* ════════════════════════════════════════
+       INIT
+    ════════════════════════════════════════ */
+    function renderAll() { renderSidebar(); if (_view === 'graph') renderTimeline(); else renderTable(); }
 
-const DEMO_DB={
-  players:[{id:'p1',name:'Aldric',color:'#c0392b'},{id:'p2',name:'Miriel',color:'#2980b9'},{id:'p3',name:'Zora',color:'#27ae60'}],
-  locations:["Baldur's Gate",'Neverwinter','Waterdeep'],
-  locationOrder:['Waterdeep','Neverwinter',"Baldur's Gate"],
-  events:[
-    {id:'e1',title:'Yawning Portal Brawl',playerIds:['p1'],location:'Waterdeep',year:1492,dayOfYear:8,description:'Fought off cultists beneath the tavern.'},
-    {id:'e2',title:'Ledger Theft',playerIds:['p2'],location:"Baldur's Gate",year:1492,dayOfYear:15,description:'Stole the merchant guild ledger.'},
-    {id:'e3',title:'Dragon Sighting',playerIds:['p3'],location:'Neverwinter',year:1492,dayOfYear:31,description:'Midwinter — broken up by a white dragon.'},
-    {id:'e4',title:"Lords' Alliance Summons",playerIds:['p1'],location:'Waterdeep',year:1492,dayOfYear:44,description:''},
-    {id:'e5',title:'Ship Arrival',playerIds:['p2'],location:'Waterdeep',year:1492,dayOfYear:60,description:'Arrived with stolen cargo.'},
-    {id:'e6',title:'Dungeon Delve',playerIds:['p3'],location:'Waterdeep',year:1492,dayOfYear:60,description:'Explored the ruins beneath Waterdeep.'},
-    {id:'e7',title:'Council of Three',playerIds:['p1','p2','p3'],location:'Waterdeep',year:1492,dayOfYear:72,description:'All three gathered to plan the heist.'},
-    {id:'e8',title:'Trade Alliance',playerIds:['p3'],location:"Baldur's Gate",year:1492,dayOfYear:92,description:'Greengrass negotiations sealed.'},
-    {id:'e9',title:'Reunion at the Gate',playerIds:['p1','p2'],location:"Baldur's Gate",year:1492,dayOfYear:105,description:''},
-  ]
-};
+    const DEMO_DB = {
+      players: [{ id: 'p1', name: 'Aldric', color: '#c0392b' }, { id: 'p2', name: 'Miriel', color: '#2980b9' }, { id: 'p3', name: 'Zora', color: '#27ae60' }],
+      locations: ["Baldur's Gate", 'Neverwinter', 'Waterdeep'],
+      locationOrder: ['Waterdeep', 'Neverwinter', "Baldur's Gate"],
+      events: [
+        { id: 'e1', title: 'Yawning Portal Brawl', playerIds: ['p1'], location: 'Waterdeep', year: 1492, dayOfYear: 8, description: 'Fought off cultists beneath the tavern.' },
+        { id: 'e2', title: 'Ledger Theft', playerIds: ['p2'], location: "Baldur's Gate", year: 1492, dayOfYear: 15, description: 'Stole the merchant guild ledger.' },
+        { id: 'e3', title: 'Dragon Sighting', playerIds: ['p3'], location: 'Neverwinter', year: 1492, dayOfYear: 31, description: 'Midwinter — broken up by a white dragon.' },
+        { id: 'e4', title: "Lords' Alliance Summons", playerIds: ['p1'], location: 'Waterdeep', year: 1492, dayOfYear: 44, description: '' },
+        { id: 'e5', title: 'Ship Arrival', playerIds: ['p2'], location: 'Waterdeep', year: 1492, dayOfYear: 60, description: 'Arrived with stolen cargo.' },
+        { id: 'e6', title: 'Dungeon Delve', playerIds: ['p3'], location: 'Waterdeep', year: 1492, dayOfYear: 60, description: 'Explored the ruins beneath Waterdeep.' },
+        { id: 'e7', title: 'Council of Three', playerIds: ['p1', 'p2', 'p3'], location: 'Waterdeep', year: 1492, dayOfYear: 72, description: 'All three gathered to plan the heist.' },
+        { id: 'e8', title: 'Trade Alliance', playerIds: ['p3'], location: "Baldur's Gate", year: 1492, dayOfYear: 92, description: 'Greengrass negotiations sealed.' },
+        { id: 'e9', title: 'Reunion at the Gate', playerIds: ['p1', 'p2'], location: "Baldur's Gate", year: 1492, dayOfYear: 105, description: '' },
+      ]
+    };
 
-window.addEventListener('load',()=>{
-  loadProfiles();loadUIState();
+    window.addEventListener('load', () => {
+      loadProfiles(); loadUIState();
 
-  // First-ever launch: create demo profile
-  if(!_profiles.length){
-    const demoId='demo';
-    _profiles=[{id:demoId,name:'Demo Campaign',calendarType:'harptos'}];
-    _activeId=demoId;saveProfiles();
-    localStorage.setItem('ht-db-'+demoId,JSON.stringify(DEMO_DB));
-  }
-  if(!_activeId||!profileById(_activeId))_activeId=_profiles[0].id;
+      // First-ever launch: create demo profile
+      if (!_profiles.length) {
+        const demoId = 'demo';
+        _profiles = [{ id: demoId, name: 'Demo Campaign', calendarType: 'harptos' }];
+        _activeId = demoId; saveProfiles();
+        localStorage.setItem('ht-db-' + demoId, JSON.stringify(DEMO_DB));
+      }
+      if (!_activeId || !profileById(_activeId)) _activeId = _profiles[0].id;
 
-  db=loadDB();
-  renderProfileSelect();
-  initMonthUI();
-  document.getElementById('cal-badge').textContent=currentCal()==='harptos'?'Harptos':'Gregorian';
+      db = loadDB();
+      renderProfileSelect();
+      initMonthUI();
+      document.getElementById('cal-badge').textContent = currentCal() === 'harptos' ? 'Harptos' : 'Gregorian';
 
-  // Apply theme
-  document.documentElement.setAttribute('data-theme',_theme);
-  document.querySelectorAll('.theme-sw button').forEach(b=>b.classList.toggle('act',b.dataset.t===_theme));
+      // Apply theme
+      document.documentElement.setAttribute('data-theme', _theme);
+      document.querySelectorAll('.theme-sw button').forEach(b => b.classList.toggle('act', b.dataset.t === _theme));
 
-  setView(_view);
-  renderAll();
-  initEvDrag();
-  requestAnimationFrame(()=>fitAll());
-});
+      setView(_view);
+      renderAll();
+      initEvDrag();
+      requestAnimationFrame(() => fitAll());
+    });
 
-// Re-render on resize so dynamic COL_W stays correct
-window.addEventListener('resize',()=>{if(_view==='graph')renderTimeline();});
-</script>
+    // Re-render on resize so dynamic COL_W stays correct
+    window.addEventListener('resize', () => { if (_view === 'graph') renderTimeline(); });
+  </script>
 </body>
+
 </html>

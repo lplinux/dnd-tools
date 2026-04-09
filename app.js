@@ -19,10 +19,6 @@ app.get('/item-cards', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'item-cards.html'));
 });
 
-app.get('/full-item-cards', (req, res) => {
-  res.sendFile(path.join(__dirname, 'public', 'full-item-cards.html'));
-});
-
 app.get('/split-view', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'split-view.html'));
 });
