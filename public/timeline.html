@@ -742,14 +742,18 @@
       font-size: .56rem;
       color: var(--text-muted);
       letter-spacing: .1em;
-      text-transform: uppercase
+      text-transform: uppercase;
+      position: relative;
+      z-index: 3
     }
 
     .tl-lw {
       background: var(--surface);
       border-bottom: 2px solid var(--gold-dim);
       overflow: hidden;
-      cursor: default
+      cursor: default;
+      position: relative;
+      z-index: 2
     }
 
     .tl-li {
@@ -759,7 +763,9 @@
     .tl-dw {
       background: var(--surface);
       border-right: 1px solid var(--border);
-      overflow: hidden
+      overflow: hidden;
+      position: relative;
+      z-index: 2
     }
 
     .tl-di {
@@ -770,7 +776,8 @@
       overflow: auto;
       background: var(--bg);
       position: relative;
-      cursor: default
+      cursor: default;
+      z-index: 1
     }
 
     .tl-body::-webkit-scrollbar {
@@ -1108,18 +1115,6 @@
           <button class="btn sm dn" onclick="deleteProfile()" title="Delete timeline">🗑</button>
         </div>
 
-        <!-- Today marker -->
-        <div class="s-sec">
-          <div class="s-ttl" onclick="toggleSec('today')">
-            <span class="s-arr" id="arr-today">▾</span>Today Marker
-          </div>
-          <div class="s-body" id="sb-today">
-            <div class="s-inner" id="today-inner">
-              <!-- filled by renderTodaySection() -->
-            </div>
-          </div>
-        </div>
-
         <!-- Events list -->
         <div class="s-sec">
           <div class="s-ttl" onclick="toggleSec('events')">
@@ -1171,6 +1166,18 @@
             <div class="s-inner">
               <div id="pl-list"></div>
               <button class="btn sm" onclick="openModal('add-player')">+ Add Player</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Today marker -->
+        <div class="s-sec">
+          <div class="s-ttl" onclick="toggleSec('today')">
+            <span class="s-arr" id="arr-today">▾</span>Today Marker
+          </div>
+          <div class="s-body" id="sb-today">
+            <div class="s-inner" id="today-inner">
+              <!-- filled by renderTodaySection() -->
             </div>
           </div>
         </div>
@@ -1904,13 +1911,13 @@
       };
 
       const seenYL = new Set();
+      const markCutoff = totalH - BOTTOM_PAD + 8; // don't render labels below this
       for (const m of marks) {
-        const y = dayY(m.a); if (y < -80 || y > totalH + 80) continue;
-        // Don't render labels inside gap bands
-        const inGap = _segments.length > 1 && !_segments.some(s => y >= s.yStart && y <= s.yStart + (s.maxA - s.minA + 1) * PPD + BOTTOM_PAD);
+        const y = dayY(m.a); if (y < -80 || y > markCutoff) continue;
         if (m.type === 'yearLabel') {
           if (seenYL.has(m.a)) continue; seenYL.add(m.a);
           const ly = Math.max(16, y - PPD * .5);
+          if (ly > markCutoff) continue;
           dH += `<text x="5" y="${ly}" font-family="Cinzel,serif" font-size="14" fill="${C.goldDim}" opacity=".95" font-weight="700">${m.label}</text>`;
         } else if (m.type === 'special') {
           dH += `<rect x="0" y="${y - Math.max(PPD, 2) / 2}" width="${SIDE_W}" height="${Math.max(PPD, 2)}" fill="${C.specialBg}" opacity=".9"/>
@@ -1958,7 +1965,8 @@
       }
 
       for (const m of marks) {
-        if (m.type === 'yearLabel' || m.type === 'day') continue; const y = dayY(m.a); if (y < 0 || y > totalH) continue;
+        if (m.type === 'yearLabel' || m.type === 'day') continue;
+        const y = dayY(m.a); if (y < 0 || y > markCutoff) continue;
         if (m.type === 'special') h += `<rect x="0" y="${y - PPD / 2}" width="${totalW}" height="${Math.max(PPD, 2)}" fill="rgba(200,160,20,.04)"/><line x1="0" y1="${y - PPD / 2}" x2="${totalW}" y2="${y - PPD / 2}" stroke="${C.goldDim}" stroke-width=".8" opacity=".4"/>`;
         else if (m.type === 'month' || m.type === 'year') h += `<line x1="0" y1="${y - PPD / 2}" x2="${totalW}" y2="${y - PPD / 2}" stroke="${C.border}" stroke-width=".5" opacity=".35"/>`;
         else if (m.type === 'decade' || m.type === 'century' || m.type === 'millennium') { const big = m.type === 'millennium'; h += `<line x1="0" y1="${y}" x2="${totalW}" y2="${y}" stroke="${big ? C.goldDim : C.border2}" stroke-width="${big ? 1.2 : .7}" opacity=".5"/>`; }
@@ -1973,72 +1981,99 @@
         <text x="8" y="${ty - 5}" font-family="Cinzel,serif" font-size="11" fill="${C.today}" opacity=".8" font-weight="700">TODAY</text>`;
       }
 
-      // Groups (keyed by start day)
-      const grouped = {};
-      db.events.forEach(ev => { if (!locs.includes(ev.location)) return; const k = `${absDay(ev.year, ev.dayOfYear)}__${ev.location}`; if (!grouped[k]) grouped[k] = []; grouped[k].push(ev); });
-      window._grouped = grouped;
+      // ── SLOT ASSIGNMENT ──────────────────────────────────────────────────────
+      // For each (absDay, location), group events by their canonical playerIds key.
+      // Each unique playerIds-set gets its own horizontal slot; same set → same slot.
+      // Events with the same playerIds on the same day/loc share one circle (stacked).
+      function pidKey(ev) { return (ev.playerIds || []).slice().sort().join(','); }
 
-      // Per-player lane offset within a column so same-time events from different players don't overlap
-      // Lane index is determined by the player's position in sorted order within the column
-      const playerLaneMap = {}; // playerId -> lane index
-      {
-        const sp = visiblePlayers();
-        sp.forEach((p, i) => { playerLaneMap[p.id] = i; });
-      }
-      const numLanes = Math.max(1, visiblePlayers().length);
-      // Lane x-offset: spread lanes symmetrically within the column
-      function laneOff(pid) {
-        const idx = playerLaneMap[pid] ?? 0;
-        return (idx - (numLanes - 1) / 2) * GSPC;
-      }
+      // Build slot map: slotMap[dayLocKey][pidKey] = slotIndex
+      const slotMap = {};
+      db.events.forEach(ev => {
+        if (!locs.includes(ev.location)) return;
+        const pls = getPlayers(ev).filter(p => !_hiddenPlayers.has(p.id));
+        if (!pls.length) return;
+        const dk = `${absDay(ev.year, ev.dayOfYear)}__${ev.location}`;
+        if (!slotMap[dk]) slotMap[dk] = {};
+        const pk = pidKey(ev);
+        if (!(pk in slotMap[dk])) slotMap[dk][pk] = Object.keys(slotMap[dk]).length;
+      });
 
-      // For events with multiple players, use the primary (first visible) player's lane
-      function evLanePid(ev) {
-        const vpl = getPlayers(ev).filter(p => !_hiddenPlayers.has(p.id));
-        return vpl.length ? vpl[0].id : null;
+      function evSlot(ev) {
+        const dk = `${absDay(ev.year, ev.dayOfYear)}__${ev.location}`;
+        const slots = slotMap[dk] || {};
+        const pk = pidKey(ev);
+        const slot = slots[pk] ?? 0;
+        const n = Object.keys(slots).length;
+        return { slot, n };
       }
       function evCX(ev) {
-        const pid = evLanePid(ev);
-        const off = pid !== null ? laneOff(pid) : 0;
+        const { slot, n } = evSlot(ev);
+        const off = (slot - (n - 1) / 2) * GSPC;
         return (locs.indexOf(ev.location) * dynCOL + dynCOL / 2) + off;
       }
       function evStartY(ev) { return dayY(absDay(ev.year, ev.dayOfYear)); }
+
+      // evEndY returns pixel Y for the visual end of an event's duration,
+      // clamped to the end of whatever segment the event starts in.
       function evEndY(ev) {
         const dur = ev.durationDays || 1;
         if (dur <= 1) return evStartY(ev);
-        // End abs day clamped to segment max so bar never leaves its segment
         const startAbs = absDay(ev.year, ev.dayOfYear);
         const endAbs = startAbs + dur - 1;
-        // Find which segment start belongs to and clamp end to that segment
-        let endY = evStartY(ev);
         for (const s of _segments) {
           if (startAbs >= s.minA && startAbs <= s.maxA) {
             const clampedEnd = Math.min(endAbs, s.maxA);
-            endY = s.yStart + (clampedEnd - s.minA) * PPD + PPD / 2;
-            break;
+            return s.yStart + (clampedEnd - s.minA) * PPD + PPD / 2;
           }
         }
-        return endY;
+        return evStartY(ev);
       }
 
-      // Duration bars (drawn first, behind circles)
+      // ── DURATION BARS ────────────────────────────────────────────────────────
+      // Draw bar segments for each timeline segment the event duration covers.
+      // If a gap is crossed, draw a dashed continuation on the other side.
       db.events.forEach(ev => {
         if (!locs.includes(ev.location)) return;
         const pls = getPlayers(ev).filter(p => !_hiddenPlayers.has(p.id));
         if (!pls.length) return;
         const dur = ev.durationDays || 1;
         if (dur <= 1) return;
-        const sy = evStartY(ev), ey = evEndY(ev);
-        const durPx = ey - sy;
-        if (durPx < R * 1.2) return;
+        const startAbs = absDay(ev.year, ev.dayOfYear);
+        const endAbs = startAbs + dur - 1;
         const cx = evCX(ev), barW = R * 1.4;
-        h += `<rect x="${cx - barW / 2}" y="${sy}" width="${barW}" height="${durPx}"
-      fill="${pls[0].color}" opacity=".2" rx="${barW / 2}"/>
-      <line x1="${cx}" y1="${sy + R}" x2="${cx}" y2="${ey}"
-        stroke="${pls[0].color}" stroke-width="1.8" opacity=".3"/>`;
+        const color = pls[0].color;
+
+        // Draw a bar piece for each segment that overlaps [startAbs, endAbs]
+        for (const s of _segments) {
+          if (endAbs < s.minA || startAbs > s.maxA) continue;
+          const segStart = Math.max(startAbs, s.minA);
+          const segEnd = Math.min(endAbs, s.maxA);
+          const sy = s.yStart + (segStart - s.minA) * PPD + PPD / 2;
+          const ey = s.yStart + (segEnd - s.minA) * PPD + PPD / 2;
+          const dpx = ey - sy;
+          if (dpx < 2) continue;
+          // Full filled bar for this segment
+          h += `<rect x="${cx - barW / 2}" y="${sy}" width="${barW}" height="${dpx}"
+        fill="${color}" opacity=".2" rx="${barW / 2}"/>
+        <line x1="${cx}" y1="${sy + R}" x2="${cx}" y2="${ey}"
+          stroke="${color}" stroke-width="1.8" opacity=".3"/>`;
+          // If this isn't the last segment the event covers, draw a dashed tail
+          if (segEnd < endAbs) {
+            const tailEnd = s.yStart + (s.maxA - s.minA + 1) * PPD;
+            h += `<line x1="${cx}" y1="${ey}" x2="${cx}" y2="${tailEnd}"
+          stroke="${color}" stroke-width="1.5" opacity=".18" stroke-dasharray="3,3"/>`;
+          }
+          // If this isn't the first segment, draw a dashed lead-in from top of segment
+          if (segStart > startAbs) {
+            h += `<line x1="${cx}" y1="${s.yStart}" x2="${cx}" y2="${sy}"
+          stroke="${color}" stroke-width="1.5" opacity=".18" stroke-dasharray="3,3"/>`;
+          }
+        }
       });
 
-      // Connection lines (only visible players, connecting end→next-start)
+      // ── CONNECTION LINES ─────────────────────────────────────────────────────
+      // Connect each player's events: end of e1 → start of e2 (next chronologically)
       visiblePlayers().forEach(pl => {
         const pEvs = db.events.filter(e => (e.playerIds || []).includes(pl.id) && locs.includes(e.location)).sort((a, b) => absDay(a.year, a.dayOfYear) - absDay(b.year, b.dayOfYear));
         for (let i = 0; i < pEvs.length - 1; i++) {
@@ -2051,18 +2086,31 @@
         }
       });
 
-      // Event circles (at start position)
+      // ── EVENT CIRCLES ────────────────────────────────────────────────────────
+      // Track which (dayLocKey, pidKey) combos have already been drawn to avoid duplicates
+      const drawnSlots = new Set();
       db.events.forEach(ev => {
         if (!locs.includes(ev.location)) return;
         const pls = getPlayers(ev).filter(p => !_hiddenPlayers.has(p.id));
         if (!pls.length) return;
+
+        // Dedup: same playerIds combo at same day/loc → draw once
+        const dk = `${absDay(ev.year, ev.dayOfYear)}__${ev.location}`;
+        const pk = pidKey(ev);
+        const slotKey = `${dk}__${pk}`;
+        if (drawnSlots.has(slotKey)) return;
+        drawnSlots.add(slotKey);
+
         const cx = evCX(ev), cy = evStartY(ev);
         const colors = pls.map(p => p.color), strokeC = darken(colors[0], .35);
         const label = pls.length === 1 ? pls[0].name.slice(0, 2).toUpperCase() : `${pls.length}`;
-        const pids = (ev.playerIds || []).join(',');
+        // Collect all events sharing this slot for the pids attribute (needed for hover)
+        const shareEvs = db.events.filter(e => locs.includes(e.location) && absDay(e.year, e.dayOfYear) === absDay(ev.year, ev.dayOfYear) && e.location === ev.location && pidKey(e) === pk);
+        const allPids = [...new Set(shareEvs.flatMap(e => e.playerIds || []))].join(',');
+        // Use the first event's id as the click target; tooltip will list all titles
         const dur = ev.durationDays || 1;
-        const durBadge = dur > 1 ? `<text x="${cx + R + 2}" y="${cy - R + 3}" font-family="Cinzel,serif" font-size="10" fill="var(--text-dim)" opacity=".85" pointer-events="none">${formatDuration(dur)}</text>` : '';
-        h += `<g class="ev-g" data-eid="${ev.id}" data-pids="${esc(pids)}"
+        const durBadge = dur > 1 ? `<text x="${cx + R + 2}" y="${cy - R + 3}" font-family="Cinzel,serif" font-size="10" fill="${C.textDim}" opacity=".85" pointer-events="none">${formatDuration(dur)}</text>` : '';
+        h += `<g class="ev-g" data-eid="${ev.id}" data-pids="${esc(allPids)}"
       onmouseenter="onEvHover(event,'${ev.id}')" onmouseleave="onEvLeave()" onclick="onEvClick(event,'${ev.id}')">
       <circle cx="${cx}" cy="${cy}" r="${R + 6}" fill="transparent"/>
       ${pieSlices(cx, cy, R, colors, strokeC)}

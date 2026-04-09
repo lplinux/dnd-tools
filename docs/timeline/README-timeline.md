@@ -23,12 +23,71 @@ A single-page timeline tool for D&D campaigns. Tracks events for multiple player
 
 Open `/timeline` in your browser after starting the server.
 
+
+### Timeline Graph View (with demo data)
+![alt text](img/main_screen_dark_mode.png "Main Screen Dark Mode")
+![alt text](img/main_screen_dark_blue_mode.png "Main Screen Dark Blue Mode")
+![alt text](img/main_screen_light_mode.png "Main Screen Light Mode")
+
+
+### Timeline Table View (with demo data)
+![alt text](img/event_table_mode.png "Event Table Mode")
+
+
+### Create a new Timeline
+![alt text](img/new_timeline_menu.png "New Timeline Menu")
+
+
+### Set a Today Marker
+1. Open the **Today Marker** section in the sideber
+![alt text](img/sidebar_menu_4.png "Sidebar Menu to set Today Marker")
+2. Set the new **Today Marker** (you can also "clear" the current marker)
+![alt text](img/today_marker_menu.png "Today Marker Menu")
+
+
+### Adding new Players and/or Locations
+
+1. Open the **Players** or **Locations** section in the sidebar
+2. Click **Add Player/Location**.
+![alt text](img/sidebar_menu_3.png "Sidebar Menu to Add Players/Locations")
+3. Set a Name for the **Location** and click on "Add"
+![alt text](img/add_location_menu.png "Add Locations Menu")
+4. Set a Name and a Color for the **Player** and click on "Add"
+![alt text](img/add_player_menu.png "Add Players Menu")
+
+
 ### Adding an event
 
 1. Open the **New Event** section in the sidebar
 2. Select one or more players
 3. Choose a location, date, and optional duration
 4. Click **Add Event** — the timeline scrolls to it and flashes it gold
+![alt text](img/sidebar_menu_2.png "Sidebar Menu to Add Events")
+
+
+### Deleting an event
+
+1. Navigate the timeline and look for your event (either look on the timeline or search for it)
+![alt text](img/select_events_timeline.png "Timeline Events Selection")
+![alt text](img/search_events.png "Search Events")
+2. Click on the Event and open the "Event Card"
+![alt text](img/event_card.png "Event Card")
+3. Click on "Delete"
+4. You can also delete the events directly from the left sidebar menu
+![alt text](img/sidebar_menu_1.png "Sidebar Menu to Delete Events")
+
+
+### Editing an event
+
+1. Navigate the timeline and look for your event (either look on the timeline or search for it)
+![alt text](img/select_events_timeline.png "Timeline Events Selection")
+![alt text](img/search_events.png "Search Events")
+2. Click on the Event and open the "Event Card"
+![alt text](img/event_card.png "Event Card")
+3. Click on "Edit"
+![alt text](img/edit_events.png "Edit an Event")
+4. Save your changes
+
 
 ### Duration syntax
 
