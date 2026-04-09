@@ -10,7 +10,6 @@ A self-hosted Node.js web application with a suite of tools for tabletop RPG cam
 | `/timeline` | Campaign Timeline (Calendar of Harptos or Gregorian) |
 | `/npc-sheet` | NPC Character Sheet |
 | `/item-cards` | Item Card Creator |
-| `/full-item-cards` | Full-page Item Cards |
 | `/split-view` | Split-screen reference view |
 | `/pdf-viewer` | PDF viewer (reads from the `pdfs/` folder) |
 
@@ -153,11 +152,11 @@ dnd-tools/
 ├── package.json
 ├── Dockerfile
 ├── docker-compose.yml
+├── docs/${module}/README-${module}.md
 ├── public/
 │   ├── timeline.html   # Campaign Timeline
 │   ├── npc-sheet.html
 │   ├── item-cards.html
-│   ├── full-item-cards.html
 │   ├── split-view.html
 │   ├── pdf-viewer.html
 │   └── styles.css
