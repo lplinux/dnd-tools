@@ -1385,6 +1385,7 @@
     function migrateEv(ev) {
       if (!ev.playerIds) { ev.playerIds = ev.playerId ? [ev.playerId] : []; delete ev.playerId; }
       if (!ev.durationDays || ev.durationDays < 1) ev.durationDays = 1;
+      if (!ev.manualLinks) ev.manualLinks = [];
       return ev;
     }
     function getPlayer(id) { return db.players.find(p => p.id === id); }
@@ -2014,25 +2015,32 @@
       }
       function evStartY(ev) { return dayY(absDay(ev.year, ev.dayOfYear)); }
 
-      // evEndY returns pixel Y for the visual end of an event's duration,
-      // clamped to the end of whatever segment the event starts in.
+      // evEndY: returns pixel Y for the TRUE end of an event across ALL segments it spans
       function evEndY(ev) {
         const dur = ev.durationDays || 1;
         if (dur <= 1) return evStartY(ev);
         const startAbs = absDay(ev.year, ev.dayOfYear);
         const endAbs = startAbs + dur - 1;
+        // Walk segments in reverse and find the last one that overlaps the event
+        for (let si = _segments.length - 1; si >= 0; si--) {
+          const s = _segments[si];
+          if (endAbs < s.minA || startAbs > s.maxA) continue;
+          const segEnd = Math.min(endAbs, s.maxA);
+          return s.yStart + (segEnd - s.minA) * PPD + PPD / 2;
+        }
+        return evStartY(ev);
+      }
+
+      // Y position on an event's bar at a given absDay (for "during" connections)
+      function evBarY(ev, atAbs) {
         for (const s of _segments) {
-          if (startAbs >= s.minA && startAbs <= s.maxA) {
-            const clampedEnd = Math.min(endAbs, s.maxA);
-            return s.yStart + (clampedEnd - s.minA) * PPD + PPD / 2;
-          }
+          if (atAbs >= s.minA && atAbs <= s.maxA)
+            return s.yStart + (atAbs - s.minA) * PPD + PPD / 2;
         }
         return evStartY(ev);
       }
 
       // ── DURATION BARS ────────────────────────────────────────────────────────
-      // Draw bar segments for each timeline segment the event duration covers.
-      // If a gap is crossed, draw a dashed continuation on the other side.
       db.events.forEach(ev => {
         if (!locs.includes(ev.location)) return;
         const pls = getPlayers(ev).filter(p => !_hiddenPlayers.has(p.id));
@@ -2044,7 +2052,6 @@
         const cx = evCX(ev), barW = R * 1.4;
         const color = pls[0].color;
 
-        // Draw a bar piece for each segment that overlaps [startAbs, endAbs]
         for (const s of _segments) {
           if (endAbs < s.minA || startAbs > s.maxA) continue;
           const segStart = Math.max(startAbs, s.minA);
@@ -2053,18 +2060,16 @@
           const ey = s.yStart + (segEnd - s.minA) * PPD + PPD / 2;
           const dpx = ey - sy;
           if (dpx < 2) continue;
-          // Full filled bar for this segment
           h += `<rect x="${cx - barW / 2}" y="${sy}" width="${barW}" height="${dpx}"
         fill="${color}" opacity=".2" rx="${barW / 2}"/>
         <line x1="${cx}" y1="${sy + R}" x2="${cx}" y2="${ey}"
           stroke="${color}" stroke-width="1.8" opacity=".3"/>`;
-          // If this isn't the last segment the event covers, draw a dashed tail
+          // Dashed tail if event continues past this segment
           if (segEnd < endAbs) {
             const tailEnd = s.yStart + (s.maxA - s.minA + 1) * PPD;
             h += `<line x1="${cx}" y1="${ey}" x2="${cx}" y2="${tailEnd}"
           stroke="${color}" stroke-width="1.5" opacity=".18" stroke-dasharray="3,3"/>`;
           }
-          // If this isn't the first segment, draw a dashed lead-in from top of segment
           if (segStart > startAbs) {
             h += `<line x1="${cx}" y1="${s.yStart}" x2="${cx}" y2="${sy}"
           stroke="${color}" stroke-width="1.5" opacity=".18" stroke-dasharray="3,3"/>`;
@@ -2073,51 +2078,112 @@
       });
 
       // ── CONNECTION LINES ─────────────────────────────────────────────────────
-      // Connect each player's events: end of e1 → start of e2 (next chronologically)
       visiblePlayers().forEach(pl => {
-        const pEvs = db.events.filter(e => (e.playerIds || []).includes(pl.id) && locs.includes(e.location)).sort((a, b) => absDay(a.year, a.dayOfYear) - absDay(b.year, b.dayOfYear));
+        const pEvs = db.events
+          .filter(e => (e.playerIds || []).includes(pl.id) && locs.includes(e.location))
+          .sort((a, b) => absDay(a.year, a.dayOfYear) - absDay(b.year, b.dayOfYear));
+
         for (let i = 0; i < pEvs.length - 1; i++) {
           const e1 = pEvs[i], e2 = pEvs[i + 1];
+          const e1StartAbs = absDay(e1.year, e1.dayOfYear);
+          const e1EndAbs = e1StartAbs + (e1.durationDays || 1) - 1;
+          const e2StartAbs = absDay(e2.year, e2.dayOfYear);
           const cx1 = evCX(e1), cx2 = evCX(e2);
-          const y1 = evEndY(e1) + R, y2 = evStartY(e2) - R;
+
+          let y1, y2;
+          if (e2StartAbs <= e1EndAbs && e1.durationDays > 1) {
+            // e2 starts DURING e1's duration → depart from e1's bar at e2's Y
+            y1 = evBarY(e1, e2StartAbs) + R;
+            y2 = evStartY(e2) - R;
+          } else {
+            // Normal: depart from e1's end circle
+            y1 = evEndY(e1) + R;
+            y2 = evStartY(e2) - R;
+          }
           if (y2 <= y1 + 2) continue;
-          let path; if (Math.abs(cx1 - cx2) < 2) path = `M ${cx1},${y1} L ${cx2},${y2}`; else { const my = (y1 + y2) / 2; path = `M ${cx1},${y1} C ${cx1},${my} ${cx2},${my} ${cx2},${y2}`; }
+          let path;
+          if (Math.abs(cx1 - cx2) < 2) path = `M ${cx1},${y1} L ${cx2},${y2}`;
+          else { const my = (y1 + y2) / 2; path = `M ${cx1},${y1} C ${cx1},${my} ${cx2},${my} ${cx2},${y2}`; }
           h += `<path class="pl-line" data-pid="${pl.id}" d="${path}" stroke="${pl.color}" stroke-width="2" fill="none" opacity=".42" stroke-linecap="round"/>`;
         }
       });
 
+      // ── MANUAL CONNECTION LINES ───────────────────────────────────────────────
+      // Dashed lines for user-defined connections between any two events
+      db.events.forEach(e1 => {
+        if (!(e1.manualLinks || []).length) return;
+        if (!locs.includes(e1.location)) return;
+        const pls1 = getPlayers(e1).filter(p => !_hiddenPlayers.has(p.id));
+        if (!pls1.length) return;
+        e1.manualLinks.forEach(tid => {
+          const e2 = db.events.find(x => x.id === tid);
+          if (!e2 || !locs.includes(e2.location)) return;
+          const pls2 = getPlayers(e2).filter(p => !_hiddenPlayers.has(p.id));
+          if (!pls2.length) return;
+          const cx1 = evCX(e1), cx2 = evCX(e2);
+          const y1 = evEndY(e1), y2 = evStartY(e2);
+          const my = (y1 + y2) / 2;
+          const path = Math.abs(cx1 - cx2) < 2
+            ? `M ${cx1},${y1 + R} L ${cx2},${y2 - R}`
+            : `M ${cx1},${y1 + R} C ${cx1},${my} ${cx2},${my} ${cx2},${y2 - R}`;
+          // Use first shared player color, or first event's player color
+          const color = pls1[0].color;
+          h += `<path d="${path}" stroke="${color}" stroke-width="1.8" fill="none" opacity=".55"
+        stroke-dasharray="6,4" stroke-linecap="round"/>`;
+        });
+      });
+
       // ── EVENT CIRCLES ────────────────────────────────────────────────────────
-      // Track which (dayLocKey, pidKey) combos have already been drawn to avoid duplicates
       const drawnSlots = new Set();
       db.events.forEach(ev => {
         if (!locs.includes(ev.location)) return;
         const pls = getPlayers(ev).filter(p => !_hiddenPlayers.has(p.id));
         if (!pls.length) return;
 
-        // Dedup: same playerIds combo at same day/loc → draw once
-        const dk = `${absDay(ev.year, ev.dayOfYear)}__${ev.location}`;
+        const startAbs = absDay(ev.year, ev.dayOfYear);
+        const dk = `${startAbs}__${ev.location}`;
         const pk = pidKey(ev);
         const slotKey = `${dk}__${pk}`;
-        if (drawnSlots.has(slotKey)) return;
-        drawnSlots.add(slotKey);
+        const isFirst = !drawnSlots.has(slotKey);
+        if (isFirst) drawnSlots.add(slotKey);
 
-        const cx = evCX(ev), cy = evStartY(ev);
+        const cx = evCX(ev);
         const colors = pls.map(p => p.color), strokeC = darken(colors[0], .35);
         const label = pls.length === 1 ? pls[0].name.slice(0, 2).toUpperCase() : `${pls.length}`;
-        // Collect all events sharing this slot for the pids attribute (needed for hover)
-        const shareEvs = db.events.filter(e => locs.includes(e.location) && absDay(e.year, e.dayOfYear) === absDay(ev.year, ev.dayOfYear) && e.location === ev.location && pidKey(e) === pk);
+        const shareEvs = db.events.filter(e => locs.includes(e.location) && absDay(e.year, e.dayOfYear) === startAbs && e.location === ev.location && pidKey(e) === pk);
         const allPids = [...new Set(shareEvs.flatMap(e => e.playerIds || []))].join(',');
-        // Use the first event's id as the click target; tooltip will list all titles
         const dur = ev.durationDays || 1;
-        const durBadge = dur > 1 ? `<text x="${cx + R + 2}" y="${cy - R + 3}" font-family="Cinzel,serif" font-size="10" fill="${C.textDim}" opacity=".85" pointer-events="none">${formatDuration(dur)}</text>` : '';
-        h += `<g class="ev-g" data-eid="${ev.id}" data-pids="${esc(allPids)}"
-      onmouseenter="onEvHover(event,'${ev.id}')" onmouseleave="onEvLeave()" onclick="onEvClick(event,'${ev.id}')">
-      <circle cx="${cx}" cy="${cy}" r="${R + 6}" fill="transparent"/>
-      ${pieSlices(cx, cy, R, colors, strokeC)}
-      <circle class="ev-ring" cx="${cx}" cy="${cy}" r="${R}" fill="none" stroke="transparent" stroke-width="2"/>
-      <text x="${cx}" y="${cy + 4}" text-anchor="middle" font-family="Cinzel,serif" font-size="${pls.length === 1 ? 10 : 11}" fill="white" pointer-events="none" font-weight="600">${label}</text>
-      ${durBadge}
-    </g>`;
+
+        // START circle (draw only once per slot)
+        if (isFirst) {
+          const cy = evStartY(ev);
+          const durBadge = dur > 1 ? `<text x="${cx + R + 2}" y="${cy - R + 3}" font-family="Cinzel,serif" font-size="10" fill="${C.textDim}" opacity=".85" pointer-events="none">${formatDuration(dur)}</text>` : '';
+          h += `<g class="ev-g" data-eid="${ev.id}" data-pids="${esc(allPids)}"
+        onmouseenter="onEvHover(event,'${ev.id}')" onmouseleave="onEvLeave()" onclick="onEvClick(event,'${ev.id}')">
+        <circle cx="${cx}" cy="${cy}" r="${R + 6}" fill="transparent"/>
+        ${pieSlices(cx, cy, R, colors, strokeC)}
+        <circle class="ev-ring" cx="${cx}" cy="${cy}" r="${R}" fill="none" stroke="transparent" stroke-width="2"/>
+        <text x="${cx}" y="${cy + 4}" text-anchor="middle" font-family="Cinzel,serif" font-size="${pls.length === 1 ? 10 : 11}" fill="white" pointer-events="none" font-weight="600">${label}</text>
+        ${durBadge}
+      </g>`;
+        }
+
+        // END circle for duration events — smaller, same color, at evEndY
+        if (dur > 1) {
+          const endAbs = startAbs + dur - 1;
+          const endSlotKey = `end__${endAbs}__${ev.location}__${pk}`;
+          if (!drawnSlots.has(endSlotKey)) {
+            drawnSlots.add(endSlotKey);
+            const ey = evEndY(ev);
+            const Re = Math.round(R * 0.7); // smaller radius
+            h += `<g class="ev-g" data-eid="${ev.id}" data-pids="${esc(allPids)}"
+          onmouseenter="onEvHover(event,'${ev.id}')" onmouseleave="onEvLeave()" onclick="onEvClick(event,'${ev.id}')">
+          <circle cx="${cx}" cy="${ey}" r="${Re + 5}" fill="transparent"/>
+          ${pieSlices(cx, ey, Re, colors, strokeC)}
+          <circle cx="${cx}" cy="${ey}" r="${Re}" fill="none" stroke="${strokeC}" stroke-width="1.5"/>
+        </g>`;
+          }
+        }
       });
       svgB.innerHTML = h;
     }
@@ -2375,6 +2441,15 @@
         const ev = data;
         const { midx, day, special } = formMidxFromDoy(ev.dayOfYear, ev.year, cal);
         const sl = sortedLocs();
+        // Build manual links picker — all events except self, sorted chronologically
+        const otherEvs = sortedEvents().filter(e => e.id !== ev.id);
+        const linksHtml = otherEvs.length === 0
+          ? `<div style="color:var(--text-muted);font-style:italic;font-size:.82rem;padding:4px">No other events.</div>`
+          : `<div class="mpc" style="max-height:90px">` + otherEvs.map(e => {
+            const linked = (ev.manualLinks || []).includes(e.id);
+            const pls2 = getPlayers(e); const dot = pls2[0] ? `<span style="width:8px;height:8px;border-radius:50%;background:${pls2[0].color};display:inline-block;flex-shrink:0"></span>` : '';
+            return `<label class="pcl"><input type="checkbox" class="ml-chk" value="${e.id}" ${linked ? 'checked' : ''}>${dot}<span style="font-size:.78rem">${esc(formatDate(e.year, e.dayOfYear))} – ${esc(e.title)}</span></label>`;
+          }).join('') + `</div>`;
         box.innerHTML = `<h3>Edit Event</h3>
       <div class="fr"><label>Title</label><input id="m-ev-t" type="text" value="${esc(ev.title)}"></div>
       <div class="fr"><label>Players</label>${pchkHtml(ev.playerIds || [])}</div>
@@ -2388,6 +2463,7 @@
       <div class="fr"><label>Duration <span style="color:var(--text-muted);font-size:.65rem">(1d, 3m, 2y)</span></label>
         <input id="m-ev-dur" type="text" value="${ev.durationDays > 1 ? formatDuration(ev.durationDays).replace('~', '') : '1d'}"></div>
       <div class="fr"><label>Description</label><textarea id="m-ev-desc" rows="2">${esc(ev.description || '')}</textarea></div>
+      <div class="fr"><label>Manual connections <span style="color:var(--text-muted);font-size:.65rem">(draw extra lines)</span></label>${linksHtml}</div>
       <div class="ma"><button class="btn" onclick="openEventModal('${ev.id}')">Cancel</button><button class="btn gld" onclick="saveEditEvent('${ev.id}')">Save</button></div>`;
 
       } else if (type === 'set-today') {
@@ -2456,16 +2532,25 @@
       db.locations.push(loc); db.locationOrder.push(loc); saveDB(); closeModal(); renderAll();
     }
     function removePlayer(id) {
-      if (!confirm('Remove this player?')) return;
+      if (!confirm('Remove this player? Events with no other players will also be deleted.')) return;
       db.players = db.players.filter(p => p.id !== id);
+      // Remove player from all events, then delete events that have no players left
       db.events.forEach(ev => { ev.playerIds = (ev.playerIds || []).filter(pid => pid !== id); });
+      db.events = db.events.filter(ev => ev.playerIds.length > 0);
+      // Also remove any manual links pointing to now-deleted events
+      const validIds = new Set(db.events.map(e => e.id));
+      db.events.forEach(ev => { ev.manualLinks = (ev.manualLinks || []).filter(id => validIds.has(id)); });
       saveDB(); renderAll();
     }
     function removeLocationByName(loc) {
-      const has = db.events.some(e => e.location === loc);
-      if (has && !confirm(`"${loc}" has events. Remove anyway?`)) return;
+      const count = db.events.filter(e => e.location === loc).length;
+      if (count > 0 && !confirm(`"${loc}" has ${count} event${count === 1 ? '' : 's'}. Delete them all?`)) return;
+      db.events = db.events.filter(e => e.location !== loc);
       db.locations = db.locations.filter(l => l !== loc);
       db.locationOrder = db.locationOrder.filter(l => l !== loc);
+      // Clean up any manual links that now point to deleted events
+      const validIds = new Set(db.events.map(e => e.id));
+      db.events.forEach(ev => { ev.manualLinks = (ev.manualLinks || []).filter(id => validIds.has(id)); });
       saveDB(); renderAll();
     }
     function addEvent() {
@@ -2514,6 +2599,7 @@
       ev.dayOfYear = doyFromForm(midx, day, ev.year, cal);
       ev.description = document.getElementById('m-ev-desc').value.trim();
       ev.durationDays = parseDuration(document.getElementById('m-ev-dur').value);
+      ev.manualLinks = [...document.querySelectorAll('.ml-chk:checked')].map(i => i.value);
       saveDB(); closeModal(); renderAll();
     }
 
