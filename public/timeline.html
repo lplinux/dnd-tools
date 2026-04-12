@@ -369,6 +369,31 @@
       overflow: hidden
     }
 
+    /* sidebar toggle button — sits outside the sidebar as a sibling */
+    .sb-toggle {
+      flex-shrink: 0;
+      width: 18px;
+      background: var(--surface2);
+      border-left: 1px solid var(--border2);
+      border-right: none;
+      border-top: none;
+      border-bottom: none;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--text-muted);
+      font-size: .6rem;
+      transition: background .15s, color .15s, width .2s;
+      writing-mode: vertical-rl;
+      letter-spacing: .06em;
+    }
+
+    .sb-toggle:hover {
+      background: var(--border2);
+      color: var(--gold)
+    }
+
     /* ── SIDEBAR ── */
     .sidebar {
       width: 256px;
@@ -377,7 +402,15 @@
       border-right: 1px solid var(--border);
       display: flex;
       flex-direction: column;
-      overflow-y: auto
+      overflow-y: auto;
+      transition: width .2s
+    }
+
+    .sidebar.collapsed {
+      width: 0;
+      min-width: 0;
+      overflow: hidden;
+      border-right: none
     }
 
     .sidebar::-webkit-scrollbar {
@@ -1107,8 +1140,7 @@
     <!-- BODY -->
     <div class="app-body">
       <!-- SIDEBAR -->
-      <div class="sidebar">
-        <!-- Profile bar -->
+      <div class="sidebar" id="sidebar">
         <div class="prof-bar">
           <select id="prof-sel" onchange="switchProfile(this.value)" title="Active timeline"></select>
           <button class="btn sm gld" onclick="openModal('new-profile')" title="New timeline">+</button>
@@ -1195,6 +1227,9 @@
           </div>
         </div>
       </div><!-- /sidebar -->
+
+      <!-- Sidebar toggle — always visible, outside the collapsible sidebar -->
+      <button class="sb-toggle" id="sb-toggle" onclick="toggleSidebar()" title="Hide sidebar">◀</button>
 
       <!-- MAIN AREA -->
       <div class="tl-area" id="tl-area">
@@ -1332,15 +1367,14 @@
       document.getElementById('cal-badge').textContent = currentCal() === 'harptos' ? 'Harptos' : 'Gregorian';
     }
 
-    function createProfile(name, calendarType, playersRaw, locsRaw) {
+    function createProfile(name, calendarType, playersRaw, locsRaw, todayAbs = null) {
       const id = 'p' + Date.now().toString(36);
       _profiles.push({ id, name, calendarType });
       _activeId = id; saveProfiles();
-      // Init DB
       const players = playersRaw.split(',').map(s => s.trim()).filter(Boolean).map((nm, i) => ({ id: 'pl' + i + Date.now(), name: nm, color: PALETTE[i % PALETTE.length] }));
       const locations = locsRaw.split(',').map(s => s.trim()).filter(Boolean);
       const locationOrder = [...locations];
-      db = { players, locations, locationOrder, events: [] };
+      db = { players, locations, locationOrder, events: [], todayAbs };
       saveDB();
       renderProfileSelect();
       initMonthUI(); renderAll();
@@ -1385,6 +1419,7 @@
     function migrateEv(ev) {
       if (!ev.playerIds) { ev.playerIds = ev.playerId ? [ev.playerId] : []; delete ev.playerId; }
       if (!ev.durationDays || ev.durationDays < 1) ev.durationDays = 1;
+      if (!ev.manualLinks) ev.manualLinks = [];
       return ev;
     }
     function getPlayer(id) { return db.players.find(p => p.id === id); }
@@ -1438,6 +1473,14 @@
     }
     function applyAllSecs() { for (const k of Object.keys(_collapsed)) applySec(k); }
 
+    function toggleSidebar() {
+      const sb = document.getElementById('sidebar');
+      const btn = document.getElementById('sb-toggle');
+      const collapsed = sb.classList.toggle('collapsed');
+      btn.textContent = collapsed ? '▶' : '◀';
+      btn.title = collapsed ? 'Show sidebar' : 'Hide sidebar';
+      setTimeout(() => { if (_view === 'graph') renderTimeline(); }, 220);
+    }
     function setView(v) {
       _view = v; saveUIState();
       document.getElementById('vt-graph').classList.toggle('active', v === 'graph');
@@ -1481,6 +1524,14 @@
       if (PPD >= 0.0001) return 'century'; return 'millennium';
     }
     function granLabel() { return { day: 'Day', month: 'Month', year: 'Year', decade: 'Decade', century: 'Century', millennium: 'Millennium' }[granularity()]; }
+    function filterManualLinks(q) {
+      const lc = q.toLowerCase();
+      document.querySelectorAll('#ml-list .ml-row').forEach(row => {
+        const txt = row.querySelector('.ml-label')?.textContent || '';
+        row.style.display = txt.toLowerCase().includes(lc) ? '' : 'none';
+      });
+    }
+
     function onZoomSlider(v) { PPD = sliderToPPD(v); document.getElementById('zlbl').textContent = granLabel(); renderTimeline(); }
     function fitAll() {
       const body = document.getElementById('tl-body'), h = body.clientHeight || 500;
@@ -1506,7 +1557,7 @@
     /* ════════════════════════════════════════
        UTILITIES
     ════════════════════════════════════════ */
-    function esc(s) { return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
+    function esc(s) { return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;'); }
     function darken(hex, f) {
       let c = hex.replace('#', ''); if (c.length === 3) c = c.split('').map(x => x + x).join('');
       return `rgb(${Math.max(0, parseInt(c.slice(0, 2), 16) - Math.round(255 * f))},${Math.max(0, parseInt(c.slice(2, 4), 16) - Math.round(255 * f))},${Math.max(0, parseInt(c.slice(4, 6), 16) - Math.round(255 * f))})`;
@@ -1592,7 +1643,9 @@
        SIDEBAR RENDER
     ════════════════════════════════════════ */
     function renderSidebar() {
-      const sp = sortedPlayers(), sl = sortedLocs(), se = sortedEvents(), dl = displayedLocs();
+      const sp = sortedPlayers(), sl = sortedLocs(), se = sortedEvents();
+      window._dl = displayedLocs();   // exposed for onclick handlers
+      const dl = window._dl;
       document.getElementById('bdg-events').textContent = db.events.length;
       document.getElementById('bdg-players').textContent = db.players.length;
       document.getElementById('bdg-locs').textContent = db.locations.length;
@@ -1614,16 +1667,16 @@
         </div>`;
         }).join('');
 
-      // Players — with eye toggle
+      // Players — with eye toggle + editable color dot
       document.getElementById('pl-list').innerHTML = sp.length === 0
         ? `<div class="empty-m">No players yet.</div>`
         : sp.map(p => {
           const hidden = _hiddenPlayers.has(p.id);
           return `<div class="p-it ${hidden ? 'item-hidden' : ''}">
-          <div class="p-dot" style="background:${p.color}"></div>
+          <div class="p-dot" style="background:${p.color};cursor:pointer;position:relative" title="Click to change colour" onclick="editPlayerColor('${p.id}')"></div>
           <div class="p-nm">${esc(p.name)}</div>
-          <button class="eye-btn ${hidden ? 'hidden-item' : ''}" title="${hidden ? 'Show' : 'Hide'}" onclick="togglePlayerVis('${p.id}')">${hidden ? '👁‍🗨' : '👁'}</button>
-          <button class="btn sm dn" onclick="removePlayer('${p.id}')">✕</button>
+          <button class="eye-btn ${hidden ? 'hidden-item' : ''}" title="${hidden ? 'Show' : 'Hide'}" data-pid="${p.id}" onclick="togglePlayerVis(this.dataset.pid)">${hidden ? '👁‍🗨' : '👁'}</button>
+          <button class="btn sm dn" data-pid="${p.id}" onclick="removePlayer(this.dataset.pid)">✕</button>
         </div>`;
         }).join('');
 
@@ -1632,13 +1685,30 @@
         ? `<div class="empty-m">No locations yet.</div>`
         : dl.map((l, i) => {
           const hidden = _hiddenLocs.has(l);
-          return `<div class="l-it ${hidden ? 'item-hidden' : ''}" draggable="true" data-loc="${esc(l)}" data-idx="${i}"
-          ondragstart="locDragStart(event,${i})" ondragover="locDragOver(event)" ondrop="locDrop(event,${i})" ondragleave="locDragLeave(event)">
+          return `<div class="l-it ${hidden ? 'item-hidden' : ''}"
+             draggable="true"
+             data-loc="${esc(l)}"
+             data-idx="${i}"
+             ondragstart="locDragStart(event,${i})"
+             ondragover="locDragOver(event)"
+             ondrop="locDrop(event,${i})"
+             ondragleave="locDragLeave(event)">
+
           <span class="drag-handle" title="Drag to reorder">⠿</span>
           <span style="flex:1">${esc(l)}</span>
-          <button class="eye-btn ${hidden ? 'hidden-item' : ''}" title="${hidden ? 'Show' : 'Hide'}" onclick="toggleLocVis('${esc(l)}')">${hidden ? '👁‍🗨' : '👁'}</button>
-          <button class="btn sm dn" onclick="removeLocationByName('${esc(l)}')">✕</button>
-        </div>`;
+
+          <button class="eye-btn ${hidden ? 'hidden-item' : ''}"
+                  title="${hidden ? 'Show' : 'Hide'}"
+                  onclick="toggleLocVis(this.closest('.l-it').dataset.loc)">
+            ${hidden ? '👁‍🗨' : '👁'}
+          </button>
+
+          <button class="btn sm dn"
+                  onclick="removeLocationByName(this.closest('.l-it').dataset.loc)">
+            ✕
+          </button>
+        </div>
+      `;
         }).join('');
 
       // Player checkboxes in form
@@ -1655,6 +1725,30 @@
 
       applyAllSecs();
       renderTodaySection();
+      syncNewEventDateFromToday();
+    }
+
+    function syncNewEventDateFromToday() {
+      if (db.todayAbs == null) return;
+      const { year, dayOfYear } = fromAbsDay(db.todayAbs);
+      const yearInp = document.getElementById('ev-year');
+      const dayInp = document.getElementById('ev-day');
+      const monthSel = document.getElementById('ev-month');
+      if (!yearInp || !monthSel) return;
+      yearInp.value = year;
+      const cal = currentCal();
+      if (cal === 'harptos') {
+        const r = harptDayToPeriod(dayOfYear);
+        if (r) {
+          const midx = HARPTOS.indexOf(r.period);
+          monthSel.value = midx;
+          if (r.period.sp) { dayInp.value = 1; dayInp.disabled = true; }
+          else { dayInp.value = r.dayInPeriod; dayInp.disabled = false; }
+        }
+      } else {
+        const { m, d } = gregDayToMD(year, dayOfYear);
+        monthSel.value = m; dayInp.value = d; dayInp.disabled = false;
+      }
     }
 
     function renderTodaySection() {
@@ -1786,7 +1880,10 @@
     ════════════════════════════════════════ */
     function buildDateMarks() {
       const marks = [];
-      for (const seg of _segments) marks.push(..._buildRangeMarks(seg.minA, seg.maxA));
+      for (const seg of _segments) {
+        // Use the segment bounds directly — never generate marks for the CLUS_PAD buffer
+        marks.push(..._buildRangeMarks(seg.minA, seg.maxA));
+      }
       return marks;
     }
 
@@ -1911,7 +2008,12 @@
       };
 
       const seenYL = new Set();
-      const markCutoff = totalH - BOTTOM_PAD + 8; // don't render labels below this
+      // Hard pixel cutoff = end of last segment (no BOTTOM_PAD tolerance)
+      const lastSeg = _segments[_segments.length - 1];
+      const markCutoff = lastSeg ? (lastSeg.yStart + (lastSeg.maxA - lastSeg.minA + 1) * PPD - 1) : totalH;
+
+      // Clip both SVGs so nothing renders below the last segment
+
       for (const m of marks) {
         const y = dayY(m.a); if (y < -80 || y > markCutoff) continue;
         if (m.type === 'yearLabel') {
@@ -1940,45 +2042,76 @@
 
       // Today marker in sidebar
       if (db.todayAbs != null) {
-        const ty = dayY(db.todayAbs);
-        if (ty >= 0 && ty <= totalH)
+        const rawTy = dayY(db.todayAbs);
+        const ty = Math.max(4, Math.min(totalH - 4, rawTy));
+        const isOut = rawTy < 0 || rawTy > totalH;
+        const todayDate = fromAbsDay(db.todayAbs);
+        const todayLbl = formatDate(todayDate.year, todayDate.dayOfYear);
+        if (!isOut) {
           dH += `<rect x="0" y="${ty - 12}" width="${SIDE_W}" height="22" fill="${C.todayBg}"/>
         <line x1="0" y1="${ty}" x2="${SIDE_W}" y2="${ty}" stroke="${C.today}" stroke-width="2.5"/>
-        <text x="${SIDE_W - 4}" y="${ty - 4}" text-anchor="end" font-family="Cinzel,serif" font-size="11" fill="${C.today}" font-weight="700">TODAY</text>`;
+        <text x="${SIDE_W - 4}" y="${ty - 4}" text-anchor="end" font-family="Cinzel,serif" font-size="10" fill="${C.today}" font-weight="700">TODAY</text>
+        <text x="4" y="${ty + 14}" font-family="Cinzel,serif" font-size="9" fill="${C.today}" opacity=".8">${esc(todayLbl)}</text>`;
+        } else {
+          const atTop = rawTy <= 0;
+          const edgeY = atTop ? 8 : totalH - 8;
+          const arrow = atTop ? '▲' : '▼';
+          dH += `<rect x="0" y="${edgeY - 8}" width="${SIDE_W}" height="16" fill="${C.todayBg}"/>
+        <line x1="0" y1="${edgeY}" x2="${SIDE_W}" y2="${edgeY}" stroke="${C.today}" stroke-width="1.5" opacity=".6" stroke-dasharray="4,3"/>
+        <text x="4" y="${edgeY + (atTop ? 12 : -3)}" font-family="Cinzel,serif" font-size="9" fill="${C.today}" font-weight="700">${arrow} ${esc(todayLbl)}</text>`;
+        }
       }
 
-      svgD.innerHTML = dH;
+      // Build date SVG: first define clipPath, then wrap all content in it
+      const dClip = `<defs><clipPath id="dc"><rect x="0" y="0" width="${SIDE_W}" height="${markCutoff}"/></clipPath></defs>`;
+      svgD.innerHTML = dClip + `<g clip-path="url(#dc)">` + dH + `</g>`;
 
-      // Body
       svgB.setAttribute('width', totalW); svgB.setAttribute('height', totalH);
-      let h = `<rect width="${totalW}" height="${totalH}" fill="${C.bg}"/>`;
-      locs.forEach((_, i) => { const x = i * dynCOL; if (i % 2 === 1) h += `<rect x="${x}" y="0" width="${dynCOL}" height="${totalH}" fill="rgba(128,100,50,.03)"/>`; h += `<line x1="${x}" y1="0" x2="${x}" y2="${totalH}" stroke="${C.border}" stroke-width=".5" opacity=".6"/>`; });
-      h += `<line x1="${totalW}" y1="0" x2="${totalW}" y2="${totalH}" stroke="${C.border}" stroke-width=".5" opacity=".6"/>`;
 
-      // Gap markers in body
+      // Body — build in layers. hBg holds column stripes + grid lines + gap overlays.
+      // hBars (duration bars) goes BEFORE hBg so bars are truly behind everything.
+      let hBg = ``;
+      locs.forEach((_, i) => { const x = i * dynCOL; if (i % 2 === 1) hBg += `<rect x="${x}" y="0" width="${dynCOL}" height="${totalH}" fill="rgba(128,100,50,.03)"/>`; hBg += `<line x1="${x}" y1="0" x2="${x}" y2="${totalH}" stroke="${C.border}" stroke-width=".5" opacity=".6"/>`; });
+      hBg += `<line x1="${totalW}" y1="0" x2="${totalW}" y2="${totalH}" stroke="${C.border}" stroke-width=".5" opacity=".6"/>`;
+
+      // Gap markers
       for (let i = 0; i < _segments.length - 1; i++) {
         const s1 = _segments[i], s2 = _segments[i + 1];
         const gapY = s1.yStart + (s1.maxA - s1.minA + 1) * PPD;
         const gapH = s2.yStart - gapY;
-        h += `<rect x="0" y="${gapY}" width="${totalW}" height="${gapH}" fill="rgba(80,60,30,.09)"/>
+        hBg += `<rect x="0" y="${gapY}" width="${totalW}" height="${gapH}" fill="rgba(80,60,30,.09)"/>
       <line x1="0" y1="${gapY + gapH / 2}" x2="${totalW}" y2="${gapY + gapH / 2}" stroke="${C.goldDim}" stroke-width=".8" stroke-dasharray="8,5" opacity=".35"/>`;
       }
 
       for (const m of marks) {
         if (m.type === 'yearLabel' || m.type === 'day') continue;
         const y = dayY(m.a); if (y < 0 || y > markCutoff) continue;
-        if (m.type === 'special') h += `<rect x="0" y="${y - PPD / 2}" width="${totalW}" height="${Math.max(PPD, 2)}" fill="rgba(200,160,20,.04)"/><line x1="0" y1="${y - PPD / 2}" x2="${totalW}" y2="${y - PPD / 2}" stroke="${C.goldDim}" stroke-width=".8" opacity=".4"/>`;
-        else if (m.type === 'month' || m.type === 'year') h += `<line x1="0" y1="${y - PPD / 2}" x2="${totalW}" y2="${y - PPD / 2}" stroke="${C.border}" stroke-width=".5" opacity=".35"/>`;
-        else if (m.type === 'decade' || m.type === 'century' || m.type === 'millennium') { const big = m.type === 'millennium'; h += `<line x1="0" y1="${y}" x2="${totalW}" y2="${y}" stroke="${big ? C.goldDim : C.border2}" stroke-width="${big ? 1.2 : .7}" opacity=".5"/>`; }
+        if (m.type === 'special') hBg += `<rect x="0" y="${y - PPD / 2}" width="${totalW}" height="${Math.max(PPD, 2)}" fill="rgba(200,160,20,.04)"/><line x1="0" y1="${y - PPD / 2}" x2="${totalW}" y2="${y - PPD / 2}" stroke="${C.goldDim}" stroke-width=".8" opacity=".4"/>`;
+        else if (m.type === 'month' || m.type === 'year') hBg += `<line x1="0" y1="${y - PPD / 2}" x2="${totalW}" y2="${y - PPD / 2}" stroke="${C.border}" stroke-width=".5" opacity=".35"/>`;
+        else if (m.type === 'decade' || m.type === 'century' || m.type === 'millennium') { const big = m.type === 'millennium'; hBg += `<line x1="0" y1="${y}" x2="${totalW}" y2="${y}" stroke="${big ? C.goldDim : C.border2}" stroke-width="${big ? 1.2 : .7}" opacity=".5"/>`; }
       }
 
-      // Today line in body
+      // Today line — render even if outside visible segments, clamping to nearest edge with a flag
       if (db.todayAbs != null) {
-        const ty = dayY(db.todayAbs);
-        if (ty >= 0 && ty <= totalH)
-          h += `<rect x="0" y="${ty - 14}" width="${totalW}" height="28" fill="${C.todayBg}"/>
+        const rawTy = dayY(db.todayAbs);
+        // dayY returns boundary values for out-of-range abs days — clamp to visible area
+        const ty = Math.max(4, Math.min(totalH - 4, rawTy));
+        const isOutOfRange = rawTy < 0 || rawTy > totalH;
+        const todayDate = fromAbsDay(db.todayAbs);
+        const todayLabel = `TODAY · ${formatDate(todayDate.year, todayDate.dayOfYear)}`;
+        if (!isOutOfRange) {
+          hBg += `<rect x="0" y="${ty - 14}" width="${totalW}" height="28" fill="${C.todayBg}"/>
         <line x1="0" y1="${ty}" x2="${totalW}" y2="${ty}" stroke="${C.today}" stroke-width="2.5" opacity=".85"/>
-        <text x="8" y="${ty - 5}" font-family="Cinzel,serif" font-size="11" fill="${C.today}" opacity=".8" font-weight="700">TODAY</text>`;
+        <text x="8" y="${ty - 5}" font-family="Cinzel,serif" font-size="11" fill="${C.today}" opacity=".9" font-weight="700">${esc(todayLabel)}</text>`;
+        } else {
+          // Out of visible range — draw a pinned indicator at the top or bottom edge
+          const atTop = rawTy <= 0;
+          const edgeY = atTop ? 8 : totalH - 8;
+          const arrow = atTop ? '▲' : '▼';
+          hBg += `<rect x="0" y="${edgeY - 10}" width="${totalW}" height="20" fill="${C.todayBg}"/>
+        <line x1="0" y1="${edgeY}" x2="${totalW}" y2="${edgeY}" stroke="${C.today}" stroke-width="1.5" opacity=".6" stroke-dasharray="6,4"/>
+        <text x="8" y="${edgeY + (atTop ? 12 : -4)}" font-family="Cinzel,serif" font-size="11" fill="${C.today}" opacity=".85" font-weight="700">${arrow} ${esc(todayLabel)}</text>`;
+        }
       }
 
       // ── SLOT ASSIGNMENT ──────────────────────────────────────────────────────
@@ -2014,25 +2147,35 @@
       }
       function evStartY(ev) { return dayY(absDay(ev.year, ev.dayOfYear)); }
 
-      // evEndY returns pixel Y for the visual end of an event's duration,
-      // clamped to the end of whatever segment the event starts in.
+      // evEndY: pixel Y for the TRUE end of an event (last segment it spans)
       function evEndY(ev) {
         const dur = ev.durationDays || 1;
         if (dur <= 1) return evStartY(ev);
         const startAbs = absDay(ev.year, ev.dayOfYear);
         const endAbs = startAbs + dur - 1;
-        for (const s of _segments) {
-          if (startAbs >= s.minA && startAbs <= s.maxA) {
-            const clampedEnd = Math.min(endAbs, s.maxA);
-            return s.yStart + (clampedEnd - s.minA) * PPD + PPD / 2;
-          }
+        for (let si = _segments.length - 1; si >= 0; si--) {
+          const s = _segments[si];
+          if (endAbs < s.minA || startAbs > s.maxA) continue;
+          const segEnd = Math.min(endAbs, s.maxA);
+          return s.yStart + (segEnd - s.minA) * PPD + PPD / 2;
         }
         return evStartY(ev);
       }
 
-      // ── DURATION BARS ────────────────────────────────────────────────────────
-      // Draw bar segments for each timeline segment the event duration covers.
-      // If a gap is crossed, draw a dashed continuation on the other side.
+      // Y on a player's event bar at a specific absDay (for branching connections)
+      function evBarY(ev, atAbs) {
+        for (const s of _segments) {
+          if (atAbs >= s.minA && atAbs <= s.maxA)
+            return s.yStart + (atAbs - s.minA) * PPD + PPD / 2;
+        }
+        return evStartY(ev);
+      }
+
+      // ── RENDERING: separate buffers for z-order control ──────────────────────
+      // Order: background → bars → gap overlays → grid lines → connections → end circles → start circles
+      let hBars = '', hLines = '', hEndCircles = '', hStartCircles = '';
+
+      // ── DURATION BARS ─────────────────────────────────────────────────────────
       db.events.forEach(ev => {
         if (!locs.includes(ev.location)) return;
         const pls = getPlayers(ev).filter(p => !_hiddenPlayers.has(p.id));
@@ -2041,85 +2184,195 @@
         if (dur <= 1) return;
         const startAbs = absDay(ev.year, ev.dayOfYear);
         const endAbs = startAbs + dur - 1;
-        const cx = evCX(ev), barW = R * 1.4;
-        const color = pls[0].color;
+        const cx = evCX(ev), barW = R * 1.4, color = pls[0].color;
 
-        // Draw a bar piece for each segment that overlaps [startAbs, endAbs]
-        for (const s of _segments) {
+        for (let si = 0; si < _segments.length; si++) {
+          const s = _segments[si];
           if (endAbs < s.minA || startAbs > s.maxA) continue;
           const segStart = Math.max(startAbs, s.minA);
           const segEnd = Math.min(endAbs, s.maxA);
           const sy = s.yStart + (segStart - s.minA) * PPD + PPD / 2;
           const ey = s.yStart + (segEnd - s.minA) * PPD + PPD / 2;
           const dpx = ey - sy;
-          if (dpx < 2) continue;
-          // Full filled bar for this segment
-          h += `<rect x="${cx - barW / 2}" y="${sy}" width="${barW}" height="${dpx}"
-        fill="${color}" opacity=".2" rx="${barW / 2}"/>
-        <line x1="${cx}" y1="${sy + R}" x2="${cx}" y2="${ey}"
-          stroke="${color}" stroke-width="1.8" opacity=".3"/>`;
-          // If this isn't the last segment the event covers, draw a dashed tail
-          if (segEnd < endAbs) {
-            const tailEnd = s.yStart + (s.maxA - s.minA + 1) * PPD;
-            h += `<line x1="${cx}" y1="${ey}" x2="${cx}" y2="${tailEnd}"
-          stroke="${color}" stroke-width="1.5" opacity=".18" stroke-dasharray="3,3"/>`;
+          if (dpx >= 2) {
+            hBars += `<rect x="${cx - barW / 2}" y="${sy}" width="${barW}" height="${dpx}"
+          fill="${color}" opacity=".18" rx="${barW / 2}" pointer-events="none"/>
+          <line x1="${cx}" y1="${sy + R}" x2="${cx}" y2="${ey}"
+            stroke="${color}" stroke-width="2" opacity=".28" pointer-events="none"/>`;
           }
-          // If this isn't the first segment, draw a dashed lead-in from top of segment
-          if (segStart > startAbs) {
-            h += `<line x1="${cx}" y1="${s.yStart}" x2="${cx}" y2="${sy}"
-          stroke="${color}" stroke-width="1.5" opacity=".18" stroke-dasharray="3,3"/>`;
+          // Continuation through gap to next segment
+          if (segEnd < endAbs && si < _segments.length - 1) {
+            const s2 = _segments[si + 1];
+            const gapTop = s.yStart + (s.maxA - s.minA + 1) * PPD;
+            const gapBot = s2.yStart;
+            hBars += `<line x1="${cx}" y1="${gapTop}" x2="${cx}" y2="${gapBot}"
+          stroke="${color}" stroke-width="2" opacity=".22" stroke-dasharray="4,3" pointer-events="none"/>`;
+          }
+          // Lead-in from gap (this segment is a continuation)
+          if (segStart > startAbs && si > 0) {
+            const sPrev = _segments[si - 1];
+            const gapTop2 = sPrev.yStart + (sPrev.maxA - sPrev.minA + 1) * PPD;
+            const gapBot2 = s.yStart;
+            // Gap line already drawn by previous iteration; draw lead-in only if needed
+            if (gapBot2 > gapTop2) {
+              hBars += `<line x1="${cx}" y1="${gapBot2}" x2="${cx}" y2="${sy}"
+            stroke="${color}" stroke-width="2" opacity=".22" stroke-dasharray="4,3" pointer-events="none"/>`;
+            }
           }
         }
       });
 
-      // ── CONNECTION LINES ─────────────────────────────────────────────────────
-      // Connect each player's events: end of e1 → start of e2 (next chronologically)
+      // ── CONNECTION LINES ──────────────────────────────────────────────────────
       visiblePlayers().forEach(pl => {
-        const pEvs = db.events.filter(e => (e.playerIds || []).includes(pl.id) && locs.includes(e.location)).sort((a, b) => absDay(a.year, a.dayOfYear) - absDay(b.year, b.dayOfYear));
+        const pEvs = db.events
+          .filter(e => (e.playerIds || []).includes(pl.id) && locs.includes(e.location))
+          .sort((a, b) => absDay(a.year, a.dayOfYear) - absDay(b.year, b.dayOfYear));
+
         for (let i = 0; i < pEvs.length - 1; i++) {
           const e1 = pEvs[i], e2 = pEvs[i + 1];
+          const e1StartAbs = absDay(e1.year, e1.dayOfYear);
+          const e1EndAbs = e1StartAbs + (e1.durationDays || 1) - 1;
+          const e2StartAbs = absDay(e2.year, e2.dayOfYear);
           const cx1 = evCX(e1), cx2 = evCX(e2);
-          const y1 = evEndY(e1) + R, y2 = evStartY(e2) - R;
-          if (y2 <= y1 + 2) continue;
-          let path; if (Math.abs(cx1 - cx2) < 2) path = `M ${cx1},${y1} L ${cx2},${y2}`; else { const my = (y1 + y2) / 2; path = `M ${cx1},${y1} C ${cx1},${my} ${cx2},${my} ${cx2},${y2}`; }
-          h += `<path class="pl-line" data-pid="${pl.id}" d="${path}" stroke="${pl.color}" stroke-width="2" fill="none" opacity=".42" stroke-linecap="round"/>`;
+
+          let y1, y2;
+          if (e2StartAbs <= e1EndAbs && e1.durationDays > 1) {
+            // e2 starts DURING e1 — depart from e1 bar at e2's time, arrive at e2 start
+            y1 = evBarY(e1, e2StartAbs);
+            y2 = evStartY(e2);
+          } else {
+            y1 = evEndY(e1);
+            y2 = evStartY(e2);
+          }
+
+          const dx = Math.abs(cx1 - cx2), dy = Math.abs(y2 - y1);
+          // Skip only if truly same point
+          if (dx < 2 && dy < 2) continue;
+
+          // If same column (vertical line), offset slightly so it clears circles
+          let path;
+          if (dx < 2) {
+            const dir = y2 > y1 ? 1 : -1;
+            path = `M ${cx1},${y1 + dir * R} L ${cx2},${y2 - dir * R}`;
+          } else {
+            // Horizontal or diagonal — connect centre to centre regardless of Y distance
+            const my = (y1 + y2) / 2;
+            path = `M ${cx1},${y1} C ${cx1},${my} ${cx2},${my} ${cx2},${y2}`;
+          }
+          hLines += `<path class="pl-line" data-pid="${pl.id}" d="${path}" stroke="${pl.color}" stroke-width="2" fill="none" opacity=".5" stroke-linecap="round"/>`;
         }
       });
 
-      // ── EVENT CIRCLES ────────────────────────────────────────────────────────
-      // Track which (dayLocKey, pidKey) combos have already been drawn to avoid duplicates
+      // ── MANUAL CONNECTION LINES ────────────────────────────────────────────────
+      // When linking to/from a long duration event, connect to the bar at the
+      // appropriate time position rather than always the start or end.
+      db.events.forEach(e1 => {
+        if (!(e1.manualLinks || []).length) return;
+        if (!locs.includes(e1.location)) return;
+        const pls1 = getPlayers(e1).filter(p => !_hiddenPlayers.has(p.id));
+        if (!pls1.length) return;
+        e1.manualLinks.forEach(tid => {
+          const e2 = db.events.find(x => x.id === tid);
+          if (!e2 || !locs.includes(e2.location)) return;
+          const pls2 = getPlayers(e2).filter(p => !_hiddenPlayers.has(p.id));
+          if (!pls2.length) return;
+          const cx1 = evCX(e1), cx2 = evCX(e2);
+
+          // For the source: if e1 is a long duration event and e2's date falls within it,
+          // depart from e1's bar at e2's date. Otherwise depart from e1's start circle.
+          const e1StartAbs = absDay(e1.year, e1.dayOfYear);
+          const e1EndAbs = e1StartAbs + (e1.durationDays || 1) - 1;
+          const e2StartAbs = absDay(e2.year, e2.dayOfYear);
+          let y1;
+          if (e1.durationDays > 1 && e2StartAbs >= e1StartAbs && e2StartAbs <= e1EndAbs) {
+            y1 = evBarY(e1, e2StartAbs);
+          } else {
+            y1 = evStartY(e1);
+          }
+
+          // For the target: same logic in reverse
+          const e2EndAbs = e2StartAbs + (e2.durationDays || 1) - 1;
+          let y2;
+          if (e2.durationDays > 1 && e1StartAbs >= e2StartAbs && e1StartAbs <= e2EndAbs) {
+            y2 = evBarY(e2, e1StartAbs);
+          } else {
+            y2 = evStartY(e2);
+          }
+
+          const dx = Math.abs(cx1 - cx2), dy = Math.abs(y2 - y1);
+          if (dx < 2 && dy < 2) return;
+          let path;
+          if (dx < 2) {
+            const dir = y2 > y1 ? 1 : -1;
+            path = `M ${cx1},${y1 + dir * R} L ${cx2},${y2 - dir * R}`;
+          } else {
+            const my = (y1 + y2) / 2;
+            path = `M ${cx1},${y1} C ${cx1},${my} ${cx2},${my} ${cx2},${y2}`;
+          }
+          hLines += `<path d="${path}" stroke="${pls1[0].color}" stroke-width="1.8" fill="none" opacity=".55"
+        stroke-dasharray="6,4" stroke-linecap="round"/>`;
+        });
+      });
+
+      // ── EVENT CIRCLES — two passes: end circles first, start circles on top ───
       const drawnSlots = new Set();
       db.events.forEach(ev => {
         if (!locs.includes(ev.location)) return;
         const pls = getPlayers(ev).filter(p => !_hiddenPlayers.has(p.id));
         if (!pls.length) return;
 
-        // Dedup: same playerIds combo at same day/loc → draw once
-        const dk = `${absDay(ev.year, ev.dayOfYear)}__${ev.location}`;
+        const startAbs = absDay(ev.year, ev.dayOfYear);
         const pk = pidKey(ev);
-        const slotKey = `${dk}__${pk}`;
-        if (drawnSlots.has(slotKey)) return;
-        drawnSlots.add(slotKey);
-
-        const cx = evCX(ev), cy = evStartY(ev);
         const colors = pls.map(p => p.color), strokeC = darken(colors[0], .35);
-        const label = pls.length === 1 ? pls[0].name.slice(0, 2).toUpperCase() : `${pls.length}`;
-        // Collect all events sharing this slot for the pids attribute (needed for hover)
-        const shareEvs = db.events.filter(e => locs.includes(e.location) && absDay(e.year, e.dayOfYear) === absDay(ev.year, ev.dayOfYear) && e.location === ev.location && pidKey(e) === pk);
+        const shareEvs = db.events.filter(e => locs.includes(e.location) && absDay(e.year, e.dayOfYear) === startAbs && e.location === ev.location && pidKey(e) === pk);
         const allPids = [...new Set(shareEvs.flatMap(e => e.playerIds || []))].join(',');
-        // Use the first event's id as the click target; tooltip will list all titles
         const dur = ev.durationDays || 1;
-        const durBadge = dur > 1 ? `<text x="${cx + R + 2}" y="${cy - R + 3}" font-family="Cinzel,serif" font-size="10" fill="${C.textDim}" opacity=".85" pointer-events="none">${formatDuration(dur)}</text>` : '';
-        h += `<g class="ev-g" data-eid="${ev.id}" data-pids="${esc(allPids)}"
-      onmouseenter="onEvHover(event,'${ev.id}')" onmouseleave="onEvLeave()" onclick="onEvClick(event,'${ev.id}')">
-      <circle cx="${cx}" cy="${cy}" r="${R + 6}" fill="transparent"/>
-      ${pieSlices(cx, cy, R, colors, strokeC)}
-      <circle class="ev-ring" cx="${cx}" cy="${cy}" r="${R}" fill="none" stroke="transparent" stroke-width="2"/>
-      <text x="${cx}" y="${cy + 4}" text-anchor="middle" font-family="Cinzel,serif" font-size="${pls.length === 1 ? 10 : 11}" fill="white" pointer-events="none" font-weight="600">${label}</text>
-      ${durBadge}
-    </g>`;
+        const cx = evCX(ev);
+
+        // END circle (drawn into hEndCircles — below start circles in z-order)
+        if (dur > 1) {
+          const endAbs = startAbs + dur - 1;
+          const endSlotKey = `end__${endAbs}__${ev.location}__${pk}`;
+          if (!drawnSlots.has(endSlotKey)) {
+            drawnSlots.add(endSlotKey);
+            const ey = evEndY(ev);
+            const Re = Math.round(R * 0.7);
+            hEndCircles += `<g class="ev-g" data-eid="${ev.id}" data-pids="${esc(allPids)}"
+          onmouseenter="onEvHover(event,'${ev.id}')" onmouseleave="onEvLeave()" onclick="onEvClick(event,'${ev.id}')">
+          <circle cx="${cx}" cy="${ey}" r="${Re + 5}" fill="transparent"/>
+          ${pieSlices(cx, ey, Re, colors, strokeC)}
+          <circle cx="${cx}" cy="${ey}" r="${Re}" fill="none" stroke="${strokeC}" stroke-width="1.5"/>
+        </g>`;
+          }
+        }
+
+        // START circle (drawn into hStartCircles — always on top)
+        const slotKey = `${startAbs}__${ev.location}__${pk}`;
+        if (!drawnSlots.has(slotKey)) {
+          drawnSlots.add(slotKey);
+          const cy = evStartY(ev);
+          const label = pls.length === 1 ? pls[0].name.slice(0, 2).toUpperCase() : `${pls.length}`;
+          const durBadge = dur > 1 ? `<text x="${cx + R + 2}" y="${cy - R + 3}" font-family="Cinzel,serif" font-size="10" fill="${C.textDim}" opacity=".85" pointer-events="none">${formatDuration(dur)}</text>` : '';
+          hStartCircles += `<g class="ev-g" data-eid="${ev.id}" data-pids="${esc(allPids)}"
+        onmouseenter="onEvHover(event,'${ev.id}')" onmouseleave="onEvLeave()" onclick="onEvClick(event,'${ev.id}')">
+        <circle cx="${cx}" cy="${cy}" r="${R + 6}" fill="transparent"/>
+        ${pieSlices(cx, cy, R, colors, strokeC)}
+        <circle class="ev-ring" cx="${cx}" cy="${cy}" r="${R}" fill="none" stroke="transparent" stroke-width="2"/>
+        <text x="${cx}" y="${cy + 4}" text-anchor="middle" font-family="Cinzel,serif" font-size="${pls.length === 1 ? 10 : 11}" fill="white" pointer-events="none" font-weight="600">${label}</text>
+        ${durBadge}
+      </g>`;
+        }
       });
-      svgB.innerHTML = h;
+
+      // Compose final SVG:
+      // 1. background rect
+      // 2. duration bars (behind everything)
+      // 3. column stripes + grid lines + gap overlays + marks + today
+      // 4. connection lines
+      // 5. end circles
+      // 6. start circles (always on top)
+      const bgRect = `<rect width="${totalW}" height="${totalH}" fill="${C.bg}"/>`;
+      svgB.innerHTML = bgRect + hBars + hBg + hLines + hEndCircles + hStartCircles;
     }
 
     /* ════════════════════════════════════════
@@ -2129,16 +2382,22 @@
       const se = sortedEvents();
       document.getElementById('tbl-count').textContent = `${se.length} event${se.length === 1 ? '' : 's'}`;
       document.getElementById('tbl-head').innerHTML = `<tr>
-    <th>Date</th><th>Duration</th><th>Title</th><th>Location</th><th>Players</th><th>Description</th><th></th>
+    <th>Start Date</th><th>End Date</th><th>Title</th><th>Location</th><th>Players</th><th>Description</th><th></th>
   </tr>`;
       document.getElementById('tbl-body').innerHTML = se.length === 0
         ? `<tr><td colspan="7" style="text-align:center;color:var(--text-muted);font-style:italic;padding:24px">No events yet.</td></tr>`
         : se.map(ev => {
           const pls = getPlayers(ev);
           const dots = pls.map(p => `<span style="display:inline-flex;align-items:center;gap:3px"><span style="width:8px;height:8px;border-radius:50%;background:${p.color};display:inline-block"></span><span style="color:${p.color}">${esc(p.name)}</span></span>`).join(' ');
+          let endCell = '<span style="color:var(--text-muted)">—</span>';
+          if (ev.durationDays > 1) {
+            const endA = absDay(ev.year, ev.dayOfYear) + ev.durationDays - 1;
+            const { year: ey, dayOfYear: ed } = fromAbsDay(endA);
+            endCell = `<span style="color:var(--text-dim)">${esc(formatDate(ey, ed))}</span><br><span style="font-size:.74rem;color:var(--gold-dim)">${formatDuration(ev.durationDays)}</span>`;
+          }
           return `<tr>
           <td>${esc(formatDate(ev.year, ev.dayOfYear))}</td>
-          <td style="color:var(--gold-dim)">${ev.durationDays > 1 ? formatDuration(ev.durationDays) : '—'}</td>
+          <td>${endCell}</td>
           <td class="ev-tit">${esc(ev.title)}</td>
           <td>📍 ${esc(ev.location)}</td>
           <td><div class="pl-dots">${dots || '<span style="color:var(--text-muted)">—</span>'}</div></td>
@@ -2161,6 +2420,23 @@
       tb.addEventListener('mousedown', evDragStart);
       window.addEventListener('mousemove', evDragMove);
       window.addEventListener('mouseup', evDragEnd);
+      // Double-click zooms in 2× centred on the clicked position
+      tb.addEventListener('dblclick', e => {
+        if (e.target.closest('.ev-g')) return; // let event circles handle their own dblclick
+        const body = document.getElementById('tl-body');
+        const bodyR = body.getBoundingClientRect();
+        const clickY = e.clientY - bodyR.top + body.scrollTop;
+        const newPPD = Math.min(MAX_PPD, PPD * 2);
+        if (newPPD === PPD) return;
+        // Keep the clicked Y position stable after zoom
+        const ratio = newPPD / PPD;
+        PPD = newPPD;
+        document.getElementById('zoom').value = ppdToSlider(PPD);
+        document.getElementById('zlbl').textContent = granLabel();
+        renderTimeline();
+        // Scroll so the clicked point stays in the same visual position
+        setTimeout(() => { body.scrollTop = clickY * ratio - (e.clientY - bodyR.top); }, 0);
+      });
     }
     function evDragStart(e) {
       const g = e.target.closest('.ev-g'); if (!g) return;
@@ -2226,7 +2502,17 @@
         const locIdx = Math.max(0, Math.min(_dispLocs.length - 1, Math.floor(svgX / dynW2)));
         const newLocation = _dispLocs[locIdx];
         const newAbs = Math.max(0, yToAbsDay(svgY));
-        const { year, dayOfYear } = fromAbsDay(newAbs);
+        // Snap to the nearest valid segment day (avoid placing in gaps)
+        let snappedAbs = newAbs;
+        if (_segments.length) {
+          let bestDist = Infinity;
+          for (const s of _segments) {
+            const clamped = Math.max(s.minA, Math.min(s.maxA, newAbs));
+            const dist = Math.abs(clamped - newAbs);
+            if (dist < bestDist) { bestDist = dist; snappedAbs = clamped; }
+          }
+        }
+        const { year, dayOfYear } = fromAbsDay(snappedAbs);
         // Snap dayOfYear to valid range
         const safeDoY = Math.max(1, Math.min(currentCal() === 'harptos' ? 365 : gregDaysInYear(year), dayOfYear));
         const ev = db.events.find(x => x.id === evId);
@@ -2337,12 +2623,28 @@
       const cal = currentCal();
 
       if (type === 'new-profile') {
+        // Build month options for default Harptos (will refresh if calendar changes)
+        const hMopts = HARPTOS.map((p, i) => `<option value="${i}">${p.name}${p.sp ? ' ✦' : ''}</option>`).join('');
+        const gMopts = GREG_MONTHS.map((m, i) => `<option value="${i}">${m}</option>`).join('');
         box.innerHTML = `<h3>New Timeline</h3>
       <div class="fr"><label>Name</label><input id="m-pname" type="text" placeholder="My Campaign…" autofocus></div>
       <div class="fr"><label>Calendar</label>
-        <select id="m-pcal"><option value="harptos">Harptos (D&D Faerûn)</option><option value="gregorian">Gregorian</option></select></div>
+        <select id="m-pcal" onchange="onNewProfileCalChange(this)">
+          <option value="harptos">Harptos (D&D Faerûn)</option>
+          <option value="gregorian">Gregorian</option>
+        </select></div>
       <div class="fr"><label>Players (comma-separated, optional)</label><input id="m-pplayers" type="text" placeholder="Alice, Bob, Carol"></div>
       <div class="fr"><label>Locations (comma-separated, optional)</label><input id="m-plocs" type="text" placeholder="Waterdeep, Neverwinter"></div>
+      <div style="border-top:1px solid var(--border);padding-top:10px;margin-top:4px">
+        <div style="font-family:var(--fd);font-size:.62rem;letter-spacing:.1em;text-transform:uppercase;color:var(--gold-dim);margin-bottom:8px">Today Marker (optional)</div>
+        <div class="fg">
+          <div class="fr"><label>Year</label><input id="m-td-year" type="number" value="1492" min="1"></div>
+          <div class="fr"><label>Day</label><input id="m-td-day" type="number" value="1" min="1" max="30"></div>
+        </div>
+        <div class="fr"><label id="m-td-mlbl">Month / Festival</label>
+          <select id="m-td-month" onchange="onNewProfileTodayMonthChange(this)">${hMopts}</select></div>
+        <div style="font-size:.76rem;color:var(--text-muted);font-style:italic">Leave Year blank to skip setting a today marker.</div>
+      </div>
       <div class="ma"><button class="btn" onclick="closeModal()">Cancel</button><button class="btn gld" onclick="confirmNewProfile()">Create</button></div>`;
 
       } else if (type === 'add-player') {
@@ -2360,11 +2662,18 @@
       } else if (type === 'view-event') {
         const ev = data, pls = getPlayers(ev);
         const pdots = pls.map(p => `<span style="display:inline-flex;align-items:center;gap:4px;margin-right:6px"><span style="width:9px;height:9px;border-radius:50%;background:${p.color};display:inline-block"></span><span style="color:${p.color}">${esc(p.name)}</span></span>`).join('');
-        const dur = ev.durationDays > 1 ? `<div>⏱ <span style="color:var(--text)">${formatDuration(ev.durationDays)} (${ev.durationDays} days)</span></div>` : '';
+        let durRow = '';
+        if (ev.durationDays > 1) {
+          const endA = absDay(ev.year, ev.dayOfYear) + ev.durationDays - 1;
+          const { year: ey2, dayOfYear: ed2 } = fromAbsDay(endA);
+          durRow = `<div>⏱ <span style="color:var(--text)">${formatDuration(ev.durationDays)}</span>
+        <span style="color:var(--text-muted);margin:0 5px">→</span>
+        <span style="color:var(--text)">ends ${esc(formatDate(ey2, ed2))}</span></div>`;
+        }
         box.innerHTML = `<h3>${esc(ev.title)}</h3>
       <div style="font-size:.88rem;line-height:2;color:var(--text-dim)">
         <div>📅 <span style="color:var(--text)">${esc(formatDate(ev.year, ev.dayOfYear))}</span></div>
-        ${dur}
+        ${durRow}
         <div>📍 <span style="color:var(--text)">${esc(ev.location)}</span></div>
         <div>👤 ${pls.length ? pdots : '<span style="color:var(--text-muted)">—</span>'}</div>
         ${ev.description ? `<div style="margin-top:8px;font-style:italic;color:var(--text)">"${esc(ev.description)}"</div>` : ''}
@@ -2375,6 +2684,21 @@
         const ev = data;
         const { midx, day, special } = formMidxFromDoy(ev.dayOfYear, ev.year, cal);
         const sl = sortedLocs();
+        const otherEvs = sortedEvents().filter(e => e.id !== ev.id);
+        const mlRowsHtml = otherEvs.map(e => {
+          const linked = (ev.manualLinks || []).includes(e.id);
+          const pls2 = getPlayers(e);
+          const dot = pls2[0] ? `<span style="width:8px;height:8px;border-radius:50%;background:${pls2[0].color};display:inline-block;flex-shrink:0"></span>` : '';
+          return `<label class="pcl ml-row"><input type="checkbox" class="ml-chk" value="${e.id}" ${linked ? 'checked' : ''}>${dot}<span class="ml-label" style="font-size:.78rem">${esc(formatDate(e.year, e.dayOfYear))} – ${esc(e.title)}</span></label>`;
+        }).join('');
+        const linksHtml = otherEvs.length === 0
+          ? `<div style="color:var(--text-muted);font-style:italic;font-size:.82rem;padding:4px">No other events.</div>`
+          : `<div>
+          <input id="ml-search" type="text" placeholder="Filter events…" autocomplete="off"
+            style="width:100%;background:var(--surface2);border:1px solid var(--border);color:var(--text);padding:4px 7px;border-radius:2px;font-family:var(--fb);font-size:.82rem;margin-bottom:4px"
+            oninput="filterManualLinks(this.value)">
+          <div class="mpc" id="ml-list" style="max-height:100px">${mlRowsHtml}</div>
+        </div>`;
         box.innerHTML = `<h3>Edit Event</h3>
       <div class="fr"><label>Title</label><input id="m-ev-t" type="text" value="${esc(ev.title)}"></div>
       <div class="fr"><label>Players</label>${pchkHtml(ev.playerIds || [])}</div>
@@ -2388,6 +2712,7 @@
       <div class="fr"><label>Duration <span style="color:var(--text-muted);font-size:.65rem">(1d, 3m, 2y)</span></label>
         <input id="m-ev-dur" type="text" value="${ev.durationDays > 1 ? formatDuration(ev.durationDays).replace('~', '') : '1d'}"></div>
       <div class="fr"><label>Description</label><textarea id="m-ev-desc" rows="2">${esc(ev.description || '')}</textarea></div>
+      <div class="fr"><label>Manual connections <span style="color:var(--text-muted);font-size:.65rem">(dashed lines)</span></label>${linksHtml}</div>
       <div class="ma"><button class="btn" onclick="openEventModal('${ev.id}')">Cancel</button><button class="btn gld" onclick="saveEditEvent('${ev.id}')">Save</button></div>`;
 
       } else if (type === 'set-today') {
@@ -2411,6 +2736,23 @@
       </div>`;
       }
     }
+    function onNewProfileCalChange(sel) {
+      const cal = sel.value;
+      const mlbl = document.getElementById('m-td-mlbl');
+      const mSel = document.getElementById('m-td-month');
+      const dayInp = document.getElementById('m-td-day');
+      if (mlbl) mlbl.textContent = cal === 'harptos' ? 'Month / Festival' : 'Month';
+      if (mSel) mSel.innerHTML = cal === 'harptos'
+        ? HARPTOS.map((p, i) => `<option value="${i}">${p.name}${p.sp ? ' ✦' : ''}</option>`).join('')
+        : GREG_MONTHS.map((m, i) => `<option value="${i}">${m}</option>`).join('');
+      if (dayInp) { dayInp.disabled = false; }
+    }
+    function onNewProfileTodayMonthChange(sel) {
+      const cal = document.getElementById('m-pcal')?.value || 'harptos';
+      if (cal !== 'harptos') return;
+      const p = HARPTOS[+sel.value]; const d = document.getElementById('m-td-day');
+      if (p && p.sp) { d.value = 1; d.disabled = true; } else if (d) { d.disabled = false; }
+    }
     function onEditMonth(sel) {
       if (currentCal() !== 'harptos') return;
       const p = HARPTOS[+sel.value]; const d = document.getElementById('m-ev-d');
@@ -2429,9 +2771,11 @@
       const doy = doyFromForm(midx, day, year, cal);
       db.todayAbs = absDay(year, doy);
       saveDB(); closeModal(); renderTimeline();
+      renderTodaySection(); syncNewEventDateFromToday();
     }
-    function clearToday() { db.todayAbs = null; saveDB(); closeModal(); renderTimeline(); }
+    function clearToday() { db.todayAbs = null; saveDB(); closeModal(); renderTimeline(); renderTodaySection(); }
     function closeModal() { document.getElementById('mbg').style.display = 'none'; }
+    document.addEventListener('keydown', e => { if (e.key === 'Escape') { closeModal(); closeSearch(); } });
     function openEventModal(id) { const ev = db.events.find(e => e.id === id); if (ev) openModal('view-event', ev); }
     function editEvent(id) { const ev = db.events.find(e => e.id === id); if (ev) openModal('edit-event', ev); }
 
@@ -2444,7 +2788,17 @@
       const cal = document.getElementById('m-pcal').value;
       const players = document.getElementById('m-pplayers').value;
       const locs = document.getElementById('m-plocs').value;
-      closeModal(); createProfile(name, cal, players, locs);
+      // Read optional today marker
+      const tdYearRaw = document.getElementById('m-td-year').value.trim();
+      let todayAbs = null;
+      if (tdYearRaw) {
+        const tdYear = +tdYearRaw;
+        const tdMidx = +document.getElementById('m-td-month').value;
+        const tdDay = +document.getElementById('m-td-day').value || 1;
+        const tdDoy = doyFromForm(tdMidx, tdDay, tdYear, cal);
+        todayAbs = absDay(tdYear, tdDoy);
+      }
+      closeModal(); createProfile(name, cal, players, locs, todayAbs);
     }
     function confirmAddPlayer() {
       const name = document.getElementById('m-name').value.trim(); if (!name) return;
@@ -2455,17 +2809,35 @@
       if (!loc || db.locations.includes(loc)) return;
       db.locations.push(loc); db.locationOrder.push(loc); saveDB(); closeModal(); renderAll();
     }
+    function editPlayerColor(pid) {
+      const p = getPlayer(pid); if (!p) return;
+      // Use a temporary hidden input[type=color] for the native picker
+      let inp = document.getElementById('_color-picker');
+      if (!inp) { inp = document.createElement('input'); inp.type = 'color'; inp.id = '_color-picker'; inp.style.cssText = 'position:absolute;opacity:0;pointer-events:none;width:1px;height:1px'; document.body.appendChild(inp); }
+      inp.value = p.color;
+      inp.onchange = () => { p.color = inp.value; saveDB(); renderAll(); };
+      inp.click();
+    }
     function removePlayer(id) {
-      if (!confirm('Remove this player?')) return;
+      if (!confirm('Remove this player? Events with no other players will also be deleted.')) return;
       db.players = db.players.filter(p => p.id !== id);
+      // Remove player from all events, then delete events that have no players left
       db.events.forEach(ev => { ev.playerIds = (ev.playerIds || []).filter(pid => pid !== id); });
+      db.events = db.events.filter(ev => ev.playerIds.length > 0);
+      // Also remove any manual links pointing to now-deleted events
+      const validIds = new Set(db.events.map(e => e.id));
+      db.events.forEach(ev => { ev.manualLinks = (ev.manualLinks || []).filter(id => validIds.has(id)); });
       saveDB(); renderAll();
     }
     function removeLocationByName(loc) {
-      const has = db.events.some(e => e.location === loc);
-      if (has && !confirm(`"${loc}" has events. Remove anyway?`)) return;
+      const count = db.events.filter(e => e.location === loc).length;
+      if (count > 0 && !confirm(`"${loc}" has ${count} event${count === 1 ? '' : 's'}. Delete them all?`)) return;
+      db.events = db.events.filter(e => e.location !== loc);
       db.locations = db.locations.filter(l => l !== loc);
       db.locationOrder = db.locationOrder.filter(l => l !== loc);
+      // Clean up any manual links that now point to deleted events
+      const validIds = new Set(db.events.map(e => e.id));
+      db.events.forEach(ev => { ev.manualLinks = (ev.manualLinks || []).filter(id => validIds.has(id)); });
       saveDB(); renderAll();
     }
     function addEvent() {
@@ -2514,6 +2886,7 @@
       ev.dayOfYear = doyFromForm(midx, day, ev.year, cal);
       ev.description = document.getElementById('m-ev-desc').value.trim();
       ev.durationDays = parseDuration(document.getElementById('m-ev-dur').value);
+      ev.manualLinks = [...document.querySelectorAll('.ml-chk:checked')].map(i => i.value);
       saveDB(); closeModal(); renderAll();
     }
 

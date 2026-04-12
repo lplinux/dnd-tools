@@ -1,8 +1,6 @@
 # Small fixes
 ## Timeline
-* `fill="var(--text-muted)"` aparently is not been hidden, but everything is being overlaped at the end of the timeline
-* Events on the left side of the timeline are put behind the Date column
-* Events with a duration that cross over condensed timeframes doesn't continue the color after the timeframe
+* Long duration events shadow/line not be overlap by any other event
 
 # Breaking changes
 ## General
