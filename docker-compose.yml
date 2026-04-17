@@ -11,5 +11,35 @@ services:
       # Create the folder first: mkdir -p ./pdfs
       - ./pdfs:/app/pdfs:ro
     # Uncomment to override the port (also change app.js PORT constant):
-    # environment:
+    environment:
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_USER=dndtools
+      - DB_PASSWORD=dndtools123
+      - DB_NAME=dndtools
     #   - PORT=8080
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  postgres:
+    image: postgres:15-alpine
+    container_name: dnd-tools-db
+    environment:
+      POSTGRES_DB: dndtools
+      POSTGRES_USER: dndtools
+      POSTGRES_PASSWORD: dndtools123
+    ports:
+      - "15432:5432"
+    volumes:
+      - dnd_tools_data:/var/lib/postgresql/data
+      # - ./init.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U dndtools"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  dnd_tools_data:
+    driver: local

@@ -1,0 +1,474 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>👥 User Management</title>
+    <link
+        href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700&family=Crimson+Text:ital,wght@0,400;1,400&display=swap"
+        rel="stylesheet">
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        :root {
+            --bg: #13100b;
+            --surface: #1e1810;
+            --surface2: #272015;
+            --surface3: #302818;
+            --border: #3d3220;
+            --border2: #554428;
+            --gold: #c9a84c;
+            --gold-dim: #7a6030;
+            --gold-glow: #e8c96a;
+            --text: #e8dcc0;
+            --text-dim: #a09070;
+            --text-muted: #6a5a40;
+            --fd: 'Cinzel', 'Georgia', serif;
+            --fb: 'Crimson Text', 'Georgia', serif;
+        }
+
+        html,
+        body {
+            height: 100%;
+            overflow: hidden;
+        }
+
+        body {
+            font-family: var(--fb);
+            background: var(--bg);
+            color: var(--text);
+            font-size: 15px;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .app-header {
+            background: var(--surface);
+            border-bottom: 2px solid var(--gold-dim);
+            padding: 7px 14px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            flex-shrink: 0;
+            box-shadow: 0 2px 12px rgba(0, 0, 0, .5);
+        }
+
+        .app-title {
+            font-family: var(--fd);
+            font-size: .95rem;
+            color: var(--gold);
+            letter-spacing: .08em;
+            white-space: nowrap;
+            flex-shrink: 0;
+        }
+
+        .hdr-r {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-left: auto;
+        }
+
+        .back-btn {
+            background: var(--gold-dim);
+            color: var(--text);
+            border: none;
+            padding: 6px 12px;
+            border-radius: 2px;
+            font-family: var(--fd);
+            font-size: .7rem;
+            letter-spacing: .06em;
+            text-transform: uppercase;
+            cursor: pointer;
+            transition: background .15s;
+        }
+
+        .back-btn:hover {
+            background: var(--gold);
+            color: var(--bg);
+        }
+
+        .container {
+            flex: 1;
+            overflow: auto;
+            padding: 16px;
+        }
+
+        .section {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 2px;
+            margin-bottom: 24px;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, .3);
+            overflow: hidden;
+        }
+
+        .section-header {
+            background: var(--surface2);
+            border-bottom: 1px solid var(--border);
+            padding: 12px 16px;
+            font-family: var(--fd);
+            font-size: .75rem;
+            color: var(--gold);
+            letter-spacing: .08em;
+            text-transform: uppercase;
+        }
+
+        .section-body {
+            padding: 16px;
+        }
+
+        .form-group {
+            margin-bottom: 12px;
+        }
+
+        .form-group label {
+            display: block;
+            font-size: .75rem;
+            color: var(--text-dim);
+            margin-bottom: 4px;
+            font-family: var(--fd);
+            letter-spacing: .04em;
+            text-transform: uppercase;
+        }
+
+        .form-group input,
+        .form-group select {
+            width: 100%;
+            background: var(--surface2);
+            border: 1px solid var(--border2);
+            color: var(--text);
+            padding: 6px 9px;
+            border-radius: 2px;
+            font-family: var(--fb);
+            font-size: 14px;
+            transition: border-color .15s;
+        }
+
+        .form-group input:focus,
+        .form-group select:focus {
+            outline: none;
+            border-color: var(--gold-dim);
+        }
+
+        button.primary {
+            background: var(--gold-dim);
+            color: var(--text);
+            border: none;
+            padding: 6px 12px;
+            border-radius: 2px;
+            font-family: var(--fd);
+            font-size: .7rem;
+            letter-spacing: .06em;
+            text-transform: uppercase;
+            cursor: pointer;
+            transition: background .15s;
+            margin-right: 6px;
+        }
+
+        button.primary:hover {
+            background: var(--gold);
+            color: var(--bg);
+        }
+
+        button.danger {
+            background: #8b3a3a;
+            color: var(--text);
+            border: none;
+            padding: 6px 12px;
+            border-radius: 2px;
+            font-family: var(--fd);
+            font-size: .7rem;
+            letter-spacing: .06em;
+            text-transform: uppercase;
+            cursor: pointer;
+            transition: background .15s;
+            margin-right: 6px;
+        }
+
+        button.danger:hover {
+            background: #a83a3a;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 13px;
+        }
+
+        thead {
+            background: var(--surface2);
+        }
+
+        th {
+            padding: 10px;
+            text-align: left;
+            color: var(--gold);
+            font-weight: 600;
+            border-bottom: 1px solid var(--border);
+        }
+
+        td {
+            padding: 10px;
+            border-bottom: 1px solid var(--border);
+        }
+
+        tr:hover {
+            background: var(--surface3);
+        }
+
+        .role-tag {
+            background: var(--gold-dim);
+            color: var(--bg);
+            padding: 3px 6px;
+            border-radius: 2px;
+            font-size: 11px;
+            font-weight: bold;
+            text-transform: uppercase;
+            letter-spacing: .04em;
+        }
+
+        .role-tag.admin {
+            background: #8b3a3a;
+            color: var(--text);
+        }
+
+        .message {
+            padding: 10px;
+            border-radius: 2px;
+            margin-bottom: 12px;
+            font-size: 13px;
+        }
+
+        .message.success {
+            background: #1f3d1a;
+            color: #9fd49f;
+            border: 1px solid #3d5a3a;
+        }
+
+        .message.error {
+            background: #3d1f1f;
+            color: #d49f9f;
+            border: 1px solid #5a3d3d;
+        }
+
+        .form-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 12px;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="app-header">
+        <div class="app-title">👥 User Management</div>
+        <div class="hdr-r">
+            <button class="back-btn" onclick="location.href='/'">← Back</button>
+        </div>
+    </div>
+
+    <div class="container">
+        <!-- Create User -->
+        <div class="section">
+            <div class="section-header">Create User</div>
+            <div class="section-body">
+                <div id="createMessage"></div>
+                <form onsubmit="handleCreateUser(event)">
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label>Username</label>
+                            <input type="text" id="newUsername" required>
+                        </div>
+                        <div class="form-group">
+                            <label>Email</label>
+                            <input type="email" id="newEmail">
+                        </div>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label>Password</label>
+                            <input type="password" id="newPassword" required>
+                        </div>
+                        <div class="form-group">
+                            <label>Role</label>
+                            <select id="newRole">
+                                <option value="player">Player</option>
+                                <option value="dm">DM</option>
+                                <option value="admin">Admin</option>
+                            </select>
+                        </div>
+                    </div>
+                    <button type="submit" class="primary">Create User</button>
+                </form>
+            </div>
+        </div>
+
+        <!-- Users List -->
+        <div class="section">
+            <div class="section-header">Users</div>
+            <div class="section-body">
+                <div id="userMessage"></div>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Username</th>
+                            <th>Email</th>
+                            <th>Role</th>
+                            <th>Created</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="usersTable">
+                        <tr>
+                            <td colspan="5" style="text-align: center;">Loading...</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        async function loadUsers() {
+            try {
+                const response = await fetch('/api/users');
+                if (!response.ok) throw new Error('Failed to load users');
+
+                const users = await response.json();
+                const tbody = document.getElementById('usersTable');
+
+                tbody.innerHTML = users.map(user => `
+                    <tr>
+                        <td><strong>${user.username}</strong></td>
+                        <td>${user.email || '—'}</td>
+                        <td>
+                            <span class="role-tag ${user.role === 'admin' ? 'admin' : ''}">
+                                ${user.role.toUpperCase()}
+                            </span>
+                        </td>
+                        <td>${new Date(user.created_at).toLocaleDateString()}</td>
+                        <td>
+                            <button class="primary" onclick="changeRole(${user.id}, '${user.role}')">
+                                Change Role
+                            </button>
+                            <button class="primary" onclick="resetPassword(${user.id})">
+                                Reset Pass
+                            </button>
+                            <button class="danger" onclick="deleteUser(${user.id})">
+                                Delete
+                            </button>
+                        </td>
+                    </tr>
+                `).join('');
+            } catch (error) {
+                document.getElementById('usersTable').innerHTML =
+                    `<tr><td colspan="5" style="color: #d49f9f;">Error: ${error.message}</td></tr>`;
+            }
+        }
+
+        async function handleCreateUser(event) {
+            event.preventDefault();
+            const username = document.getElementById('newUsername').value;
+            const email = document.getElementById('newEmail').value;
+            const password = document.getElementById('newPassword').value;
+            const role = document.getElementById('newRole').value;
+            const msg = document.getElementById('createMessage');
+
+            try {
+                const response = await fetch('/api/users', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ username, email, password, role })
+                });
+
+                const data = await response.json();
+
+                if (response.ok) {
+                    msg.innerHTML = '<div class="message success">✓ User created successfully</div>';
+                    document.getElementById('newUsername').value = '';
+                    document.getElementById('newEmail').value = '';
+                    document.getElementById('newPassword').value = '';
+                    loadUsers();
+                    setTimeout(() => msg.innerHTML = '', 3000);
+                } else {
+                    msg.innerHTML = `<div class="message error">✗ ${data.error}</div>`;
+                }
+            } catch (error) {
+                msg.innerHTML = `<div class="message error">✗ Error: ${error.message}</div>`;
+            }
+        }
+
+        async function changeRole(userId, currentRole) {
+            const newRole = currentRole === 'admin' ? 'dm' : currentRole === 'dm' ? 'player' : 'admin';
+            if (!confirm(`Change role to ${newRole.toUpperCase()}?`)) return;
+
+            try {
+                const response = await fetch(`/api/users/${userId}/role`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ role: newRole })
+                });
+
+                if (response.ok) {
+                    loadUsers();
+                } else {
+                    const data = await response.json();
+                    alert('Error: ' + data.error);
+                }
+            } catch (error) {
+                alert('Error: ' + error.message);
+            }
+        }
+
+        async function resetPassword(userId) {
+            const newPass = prompt('New password:');
+            if (!newPass) return;
+
+            try {
+                const response = await fetch(`/api/users/${userId}/password`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ password: newPass })
+                });
+
+                if (response.ok) {
+                    alert('Password updated');
+                } else {
+                    const data = await response.json();
+                    alert('Error: ' + data.error);
+                }
+            } catch (error) {
+                alert('Error: ' + error.message);
+            }
+        }
+
+        async function deleteUser(userId) {
+            if (!confirm('Delete this user?')) return;
+
+            try {
+                const response = await fetch(`/api/users/${userId}`, {
+                    method: 'DELETE'
+                });
+
+                if (response.ok) {
+                    loadUsers();
+                } else {
+                    const data = await response.json();
+                    alert('Error: ' + data.error);
+                }
+            } catch (error) {
+                alert('Error: ' + error.message);
+            }
+        }
+
+        loadUsers();
+    </script>
+</body>
+
+</html>

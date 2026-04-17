@@ -2,247 +2,595 @@
 <html lang="en">
 
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>⚔ D&D Campaign Tools</title>
-  <link
-    href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700&family=Crimson+Text:ital,wght@0,400;1,400&display=swap"
-    rel="stylesheet">
-  <style>
-    *,
-    *::before,
-    *::after {
-      box-sizing: border-box;
-      margin: 0;
-      padding: 0
-    }
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🎲 D&D Campaign Tools</title>
+    <link
+        href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700&family=Crimson+Text:ital,wght@0,400;1,400&display=swap"
+        rel="stylesheet">
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
 
-    :root {
-      --bg: #13100b;
-      --surface: #1e1810;
-      --surface2: #272015;
-      --border: #3d3220;
-      --border2: #554428;
-      --gold: #c9a84c;
-      --gold-dim: #7a6030;
-      --gold-glow: #e8c96a;
-      --text: #e8dcc0;
-      --text-dim: #a09070;
-      --text-muted: #6a5a40;
-      --fd: 'Cinzel', 'Georgia', serif;
-      --fb: 'Crimson Text', 'Georgia', serif;
-    }
+        :root {
+            --bg: #13100b;
+            --surface: #1e1810;
+            --surface2: #272015;
+            --border: #3d3220;
+            --border2: #554428;
+            --gold: #c9a84c;
+            --gold-dim: #7a6030;
+            --text: #e8dcc0;
+            --text-dim: #a09070;
+            --fd: 'Cinzel', 'Georgia', serif;
+            --fb: 'Crimson Text', 'Georgia', serif;
+        }
 
-    html,
-    body {
-      height: 100%;
-      background: var(--bg);
-      color: var(--text);
-      font-family: var(--fb)
-    }
+        html,
+        body {
+            height: 100%;
+            background: var(--bg);
+            color: var(--text);
+            font-family: var(--fb);
+        }
 
-    body {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: flex-start;
-      min-height: 100vh;
-      padding: 40px 20px
-    }
+        body {
+            display: flex;
+            flex-direction: column;
+        }
 
-    /* ornamental header */
-    .title-wrap {
-      text-align: center;
-      margin-bottom: 48px
-    }
+        .header {
+            background: var(--surface);
+            border-bottom: 2px solid var(--gold-dim);
+            padding: 16px 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            box-shadow: 0 2px 12px rgba(0, 0, 0, .5);
+        }
 
-    .crest {
-      font-size: 2.8rem;
-      margin-bottom: 8px;
-      filter: drop-shadow(0 2px 8px rgba(200, 168, 76, .3))
-    }
+        .title {
+            font-family: var(--fd);
+            font-size: 28px;
+            color: var(--gold);
+            letter-spacing: .08em;
+        }
 
-    h1 {
-      font-family: var(--fd);
-      font-size: 2rem;
-      letter-spacing: .12em;
-      color: var(--gold);
-      line-height: 1.15;
-      text-shadow: 0 2px 12px rgba(200, 168, 76, .2)
-    }
+        .header-right {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
 
-    .subtitle {
-      font-family: var(--fb);
-      font-size: 1rem;
-      color: var(--text-muted);
-      margin-top: 8px;
-      font-style: italic;
-      letter-spacing: .04em
-    }
+        .user-info {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            font-size: 13px;
+        }
 
-    .divider {
-      width: 240px;
-      height: 1px;
-      background: linear-gradient(to right, transparent, var(--gold-dim), transparent);
-      margin: 18px auto 0
-    }
+        .role-badge {
+            background: var(--gold-dim);
+            color: var(--bg);
+            padding: 4px 8px;
+            border-radius: 2px;
+            font-family: var(--fd);
+            text-transform: uppercase;
+            font-size: 11px;
+            font-weight: bold;
+            letter-spacing: .04em;
+        }
 
-    /* grid of cards */
-    .grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
-      gap: 18px;
-      width: 100%;
-      max-width: 960px;
-    }
+        button {
+            background: var(--gold-dim);
+            color: var(--text);
+            border: none;
+            padding: 8px 14px;
+            border-radius: 2px;
+            font-family: var(--fd);
+            font-size: 12px;
+            letter-spacing: .06em;
+            text-transform: uppercase;
+            cursor: pointer;
+            transition: background .15s;
+        }
 
-    .card {
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: 4px;
-      padding: 22px 20px 18px;
-      text-decoration: none;
-      color: inherit;
-      display: flex;
-      flex-direction: column;
-      gap: 8px;
-      transition: border-color .18s, transform .18s, box-shadow .18s;
-      position: relative;
-      overflow: hidden;
-    }
+        button:hover {
+            background: var(--gold);
+            color: var(--bg);
+        }
 
-    .card::before {
-      content: '';
-      position: absolute;
-      inset: 0;
-      background: linear-gradient(135deg, rgba(200, 168, 76, .04) 0%, transparent 60%);
-      pointer-events: none;
-    }
+        .container {
+            flex: 1;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 32px 20px;
+            width: 100%;
+            overflow-y: auto;
+        }
 
-    .card:hover {
-      border-color: var(--gold-dim);
-      transform: translateY(-2px);
-      box-shadow: 0 8px 24px rgba(0, 0, 0, .4);
-    }
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 24px;
+        }
 
-    .card:hover .card-icon {
-      transform: scale(1.12);
-    }
+        .card {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 2px;
+            overflow: hidden;
+            box-shadow: 0 2px 12px rgba(0, 0, 0, .3);
+            transition: all .15s;
+            display: flex;
+            flex-direction: column;
+        }
 
-    .card-icon {
-      font-size: 1.8rem;
-      transition: transform .18s;
-      line-height: 1
-    }
+        .card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 16px rgba(0, 0, 0, .4);
+            border-color: var(--gold-dim);
+        }
 
-    .card-name {
-      font-family: var(--fd);
-      font-size: .88rem;
-      letter-spacing: .1em;
-      color: var(--gold);
-      text-transform: uppercase;
-    }
+        .card-header {
+            background: var(--surface2);
+            border-bottom: 1px solid var(--border);
+            padding: 16px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
 
-    .card-desc {
-      font-size: .9rem;
-      color: var(--text-dim);
-      line-height: 1.55;
-      font-style: italic;
-    }
+        .card-icon {
+            font-size: 28px;
+        }
 
-    .card-tag {
-      font-family: var(--fd);
-      font-size: .58rem;
-      letter-spacing: .1em;
-      text-transform: uppercase;
-      color: var(--text-muted);
-      background: var(--surface2);
-      border: 1px solid var(--border);
-      padding: 2px 7px;
-      border-radius: 10px;
-      display: inline-block;
-      align-self: flex-start;
-      margin-top: auto;
-      padding-top: 6px;
-    }
+        .card-title {
+            font-family: var(--fd);
+            font-size: 18px;
+            color: var(--gold);
+            letter-spacing: .04em;
+        }
 
-    footer {
-      margin-top: 56px;
-      font-size: .78rem;
-      color: var(--text-muted);
-      font-family: var(--fd);
-      letter-spacing: .07em;
-      text-align: center;
-    }
+        .card-body {
+            padding: 16px;
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
 
-    footer a {
-      color: var(--gold-dim);
-      text-decoration: none
-    }
+        .card-desc {
+            font-size: 14px;
+            color: var(--text-dim);
+            line-height: 1.5;
+        }
 
-    footer a:hover {
-      color: var(--gold)
-    }
-  </style>
+        .card-badge {
+            display: inline-block;
+            background: var(--border);
+            color: var(--gold-dim);
+            padding: 3px 7px;
+            border-radius: 2px;
+            font-size: 11px;
+            font-family: var(--fd);
+            letter-spacing: .04em;
+            text-transform: uppercase;
+            width: fit-content;
+        }
+
+        .card-badge.locked {
+            background: var(--border2);
+            color: var(--text-muted);
+        }
+
+        .card-footer {
+            padding: 16px;
+            border-top: 1px solid var(--border);
+        }
+
+        .card-link {
+            display: inline-block;
+            padding: 8px 14px;
+            background: var(--gold-dim);
+            color: var(--text);
+            text-decoration: none;
+            border-radius: 2px;
+            font-size: 12px;
+            font-family: var(--fd);
+            letter-spacing: .06em;
+            text-transform: uppercase;
+            transition: background .15s;
+            border: none;
+            cursor: pointer;
+            font-weight: 600;
+        }
+
+        .card-link:hover {
+            background: var(--gold);
+            color: var(--bg);
+        }
+
+        .card-link.disabled {
+            background: var(--border2);
+            color: var(--text-muted);
+            cursor: not-allowed;
+            opacity: .5;
+            pointer-events: none;
+        }
+
+        .hidden {
+            display: none !important;
+        }
+
+        /* LOGIN MODAL */
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, .7);
+            z-index: 1000;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .modal.active {
+            display: flex;
+        }
+
+        .modal-content {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            padding: 32px;
+            max-width: 400px;
+            width: 90%;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, .5);
+        }
+
+        .modal-title {
+            font-family: var(--fd);
+            font-size: 24px;
+            color: var(--gold);
+            margin-bottom: 20px;
+            letter-spacing: .04em;
+        }
+
+        .modal-close {
+            position: absolute;
+            top: 16px;
+            right: 16px;
+            background: transparent;
+            border: none;
+            color: var(--text-dim);
+            font-size: 24px;
+            cursor: pointer;
+            padding: 0;
+        }
+
+        .form-group {
+            margin-bottom: 14px;
+        }
+
+        .form-group label {
+            display: block;
+            font-size: 12px;
+            color: var(--text-dim);
+            margin-bottom: 6px;
+            font-family: var(--fd);
+            letter-spacing: .04em;
+            text-transform: uppercase;
+        }
+
+        .form-group input {
+            width: 100%;
+            background: var(--surface2);
+            border: 1px solid var(--border2);
+            color: var(--text);
+            padding: 8px 10px;
+            border-radius: 2px;
+            font-family: var(--fb);
+            font-size: 14px;
+            transition: border-color .15s;
+        }
+
+        .form-group input:focus {
+            outline: none;
+            border-color: var(--gold-dim);
+        }
+
+        .modal-button {
+            width: 100%;
+            padding: 10px;
+            background: var(--gold-dim);
+            color: var(--text);
+            border: none;
+            border-radius: 2px;
+            font-family: var(--fd);
+            font-size: 12px;
+            letter-spacing: .06em;
+            text-transform: uppercase;
+            cursor: pointer;
+            transition: background .15s;
+            font-weight: 600;
+            margin-bottom: 8px;
+        }
+
+        .modal-button:hover {
+            background: var(--gold);
+            color: var(--bg);
+        }
+
+        .error-message {
+            color: #ff6b6b;
+            font-size: 12px;
+            margin-bottom: 12px;
+        }
+
+        .footer {
+            background: var(--surface);
+            border-top: 1px solid var(--border);
+            padding: 16px;
+            text-align: center;
+            font-size: 12px;
+            color: var(--text-muted);
+        }
+
+        @media (max-width: 768px) {
+            .grid {
+                grid-template-columns: 1fr;
+            }
+
+            .header {
+                flex-direction: column;
+                gap: 12px;
+            }
+
+            .modal-content {
+                padding: 24px;
+            }
+        }
+    </style>
 </head>
 
 <body>
+    <div class="header">
+        <div class="title">🎲 D&D Tools</div>
+        <div class="header-right">
+            <div id="userDisplay" style="display: none;">
+                <span class="user-info">
+                    <span id="currentUsername"></span>
+                    <span class="role-badge" id="roleDisplay"></span>
+                </span>
+            </div>
+            <button id="loginBtn" onclick="openLogin()">🔐 Login</button>
+            <button id="logoutBtn" onclick="logout()" style="display: none; background: #dc3545;">Logout</button>
+        </div>
+    </div>
 
-  <div class="title-wrap">
-    <div class="crest">⚔</div>
-    <h1>D&amp;D Campaign Tools</h1>
-    <p class="subtitle">A collection of tools for tabletop RPG campaign management</p>
-    <div class="divider"></div>
-  </div>
+    <div class="container">
+        <div class="grid" id="moduleGrid">
+            <!-- Modules will be added here based on auth -->
+        </div>
+    </div>
 
-  <div class="grid">
+    <div class="footer">
+        <p>🎲 D&D Campaign Tools v3 — Public tools available without login</p>
+    </div>
 
-    <a class="card" href="/timeline">
-      <div class="card-icon">📜</div>
-      <div class="card-name">Campaign Timeline</div>
-      <div class="card-desc">Track events across the Calendar of Harptos or Gregorian time. Multiple profiles, player
-        lanes, durations, and a "Today" marker.</div>
-      <span class="card-tag">Planning · History</span>
-    </a>
+    <!-- LOGIN MODAL -->
+    <div class="modal" id="loginModal">
+        <div class="modal-content">
+            <button class="modal-close" onclick="closeLogin()">✕</button>
+            <div class="modal-title">Login</div>
+            <form onsubmit="handleLogin(event)">
+                <div id="loginError" class="error-message"></div>
+                <div class="form-group">
+                    <label>Username</label>
+                    <input type="text" id="username" required>
+                </div>
+                <div class="form-group">
+                    <label>Password</label>
+                    <input type="password" id="password" required>
+                </div>
+                <button type="submit" class="modal-button">Login</button>
+            </form>
+        </div>
+    </div>
 
-    <a class="card" href="/npc-sheet">
-      <div class="card-icon">🧙</div>
-      <div class="card-name">NPC Sheet</div>
-      <div class="card-desc">A fillable character sheet for non-player characters. Stats, spells, abilities, and class
-        selection in a printable layout.</div>
-      <span class="card-tag">Characters</span>
-    </a>
+    <script>
+        let currentUser = null;
 
-    <a class="card" href="/item-cards">
-      <div class="card-icon">🗡️</div>
-      <div class="card-name">Item Cards</div>
-      <div class="card-desc">Create beautifully formatted magic item cards. Fill in properties, flavour text,
-        attunement, and special abilities.</div>
-      <span class="card-tag">Loot · Items</span>
-    </a>
+        // Module definitions
+        const modules = {
+            npc: {
+                icon: '🧙',
+                title: 'NPC Sheet',
+                desc: 'Create D&D 5e NPC stat blocks with automatic ability modifiers.',
+                url: '/npc-sheet',
+                accessLevel: 'public'
+            },
+            items: {
+                icon: '🗡️',
+                title: 'Item Cards',
+                desc: 'Create magic item cards with rarities and special abilities.',
+                url: '/item-cards',
+                accessLevel: 'public'
+            },
+            split: {
+                icon: '🪟',
+                title: 'Split View',
+                desc: 'View multiple tools side-by-side with custom layouts.',
+                url: '/split-view',
+                accessLevel: 'public'
+            },
+            timeline: {
+                icon: '📜',
+                title: 'Timeline',
+                desc: 'Track campaign events across multiple calendar systems.',
+                url: '/timeline',
+                accessLevel: 'dm,player'
+            },
+            pdf: {
+                icon: '📖',
+                title: 'PDF Viewer',
+                desc: 'Access rulebooks and references with fullscreen support.',
+                url: '/pdf-viewer',
+                accessLevel: 'dm'
+            },
+            campaigns: {
+                icon: '🏰',
+                title: 'Manage Campaigns',
+                desc: 'Create and manage campaigns, players, and assignments.',
+                url: '/manage-campaigns',
+                accessLevel: 'dm'
+            },
+            pcsheet: {
+                icon: '🧝',
+                title: 'PC Character Sheet',
+                desc: 'Manage your player character — story, traits, relationships, and private notes.',
+                url: '/pc-sheet',
+                accessLevel: 'dm,player'
+            },
+            userpanel: {
+                icon: '⚙️',
+                title: 'User Panel',
+                desc: 'Admin panel to manage users, roles, and permissions.',
+                url: '/user-panel',
+                accessLevel: 'admin'
+            }
+        };
 
-    <a class="card" href="/split-view">
-      <div class="card-icon">🪟</div>
-      <div class="card-name">Split View</div>
-      <div class="card-desc">Side-by-side reference pane — display two documents or notes simultaneously during a
-        session.</div>
-      <span class="card-tag">Reference</span>
-    </a>
+        async function checkAuth() {
+            try {
+                const response = await fetch('/api/auth/user');
+                const data = await response.json();
 
-    <a class="card" href="/pdf-viewer">
-      <div class="card-icon">📖</div>
-      <div class="card-name">PDF Viewer</div>
-      <div class="card-desc">Browse and read PDF rulebooks, supplements, and adventure modules stored in the server's
-        pdfs/ folder.</div>
-      <span class="card-tag">Reference · Rules</span>
-    </a>
+                if (data.user) {
+                    currentUser = data.user;
+                    updateUI();
+                    renderModules();
+                } else {
+                    renderModules();
+                }
+            } catch (error) {
+                console.error('Auth check failed:', error);
+                renderModules();
+            }
+        }
 
-  </div>
+        function updateUI() {
+            document.getElementById('userDisplay').style.display = 'flex';
+            document.getElementById('loginBtn').style.display = 'none';
+            document.getElementById('logoutBtn').style.display = 'block';
+            document.getElementById('currentUsername').textContent = currentUser.username;
+            document.getElementById('roleDisplay').textContent = currentUser.role.toUpperCase();
+        }
 
-  <footer>
-    Running locally · <a href="https://github.com/lplinux/dnd-tools" target="_blank">GitHub</a>
-  </footer>
+        function canAccess(module) {
+            if (module.accessLevel === 'public') return true;
+            if (!currentUser) return false;
+            if (module.accessLevel === 'auth') return true;
+            return module.accessLevel.split(',').includes(currentUser.role);
+        }
 
+        function renderModules() {
+            const grid = document.getElementById('moduleGrid');
+            let html = '';
+
+            Object.entries(modules).forEach(([key, module]) => {
+                const canAccess_ = canAccess(module);
+                const locked = !canAccess_;
+
+                if (locked) return; // Hide locked modules entirely
+                html += `
+                    <div class="card">
+                        <div class="card-header">
+                            <div class="card-icon">${module.icon}</div>
+                            <div class="card-title">${module.title}</div>
+                        </div>
+                        <div class="card-body">
+                            <div class="card-desc">${module.desc}</div>
+                            <span class="card-badge ${locked ? 'locked' : ''}">${module.accessLevel === 'public' ? '🔓 Public' :
+                        module.accessLevel === 'auth' ? '🔐 Login Required' :
+                            module.accessLevel === 'admin' ? '🛠️ Admin Only' :
+                                '👑 Admin/DM Only'
+                    }</span>
+                        </div>
+                        <div class="card-footer">
+                            <a href="${module.url}" class="card-link ${locked ? 'disabled' : ''}">
+                                ${locked ? '🔒 Locked' : 'Open'}
+                            </a>
+                        </div>
+                    </div>
+                `;
+            });
+
+            grid.innerHTML = html;
+        }
+
+        function openLogin() {
+            document.getElementById('loginModal').classList.add('active');
+        }
+
+        function closeLogin() {
+            document.getElementById('loginModal').classList.remove('active');
+        }
+
+        async function handleLogin(event) {
+            event.preventDefault();
+            const username = document.getElementById('username').value;
+            const password = document.getElementById('password').value;
+            const errorDiv = document.getElementById('loginError');
+
+            try {
+                const response = await fetch('/api/auth/login', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ username, password })
+                });
+
+                const data = await response.json();
+
+                if (response.ok) {
+                    currentUser = data.user;
+                    updateUI();
+                    renderModules();
+                    closeLogin();
+                    document.getElementById('username').value = '';
+                    document.getElementById('password').value = '';
+                    errorDiv.textContent = '';
+                } else {
+                    errorDiv.textContent = data.error || 'Login failed';
+                }
+            } catch (error) {
+                errorDiv.textContent = 'Error: ' + error.message;
+            }
+        }
+
+        async function logout() {
+            await fetch('/api/auth/logout', { method: 'POST' });
+            currentUser = null;
+            document.getElementById('userDisplay').style.display = 'none';
+            document.getElementById('loginBtn').style.display = 'block';
+            document.getElementById('logoutBtn').style.display = 'none';
+            renderModules();
+        }
+
+        // Close modal on background click
+        document.getElementById('loginModal').addEventListener('click', (e) => {
+            if (e.target.id === 'loginModal') closeLogin();
+        });
+
+        // Initialize
+        checkAuth();
+    </script>
 </body>
 
 </html>

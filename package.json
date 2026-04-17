@@ -1,14 +1,19 @@
 {
   "name": "dnd-tools",
-  "version": "1.0.0",
-  "main": "index.js",
+  "version": "3.0.0",
+  "main": "app.js",
   "scripts": {
+    "start": "node app.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "author": "",
   "license": "ISC",
-  "description": "",
+  "description": "D&D 5e Campaign Tools with Authentication",
   "dependencies": {
-    "express": "^5.1.0"
+    "dotenv": "^16.0.0",
+    "express": "^5.1.0",
+    "pg": "^8.11.0",
+    "express-session": "^1.17.3",
+    "bcryptjs": "^2.4.3"
   }
 }
