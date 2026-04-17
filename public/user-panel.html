@@ -1,12 +1,19 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>👥 User Management</title>
-    <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700&family=Crimson+Text:ital,wght@0,400;1,400&display=swap" rel="stylesheet">
+    <link
+        href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700&family=Crimson+Text:ital,wght@0,400;1,400&display=swap"
+        rel="stylesheet">
     <style>
-        * { box-sizing: border-box; margin: 0; padding: 0; }
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
 
         :root {
             --bg: #13100b;
@@ -25,7 +32,11 @@
             --fb: 'Crimson Text', 'Georgia', serif;
         }
 
-        html, body { height: 100%; overflow: hidden; }
+        html,
+        body {
+            height: 100%;
+            overflow: hidden;
+        }
 
         body {
             font-family: var(--fb);
@@ -93,7 +104,7 @@
             border: 1px solid var(--border);
             border-radius: 2px;
             margin-bottom: 24px;
-            box-shadow: 0 2px 8px rgba(0,0,0,.3);
+            box-shadow: 0 2px 8px rgba(0, 0, 0, .3);
             overflow: hidden;
         }
 
@@ -168,6 +179,16 @@
         button.danger {
             background: #8b3a3a;
             color: var(--text);
+            border: none;
+            padding: 6px 12px;
+            border-radius: 2px;
+            font-family: var(--fd);
+            font-size: .7rem;
+            letter-spacing: .06em;
+            text-transform: uppercase;
+            cursor: pointer;
+            transition: background .15s;
+            margin-right: 6px;
         }
 
         button.danger:hover {
@@ -243,6 +264,7 @@
         }
     </style>
 </head>
+
 <body>
     <div class="app-header">
         <div class="app-title">👥 User Management</div>
@@ -303,7 +325,9 @@
                         </tr>
                     </thead>
                     <tbody id="usersTable">
-                        <tr><td colspan="5" style="text-align: center;">Loading...</td></tr>
+                        <tr>
+                            <td colspan="5" style="text-align: center;">Loading...</td>
+                        </tr>
                     </tbody>
                 </table>
             </div>
@@ -315,7 +339,7 @@
             try {
                 const response = await fetch('/api/users');
                 if (!response.ok) throw new Error('Failed to load users');
-                
+
                 const users = await response.json();
                 const tbody = document.getElementById('usersTable');
 
@@ -343,7 +367,7 @@
                     </tr>
                 `).join('');
             } catch (error) {
-                document.getElementById('usersTable').innerHTML = 
+                document.getElementById('usersTable').innerHTML =
                     `<tr><td colspan="5" style="color: #d49f9f;">Error: ${error.message}</td></tr>`;
             }
         }
@@ -446,4 +470,5 @@
         loadUsers();
     </script>
 </body>
+
 </html>

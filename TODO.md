@@ -1,13 +1,14 @@
 # Small fixes
-## General (tablet Claude)
+## General
 * Enter key should ADD/SAVE/accept/etc
 * Ensure all the modules have the "Go back" button as a pop up in the right bottom corner 
+* Any endpoint that is protected should redirect to the index.html instead of returning an unauthorized error
 
-## item-cards (tablet Claude)
+## item-cards
 * Print should only print the end card with format as seen in the browser (look&feel).
     * If not possible, we can use an image as background as in the `original` module
 
-## Players Character (PC) chart (tablet Claude)
+## Players Character (PC) chart
 ### Player Panel
 * Image is missing when generating the PDF to print
 
@@ -32,16 +33,17 @@
 * Reference already created Timelines (from `timeline` module) into Campaigns
 
 # New Tools
-## Journey Path Map
-A tool to draw your journey on a map
+## Journey Path Map for Campaigns
+A tool to draw your journey on a map. 
 
 ### General Features
+* A tool for DM
 * Set a Map as background
-* Define points for cities/locations
-* Define Groups/NPCs to track
+* Use the cities/locations from the Campaign
+* Define Groups/NPCs to track (in addition to the Players)
 * Define a matrix of distances between cities/locations
 * Display the direct paths with the distance and time in hours (walking, flying and by horse) between points
-* Allow to draw the paths taken by the Groups/NPCs
+* Allow to draw the paths taken by the Groups/NPCs/Players
 * Display the information of the paths
 
 
@@ -49,6 +51,3 @@ A tool to draw your journey on a map
 
 ## General
 * Player Profile with read/write for resources created by the player on the assigned campaigns
-
-# Permissions
-* Admin should only be able to create users

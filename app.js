@@ -43,8 +43,8 @@ function unhashId(token) {
 const pool = new Pool({
   user: process.env.DB_USER || 'dndtools',
   password: process.env.DB_PASSWORD || 'dndtools123',
-  host: process.env.DB_HOST || 'localhost',
-  port: process.env.DB_PORT || 15432,
+  host: process.env.DB_HOST || '127.0.0.1',
+  port: process.env.DB_PORT || 5432,
   database: process.env.DB_NAME || 'dndtools'
 });
 
@@ -300,10 +300,7 @@ app.get('/api/campaigns', requireAuth, async (req, res) => {
   try {
     let query, params;
 
-    if (req.session.role === 'admin') {
-      query = 'SELECT * FROM campaigns ORDER BY created_at DESC';
-      params = [];
-    } else if (req.session.role === 'dm') {
+    if (req.session.role === 'dm') {
       query = 'SELECT * FROM campaigns WHERE dm_user_id = $1 ORDER BY created_at DESC';
       params = [req.session.userId];
     } else {
@@ -321,7 +318,7 @@ app.get('/api/campaigns', requireAuth, async (req, res) => {
   }
 });
 
-app.post('/api/campaigns', requireRole(['admin', 'dm']), async (req, res) => {
+app.post('/api/campaigns', requireRole(['dm']), async (req, res) => {
   const { name, description } = req.body;
 
   if (!name) {
@@ -340,7 +337,7 @@ app.post('/api/campaigns', requireRole(['admin', 'dm']), async (req, res) => {
   }
 });
 
-app.delete('/api/campaigns/:id', requireRole(['admin', 'dm']), async (req, res) => {
+app.delete('/api/campaigns/:id', requireRole(['dm']), async (req, res) => {
   const { id } = req.params;
 
   try {
@@ -363,7 +360,7 @@ app.delete('/api/campaigns/:id', requireRole(['admin', 'dm']), async (req, res) 
 // CAMPAIGN PLAYERS
 // ============================================
 
-app.get('/api/campaigns/:campaignId/players', requireAuth, async (req, res) => {
+app.get('/api/campaigns/:campaignId/players', requireRole(['dm', 'player']), async (req, res) => {
   const { campaignId } = req.params;
 
   try {
@@ -381,7 +378,7 @@ app.get('/api/campaigns/:campaignId/players', requireAuth, async (req, res) => {
   }
 });
 
-app.post('/api/campaigns/:campaignId/players', requireRole(['admin', 'dm']), async (req, res) => {
+app.post('/api/campaigns/:campaignId/players', requireRole(['dm']), async (req, res) => {
   const { campaignId } = req.params;
   const { name, userId } = req.body;
 
@@ -412,7 +409,7 @@ app.post('/api/campaigns/:campaignId/players', requireRole(['admin', 'dm']), asy
   }
 });
 
-app.delete('/api/campaigns/:campaignId/players/:playerId', requireRole(['admin', 'dm']), async (req, res) => {
+app.delete('/api/campaigns/:campaignId/players/:playerId', requireRole(['dm']), async (req, res) => {
   const { campaignId, playerId } = req.params;
 
   try {
@@ -431,7 +428,7 @@ app.delete('/api/campaigns/:campaignId/players/:playerId', requireRole(['admin',
 // TIMELINE DATA (Database-backed)
 // ============================================
 
-app.get('/api/timeline/:campaignId', requireAuth, async (req, res) => {
+app.get('/api/timeline/:campaignId', requireRole(['dm', 'player']), async (req, res) => {
   const { campaignId } = req.params;
 
   try {
@@ -446,7 +443,7 @@ app.get('/api/timeline/:campaignId', requireAuth, async (req, res) => {
   }
 });
 
-app.post('/api/timeline/:campaignId', requireAuth, async (req, res) => {
+app.post('/api/timeline/:campaignId', requireRole(['dm', 'player']), async (req, res) => {
   const { campaignId } = req.params;
   const { date, title, description, type } = req.body;
 
@@ -462,7 +459,7 @@ app.post('/api/timeline/:campaignId', requireAuth, async (req, res) => {
   }
 });
 
-app.put('/api/timeline/:campaignId/:entryId', requireAuth, async (req, res) => {
+app.put('/api/timeline/:campaignId/:entryId', requireRole(['dm', 'player']), async (req, res) => {
   const { campaignId, entryId } = req.params;
   const { date, title, description, type } = req.body;
 
@@ -478,7 +475,7 @@ app.put('/api/timeline/:campaignId/:entryId', requireAuth, async (req, res) => {
   }
 });
 
-app.delete('/api/timeline/:campaignId/:entryId', requireAuth, async (req, res) => {
+app.delete('/api/timeline/:campaignId/:entryId', requireRole(['dm', 'player']), async (req, res) => {
   const { campaignId, entryId } = req.params;
 
   try {
@@ -513,11 +510,11 @@ app.get('/timeline', requireAuth, (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'timeline.html'));
 });
 
-app.get('/pdf-viewer', requireRole(['admin', 'dm']), (req, res) => {
+app.get('/pdf-viewer', requireRole(['dm']), (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'pdf-viewer.html'));
 });
 
-app.get('/manage-campaigns', requireRole(['admin', 'dm']), (req, res) => {
+app.get('/manage-campaigns', requireRole(['dm']), (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'manage-campaigns.html'));
 });
 
@@ -525,7 +522,7 @@ app.get('/user-panel', requireRole(['admin']), (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'user-panel.html'));
 });
 
-app.get('/pc-sheet', requireAuth, (req, res) => {
+app.get('/pc-sheet', requireRole(['dm', 'player']), (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'pc-sheet.html'));
 });
 
@@ -535,7 +532,7 @@ app.get('/pc-sheet', requireAuth, (req, res) => {
 
 // Helper: check if user can access a player's PC data
 async function canAccessPC(userId, userRole, playerId) {
-  if (userRole === 'admin' || userRole === 'dm') return true;
+  if (userRole === 'dm') return true;
   const result = await pool.query(
     'SELECT id FROM campaign_user_assignments WHERE player_id = $1 AND user_id = $2',
     [playerId, userId]
@@ -638,7 +635,7 @@ app.delete('/api/pc/:playerId/relationships/:relId', requireAuth, async (req, re
   } catch (error) { res.status(500).json({ error: error.message }); }
 });
 
-// Get DM notes (DM/admin see all; player sees only visible ones)
+// Get DM notes (DM see all; player sees only visible ones)
 app.get('/api/pc/:playerId/dm-notes', requireAuth, async (req, res) => {
   const { playerId } = req.params;
   try {
@@ -647,8 +644,8 @@ app.get('/api/pc/:playerId/dm-notes', requireAuth, async (req, res) => {
     }
     const charResult = await pool.query('SELECT id FROM pc_characters WHERE player_id = $1', [playerId]);
     if (charResult.rows.length === 0) return res.json([]);
-    const isDMOrAdmin = req.session.role === 'admin' || req.session.role === 'dm';
-    const query = isDMOrAdmin
+    const isDM = req.session.role === 'dm';
+    const query = isDM
       ? 'SELECT * FROM pc_dm_notes WHERE character_id = $1 ORDER BY created_at DESC'
       : 'SELECT * FROM pc_dm_notes WHERE character_id = $1 AND dm_visible = true ORDER BY created_at DESC';
     const result = await pool.query(query, [charResult.rows[0].id]);
@@ -657,7 +654,7 @@ app.get('/api/pc/:playerId/dm-notes', requireAuth, async (req, res) => {
 });
 
 // Add DM note
-app.post('/api/pc/:playerId/dm-notes', requireRole(['admin', 'dm']), async (req, res) => {
+app.post('/api/pc/:playerId/dm-notes', requireRole(['dm']), async (req, res) => {
   const { playerId } = req.params;
   const { content, dm_visible } = req.body;
   try {
@@ -678,7 +675,7 @@ app.post('/api/pc/:playerId/dm-notes', requireRole(['admin', 'dm']), async (req,
 });
 
 // Toggle DM note visibility
-app.put('/api/pc/:playerId/dm-notes/:noteId', requireRole(['admin', 'dm']), async (req, res) => {
+app.put('/api/pc/:playerId/dm-notes/:noteId', requireRole(['dm']), async (req, res) => {
   const { noteId } = req.params;
   const { dm_visible, content } = req.body;
   try {
@@ -691,7 +688,7 @@ app.put('/api/pc/:playerId/dm-notes/:noteId', requireRole(['admin', 'dm']), asyn
 });
 
 // Delete DM note
-app.delete('/api/pc/:playerId/dm-notes/:noteId', requireRole(['admin', 'dm']), async (req, res) => {
+app.delete('/api/pc/:playerId/dm-notes/:noteId', requireRole(['dm']), async (req, res) => {
   const { noteId } = req.params;
   try {
     await pool.query('DELETE FROM pc_dm_notes WHERE id = $1', [noteId]);
@@ -718,7 +715,7 @@ app.get('/api/pc-public/:playerToken', async (req, res) => {
 });
 
 // Get public token for a player (for sharing the public sheet URL)
-app.get('/api/pc/:playerId/public-token', requireAuth, async (req, res) => {
+app.get('/api/pc/:playerId/public-token', requireRole(['dm', 'player']), async (req, res) => {
   const playerId = parseInt(req.params.playerId);
   if (isNaN(playerId)) return res.status(400).json({ error: 'Invalid player ID' });
   res.json({ token: hashId(playerId) });
@@ -728,7 +725,7 @@ app.get('/api/pc/:playerId/public-token', requireAuth, async (req, res) => {
 // CAMPAIGN LOCATIONS
 // ============================================
 
-app.get('/api/campaigns/:campaignId/locations', requireAuth, async (req, res) => {
+app.get('/api/campaigns/:campaignId/locations', requireRole(['dm', 'player']), async (req, res) => {
   try {
     const result = await pool.query(
       'SELECT * FROM campaign_locations WHERE campaign_id = $1 ORDER BY created_at ASC',
@@ -738,7 +735,7 @@ app.get('/api/campaigns/:campaignId/locations', requireAuth, async (req, res) =>
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-app.post('/api/campaigns/:campaignId/locations', requireRole(['admin', 'dm']), async (req, res) => {
+app.post('/api/campaigns/:campaignId/locations', requireRole(['dm']), async (req, res) => {
   const { name, description } = req.body;
   if (!name) return res.status(400).json({ error: 'Name required' });
   try {
@@ -750,7 +747,7 @@ app.post('/api/campaigns/:campaignId/locations', requireRole(['admin', 'dm']), a
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-app.delete('/api/campaigns/:campaignId/locations/:locationId', requireRole(['admin', 'dm']), async (req, res) => {
+app.delete('/api/campaigns/:campaignId/locations/:locationId', requireRole(['dm']), async (req, res) => {
   try {
     await pool.query('DELETE FROM campaign_locations WHERE id = $1 AND campaign_id = $2',
       [req.params.locationId, req.params.campaignId]);
@@ -762,7 +759,7 @@ app.delete('/api/campaigns/:campaignId/locations/:locationId', requireRole(['adm
 // CAMPAIGN META (today_marker, etc.)
 // ============================================
 
-app.get('/api/campaigns/:campaignId/meta', requireAuth, async (req, res) => {
+app.get('/api/campaigns/:campaignId/meta', requireRole(['dm', 'player']), async (req, res) => {
   try {
     const result = await pool.query(
       'SELECT * FROM campaign_meta WHERE campaign_id = $1',
@@ -772,7 +769,7 @@ app.get('/api/campaigns/:campaignId/meta', requireAuth, async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-app.put('/api/campaigns/:campaignId/meta', requireRole(['admin', 'dm']), async (req, res) => {
+app.put('/api/campaigns/:campaignId/meta', requireRole(['dm']), async (req, res) => {
   const { today_marker } = req.body;
   try {
     const existing = await pool.query(
@@ -798,7 +795,7 @@ app.put('/api/campaigns/:campaignId/meta', requireRole(['admin', 'dm']), async (
 // PDF API
 // ============================================
 
-app.get('/api/pdfs', requireRole(['admin', 'dm']), async (req, res) => {
+app.get('/api/pdfs', requireRole(['dm']), async (req, res) => {
   const pdfsDir = path.join(__dirname, 'pdfs');
 
   try {
@@ -816,7 +813,7 @@ app.get('/api/pdfs', requireRole(['admin', 'dm']), async (req, res) => {
 
 async function initializeDatabase() {
   try {
-    console.log('Initializing database...');
+    console.log(`Initializing database...\n ${process.env.DB_HOST}:${process.env.DB_PORT} as ${process.env.DB_USER}`);
 
     // Users table
     await pool.query(`
@@ -950,6 +947,6 @@ app.listen(PORT, async () => {
   console.log(`\n📋 Routes:`);
   console.log(`  🔓 Public: /npc-sheet, /item-cards, /split-view`);
   console.log(`  🔐 Auth: /timeline, /pc-sheet`);
-  console.log(`  👑 DM/Admin: /manage-campaigns, /pdf-viewer`);
-  console.log(`  🛠️  Admin: /user-panel`);
+  console.log(`  👑 DM: /manage-campaigns, /pdf-viewer`);
+  console.log(`  🛠️ Admin: /user-panel`);
 });

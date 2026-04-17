@@ -11,8 +11,16 @@ services:
       # Create the folder first: mkdir -p ./pdfs
       - ./pdfs:/app/pdfs:ro
     # Uncomment to override the port (also change app.js PORT constant):
-    # environment:
+    environment:
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_USER=dndtools
+      - DB_PASSWORD=dndtools123
+      - DB_NAME=dndtools
     #   - PORT=8080
+    depends_on:
+      postgres:
+        condition: service_healthy
 
   postgres:
     image: postgres:15-alpine
