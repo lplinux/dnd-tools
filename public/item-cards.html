@@ -290,7 +290,7 @@
             border-radius: 2px;
             padding: 12px;
             margin-bottom: 12px;
-            font-size: 13px;
+            font-size: 23px;
             line-height: 1.5;
             transition: border-color .15s;
         }
@@ -321,7 +321,7 @@
 
         .card-name {
             font-family: var(--fd);
-            font-size: 1.1rem;
+            font-size: 3.1rem;
             color: var(--gold);
             margin-bottom: 4px;
             font-weight: 600;
@@ -329,7 +329,7 @@
 
         .card-type,
         .card-stats {
-            font-size: 12px;
+            font-size: 21px;
             color: var(--text-dim);
             margin-bottom: 6px;
         }
@@ -344,9 +344,109 @@
         }
 
         .card-abilities {
-            font-size: 12px;
+            font-size: 23px;
             color: var(--text);
-            white-space: pre-wrap;
+            white-space: normal;
+            line-height: 1.6;
+        }
+
+        /* Rich-text editor for Special Abilities */
+        .rte-wrap {
+            border: 1px solid var(--border2);
+            border-radius: 2px;
+            overflow: hidden;
+        }
+
+        .rte-toolbar {
+            display: flex;
+            gap: 1px;
+            background: var(--surface3);
+            border-bottom: 1px solid var(--border);
+            padding: 3px 4px;
+        }
+
+        .rte-btn {
+            background: transparent;
+            border: 1px solid transparent;
+            color: var(--text-dim);
+            width: 24px;
+            height: 22px;
+            border-radius: 2px;
+            font-size: 12px;
+            font-family: var(--fd);
+            line-height: 1;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all .1s;
+            flex-shrink: 0;
+        }
+
+        .rte-btn:hover {
+            background: var(--border2);
+            color: var(--gold);
+        }
+
+        .rte-btn.active {
+            background: var(--gold-dim);
+            color: var(--text);
+            border-color: var(--gold-dim);
+        }
+
+        .rte-sep {
+            width: 1px;
+            background: var(--border);
+            margin: 2px 3px;
+        }
+
+        #abilitiesEditor {
+            width: 100%;
+            min-height: 90px;
+            max-height: 220px;
+            overflow-y: auto;
+            background: var(--surface2);
+            color: var(--text);
+            padding: 7px 9px;
+            font-family: var(--fb);
+            font-size: 13px;
+            line-height: 1.6;
+            outline: none;
+            transition: border-color .15s;
+        }
+
+        #abilitiesEditor:focus {
+            border-color: var(--gold-dim);
+        }
+
+        /* Bullets inside the editor */
+        #abilitiesEditor ul {
+            padding-left: 1.4em;
+            margin: 2px 0;
+        }
+
+        #abilitiesEditor ul li {
+            margin: 1px 0;
+        }
+
+        /* Mirror bullet/bold/italic into preview card */
+        .card-abilities ul {
+            padding-left: 1.3em;
+            margin: 2px 0;
+        }
+
+        .card-abilities ul li {
+            margin: 1px 0;
+        }
+
+        .card-abilities b,
+        .card-abilities strong {
+            color: var(--gold);
+        }
+
+        .card-abilities i,
+        .card-abilities em {
+            color: var(--text-dim);
         }
 
         .uses-display {
@@ -363,6 +463,12 @@
             display: inline-block;
         }
 
+        #abilitiesEditor:empty::before {
+            content: attr(placeholder);
+            color: var(--text-muted);
+            pointer-events: none;
+        }
+
         @media (max-width: 1024px) {
             .main-content {
                 grid-template-columns: 1fr;
@@ -371,25 +477,9 @@
 
         @media print {
 
-            .app-header,
-            .sb-toggle,
-            .sidebar,
-            .form-panel {
+            /* card-only print is handled via the new window — block accidental direct prints */
+            body>* {
                 display: none !important;
-            }
-
-            .main-content {
-                padding: 0;
-                grid-template-columns: 1fr;
-            }
-
-            .preview-panel {
-                box-shadow: none;
-                border: none;
-            }
-
-            .preview-body {
-                padding: 0;
             }
         }
     </style>
@@ -418,24 +508,25 @@
                             <input type="text" id="formItemName" placeholder="e.g., Sword of Dragonslaying">
                         </div>
                         <div class="form-group">
-                            <label>Type</label>
+                            <label for="formItemType">Item Type</label>
                             <select id="formItemType" onchange="toggleTypeFields()">
-                                <option value="">Select item type</option>
-                                <option value="Weapon">Weapon</option>
-                                <option value="Armor">Armor</option>
+                                <option value="">Select item Type</option>
                                 <option value="Accessory">Accessory</option>
-                                <option value="Wondrous Item">Wondrous Item</option>
+                                <option value="Armor">Armor</option>
+                                <option value="Artifact">Artifact</option>
                                 <option value="Consumable">Consumable</option>
                                 <option value="Potion">Potion</option>
-                                <option value="Artifact">Artifact</option>
+                                <option value="Weapon">Weapon</option>
+                                <option value="Wondrous Item">Wondrous Item</option>
                             </select>
                         </div>
                         <div class="form-group">
                             <label>Rarity</label>
                             <select id="formItemRarity">
+                                <option value="">Select item Rarity</option>
                                 <option value="common">Common</option>
                                 <option value="uncommon">Uncommon</option>
-                                <option value="rare" selected>Rare</option>
+                                <option value="rare">Rare</option>
                                 <option value="veryrare">Very Rare</option>
                                 <option value="legendary">Legendary</option>
                                 <option value="artifact">Artifact</option>
@@ -470,6 +561,7 @@
                             <div class="form-group">
                                 <label>Type</label>
                                 <select id="formItemArmorType">
+                                    <option value="">Select Armor Type</option>
                                     <option>Light</option>
                                     <option>Medium</option>
                                     <option>Heavy</option>
@@ -486,8 +578,22 @@
 
                         <div class="form-group">
                             <label>Special Abilities</label>
-                            <textarea id="formItemAbilities"
-                                placeholder="List special powers and effects..."></textarea>
+                            <div class="rte-wrap">
+                                <div class="rte-toolbar" id="rteToolbar">
+                                    <button class="rte-btn" title="Bold (Ctrl+B)" onclick="rteCmd('bold')"
+                                        tabindex="-1"><b>B</b></button>
+                                    <button class="rte-btn" title="Italic (Ctrl+I)" onclick="rteCmd('italic')"
+                                        tabindex="-1"><i>I</i></button>
+                                    <div class="rte-sep"></div>
+                                    <button class="rte-btn" title="Bullet list" onclick="rteBullet()"
+                                        tabindex="-1">•≡</button>
+                                    <div class="rte-sep"></div>
+                                    <button class="rte-btn" title="Clear formatting" onclick="rteClear()"
+                                        tabindex="-1">✕</button>
+                                </div>
+                                <div id="abilitiesEditor" contenteditable="true" spellcheck="false"
+                                    oninput="updatePreview()" placeholder="List special powers and effects…"></div>
+                            </div>
                         </div>
 
                         <div class="form-checkbox-group">
@@ -498,7 +604,6 @@
                         </div>
                         <div class="s-content" id="actions-content">
                             <div class="s-form">
-                                <button class="s-button" onclick="window.print()">🖨️ Print</button>
                                 <button class="s-button" onclick="downloadCard()">💾 Download</button>
                                 <button class="s-button" onclick="clearForm()">Clear</button>
                             </div>
@@ -549,25 +654,18 @@
 
         function toggleTypeFields() {
             const type = document.getElementById('formItemType').value;
-            document.getElementById('itemType').value = type;
 
             // Hide all type-specific fields
-            document.getElementById('weaponFields').style.display = 'none';
-            document.getElementById('armorFields').style.display = 'none';
-            document.getElementById('consumableFields').style.display = 'none';
             document.getElementById('formWeaponFields').style.display = 'none';
             document.getElementById('formArmorFields').style.display = 'none';
             document.getElementById('formConsumableFields').style.display = 'none';
 
             // Show relevant fields
             if (type === 'Weapon') {
-                document.getElementById('weaponFields').style.display = 'block';
                 document.getElementById('formWeaponFields').style.display = 'block';
             } else if (type === 'Armor') {
-                document.getElementById('armorFields').style.display = 'block';
                 document.getElementById('formArmorFields').style.display = 'block';
             } else if (type === 'Consumable' || type === 'Potion') {
-                document.getElementById('consumableFields').style.display = 'block';
                 document.getElementById('formConsumableFields').style.display = 'block';
             }
             updatePreview();
@@ -578,7 +676,8 @@
             const type = document.getElementById('formItemType').value || 'Item';
             const rarity = document.getElementById('formItemRarity').value || 'rare';
             const flavor = document.getElementById('formItemFlavor').value || 'A legendary item forged by master craftsmen.';
-            const abilities = document.getElementById('formItemAbilities').value || '';
+            // Read rich HTML directly from the contenteditable editor
+            const abilitiesHtml = document.getElementById('abilitiesEditor').innerHTML;
             const attunement = document.getElementById('formItemAttunement').checked ? ' - Requires Attunement -' : '';
 
             const preview = document.getElementById('preview');
@@ -591,11 +690,14 @@
                 .map(a => a.trim())
                 .filter(a => a)
                 .join('<br>');
-            document.getElementById('previewAbilities').innerHTML = abilities
-                .split('\n')
-                .map(a => a.trim())
-                .filter(a => a)
-                .join('<br>');
+            // Paste rich HTML straight into preview — formatting is preserved
+            document.getElementById('previewAbilities').innerHTML = abilitiesHtml;
+
+            // Update toolbar button active states
+            ['bold', 'italic'].forEach(cmd => {
+                const btn = document.querySelector(`.rte-btn[title^="${cmd.charAt(0).toUpperCase() + cmd.slice(1)}"]`);
+                if (btn) btn.classList.toggle('active', document.queryCommandState(cmd));
+            });
 
             // Show/hide stats based on type
             const statsDiv = document.getElementById('previewStats');
@@ -635,12 +737,51 @@
 
         function downloadCard() {
             const preview = document.getElementById('preview');
-            html2canvas(preview).then(canvas => {
+            // 5 cm @ 300 dpi  =  5/2.54 * 300  ≈ 591 px
+            const TARGET_PX = 591;
+            const scale = TARGET_PX / preview.offsetWidth;
+            const bg = getComputedStyle(document.documentElement)
+                .getPropertyValue('--surface2').trim() || '#272015';
+            html2canvas(preview, { backgroundColor: bg, scale, logging: false }).then(canvas => {
                 const link = document.createElement('a');
                 link.href = canvas.toDataURL('image/png');
-                link.download = document.getElementById('formItemName').value.replace(/\s+/g, '-').toLowerCase() + '.png';
+                link.download = (document.getElementById('formItemName').value || 'item-card')
+                    .replace(/\s+/g, '-').toLowerCase() + '.png';
                 link.click();
             });
+        }
+
+
+        // ── Rich Text Editor helpers ──
+        function rteCmd(cmd) {
+            document.getElementById('abilitiesEditor').focus();
+            document.execCommand(cmd, false, null);
+            updatePreview();
+        }
+
+        function rteBullet() {
+            const ed = document.getElementById('abilitiesEditor');
+            ed.focus();
+            // If selection is in a UL, toggle it off; otherwise insert bullet
+            const inList = document.queryCommandState('insertUnorderedList');
+            document.execCommand('insertUnorderedList', false, null);
+            if (!inList) {
+                // Ensure consistent list styling matches card-abilities ul
+                const ul = ed.querySelector('ul:last-of-type');
+                if (ul) ul.style.cssText = '';
+            }
+            updatePreview();
+        }
+
+        function rteClear() {
+            const ed = document.getElementById('abilitiesEditor');
+            ed.focus();
+            document.execCommand('selectAll', false, null);
+            document.execCommand('removeFormat', false, null);
+            // Also strip any remaining UL/LI by unwrapping to plain text
+            document.execCommand('insertText', false,
+                ed.innerText.replace(/\n{3,}/g, '\n\n').trim());
+            updatePreview();
         }
 
         function clearForm() {
@@ -650,14 +791,27 @@
             document.querySelectorAll('input[type="checkbox"]').forEach(el => {
                 el.checked = false;
             });
+            // Clear rich-text editor
+            document.getElementById('abilitiesEditor').innerHTML = '';
             updatePreview();
         }
 
-        // Add event listeners for all inputs
+        // Event listeners — exclude the contenteditable (it fires its own oninput)
         document.querySelectorAll('input, textarea, select').forEach(el => {
             el.addEventListener('input', updatePreview);
             el.addEventListener('change', updatePreview);
         });
+
+        // Keyboard shortcuts
+        document.addEventListener('keydown', e => {
+            if (e.key === 'Escape') {
+                const modal = document.querySelector('.modal-overlay, [id*="modal"][style*="flex"]');
+                if (modal) modal.style.display = 'none';
+            }
+        });
+        // Track cursor moves inside editor to update toolbar active states
+        document.getElementById('abilitiesEditor').addEventListener('keyup', updatePreview);
+        document.getElementById('abilitiesEditor').addEventListener('mouseup', updatePreview);
 
         updatePreview();
     </script>

@@ -468,6 +468,13 @@
         }
 
         loadUsers();
+
+        // Enter key support
+        document.addEventListener('keydown', e => {
+            if (e.key !== 'Enter') return;
+            const t = e.target;
+            if (['newUsername', 'newEmail', 'newPassword'].includes(t.id)) createUser();
+        });
     </script>
 </body>
 

@@ -444,6 +444,13 @@
                 url: '/pdf-viewer',
                 accessLevel: 'dm'
             },
+            pcsheet: {
+                icon: '🧝',
+                title: 'PC Character Sheet',
+                desc: 'Manage your player character — story, traits, relationships, and private notes.',
+                url: '/pc-sheet',
+                accessLevel: 'dm,player'
+            },
             campaigns: {
                 icon: '🏰',
                 title: 'Manage Campaigns',
@@ -451,12 +458,12 @@
                 url: '/manage-campaigns',
                 accessLevel: 'dm'
             },
-            pcsheet: {
-                icon: '🧝',
-                title: 'PC Character Sheet',
-                desc: 'Manage your player character — story, traits, relationships, and private notes.',
-                url: '/pc-sheet',
-                accessLevel: 'dm,player'
+            journeymap: {
+                icon: '🗺️',
+                title: 'Journey Path Map',
+                desc: 'Draw party routes on a map. Track groups, NPCs and players, set distances and see travel times.',
+                url: '/journey-map',
+                accessLevel: 'dm'
             },
             userpanel: {
                 icon: '⚙️',
@@ -520,7 +527,8 @@
                             <span class="card-badge ${locked ? 'locked' : ''}">${module.accessLevel === 'public' ? '🔓 Public' :
                         module.accessLevel === 'auth' ? '🔐 Login Required' :
                             module.accessLevel === 'admin' ? '🛠️ Admin Only' :
-                                '👑 Admin/DM Only'
+                                module.accessLevel === 'dm' ? '🛠️ DM Only' :
+                                    '👑 DM/Player Only'
                     }</span>
                         </div>
                         <div class="card-footer">

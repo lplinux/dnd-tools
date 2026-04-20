@@ -1,53 +1,27 @@
 # Small fixes
 ## General
-* Enter key should ADD/SAVE/accept/etc
-* Ensure all the modules have the "Go back" button as a pop up in the right bottom corner 
-* Any endpoint that is protected should redirect to the index.html instead of returning an unauthorized error
-
-## item-cards
-* Print should only print the end card with format as seen in the browser (look&feel).
-    * If not possible, we can use an image as background as in the `original` module
-
-## Players Character (PC) chart
-### Player Panel
-* Image is missing when generating the PDF to print
-
-## Timeline
-* There should be 2 types of `timeline`: 
-    * public:
-        * Only mode for non-authenticated users
-        * Store data on browser cache
-    * private:
-        * Requires a Campaign to be selected and a Player
-        * Data must be stored on the DB and timeline should belong to a player and a campaign
-        * Today Marker, Calendar type and Locations should be completed from the "Manage Campaign"
-            * Players could not change, delete or add the previous items
-            * Players on the timeline should be a list of the relationships for that specific player and the player itself
-            * The only way to add Players to the timeline is by adding relationships
-        * DM should be able to see timelines on its campaigns (no matter the user that has created them)
+* Add template color selector on all modules among the Login button or the Account button (if logged in)
+* Item Card form should be cleared every time the "Item Type' is changed
+* Refactor CSS code to be DRY
 
 ## Manage Campaigns
 ### General Features
-* Create "private" timelines from this module
-* "Today Marker" should be a calendar same as in the `timeline`. Select the type of Calendar on Campaing creation and the Marker should display a calendar pop-up to select the date
-* Reference already created Timelines (from `timeline` module) into Campaigns
+* Create "private" timelines from the Manage Campaigns module as well as from the Timeline Module
+    * There should be a button to create Timelines and assign them to Players
 
-# New Tools
-## Journey Path Map for Campaigns
-A tool to draw your journey on a map. 
+## Timeline
+* Combined Timeline for DMs should only display 1 graph ("Combined view - Read Only" should be removed)
+    * A button to create a public link for the combined view
+    * Events in this view should not be editable
 
-### General Features
-* A tool for DM
-* Set a Map as background
-* Use the cities/locations from the Campaign
-* Define Groups/NPCs to track (in addition to the Players)
-* Define a matrix of distances between cities/locations
-* Display the direct paths with the distance and time in hours (walking, flying and by horse) between points
-* Allow to draw the paths taken by the Groups/NPCs/Players
+## Journey Path Map
+* Players for the Campaign should appear as Trackers (they should not be deleted)
+* Locations can be pinned only once
+* Pick location list should only show those that are not pinned yet
+* Pin for location is not set correctly
+* Changing tools (select/move, place location, pan, etc) should have shortcuts (the button should show the shortcut)
+    * Pan should be able to be done by holding the Alt/command key in the keyboard (the button should show the shortcut)
+* Distance Matrix should be a menu/section to configure and check it independently of the map
+* Distance Matrix doesn't refresh automatically when save the distance
+* Distances Time measure for walking, riding, flying should be taken as 8 hours per day of movement and not 24 hours. Rounded up in days.
 * Display the information of the paths
-
-
-# Others
-
-## General
-* Player Profile with read/write for resources created by the player on the assigned campaigns

@@ -1,0 +1,1976 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>🗺️ Journey Path Map</title>
+  <link
+    href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700&family=Crimson+Text:ital,wght@0,400;1,400&display=swap"
+    rel="stylesheet">
+  <script src="/header-component.js"></script>
+  <style>
+    *,
+    *::before,
+    *::after {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    :root {
+      --bg: #13100b;
+      --surface: #1e1810;
+      --surface2: #272015;
+      --surface3: #30281a;
+      --border: #3d3220;
+      --border2: #554428;
+      --gold: #c9a84c;
+      --gold-dim: #7a6030;
+      --gold-glow: rgba(201, 168, 76, .15);
+      --text: #e8dcc0;
+      --text-dim: #a09070;
+      --text-muted: #6a5a40;
+      --red: #8b3a3a;
+      --red-hover: #a83a3a;
+      --fd: 'Cinzel', 'Georgia', serif;
+      --fb: 'Crimson Text', 'Georgia', serif;
+    }
+
+    html,
+    body {
+      height: 100%;
+      overflow: hidden;
+    }
+
+    body {
+      font-family: var(--fb);
+      background: var(--bg);
+      color: var(--text);
+      font-size: 15px;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* ─── HEADER ─────────────────────────────── */
+    .app-header {
+      background: var(--surface);
+      border-bottom: 2px solid var(--gold-dim);
+      padding: 7px 14px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-shrink: 0;
+      box-shadow: 0 2px 12px rgba(0, 0, 0, .5);
+      flex-wrap: wrap;
+    }
+
+    .app-title {
+      font-family: var(--fd);
+      font-size: .9rem;
+      color: var(--gold);
+      letter-spacing: .08em;
+      white-space: nowrap;
+    }
+
+    .hdr-sep {
+      width: 1px;
+      height: 20px;
+      background: var(--border2);
+      flex-shrink: 0;
+    }
+
+    .hdr-r {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-left: auto;
+      flex-wrap: wrap;
+    }
+
+    .hdr-sel {
+      background: var(--surface2);
+      border: 1px solid var(--border2);
+      color: var(--text);
+      padding: 4px 8px;
+      border-radius: 2px;
+      font-family: var(--fb);
+      font-size: 13px;
+      max-width: 180px;
+    }
+
+    .hdr-sel:focus {
+      outline: none;
+      border-color: var(--gold-dim);
+    }
+
+    .back-btn,
+    .hdr-btn {
+      background: var(--gold-dim);
+      color: var(--text);
+      border: none;
+      padding: 5px 11px;
+      border-radius: 2px;
+      font-family: var(--fd);
+      font-size: .65rem;
+      letter-spacing: .06em;
+      text-transform: uppercase;
+      cursor: pointer;
+      transition: background .15s;
+      white-space: nowrap;
+    }
+
+    .back-btn:hover,
+    .hdr-btn:hover {
+      background: var(--gold);
+      color: var(--bg);
+    }
+
+    .hdr-btn.danger {
+      background: var(--red);
+    }
+
+    .hdr-btn.danger:hover {
+      background: var(--red-hover);
+    }
+
+    /* ─── MAIN LAYOUT ────────────────────────── */
+    .layout {
+      flex: 1;
+      display: grid;
+      grid-template-columns: 248px 1fr 272px;
+      overflow: hidden;
+    }
+
+    /* ─── SIDEBAR ────────────────────────────── */
+    .sidebar {
+      background: var(--surface);
+      border-right: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    .sb-body {
+      flex: 1;
+      overflow-y: auto;
+    }
+
+    .sb-sec {
+      border-bottom: 1px solid var(--border);
+    }
+
+    .sb-hd {
+      background: var(--surface2);
+      padding: 8px 12px;
+      font-family: var(--fd);
+      font-size: .68rem;
+      color: var(--gold);
+      letter-spacing: .08em;
+      text-transform: uppercase;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      user-select: none;
+      transition: background .12s;
+    }
+
+    .sb-hd:hover {
+      background: var(--surface3);
+    }
+
+    .sb-hd .arr {
+      font-size: .55rem;
+      transition: transform .15s;
+    }
+
+    .sb-hd.collapsed .arr {
+      transform: rotate(-90deg);
+    }
+
+    .sb-body-sec {
+      padding: 8px;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .sb-body-sec.collapsed {
+      display: none;
+    }
+
+    /* Tool buttons */
+    .tool-btn {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      padding: 7px 10px;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      color: var(--text-dim);
+      border-radius: 2px;
+      font-family: var(--fb);
+      font-size: 13px;
+      cursor: pointer;
+      transition: all .12s;
+      text-align: left;
+      width: 100%;
+    }
+
+    .tool-btn:hover {
+      background: var(--surface3);
+      color: var(--text);
+      border-color: var(--gold-dim);
+    }
+
+    .tool-btn.active {
+      background: var(--gold-dim);
+      border-color: var(--gold);
+      color: var(--text);
+    }
+
+    .tool-icon {
+      font-size: 13px;
+      flex-shrink: 0;
+    }
+
+    /* List items */
+    .list-item {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 8px;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 2px;
+      font-size: 12px;
+      cursor: pointer;
+      transition: all .12s;
+    }
+
+    .list-item:hover {
+      border-color: var(--gold-dim);
+    }
+
+    .list-item.active {
+      border-color: var(--gold);
+      background: var(--surface3);
+    }
+
+    .list-item .dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+
+    .list-item .lbl {
+      flex: 1;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .list-item .del {
+      opacity: 0;
+      font-size: 10px;
+      color: var(--text-muted);
+      cursor: pointer;
+      flex-shrink: 0;
+    }
+
+    .list-item:hover .del {
+      opacity: 1;
+    }
+
+    .list-item .del:hover {
+      color: var(--red-hover);
+    }
+
+    /* Mini input row */
+    .mini-row {
+      display: flex;
+      gap: 4px;
+      margin-top: 4px;
+    }
+
+    .mini-in {
+      flex: 1;
+      background: var(--surface2);
+      border: 1px solid var(--border2);
+      color: var(--text);
+      padding: 5px 7px;
+      border-radius: 2px;
+      font-family: var(--fb);
+      font-size: 12px;
+    }
+
+    .mini-in:focus {
+      outline: none;
+      border-color: var(--gold-dim);
+    }
+
+    .mini-add {
+      background: var(--gold-dim);
+      color: var(--text);
+      border: none;
+      padding: 5px 9px;
+      border-radius: 2px;
+      font-family: var(--fd);
+      font-size: .65rem;
+      cursor: pointer;
+      transition: background .12s;
+      white-space: nowrap;
+    }
+
+    .mini-add:hover {
+      background: var(--gold);
+      color: var(--bg);
+    }
+
+    .mini-sel {
+      background: var(--surface2);
+      border: 1px solid var(--border2);
+      color: var(--text);
+      padding: 5px 4px;
+      border-radius: 2px;
+      font-family: var(--fb);
+      font-size: 12px;
+    }
+
+    .color-swatches {
+      display: flex;
+      gap: 4px;
+      flex-wrap: wrap;
+      margin-top: 4px;
+    }
+
+    .swatch {
+      width: 18px;
+      height: 18px;
+      border-radius: 50%;
+      cursor: pointer;
+      border: 2px solid transparent;
+      transition: transform .1s;
+    }
+
+    .swatch:hover {
+      transform: scale(1.2);
+    }
+
+    .swatch.sel {
+      border-color: #fff;
+    }
+
+    .hint {
+      font-size: 11px;
+      color: var(--text-muted);
+      line-height: 1.4;
+      padding: 4px 2px;
+    }
+
+    /* ─── MAP CANVAS ─────────────────────────── */
+    .map-area {
+      position: relative;
+      overflow: hidden;
+      background: #0a0807;
+      cursor: default;
+      outline: none;
+    }
+
+    .map-area.tool-pan {
+      cursor: grab;
+    }
+
+    .map-area.tool-pan:active {
+      cursor: grabbing;
+    }
+
+    .map-area.tool-place {
+      cursor: crosshair;
+    }
+
+    .map-area.tool-draw {
+      cursor: crosshair;
+    }
+
+    .map-area.tool-delete {
+      cursor: not-allowed;
+    }
+
+    .map-viewport {
+      position: absolute;
+      transform-origin: 0 0;
+      transition: none;
+    }
+
+    .map-img {
+      display: block;
+      pointer-events: none;
+      user-select: none;
+    }
+
+    .map-svg {
+      position: absolute;
+      top: 0;
+      left: 0;
+      overflow: visible;
+    }
+
+    /* empty map state */
+    .map-empty {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 12px;
+      color: var(--text-muted);
+    }
+
+    .map-empty .em-icon {
+      font-size: 48px;
+      opacity: .35;
+    }
+
+    .map-empty p {
+      font-family: var(--fd);
+      font-size: .8rem;
+      letter-spacing: .08em;
+      opacity: .45;
+    }
+
+    .upload-zone {
+      border: 2px dashed var(--border2);
+      padding: 12px 22px;
+      border-radius: 2px;
+      font-size: 12px;
+      color: var(--text-dim);
+      cursor: pointer;
+      transition: border-color .15s;
+      text-align: center;
+      pointer-events: all;
+    }
+
+    .upload-zone:hover {
+      border-color: var(--gold-dim);
+      color: var(--gold);
+    }
+
+    /* zoom controls */
+    .zoom-ctrl {
+      position: absolute;
+      bottom: 14px;
+      right: 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+      z-index: 10;
+    }
+
+    .zoom-btn {
+      width: 28px;
+      height: 28px;
+      background: var(--surface);
+      border: 1px solid var(--border2);
+      color: var(--text);
+      border-radius: 2px;
+      font-size: 16px;
+      line-height: 1;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: background .12s;
+    }
+
+    .zoom-btn:hover {
+      background: var(--surface3);
+      border-color: var(--gold-dim);
+    }
+
+    /* SVG elements */
+    .svg-path-line {
+      fill: none;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+      cursor: pointer;
+    }
+
+    .svg-path-line:hover {
+      opacity: 1 !important;
+    }
+
+    .pin-g {
+      cursor: pointer;
+    }
+
+    .pin-g:hover .pin-circle {
+      r: 10;
+    }
+
+    .pin-g.sel .pin-circle {
+      r: 11;
+    }
+
+    .pin-label {
+      font-family: Cinzel, Georgia, serif;
+      font-size: 11px;
+      fill: #e8dcc0;
+      text-anchor: middle;
+      pointer-events: none;
+      paint-order: stroke;
+      stroke: #13100b;
+      stroke-width: 3px;
+    }
+
+    .path-dist-label {
+      font-family: Cinzel, Georgia, serif;
+      font-size: 9px;
+      fill: #c9a84c;
+      text-anchor: middle;
+      pointer-events: none;
+      paint-order: stroke;
+      stroke: #13100b;
+      stroke-width: 2.5px;
+    }
+
+    #drawPreview {
+      fill: none;
+      stroke: var(--gold);
+      stroke-width: 1.5;
+      stroke-dasharray: 6 3;
+      opacity: .7;
+      pointer-events: none;
+    }
+
+    /* ─── RIGHT PANEL ────────────────────────── */
+    .right-panel {
+      background: var(--surface);
+      border-left: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    .rp-head {
+      background: var(--surface2);
+      border-bottom: 1px solid var(--border);
+      padding: 10px 14px;
+      font-family: var(--fd);
+      font-size: .75rem;
+      color: var(--gold);
+      letter-spacing: .08em;
+      text-transform: uppercase;
+      flex-shrink: 0;
+    }
+
+    .rp-body {
+      flex: 1;
+      overflow-y: auto;
+      padding: 12px;
+    }
+
+    .rp-empty {
+      color: var(--text-muted);
+      font-style: italic;
+      font-size: 12px;
+      text-align: center;
+      padding: 24px 8px;
+    }
+
+    /* Info cards in right panel */
+    .info-card {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 2px;
+      padding: 10px;
+      margin-bottom: 10px;
+    }
+
+    .info-card h3 {
+      font-family: var(--fd);
+      font-size: .7rem;
+      color: var(--gold);
+      margin-bottom: 7px;
+      letter-spacing: .04em;
+    }
+
+    .info-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 3px 0;
+      border-bottom: 1px solid var(--border);
+      gap: 8px;
+      font-size: 12px;
+    }
+
+    .info-row:last-child {
+      border: none;
+    }
+
+    .info-lbl {
+      color: var(--text-dim);
+    }
+
+    .info-val {
+      color: var(--text);
+      font-weight: 600;
+      text-align: right;
+    }
+
+    .travel-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 5px;
+      margin-top: 8px;
+    }
+
+    .travel-badge {
+      background: var(--surface3);
+      border: 1px solid var(--border);
+      border-radius: 2px;
+      padding: 5px 4px;
+      text-align: center;
+    }
+
+    .travel-badge .t-icon {
+      font-size: 14px;
+      display: block;
+    }
+
+    .travel-badge .t-time {
+      font-size: 11px;
+      color: var(--gold);
+      font-weight: 600;
+      margin-top: 2px;
+    }
+
+    .travel-badge .t-lbl {
+      font-size: 10px;
+      color: var(--text-muted);
+    }
+
+    kbd {
+      display:inline-block; background:var(--surface2); border:1px solid var(--border2);
+      border-radius:2px; padding:0px 4px; font-size:9px; font-family:monospace;
+      color:var(--text-muted); margin-left:4px; vertical-align:middle; line-height:1.6;
+    }
+    /* Distance matrix */
+    .dist-matrix {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 11px;
+      margin-top: 6px;
+    }
+
+    .dist-matrix th,
+    .dist-matrix td {
+      padding: 4px 5px;
+      border: 1px solid var(--border);
+      text-align: center;
+    }
+
+    .dist-matrix th {
+      background: var(--surface3);
+      color: var(--text-dim);
+      font-weight: 600;
+    }
+
+    .dist-matrix td {
+      color: var(--text-dim);
+    }
+
+    .dist-matrix td.editable {
+      cursor: pointer;
+      color: var(--text);
+    }
+
+    .dist-matrix td.editable:hover {
+      background: var(--surface3);
+      color: var(--gold);
+    }
+
+    .dist-matrix td.self {
+      background: var(--surface3);
+      color: var(--text-muted);
+    }
+
+    /* Waypoint list */
+    .wpt-list {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      margin-top: 6px;
+    }
+
+    .wpt-row {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 3px 6px;
+      background: var(--surface3);
+      border-radius: 2px;
+      font-size: 11px;
+    }
+
+    .wpt-arrow {
+      color: var(--gold-dim);
+      font-size: 10px;
+    }
+
+    /* Path note input */
+    .path-note {
+      width: 100%;
+      background: var(--surface2);
+      border: 1px solid var(--border2);
+      color: var(--text);
+      padding: 5px 7px;
+      border-radius: 2px;
+      font-family: var(--fb);
+      font-size: 12px;
+      resize: vertical;
+      min-height: 56px;
+      margin-top: 4px;
+    }
+
+    .path-note:focus {
+      outline: none;
+      border-color: var(--gold-dim);
+    }
+
+    /* ─── MODALS ─────────────────────────────── */
+    .modal-bg {
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, .75);
+      z-index: 100;
+      display: none;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .modal-bg.open {
+      display: flex;
+    }
+
+    .modal {
+      background: var(--surface);
+      border: 1px solid var(--border2);
+      border-radius: 3px;
+      padding: 22px;
+      max-width: 420px;
+      width: 92%;
+      box-shadow: 0 12px 40px rgba(0, 0, 0, .6);
+    }
+
+    .modal h2 {
+      font-family: var(--fd);
+      font-size: .85rem;
+      color: var(--gold);
+      margin-bottom: 14px;
+      letter-spacing: .06em;
+    }
+
+    .modal-group {
+      margin-bottom: 11px;
+    }
+
+    .modal-group label {
+      display: block;
+      font-size: .68rem;
+      color: var(--text-dim);
+      margin-bottom: 3px;
+      font-family: var(--fd);
+      letter-spacing: .04em;
+      text-transform: uppercase;
+    }
+
+    .modal-group input,
+    .modal-group select,
+    .modal-group textarea {
+      width: 100%;
+      background: var(--surface2);
+      border: 1px solid var(--border2);
+      color: var(--text);
+      padding: 6px 8px;
+      border-radius: 2px;
+      font-family: var(--fb);
+      font-size: 13px;
+      resize: vertical;
+    }
+
+    .modal-group input:focus,
+    .modal-group select:focus {
+      outline: none;
+      border-color: var(--gold-dim);
+    }
+
+    .modal-foot {
+      display: flex;
+      justify-content: flex-end;
+      gap: 8px;
+      margin-top: 14px;
+    }
+
+    .modal-save {
+      background: var(--gold-dim);
+      color: var(--text);
+      border: none;
+      padding: 7px 14px;
+      border-radius: 2px;
+      font-family: var(--fd);
+      font-size: .68rem;
+      letter-spacing: .06em;
+      text-transform: uppercase;
+      cursor: pointer;
+      transition: background .12s;
+    }
+
+    .modal-save:hover {
+      background: var(--gold);
+      color: var(--bg);
+    }
+
+    .modal-cancel {
+      background: transparent;
+      color: var(--text-dim);
+      border: 1px solid var(--border2);
+      padding: 7px 14px;
+      border-radius: 2px;
+      font-family: var(--fd);
+      font-size: .68rem;
+      letter-spacing: .06em;
+      text-transform: uppercase;
+      cursor: pointer;
+      transition: all .12s;
+    }
+
+    .modal-cancel:hover {
+      border-color: var(--gold-dim);
+      color: var(--text);
+    }
+
+    /* Toast */
+    #toast {
+      position: fixed;
+      bottom: 18px;
+      left: 50%;
+      transform: translateX(-50%) translateY(50px);
+      background: var(--surface2);
+      border: 1px solid var(--border2);
+      color: var(--text);
+      padding: 7px 16px;
+      border-radius: 2px;
+      font-size: 13px;
+      z-index: 200;
+      transition: transform .25s;
+      pointer-events: none;
+    }
+
+    #toast.show {
+      transform: translateX(-50%) translateY(0);
+    }
+
+    /* scrollbar */
+    ::-webkit-scrollbar {
+      width: 5px;
+    }
+
+    ::-webkit-scrollbar-track {
+      background: var(--surface);
+    }
+
+    ::-webkit-scrollbar-thumb {
+      background: var(--border2);
+      border-radius: 3px;
+    }
+  </style>
+</head>
+
+<body>
+
+  <!-- HEADER -->
+  <div class="app-header">
+    <div class="app-title">🗺️ Journey Path Map</div>
+    <div class="hdr-sep"></div>
+    <select class="hdr-sel" id="campaignSel" onchange="onCampaignChange()">
+      <option value="">— Campaign —</option>
+    </select>
+    <select class="hdr-sel" id="mapSel" onchange="onMapChange()">
+      <option value="">— Select Map —</option>
+    </select>
+    <button class="hdr-btn" onclick="openNewMap()">+ New Map</button>
+    <button class="hdr-btn" id="shareBtn" onclick="shareMap()" style="display:none">🔗 Share</button>
+    <button class="hdr-btn danger" id="delMapBtn" onclick="deleteMap()" style="display:none">🗑</button>
+    <div class="hdr-r">
+      <button class="back-btn" onclick="location.href='/'">← Back</button>
+      <div id="userMenuMount"></div>
+    </div>
+  </div>
+
+  <!-- LAYOUT -->
+  <div class="layout">
+
+    <!-- LEFT SIDEBAR -->
+    <div class="sidebar">
+      <div class="sb-body">
+
+        <!-- TOOLS -->
+        <div class="sb-sec">
+          <div class="sb-hd" onclick="toggleSection(this)">
+            Tools <span class="arr">▾</span>
+          </div>
+          <div class="sb-body-sec">
+            <button class="tool-btn active" id="tool-select" onclick="setTool('select')" title="Select/Move [V]"><span
+                class="tool-icon">↖</span> Select / Move <kbd>V</kbd></button>
+            <button class="tool-btn" id="tool-pan" onclick="setTool('pan')" title="Pan [H] or hold Alt/⌘"> <span class="tool-icon">🤚</span>
+              Pan <kbd>H</kbd></button>
+            <button class="tool-btn" id="tool-place" onclick="setTool('place')" title="Place Location [P]"><span
+                class="tool-icon">📍</span> Place Location <kbd>P</kbd></button>
+            <button class="tool-btn" id="tool-draw" onclick="setTool('draw')" title="Draw Path [D]"> <span class="tool-icon">✏️</span> Draw
+              Path <kbd>D</kbd></button>
+            <button class="tool-btn" id="tool-delete" onclick="setTool('delete')" title="Delete [X]"><span class="tool-icon">✂️</span> Delete <kbd>X</kbd>
+              Delete</button>
+            <div class="hint" id="toolHint">Click or drag map elements to interact.</div>
+            <div class="hint" style="margin-top:3px;font-size:10px;color:var(--text-muted)">Hold <kbd>Alt</kbd>/<kbd>⌘</kbd> to temporarily pan</div>
+          </div>
+        </div>
+
+        <!-- MAP IMAGE -->
+        <div class="sb-sec">
+          <div class="sb-hd" onclick="toggleSection(this)">Map Background <span class="arr">▾</span></div>
+          <div class="sb-body-sec">
+            <input type="file" id="mapFileInput" accept="image/*" style="display:none" onchange="loadMapFile()">
+            <button class="tool-btn" onclick="document.getElementById('mapFileInput').click()"><span
+                class="tool-icon">🖼️</span> Upload Image</button>
+            <button class="tool-btn" id="clearImgBtn" onclick="clearMapImage()" style="display:none"><span
+                class="tool-icon">🗑️</span> Remove Image</button>
+            <div class="hint">Supports PNG/JPG/WebP. Stored in DB.</div>
+          </div>
+        </div>
+
+        <!-- LOCATIONS -->
+        <div class="sb-sec">
+          <div class="sb-hd" onclick="toggleSection(this)">Locations <span class="arr">▾</span></div>
+          <div class="sb-body-sec">
+            <div class="hint">Campaign locations appear below. Select a location then click the map (Place tool) to pin
+              it.</div>
+            <div id="locList"></div>
+            <div class="mini-row" style="margin-top:6px">
+              <select id="placeSel" class="mini-in" style="flex:2"></select>
+              <button class="mini-add" onclick="placeSelectedLocation()" title="Pin selected location">📍</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- TRACKERS -->
+        <div class="sb-sec">
+          <div class="sb-hd" onclick="toggleSection(this)">Trackers <span class="arr">▾</span></div>
+          <div class="sb-body-sec">
+            <div id="trackerList"></div>
+            <div class="mini-row">
+              <input id="newTrackerName" class="mini-in" placeholder="Name…"
+                onkeydown="if(event.key==='Enter')addTracker()">
+              <select id="newTrackerType" class="mini-sel">
+                <option value="group">👥</option>
+                <option value="player">⚔️</option>
+                <option value="npc">🧙</option>
+              </select>
+              <button class="mini-add" onclick="addTracker()">+</button>
+            </div>
+            <div class="color-swatches" id="trackerColorSwatches">
+              <div class="swatch sel" style="background:#c9a84c" data-c="#c9a84c" onclick="pickColor(this)"></div>
+              <div class="swatch" style="background:#6ab5e0" data-c="#6ab5e0" onclick="pickColor(this)"></div>
+              <div class="swatch" style="background:#e07070" data-c="#e07070" onclick="pickColor(this)"></div>
+              <div class="swatch" style="background:#70e0a0" data-c="#70e0a0" onclick="pickColor(this)"></div>
+              <div class="swatch" style="background:#b070e0" data-c="#b070e0" onclick="pickColor(this)"></div>
+              <div class="swatch" style="background:#e0b070" data-c="#e0b070" onclick="pickColor(this)"></div>
+              <div class="swatch" style="background:#70d0e0" data-c="#70d0e0" onclick="pickColor(this)"></div>
+              <div class="swatch" style="background:#e07040" data-c="#e07040" onclick="pickColor(this)"></div>
+            </div>
+            <div class="hint">Select tracker, then use Draw Path tool.</div>
+          </div>
+        </div>
+
+        <!-- PATHS -->
+        <div class="sb-sec">
+          <div class="sb-hd" onclick="toggleSection(this)">Paths <span class="arr">▾</span></div>
+          <div class="sb-body-sec">
+            <div id="pathList"></div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- MAP CANVAS -->
+    <div class="map-area tool-select" id="mapArea" tabindex="0" onmousedown="mapDown(event)"
+      onmousemove="mapMove(event)" onmouseup="mapUp(event)" ondblclick="mapDblClick(event)" onwheel="mapWheel(event)"
+      oncontextmenu="return false">
+
+      <div id="mapViewport">
+        <img id="mapImg" class="map-img" src="" style="display:none" onload="onImgLoaded()">
+        <svg id="mapSvg" class="map-svg" width="800" height="600">
+          <defs>
+            <marker id="arrowhead" markerWidth="8" markerHeight="5" refX="7" refY="2.5" orient="auto">
+              <polygon points="0 0, 8 2.5, 0 5" fill="currentColor" opacity=".6" />
+            </marker>
+          </defs>
+          <g id="pathsG"></g>
+          <g id="pinsG"></g>
+          <polyline id="drawPreview" points="" />
+        </svg>
+      </div>
+
+      <div class="map-empty" id="mapEmpty">
+        <div class="em-icon">🗺️</div>
+        <p id="emptyMsg">Select or create a journey map</p>
+        <label class="upload-zone" for="mapFileInput" id="uploadLbl" style="display:none">
+          📁 Upload a map image to get started
+        </label>
+      </div>
+
+      <div class="zoom-ctrl">
+        <button class="zoom-btn" onclick="zoomStep(1.2)" title="Zoom in">+</button>
+        <button class="zoom-btn" onclick="zoomStep(0.8)" title="Zoom out">−</button>
+        <button class="zoom-btn" onclick="zoomFit()" title="Fit to screen" style="font-size:11px">⊡</button>
+      </div>
+    </div>
+
+    <!-- RIGHT PANEL -->
+    <div class="right-panel">
+      <div class="rp-head" id="rpHead">Details</div>
+      <div class="rp-body" id="rpBody">
+        <div class="rp-empty">Select a location or path to see details, or view the distance matrix below.</div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- MODALS -->
+  <div class="modal-bg" id="newMapModal">
+    <div class="modal">
+      <h2>New Journey Map</h2>
+      <div class="modal-group"><label>Name</label><input id="newMapName" placeholder="e.g., Road to Baldur's Gate">
+      </div>
+      <div class="modal-group"><label>Description (optional)</label><textarea id="newMapDesc" rows="2"
+          placeholder="Notes about this journey…"></textarea></div>
+      <div class="modal-foot">
+        <button class="modal-cancel" onclick="closeModal('newMapModal')">Cancel</button>
+        <button class="modal-save" onclick="createMap()">Create</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-bg" id="distModal">
+    <div class="modal">
+      <h2 id="distModalTitle">Set Distance</h2>
+      <div class="modal-group"><label>Distance (miles)</label><input id="distMiles" type="number" min="0" step="0.1"
+          placeholder="e.g., 42.5"></div>
+      <div class="modal-foot">
+        <button class="modal-cancel" onclick="closeModal('distModal')">Cancel</button>
+        <button class="modal-save" onclick="saveDistance()">Save</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-bg" id="shareModal">
+    <div class="modal">
+      <h2>Share Map (Read-Only)</h2>
+      <div class="modal-group"><label>Public URL</label><input id="shareUrl" readonly
+          style="font-size:11px; cursor:text"></div>
+      <div class="modal-foot">
+        <button class="modal-cancel" onclick="closeModal('shareModal')">Close</button>
+        <button class="modal-save" onclick="copyShareUrl()">Copy URL</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="toast"></div>
+
+  <script>
+    // ═══════════════════════════════════════════════════════
+    // STATE
+    // ═══════════════════════════════════════════════════════
+    let user = null;
+    let campaigns = [], campaignId = null;
+    let maps = [], mapId = null;
+    let campaignLocs = [];    // campaign_locations from DB
+    let placedLocs = [];     // journey_map_locations (with x,y)
+    let distances = [];     // journey_distances
+    let trackers = [];     // journey_trackers
+    let paths = [];     // journey_paths
+    let selectedLoc = null;  // placed loc id
+    let selectedPath = null;  // path id
+    let activeTool = 'select';
+    let activeTracker = null;
+    let newTrackerColor = '#c9a84c';
+
+    // Map viewport state
+    let vpScale = 1, vpX = 0, vpY = 0;
+    let imgW = 800, imgH = 600;
+    let isPanning = false, panStartX = 0, panStartY = 0, panStartVpX = 0, panStartVpY = 0;
+    let isDraggingPin = null; // { locId, startX, startY, origPct }
+    let isDrawing = false, drawPts = []; // {x%, y%}
+    let distEdit = null; // { fromId, toId }
+
+    // Pending "place from list" selection
+    let pendingPlaceLocId = null;
+
+    const SPEEDS = { walk: 3, horse: 8, fly: 25 }; // mph
+
+    // ═══════════════════════════════════════════════════════
+    // INIT
+    // ═══════════════════════════════════════════════════════
+    async function init() {
+      user = await initHeaderComponent('userMenuMount');
+      if (!user) { location.href = '/'; return; }
+
+      try {
+        const r = await apiFetch('/api/campaigns');
+        campaigns = r;
+        const sel = document.getElementById('campaignSel');
+        campaigns.forEach(c => { sel.appendChild(new Option(c.name, c.id)); });
+        // Auto-select if only one campaign
+        if (campaigns.length === 1) { sel.value = campaigns[0].id; onCampaignChange(); }
+      } catch (e) { toast('Could not load campaigns'); }
+    }
+
+    async function apiFetch(url, opts = {}) {
+      const res = await fetch(url, { headers: { 'Content-Type': 'application/json' }, ...opts });
+      if (!res.ok) { const d = await res.json().catch(() => ({})); throw new Error(d.error || res.statusText); }
+      return res.json();
+    }
+
+    function toast(msg, ms = 2400) {
+      const t = document.getElementById('toast');
+      t.textContent = msg; t.classList.add('show');
+      setTimeout(() => t.classList.remove('show'), ms);
+    }
+
+    // ═══════════════════════════════════════════════════════
+    // CAMPAIGN / MAP SELECTION
+    // ═══════════════════════════════════════════════════════
+    async function onCampaignChange() {
+      campaignId = document.getElementById('campaignSel').value || null;
+      mapId = null;
+      resetMapState();
+      document.getElementById('mapSel').innerHTML = '<option value="">— Select Map —</option>';
+      if (!campaignId) return;
+      try {
+        [campaignLocs, maps] = await Promise.all([
+          apiFetch(`/api/campaigns/${campaignId}/locations`),
+          apiFetch(`/api/campaigns/${campaignId}/journey-maps`)
+        ]);
+        buildLocationSelectors();
+        const sel = document.getElementById('mapSel');
+        maps.forEach(m => sel.appendChild(new Option(m.name, m.id)));
+        if (maps.length === 1) { sel.value = maps[0].id; onMapChange(); }
+      } catch (e) { toast(e.message); }
+    }
+
+    async function onMapChange() {
+      mapId = document.getElementById('mapSel').value || null;
+      resetMapState();
+      document.getElementById('shareBtn').style.display = mapId ? '' : 'none';
+      document.getElementById('delMapBtn').style.display = mapId ? '' : 'none';
+      if (!mapId) return;
+      try {
+        const [locs, dist, trk, pth, imgData] = await Promise.all([
+          apiFetch(`/api/journey-maps/${mapId}/locations`),
+          apiFetch(`/api/journey-maps/${mapId}/distances`),
+          apiFetch(`/api/journey-maps/${mapId}/trackers`),
+          apiFetch(`/api/journey-maps/${mapId}/paths`),
+          apiFetch(`/api/journey-maps/${mapId}/image`)
+        ]);
+        placedLocs = locs; distances = dist; trackers = trk; paths = pth;
+        renderAll();
+        if (imgData.image) loadImageFromData(imgData.image);
+        else showEmpty(true);
+      } catch (e) { toast(e.message); }
+    }
+
+    function resetMapState() {
+      placedLocs = []; distances = []; trackers = []; paths = [];
+      selectedLoc = null; selectedPath = null;
+      isDrawing = false; drawPts = [];
+      document.getElementById('pathsG').innerHTML = '';
+      document.getElementById('pinsG').innerHTML = '';
+      document.getElementById('drawPreview').setAttribute('points', '');
+      document.getElementById('mapImg').style.display = 'none';
+      document.getElementById('clearImgBtn').style.display = 'none';
+      setRightPanel(null, null);
+      renderAll();
+      showEmpty(true);
+    }
+
+    function buildLocationSelectors() {
+      const sel = document.getElementById('placeSel');
+      sel.innerHTML = '<option value="">— Pick location —</option>';
+      campaignLocs.forEach(l => sel.appendChild(new Option(l.name, l.id)));
+    }
+
+    // ═══════════════════════════════════════════════════════
+    // MAP CREATION / DELETION
+    // ═══════════════════════════════════════════════════════
+    function openNewMap() {
+      if (!campaignId) { toast('Select a campaign first'); return; }
+      document.getElementById('newMapName').value = '';
+      document.getElementById('newMapDesc').value = '';
+      openModal('newMapModal');
+      setTimeout(() => document.getElementById('newMapName').focus(), 50);
+    }
+
+    async function createMap() {
+      const name = document.getElementById('newMapName').value.trim();
+      if (!name) return;
+      try {
+        const m = await apiFetch(`/api/campaigns/${campaignId}/journey-maps`, {
+          method: 'POST',
+          body: JSON.stringify({ name, description: document.getElementById('newMapDesc').value })
+        });
+        maps.push(m); mapId = m.id;
+        const sel = document.getElementById('mapSel');
+        sel.appendChild(new Option(m.name, m.id)); sel.value = m.id;
+        closeModal('newMapModal');
+        onMapChange();
+        toast(`Map "${name}" created`);
+      } catch (e) { toast(e.message); }
+    }
+
+    async function deleteMap() {
+      if (!mapId || !confirm('Delete this journey map and all its data?')) return;
+      try {
+        await apiFetch(`/api/journey-maps/${mapId}`, { method: 'DELETE' });
+        maps = maps.filter(m => m.id != mapId); mapId = null;
+        const sel = document.getElementById('mapSel');
+        sel.innerHTML = '<option value="">— Select Map —</option>';
+        maps.forEach(m => sel.appendChild(new Option(m.name, m.id)));
+        resetMapState();
+        document.getElementById('shareBtn').style.display = 'none';
+        document.getElementById('delMapBtn').style.display = 'none';
+        toast('Map deleted');
+      } catch (e) { toast(e.message); }
+    }
+
+    // ═══════════════════════════════════════════════════════
+    // MAP IMAGE
+    // ═══════════════════════════════════════════════════════
+    function loadMapFile() {
+      const file = document.getElementById('mapFileInput').files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = async e => {
+        loadImageFromData(e.target.result);
+        // Save to DB
+        try {
+          await apiFetch(`/api/journey-maps/${mapId}/image`, {
+            method: 'PUT', body: JSON.stringify({ image: e.target.result })
+          });
+        } catch (err) { toast('Image saved locally but DB save failed: ' + err.message); }
+      };
+      reader.readAsDataURL(file);
+    }
+
+    function loadImageFromData(dataUrl) {
+      const img = document.getElementById('mapImg');
+      img.src = dataUrl;
+      // onload handled by onImgLoaded
+      img.style.display = 'block';
+      document.getElementById('clearImgBtn').style.display = '';
+      showEmpty(false);
+    }
+
+    function onImgLoaded() {
+      const img = document.getElementById('mapImg');
+      imgW = img.naturalWidth; imgH = img.naturalHeight;
+      document.getElementById('mapSvg').setAttribute('width', imgW);
+      document.getElementById('mapSvg').setAttribute('height', imgH);
+      document.getElementById('mapViewport').style.width = imgW + 'px';
+      document.getElementById('mapViewport').style.height = imgH + 'px';
+      zoomFit();
+      renderAll();
+    }
+
+    async function clearMapImage() {
+      if (!confirm('Remove the map image?')) return;
+      document.getElementById('mapImg').src = ''; document.getElementById('mapImg').style.display = 'none';
+      document.getElementById('clearImgBtn').style.display = 'none';
+      showEmpty(true);
+      try { await apiFetch(`/api/journey-maps/${mapId}/image`, { method: 'PUT', body: JSON.stringify({ image: null }) }); }
+      catch (e) { }
+    }
+
+    function showEmpty(show) {
+      const el = document.getElementById('mapEmpty');
+      const msg = document.getElementById('emptyMsg');
+      const lbl = document.getElementById('uploadLbl');
+      if (show) {
+        el.style.display = 'flex';
+        if (mapId) { msg.textContent = 'Upload a map image to begin'; lbl.style.display = ''; }
+        else { msg.textContent = 'Select or create a journey map'; lbl.style.display = 'none'; }
+      } else {
+        el.style.display = 'none';
+      }
+    }
+
+    // ═══════════════════════════════════════════════════════
+    // ZOOM / PAN
+    // ═══════════════════════════════════════════════════════
+    function applyVp() {
+      document.getElementById('mapViewport').style.transform = `translate(${vpX}px,${vpY}px) scale(${vpScale})`;
+    }
+    function zoomStep(f) {
+      vpScale = Math.max(0.1, Math.min(10, vpScale * f));
+      applyVp();
+    }
+    function zoomFit() {
+      const area = document.getElementById('mapArea');
+      const aw = area.clientWidth, ah = area.clientHeight;
+      vpScale = Math.min(aw / imgW, ah / imgH, 1);
+      vpX = (aw - imgW * vpScale) / 2;
+      vpY = (ah - imgH * vpScale) / 2;
+      applyVp();
+    }
+
+    // Convert screen coords → image percentage (0-100)
+    function screenToMapPct(sx, sy) {
+      const rect = document.getElementById('mapArea').getBoundingClientRect();
+      const mx = (sx - rect.left - vpX) / vpScale;
+      const my = (sy - rect.top - vpY) / vpScale;
+      return { x: (mx / imgW) * 100, y: (my / imgH) * 100 };
+    }
+    // Percentage → SVG pixel
+    function pctToSvg(px, py) { return { x: px * imgW / 100, y: py * imgH / 100 }; }
+
+    // ═══════════════════════════════════════════════════════
+    // TOOLS
+    // ═══════════════════════════════════════════════════════
+    const TOOL_HINTS = {
+      select: 'Click to select. Drag location pins to reposition.',
+      pan: 'Click and drag to pan. Scroll to zoom.',
+      place: 'Click map to place the selected location at that position.',
+      draw: 'Select a tracker, then click to add waypoints. Double-click or Enter to finish.',
+      delete: 'Click any pin or path to delete it.'
+    };
+    function setTool(t) {
+      activeTool = t;
+      document.querySelectorAll('.tool-btn').forEach(b => b.classList.remove('active'));
+      document.getElementById('tool-' + t)?.classList.add('active');
+      const area = document.getElementById('mapArea');
+      area.className = 'map-area tool-' + t;
+      document.getElementById('toolHint').textContent = TOOL_HINTS[t] || '';
+      if (t !== 'draw') { isDrawing = false; drawPts = []; document.getElementById('drawPreview').setAttribute('points', ''); }
+    }
+
+    // ═══════════════════════════════════════════════════════
+    // MOUSE EVENTS
+    // ═══════════════════════════════════════════════════════
+    function mapDown(e) {
+      if (e.button !== 0) return;
+      const { x, y } = screenToMapPct(e.clientX, e.clientY);
+
+      if (activeTool === 'pan') {
+        isPanning = true; panStartX = e.clientX; panStartY = e.clientY;
+        panStartVpX = vpX; panStartVpY = vpY;
+        return;
+      }
+
+      if (activeTool === 'select') {
+        // Check for pin hit
+        const pin = e.target.closest('.pin-g');
+        if (pin) {
+          const id = parseInt(pin.dataset.id);
+          const loc = placedLocs.find(l => l.id == id);
+          if (loc) {
+            selectLocation(id);
+            isDraggingPin = { locId: id, startSX: e.clientX, startSY: e.clientY, origX: loc.x, origY: loc.y };
+            e.preventDefault();
+            return;
+          }
+        }
+        // Check for path hit
+        const pathEl = e.target.closest('[data-path-id]');
+        if (pathEl) { selectPath(parseInt(pathEl.dataset.pathId)); return; }
+        selectedLoc = null; selectedPath = null;
+        renderAll(); setRightPanel(null, null);
+        return;
+      }
+
+      if (activeTool === 'delete') {
+        const pin = e.target.closest('.pin-g');
+        if (pin) { deletePlacedLoc(parseInt(pin.dataset.id)); return; }
+        const pathEl = e.target.closest('[data-path-id]');
+        if (pathEl) { deletePath(parseInt(pathEl.dataset.pathId)); return; }
+        return;
+      }
+
+      if (activeTool === 'place') {
+        if (!mapId) return;
+        const locId = parseInt(document.getElementById('placeSel').value);
+        if (!locId) { toast('Select a location from the dropdown first'); return; }
+        const campLoc = campaignLocs.find(l => l.id == locId);
+        if (!campLoc) return;
+        placeLocation(locId, campLoc.name, x, y);
+        return;
+      }
+
+      if (activeTool === 'draw') {
+        if (!activeTracker) { toast('Select a tracker first'); return; }
+        if (!mapId) return;
+        // Snap to nearby pin
+        const snap = snapToPinPct(x, y);
+        const pt = snap || { x, y };
+        isDrawing = true; drawPts.push(pt);
+        return;
+      }
+    }
+
+    function mapMove(e) {
+      if (isPanning) {
+        vpX = panStartVpX + (e.clientX - panStartX);
+        vpY = panStartVpY + (e.clientY - panStartY);
+        applyVp(); return;
+      }
+      if (isDraggingPin) {
+        const { locId, startSX, startSY, origX, origY } = isDraggingPin;
+        const dx = (e.clientX - startSX) / vpScale;
+        const dy = (e.clientY - startSY) / vpScale;
+        const loc = placedLocs.find(l => l.id == locId);
+        if (loc) {
+          loc.x = Math.max(0, Math.min(100, origX + (dx / imgW) * 100));
+          loc.y = Math.max(0, Math.min(100, origY + (dy / imgH) * 100));
+          renderPins();
+        }
+        return;
+      }
+      if (activeTool === 'draw' && isDrawing && drawPts.length > 0) {
+        const { x, y } = screenToMapPct(e.clientX, e.clientY);
+        const pts = [...drawPts, { x, y }].map(p => { const s = pctToSvg(p.x, p.y); return `${s.x},${s.y}`; }).join(' ');
+        document.getElementById('drawPreview').setAttribute('points', pts);
+      }
+    }
+
+    function mapUp(e) {
+      if (isPanning) { isPanning = false; return; }
+      if (isDraggingPin) {
+        const loc = placedLocs.find(l => l.id == isDraggingPin.locId);
+        if (loc) {
+          apiFetch(`/api/journey-maps/${mapId}/locations/${loc.id}`, {
+            method: 'PUT', body: JSON.stringify({ x: loc.x, y: loc.y })
+          }).catch(err => toast(err.message));
+          if (selectedLoc == loc.id) setRightPanel('loc', loc);
+        }
+        isDraggingPin = null;
+        renderPins();
+      }
+    }
+
+    function mapDblClick(e) {
+      if (activeTool === 'draw' && isDrawing) finishPath();
+    }
+
+    function mapWheel(e) {
+      e.preventDefault();
+      const f = e.deltaY < 0 ? 1.1 : 0.9;
+      const rect = document.getElementById('mapArea').getBoundingClientRect();
+      const mx = e.clientX - rect.left, my = e.clientY - rect.top;
+      vpX = mx - (mx - vpX) * f;
+      vpY = my - (my - vpY) * f;
+      vpScale = Math.max(0.1, Math.min(10, vpScale * f));
+      applyVp();
+    }
+
+    function snapToPinPct(x, y, threshold = 3) {
+      for (const loc of placedLocs) {
+        if (Math.hypot(loc.x - x, loc.y - y) < threshold)
+          return { x: loc.x, y: loc.y, locId: loc.id };
+      }
+      return null;
+    }
+
+    // Keyboard shortcuts
+    document.addEventListener('keydown', e => {
+      const tag = e.target.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+      if (e.key === 'Escape') { setTool('select'); }
+      if (e.key === 'Enter' && activeTool === 'draw' && isDrawing) finishPath();
+      if (e.key === 'Delete' && selectedLoc) deletePlacedLoc(selectedLoc);
+      if (e.key === 'Delete' && selectedPath) deletePath(selectedPath);
+      if (e.key === 'v' || e.key === 'V') setTool('select');
+      if (e.key === 'h' || e.key === 'H') setTool('pan');
+      if (e.key === 'p' || e.key === 'P') setTool('place');
+      if (e.key === 'd' || e.key === 'D') setTool('draw');
+      if (e.key === 'x' || e.key === 'X') setTool('delete');
+    });
+
+    // Close map context menu
+    document.getElementById('mapArea').addEventListener('contextmenu', e => e.preventDefault());
+
+    // ═══════════════════════════════════════════════════════
+    // LOCATIONS
+    // ═══════════════════════════════════════════════════════
+    async function placeLocation(campLocId, name, x, y) {
+      try {
+        const loc = await apiFetch(`/api/journey-maps/${mapId}/locations`, {
+          method: 'POST',
+          body: JSON.stringify({ campaign_location_id: campLocId, name, x, y })
+        });
+        placedLocs.push(loc);
+        renderPins(); renderLocList(); renderDistMatrix();
+        toast(`"${name}" placed`);
+      } catch (e) { toast(e.message); }
+    }
+
+    function placeSelectedLocation() {
+      const locId = parseInt(document.getElementById('placeSel').value);
+      if (!locId) { toast('Select a location'); return; }
+      if (!mapId) { toast('Select a map first'); return; }
+      setTool('place');
+      toast('Click on the map to place this location (Place tool active)');
+    }
+
+    async function deletePlacedLoc(id) {
+      if (!confirm('Remove this location from the map?')) return;
+      try {
+        await apiFetch(`/api/journey-maps/${mapId}/locations/${id}`, { method: 'DELETE' });
+        placedLocs = placedLocs.filter(l => l.id != id);
+        distances = distances.filter(d => d.from_loc_id != id && d.to_loc_id != id);
+        if (selectedLoc == id) { selectedLoc = null; setRightPanel(null, null); }
+        renderAll();
+      } catch (e) { toast(e.message); }
+    }
+
+    function selectLocation(id) {
+      selectedLoc = id; selectedPath = null;
+      renderPins(); renderPathList();
+      const loc = placedLocs.find(l => l.id == id);
+      if (loc) setRightPanel('loc', loc);
+    }
+
+    function renderLocList() {
+      const el = document.getElementById('locList');
+      if (!placedLocs.length) { el.innerHTML = '<div class="hint">No locations placed yet.</div>'; return; }
+      el.innerHTML = placedLocs.map(l => `
+    <div class="list-item ${l.id == selectedLoc ? 'active' : ''}" onclick="selectLocation(${l.id})">
+      <span class="tool-icon">📍</span>
+      <span class="lbl">${esc(l.name)}</span>
+      <span class="del" onclick="event.stopPropagation();deletePlacedLoc(${l.id})">✕</span>
+    </div>`).join('');
+    }
+
+    // ═══════════════════════════════════════════════════════
+    // TRACKERS
+    // ═══════════════════════════════════════════════════════
+    async function addTracker() {
+      const name = document.getElementById('newTrackerName').value.trim();
+      const type = document.getElementById('newTrackerType').value;
+      if (!name) return;
+      if (!mapId) { toast('Select a map first'); return; }
+      try {
+        const t = await apiFetch(`/api/journey-maps/${mapId}/trackers`, {
+          method: 'POST', body: JSON.stringify({ name, type, color: newTrackerColor })
+        });
+        trackers.push(t);
+        renderTrackerList();
+        document.getElementById('newTrackerName').value = '';
+        activeTracker = t.id;
+        renderTrackerList();
+        setTool('draw');
+        toast(`Tracker "${name}" added`);
+      } catch (e) { toast(e.message); }
+    }
+
+    async function deleteTracker(id) {
+      try {
+        await apiFetch(`/api/journey-maps/${mapId}/trackers/${id}`, { method: 'DELETE' });
+        trackers = trackers.filter(t => t.id != id);
+        if (activeTracker == id) activeTracker = null;
+        renderTrackerList();
+      } catch (e) { toast(e.message); }
+    }
+
+    function pickColor(el) {
+      document.querySelectorAll('#trackerColorSwatches .swatch').forEach(s => s.classList.remove('sel'));
+      el.classList.add('sel');
+      newTrackerColor = el.dataset.c;
+    }
+
+    function renderTrackerList() {
+      const el = document.getElementById('trackerList');
+      const ICONS = { group: '👥', player: '⚔️', npc: '🧙' };
+      el.innerHTML = trackers.map(t => `
+    <div class="list-item ${t.id == activeTracker ? 'active' : ''}" onclick="selectTracker(${t.id})">
+      <div class="dot" style="background:${t.color}"></div>
+      <span class="tool-icon" style="font-size:12px">${ICONS[t.type] || '👥'}</span>
+      <span class="lbl">${esc(t.name)}</span>
+      <span class="del" onclick="event.stopPropagation();deleteTracker(${t.id})">✕</span>
+    </div>`).join('');
+    }
+
+    function selectTracker(id) {
+      activeTracker = id;
+      renderTrackerList();
+      setTool('draw');
+    }
+
+    // ═══════════════════════════════════════════════════════
+    // PATHS
+    // ═══════════════════════════════════════════════════════
+    async function finishPath() {
+      if (!isDrawing || drawPts.length < 2) {
+        isDrawing = false; drawPts = [];
+        document.getElementById('drawPreview').setAttribute('points', '');
+        return;
+      }
+      const tracker = trackers.find(t => t.id == activeTracker);
+      const name = (tracker ? tracker.name + ' — ' : '') + 'Path';
+      // Try to compute distance from placed locations on waypoints
+      const dist = computePathDistance(drawPts);
+      try {
+        const p = await apiFetch(`/api/journey-maps/${mapId}/paths`, {
+          method: 'POST',
+          body: JSON.stringify({ tracker_id: activeTracker, name, waypoints: drawPts, distance_miles: dist || null })
+        });
+        // Reload paths to get tracker info joined
+        paths = await apiFetch(`/api/journey-maps/${mapId}/paths`);
+        renderPaths(); renderPathList();
+        selectPath(p.id);
+        toast('Path saved — click to edit notes/distance');
+      } catch (e) { toast(e.message); }
+      isDrawing = false; drawPts = [];
+      document.getElementById('drawPreview').setAttribute('points', '');
+    }
+
+    function computePathDistance(pts) {
+      let total = 0;
+      for (let i = 0; i < pts.length - 1; i++) {
+        const a = pts[i], b = pts[i + 1];
+        if (a.locId && b.locId) {
+          const d = distances.find(d =>
+            (d.from_loc_id == a.locId && d.to_loc_id == b.locId) ||
+            (d.from_loc_id == b.locId && d.to_loc_id == a.locId));
+          if (d) { total += parseFloat(d.distance_miles); continue; }
+        }
+      }
+      return total;
+    }
+
+    function selectPath(id) {
+      selectedPath = id; selectedLoc = null;
+      renderPaths(); renderPathList(); renderPins();
+      const p = paths.find(p => p.id == id);
+      if (p) setRightPanel('path', p);
+    }
+
+    async function deletePath(id) {
+      if (!confirm('Delete this path?')) return;
+      try {
+        await apiFetch(`/api/journey-maps/${mapId}/paths/${id}`, { method: 'DELETE' });
+        paths = paths.filter(p => p.id != id);
+        if (selectedPath == id) { selectedPath = null; setRightPanel(null, null); }
+        renderPaths(); renderPathList();
+      } catch (e) { toast(e.message); }
+    }
+
+    async function savePathField(pathId, field, value) {
+      const p = paths.find(p => p.id == pathId);
+      if (!p) return;
+      const payload = {};
+      payload[field] = value;
+      payload.waypoints = p.waypoints;
+      payload.distance_miles = p.distance_miles;
+      payload.notes = p.notes;
+      payload.name = p.name;
+      Object.assign(payload, { [field]: value });
+      try {
+        const updated = await apiFetch(`/api/journey-maps/${mapId}/paths/${pathId}`, {
+          method: 'PUT', body: JSON.stringify(payload)
+        });
+        Object.assign(p, updated);
+        setRightPanel('path', p);
+        renderPaths();
+      } catch (e) { toast(e.message); }
+    }
+
+    function renderPathList() {
+      const el = document.getElementById('pathList');
+      if (!paths.length) { el.innerHTML = '<div class="hint">No paths yet. Select a tracker and use the Draw tool.</div>'; return; }
+      el.innerHTML = paths.map(p => {
+        const color = p.tracker_color || '#c9a84c';
+        return `<div class="list-item ${p.id == selectedPath ? 'active' : ''}" onclick="selectPath(${p.id})">
+      <div class="dot" style="background:${color}"></div>
+      <span class="lbl">${esc(p.name || 'Path')}</span>
+      <span class="del" onclick="event.stopPropagation();deletePath(${p.id})">✕</span>
+    </div>`;
+      }).join('');
+    }
+
+    // ═══════════════════════════════════════════════════════
+    // DISTANCE MATRIX
+    // ═══════════════════════════════════════════════════════
+    function openDistEdit(fromId, toId) {
+      const from = placedLocs.find(l => l.id == fromId);
+      const to = placedLocs.find(l => l.id == toId);
+      document.getElementById('distModalTitle').textContent = `Distance: ${from?.name} ↔ ${to?.name}`;
+      const existing = distances.find(d =>
+        (d.from_loc_id == fromId && d.to_loc_id == toId) ||
+        (d.from_loc_id == toId && d.to_loc_id == fromId));
+      document.getElementById('distMiles').value = existing ? existing.distance_miles : '';
+      distEdit = { fromId, toId };
+      openModal('distModal');
+      setTimeout(() => document.getElementById('distMiles').focus(), 50);
+    }
+
+    async function saveDistance() {
+      if (!distEdit) return;
+      const miles = parseFloat(document.getElementById('distMiles').value);
+      if (isNaN(miles) || miles < 0) { toast('Enter a valid distance'); return; }
+      try {
+        await apiFetch(`/api/journey-maps/${mapId}/distances`, {
+          method: 'PUT', body: JSON.stringify({ from_loc_id: distEdit.fromId, to_loc_id: distEdit.toId, distance_miles: miles })
+        });
+        // Update local
+        const remove = d =>
+          (d.from_loc_id == distEdit.fromId && d.to_loc_id == distEdit.toId) ||
+          (d.from_loc_id == distEdit.toId && d.to_loc_id == distEdit.fromId);
+        distances = distances.filter(d => !remove(d));
+        distances.push({ map_id: mapId, from_loc_id: distEdit.fromId, to_loc_id: distEdit.toId, distance_miles: miles });
+        distances.push({ map_id: mapId, from_loc_id: distEdit.toId, to_loc_id: distEdit.fromId, distance_miles: miles });
+        closeModal('distModal');
+        renderPaths(); // re-render path labels
+        if (selectedLoc) setRightPanel('loc', placedLocs.find(l => l.id == selectedLoc));
+        toast(`Distance saved: ${miles} mi`);
+      } catch (e) { toast(e.message); }
+    }
+
+    function buildDistMatrix() {
+      if (placedLocs.length < 2) return '<div class="rp-empty">Add at least 2 locations to define distances.</div>';
+      let html = '<table class="dist-matrix"><thead><tr><th></th>';
+      placedLocs.forEach(l => { html += `<th title="${esc(l.name)}">${esc(l.name.substring(0, 8))}…</th>`; });
+      html += '</tr></thead><tbody>';
+      placedLocs.forEach(from => {
+        html += `<tr><th>${esc(from.name.substring(0, 8))}…</th>`;
+        placedLocs.forEach(to => {
+          if (from.id == to.id) { html += '<td class="self">—</td>'; return; }
+          const d = distances.find(d =>
+            (d.from_loc_id == from.id && d.to_loc_id == to.id) ||
+            (d.from_loc_id == to.id && d.to_loc_id == from.id));
+          const val = d ? `${d.distance_miles} mi` : '+';
+          html += `<td class="editable" onclick="openDistEdit(${from.id},${to.id})" title="Click to set distance">${val}</td>`;
+        });
+        html += '</tr>';
+      });
+      return html + '</tbody></table>';
+    }
+
+    // ═══════════════════════════════════════════════════════
+    // RIGHT PANEL
+    // ═══════════════════════════════════════════════════════
+    function setRightPanel(type, data) {
+      const head = document.getElementById('rpHead');
+      const body = document.getElementById('rpBody');
+
+      if (!type) {
+        head.textContent = 'Details';
+        body.innerHTML = `
+      <div class="rp-empty">Select a location or path for details.</div>
+      <div class="info-card" style="margin-top:10px">
+        <h3>📏 Distance Matrix</h3>
+        ${buildDistMatrix()}
+      </div>`;
+        return;
+      }
+
+      if (type === 'loc') {
+        const loc = data;
+        head.textContent = '📍 ' + loc.name;
+        const myDists = distances.filter(d => d.from_loc_id == loc.id);
+        const distRows = myDists.map(d => {
+          const toLoc = placedLocs.find(l => l.id == d.to_loc_id);
+          if (!toLoc) return '';
+          const mi = parseFloat(d.distance_miles);
+          return `<div class="info-row" onclick="openDistEdit(${loc.id},${toLoc.id})" style="cursor:pointer">
+        <span class="info-lbl">📍 ${esc(toLoc.name)}</span>
+        <span class="info-val">${mi} mi ${travelBadges(mi, true)}</span>
+      </div>`;
+        }).join('');
+        const unset = placedLocs.filter(l => l.id != loc.id && !distances.some(d =>
+          (d.from_loc_id == loc.id && d.to_loc_id == l.id) || (d.from_loc_id == l.id && d.to_loc_id == loc.id)
+        )).map(l => `<div class="info-row" onclick="openDistEdit(${loc.id},${l.id})" style="cursor:pointer;opacity:.55">
+        <span class="info-lbl">📍 ${esc(l.name)}</span>
+        <span class="info-val" style="color:var(--text-muted)">set distance →</span>
+      </div>`).join('');
+
+        body.innerHTML = `
+      <div class="info-card">
+        <h3>📍 Location</h3>
+        <div class="info-row"><span class="info-lbl">Position</span><span class="info-val">${loc.x.toFixed(1)}%, ${loc.y.toFixed(1)}%</span></div>
+      </div>
+      <div class="info-card">
+        <h3>📏 Distances (click to edit)</h3>
+        ${distRows}${unset}
+        ${!distRows && !unset ? '<div class="rp-empty" style="font-size:11px">Add more locations to define distances.</div>' : ''}
+      </div>`;
+        return;
+      }
+
+      if (type === 'path') {
+        const p = data;
+        const tracker = trackers.find(t => t.id == p.tracker_id);
+        const wpts = Array.isArray(p.waypoints) ? p.waypoints : JSON.parse(p.waypoints || '[]');
+        const dist = p.distance_miles ? parseFloat(p.distance_miles) : null;
+        head.textContent = '🛤️ ' + (p.name || 'Path');
+        const wptRows = wpts.map((wp, i) => {
+          const loc = wp.locId ? placedLocs.find(l => l.id == wp.locId) : null;
+          const lbl = loc ? `📍 ${loc.name}` : `Point ${i + 1}`;
+          return `<div class="wpt-row">
+        <span class="wpt-arrow">${i === 0 ? '⊙' : '→'}</span>
+        <span>${esc(lbl)}</span>
+      </div>`;
+        }).join('');
+
+        body.innerHTML = `
+      <div class="info-card">
+        <h3>Path Info</h3>
+        <div class="info-row"><span class="info-lbl">Tracker</span>
+          <span class="info-val" style="color:${p.tracker_color || '#c9a84c'}">${esc(p.tracker_name || '—')}</span></div>
+        <div class="info-row"><span class="info-lbl">Waypoints</span><span class="info-val">${wpts.length}</span></div>
+        <div class="info-row"><span class="info-lbl">Distance</span>
+          <span class="info-val">
+            <input type="number" value="${dist || ''}" min="0" step="0.1" placeholder="miles"
+              style="width:80px;background:var(--surface3);border:1px solid var(--border2);color:var(--text);padding:2px 5px;border-radius:2px;font-size:12px"
+              onchange="savePathField(${p.id},'distance_miles',parseFloat(this.value)||null)">
+          </span>
+        </div>
+      </div>
+      ${dist ? `
+      <div class="info-card">
+        <h3>⏱ Travel Times</h3>
+        <div class="travel-grid">
+          <div class="travel-badge"><span class="t-icon">🚶</span><div class="t-time">${fmtTime(dist / SPEEDS.walk)}</div><div class="t-lbl">Walking</div></div>
+          <div class="travel-badge"><span class="t-icon">🐎</span><div class="t-time">${fmtTime(dist / SPEEDS.horse)}</div><div class="t-lbl">Horse</div></div>
+          <div class="travel-badge"><span class="t-icon">🦅</span><div class="t-time">${fmtTime(dist / SPEEDS.fly)}</div><div class="t-lbl">Flying</div></div>
+        </div>
+      </div>` : ''}
+      ${wpts.length ? `<div class="info-card"><h3>📍 Waypoints</h3><div class="wpt-list">${wptRows}</div></div>` : ''}
+      <div class="info-card">
+        <h3>📝 Notes</h3>
+        <textarea class="path-note" placeholder="Encounters, events along the way…"
+          onchange="savePathField(${p.id},'notes',this.value)">${esc(p.notes || '')}</textarea>
+      </div>`;
+        return;
+      }
+    }
+
+    function travelBadges(miles, compact = false) {
+      if (!miles) return '';
+      return `<span style="color:var(--text-muted);font-size:10px">(🚶${fmtTime(miles / SPEEDS.walk)} 🐎${fmtTime(miles / SPEEDS.horse)} 🦅${fmtTime(miles / SPEEDS.fly)})</span>`;
+    }
+
+    function fmtTime(hrs) {
+      if (hrs < 1) return Math.round(hrs * 60) + 'min';
+      if (hrs < 24) return hrs.toFixed(1) + 'h';
+      const d = Math.floor(hrs / 24), h = Math.round(hrs % 24);
+      return h > 0 ? `${d}d${h}h` : `${d}d`;
+    }
+
+    // ═══════════════════════════════════════════════════════
+    // SVG RENDER
+    // ═══════════════════════════════════════════════════════
+    function renderAll() { renderPaths(); renderPins(); renderLocList(); renderTrackerList(); renderPathList(); }
+
+    function renderPins() {
+      const g = document.getElementById('pinsG');
+      g.innerHTML = placedLocs.map(loc => {
+        const { x, y } = pctToSvg(loc.x, loc.y);
+        const sel = loc.id == selectedLoc;
+        return `
+      <g class="pin-g ${sel ? 'sel' : ''}" data-id="${loc.id}">
+        <circle class="pin-circle" cx="${x}" cy="${y}" r="${sel ? 11 : 9}"
+          fill="${sel ? '#c9a84c' : '#1e1810'}"
+          stroke="${sel ? '#e8c96a' : '#7a6030'}"
+          stroke-width="${sel ? 2.5 : 1.5}" opacity=".92"/>
+        <text class="pin-label" x="${x}" y="${y + 20}">${esc(loc.name)}</text>
+      </g>`;
+      }).join('');
+    }
+
+    function renderPaths() {
+      const g = document.getElementById('pathsG');
+      g.innerHTML = paths.map(p => {
+        const wpts = Array.isArray(p.waypoints) ? p.waypoints : JSON.parse(p.waypoints || '[]');
+        if (wpts.length < 2) return '';
+        const color = p.tracker_color || '#c9a84c';
+        const sel = p.id == selectedPath;
+        const pts = wpts.map(w => { const s = pctToSvg(w.x, w.y); return `${s.x},${s.y}`; }).join(' ');
+
+        // Mid-label for distance
+        const mid = wpts[Math.floor(wpts.length / 2)];
+        const midSvg = pctToSvg(mid.x, mid.y);
+        const distLabel = p.distance_miles
+          ? `<text class="path-dist-label" x="${midSvg.x}" y="${midSvg.y - 10}">${p.distance_miles}mi</text>`
+          : '';
+
+        return `
+      <polyline points="${pts}" data-path-id="${p.id}"
+        class="svg-path-line"
+        stroke="${color}" stroke-width="${sel ? 3.5 : 2}"
+        opacity="${sel ? 1 : 0.72}" marker-end="url(#arrowhead)"/>
+      ${distLabel}`;
+      }).join('');
+    }
+
+    // ═══════════════════════════════════════════════════════
+    // SHARE
+    // ═══════════════════════════════════════════════════════
+    async function shareMap() {
+      if (!mapId) return;
+      try {
+        const d = await apiFetch(`/api/journey-maps/${mapId}/share`, { method: 'POST' });
+        const url = `${location.origin}/journey-map-public/${d.token}`;
+        document.getElementById('shareUrl').value = url;
+        openModal('shareModal');
+      } catch (e) { toast(e.message); }
+    }
+
+    function copyShareUrl() {
+      navigator.clipboard.writeText(document.getElementById('shareUrl').value)
+        .then(() => toast('URL copied!')).catch(() => { });
+    }
+
+    // ═══════════════════════════════════════════════════════
+    // SECTION TOGGLE / MODAL HELPERS / UTIL
+    // ═══════════════════════════════════════════════════════
+    function toggleSection(hd) {
+      hd.classList.toggle('collapsed');
+      const body = hd.nextElementSibling;
+      body.classList.toggle('collapsed');
+    }
+    function openModal(id) { document.getElementById(id).classList.add('open'); }
+    function closeModal(id) { document.getElementById(id).classList.remove('open'); }
+    document.querySelectorAll('.modal-bg').forEach(bg => {
+      bg.addEventListener('click', e => { if (e.target === bg) bg.classList.remove('open'); });
+    });
+
+    function esc(s) { return (s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
+
+    // ─── render distance matrix in right panel ───
+    function renderDistMatrix() {
+      const body = document.getElementById('rpBody');
+      if (selectedLoc || selectedPath) return; // don't overwrite a selection panel
+      setRightPanel(null, null);
+    }
+
+    // ═══════════════════════════════════════════════════════
+    // START
+    // ═══════════════════════════════════════════════════════
+    init();
+  </script>
+</body>
+
+</html>

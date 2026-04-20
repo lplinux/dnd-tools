@@ -8,23 +8,29 @@
     <link
         href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700&family=Crimson+Text:ital,wght@0,400;1,400&display=swap"
         rel="stylesheet">
+    <script src="/header-component.js"></script>
     <style>
-        * {
+        *,
+        *::before,
+        *::after {
             box-sizing: border-box;
             margin: 0;
-            padding: 0;
+            padding: 0
         }
 
         :root {
             --bg: #13100b;
             --surface: #1e1810;
             --surface2: #272015;
+            --surface3: #30281a;
             --border: #3d3220;
             --border2: #554428;
             --gold: #c9a84c;
             --gold-dim: #7a6030;
             --text: #e8dcc0;
             --text-dim: #a09070;
+            --red: #8b3a3a;
+            --red-hover: #a83a3a;
             --fd: 'Cinzel', 'Georgia', serif;
             --fb: 'Crimson Text', 'Georgia', serif;
         }
@@ -32,7 +38,7 @@
         html,
         body {
             height: 100%;
-            overflow: hidden;
+            overflow: hidden
         }
 
         body {
@@ -41,10 +47,10 @@
             color: var(--text);
             font-size: 15px;
             display: flex;
-            flex-direction: column;
+            flex-direction: column
         }
 
-
+        /* Header */
         .app-header {
             background: var(--surface);
             border-bottom: 2px solid var(--gold-dim);
@@ -53,14 +59,14 @@
             align-items: center;
             gap: 10px;
             flex-shrink: 0;
-            box-shadow: 0 2px 12px rgba(0, 0, 0, .5);
+            box-shadow: 0 2px 12px rgba(0, 0, 0, .5)
         }
 
         .app-title {
             font-family: var(--fd);
             font-size: .95rem;
             color: var(--gold);
-            letter-spacing: .08em;
+            letter-spacing: .08em
         }
 
         .hdr-r {
@@ -68,45 +74,6 @@
             align-items: center;
             gap: 8px;
             margin-left: auto
-        }
-
-        .theme-sw {
-            display: flex;
-            gap: 4px;
-            align-items: center
-        }
-
-        .theme-sw button {
-            width: 18px;
-            height: 18px;
-            border-radius: 50%;
-            border: 2px solid transparent;
-            cursor: pointer;
-            transition: border-color .15s, transform .1s;
-            flex-shrink: 0
-        }
-
-        .theme-sw button:hover {
-            transform: scale(1.2)
-        }
-
-        .theme-sw button.act {
-            border-color: var(--gold) !important
-        }
-
-        .theme-sw button[data-t="dark"] {
-            background: #272015;
-            border-color: #554428
-        }
-
-        .theme-sw button[data-t="light"] {
-            background: #f0ece0;
-            border-color: #b8a888
-        }
-
-        .theme-sw button[data-t="slate"] {
-            background: #1c2128;
-            border-color: #444c56
         }
 
         .back-btn {
@@ -120,97 +87,122 @@
             letter-spacing: .06em;
             text-transform: uppercase;
             cursor: pointer;
-            transition: background .15s;
+            transition: background .15s
         }
 
         .back-btn:hover {
             background: var(--gold);
-            color: var(--bg);
+            color: var(--bg)
         }
 
+        /* Layout */
         .container {
             flex: 1;
-            overflow: auto;
-            padding: 16px;
+            overflow: hidden;
             display: grid;
             grid-template-columns: 300px 1fr;
-            gap: 16px;
+            gap: 0
         }
 
-        .section {
+        .panel {
             background: var(--surface);
-            border: 1px solid var(--border);
-            border-radius: 2px;
-            box-shadow: 0 2px 8px rgba(0, 0, 0, .3);
-            overflow: hidden;
+            border-right: 1px solid var(--border);
             display: flex;
             flex-direction: column;
+            overflow: hidden
         }
 
-        .section-header {
+        .panel-head {
             background: var(--surface2);
             border-bottom: 1px solid var(--border);
-            padding: 12px 14px;
+            padding: 10px 14px;
             font-family: var(--fd);
             font-size: .75rem;
             color: var(--gold);
             letter-spacing: .08em;
             text-transform: uppercase;
+            flex-shrink: 0
         }
 
-        .section-body {
+        .panel-body {
             flex: 1;
             overflow-y: auto;
-            padding: 12px;
+            padding: 14px
         }
 
-        .campaign-item {
-            padding: 10px;
+        .detail-panel {
+            display: flex;
+            flex-direction: column;
+            overflow: hidden
+        }
+
+        .detail-head {
             background: var(--surface2);
-            border: 1px solid var(--border);
-            border-radius: 2px;
+            border-bottom: 1px solid var(--border);
+            padding: 10px 14px;
+            font-family: var(--fd);
+            font-size: .75rem;
+            color: var(--gold);
+            letter-spacing: .08em;
+            text-transform: uppercase;
+            flex-shrink: 0
+        }
+
+        .detail-body {
+            flex: 1;
+            overflow-y: auto;
+            padding: 16px
+        }
+
+        /* Campaign list */
+        .c-item {
+            padding: 10px 12px;
+            border-bottom: 1px solid var(--border);
             cursor: pointer;
-            transition: all .15s;
-            margin-bottom: 8px;
+            transition: background .12s
         }
 
-        .campaign-item:hover {
-            background: var(--surface3);
-            border-color: var(--gold-dim);
+        .c-item:hover {
+            background: var(--surface2)
         }
 
-        .campaign-item.active {
-            background: var(--gold-dim);
-            color: var(--bg);
-            border-color: var(--gold);
+        .c-item.active {
+            background: var(--surface2);
+            border-left: 3px solid var(--gold);
+            padding-left: 9px
         }
 
-        .campaign-name {
-            font-weight: bold;
-            font-size: 13px;
+        .c-name {
+            font-family: var(--fd);
+            font-size: .82rem;
+            color: var(--gold);
+            letter-spacing: .04em
         }
 
-        .campaign-desc {
-            font-size: 11px;
-            margin-top: 4px;
-            opacity: .8;
+        .c-cal {
+            font-size: .68rem;
+            color: var(--text-dim);
+            margin-top: 2px;
+            font-style: italic
         }
 
+        /* Form elements */
         .form-group {
-            margin-bottom: 10px;
+            margin-bottom: 10px
         }
 
         .form-group label {
             display: block;
-            font-size: .7rem;
+            font-size: .68rem;
             color: var(--text-dim);
             margin-bottom: 3px;
             font-family: var(--fd);
             letter-spacing: .04em;
-            text-transform: uppercase;
+            text-transform: uppercase
         }
 
-        input,
+        input[type=text],
+        input[type=password],
         textarea,
         select {
             width: 100%;
@@ -220,501 +212,758 @@
             padding: 6px 8px;
             border-radius: 2px;
             font-family: var(--fb);
-            font-size: 13px;
-            transition: border-color .15s;
+            font-size: 14px;
+            transition: border-color .15s
         }
 
         input:focus,
         textarea:focus,
         select:focus {
             outline: none;
-            border-color: var(--gold-dim);
+            border-color: var(--gold-dim)
+        }
+
+        textarea {
+            resize: vertical;
+            min-height: 60px
         }
 
         button {
+            width: 100%;
             background: var(--gold-dim);
             color: var(--text);
             border: none;
-            padding: 6px 10px;
+            padding: 7px 12px;
             border-radius: 2px;
             font-family: var(--fd);
-            font-size: .7rem;
+            font-size: .68rem;
             letter-spacing: .06em;
             text-transform: uppercase;
             cursor: pointer;
             transition: background .15s;
-            width: 100%;
-            margin-top: 6px;
+            margin-top: 6px
         }
 
         button:hover {
             background: var(--gold);
-            color: var(--bg);
+            color: var(--bg)
         }
 
         button.danger {
-            background: #8b3a3a;
+            background: var(--red)
         }
 
         button.danger:hover {
-            background: #a83a3a;
+            background: var(--red-hover)
         }
 
+        button.sm {
+            padding: 4px 8px;
+            font-size: .62rem;
+            margin-top: 0;
+            width: auto
+        }
+
+        /* Section titles */
+        .s-title {
+            font-family: var(--fd);
+            font-size: .7rem;
+            color: var(--gold);
+            letter-spacing: .08em;
+            text-transform: uppercase;
+            margin: 16px 0 8px;
+            border-bottom: 1px solid var(--border);
+            padding-bottom: 4px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between
+        }
+
+        .s-title:first-child {
+            margin-top: 0
+        }
+
+        /* Tables */
         table {
             width: 100%;
             border-collapse: collapse;
             font-size: 12px;
+            margin-bottom: 8px
         }
 
         th {
             background: var(--surface2);
-            padding: 8px;
+            padding: 5px 8px;
             text-align: left;
-            color: var(--gold);
-            border-bottom: 1px solid var(--border);
-            font-weight: 600;
+            font-family: var(--fd);
+            font-size: .62rem;
+            letter-spacing: .06em;
+            color: var(--text-dim);
+            border-bottom: 1px solid var(--border)
         }
 
         td {
-            padding: 8px;
-            border-bottom: 1px solid var(--border);
+            padding: 6px 8px;
+            border-bottom: 1px solid var(--border)
         }
 
-        tr:hover {
-            background: var(--surface2);
+        tr:hover td {
+            background: var(--surface2)
         }
 
-        .empty-state {
-            padding: 20px;
+        /* Messages */
+        .msg {
+            padding: 6px 10px;
+            border-radius: 2px;
+            font-size: 12px;
+            margin-bottom: 8px
+        }
+
+        .msg.ok {
+            background: #1f3d1a;
+            color: #9fd49f;
+            border: 1px solid #3d5a3a
+        }
+
+        .msg.err {
+            background: #3d1f1f;
+            color: #d49f9f;
+            border: 1px solid #5a3d3d
+        }
+
+        .empty {
+            padding: 12px;
             text-align: center;
             color: var(--text-dim);
             font-style: italic;
+            font-size: 13px
         }
 
-        .action-buttons {
-            display: flex;
-            gap: 4px;
+        /* Calendar picker modal */
+        .cal-modal-overlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, .7);
+            display: none;
+            align-items: center;
+            justify-content: center;
+            z-index: 100
         }
 
-        .action-buttons button {
-            flex: 1;
-            margin: 0;
-            padding: 4px 6px;
-            font-size: .65rem;
-            width: auto;
+        .cal-modal-overlay.open {
+            display: flex
         }
 
-        .message {
-            padding: 8px;
+        .cal-modal {
+            background: var(--surface);
+            border: 1px solid var(--border2);
             border-radius: 2px;
+            padding: 20px;
+            width: 340px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, .6)
+        }
+
+        .cal-modal h3 {
+            font-family: var(--fd);
+            font-size: .85rem;
+            color: var(--gold);
+            letter-spacing: .08em;
+            text-transform: uppercase;
+            margin-bottom: 14px
+        }
+
+        .cal-row {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 10px
+        }
+
+        .cal-row .form-group {
+            flex: 1;
+            margin-bottom: 0
+        }
+
+        .cal-result {
+            background: var(--surface2);
+            border: 1px solid var(--border);
+            padding: 8px 10px;
+            border-radius: 2px;
+            font-family: var(--fd);
+            font-size: .78rem;
+            color: var(--gold);
+            text-align: center;
+            margin-bottom: 12px;
+            min-height: 32px
+        }
+
+        .btn-row {
+            display: flex;
+            gap: 8px
+        }
+
+        .btn-row button {
+            flex: 1;
+            margin-top: 0
+        }
+
+        /* Timeline list */
+        .tl-card {
+            background: var(--surface2);
+            border: 1px solid var(--border);
+            border-radius: 2px;
+            padding: 10px 12px;
             margin-bottom: 8px;
-            font-size: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 10px
         }
 
-        .message.success {
-            background: #1f3d1a;
-            color: #9fd49f;
-            border: 1px solid #3d5a3a;
+        .tl-card-info .tl-pname {
+            font-family: var(--fd);
+            font-size: .78rem;
+            color: var(--gold)
         }
 
-        .message.error {
-            background: #3d1f1f;
-            color: #d49f9f;
-            border: 1px solid #5a3d3d;
+        .tl-card-info .tl-user {
+            font-size: .7rem;
+            color: var(--text-dim)
         }
 
-        @media (max-width: 1024px) {
+        .tl-card-info .tl-count {
+            font-size: .7rem;
+            color: var(--text-dim);
+            margin-top: 2px
+        }
+
+        @media(max-width:900px) {
             .container {
-                grid-template-columns: 1fr;
+                grid-template-columns: 1fr
             }
         }
     </style>
-    <script src="/header-component.js"></script>
 </head>
 
 <body>
     <div class="app-header">
         <div class="app-title">🏰 Manage Campaigns</div>
         <div class="hdr-r">
-            <div class="theme-sw" id="themeSw">
-                <button data-t="dark" title="Dark">◐</button>
-                <button data-t="light" title="Light">◯</button>
-                <button data-t="slate" title="Slate">◭</button>
-            </div>
-            <button class="back-btn" onclick="location.href='/'">← Back</button>
             <div id="userMenuMount"></div>
         </div>
     </div>
 
     <div class="container">
-        <!-- Campaigns List -->
-        <div class="section">
-            <div class="section-header">Campaigns</div>
-            <div class="section-body">
-                <div id="createMessage"></div>
-                <form onsubmit="handleCreateCampaign(event)">
-                    <div class="form-group">
-                        <label>Campaign Name</label>
-                        <input type="text" id="campaignName" placeholder="e.g., Lost Mines" required>
-                    </div>
-                    <div class="form-group">
-                        <label>Description</label>
-                        <textarea id="campaignDesc" placeholder="Brief description..." rows="3"></textarea>
-                    </div>
-                    <button type="submit">Create Campaign</button>
-                </form>
+        <!-- Left: Campaign list + create form -->
+        <div class="panel">
+            <div class="panel-head">Campaigns</div>
+            <div class="panel-body">
+                <div id="createMsg"></div>
+                <div class="s-title" style="margin-top:0">New Campaign</div>
+                <div class="form-group">
+                    <label>Name</label>
+                    <input type="text" id="campaignName" placeholder="e.g., Lost Mines…">
+                </div>
+                <div class="form-group">
+                    <label>Description</label>
+                    <textarea id="campaignDesc" rows="2" placeholder="Brief description…"></textarea>
+                </div>
+                <div class="form-group">
+                    <label>Calendar Type <span style="color:var(--red);font-size:10px">(cannot change
+                            later)</span></label>
+                    <select id="campaignCalType">
+                        <option value="harptos">Harptos (D&D / Faerûn)</option>
+                        <option value="gregorian">Gregorian</option>
+                    </select>
+                </div>
+                <button onclick="handleCreateCampaign()">Create Campaign</button>
 
-                <div id="campaignsList" style="margin-top: 16px;"></div>
+                <div class="s-title" style="margin-top:20px">Your Campaigns</div>
+                <div id="campaignsList">
+                    <div class="empty">No campaigns yet</div>
+                </div>
             </div>
         </div>
 
-        <!-- Campaign Details -->
-        <div class="section">
-            <div class="section-header" id="detailsHeader">Select a Campaign</div>
-            <div class="section-body" id="campaignDetails">
-                <div class="empty-state">Select a campaign to manage players and details</div>
+        <!-- Right: Campaign details -->
+        <div class="detail-panel">
+            <div class="detail-head" id="detailHead">Select a Campaign</div>
+            <div class="detail-body" id="detailBody">
+                <div class="empty">Select a campaign from the list</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Calendar picker modal (for Today Marker) -->
+    <div class="cal-modal-overlay" id="calPickerOverlay">
+        <div class="cal-modal">
+            <h3>📅 Set Today Marker</h3>
+            <div class="cal-row">
+                <div class="form-group">
+                    <label>Year</label>
+                    <input type="number" id="cpYear" value="1492" min="1" oninput="updateCalPreview()">
+                </div>
+                <div class="form-group" id="cpDayGroup">
+                    <label>Day</label>
+                    <input type="number" id="cpDay" value="1" min="1" max="30" oninput="updateCalPreview()">
+                </div>
+            </div>
+            <div class="form-group">
+                <label id="cpMonthLabel">Month / Festival</label>
+                <select id="cpMonth" onchange="onCalPickerMonthChange()"></select>
+            </div>
+            <div class="cal-result" id="cpResult">—</div>
+            <div class="btn-row">
+                <button onclick="closeCalPicker()">Cancel</button>
+                <button onclick="clearTodayMarker()" class="danger">Clear</button>
+                <button onclick="applyCalPicker()" style="background:var(--gold-dim)">Set Marker</button>
             </div>
         </div>
     </div>
 
     <script>
-        let campaigns = [];
-        let currentCampaign = null;
+        /* ─── State ─── */
+        let campaigns = [], currentCampaign = null, allUsers = [], _calPickerType = 'harptos', _resolvedAbsDay = null;
 
+        /* ─── Harptos / Calendar data (duplicated from timeline.html for standalone use) ─── */
+        const HARPTOS = [
+            { name: 'Hammer', sd: 1, days: 30, sp: false }, { name: 'Midwinter', sd: 31, days: 1, sp: true },
+            { name: 'Alturiak', sd: 32, days: 30, sp: false }, { name: 'Ches', sd: 62, days: 30, sp: false },
+            { name: 'Tarsakh', sd: 92, days: 30, sp: false }, { name: 'Greengrass', sd: 122, days: 1, sp: true },
+            { name: 'Mirtul', sd: 123, days: 30, sp: false }, { name: 'Kythorn', sd: 153, days: 30, sp: false },
+            { name: 'Flamerule', sd: 183, days: 30, sp: false }, { name: 'Midsummer', sd: 213, days: 1, sp: true },
+            { name: 'Flamerule II', sd: 214, days: 0, sp: false }, // leap placeholder, skip
+            { name: 'Eleasias', sd: 214, days: 30, sp: false }, { name: 'Eleint', sd: 244, days: 30, sp: false },
+            { name: 'Highharvestide', sd: 274, days: 1, sp: true }, { name: 'Marpenoth', sd: 275, days: 30, sp: false },
+            { name: 'Uktar', sd: 305, days: 30, sp: false }, { name: 'Feast of Moon', sd: 335, days: 1, sp: true },
+            { name: 'Nightal', sd: 336, days: 30, sp: false },
+        ];
+        const HARPTOS_REAL = HARPTOS.filter(p => p.days > 0);
+        const GREG_MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+        const GREG_DAYS = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+
+        function absDay(year, doy) { return (year - 1) * 365 + doy; }
+        function harptDayToPeriod(doy) {
+            for (const p of HARPTOS_REAL) if (doy >= p.sd && doy < p.sd + p.days) return { period: p, dayInPeriod: doy - p.sd + 1 };
+            return null;
+        }
+        function doyFromForm(midx, day, calType) {
+            if (calType === 'harptos') {
+                const p = HARPTOS_REAL[midx]; return p ? p.sd + (p.sp ? 0 : Math.max(0, day - 1)) : 1;
+            } else {
+                let doy = 0;
+                for (let i = 0; i < midx; i++) doy += GREG_DAYS[i];
+                return doy + Math.max(1, day);
+            }
+        }
+        function formatAbsDay(absD, calType) {
+            const year = Math.floor((absD - 1) / 365) + 1;
+            const doy = ((absD - 1) % 365) + 1;
+            if (calType === 'harptos') {
+                const r = harptDayToPeriod(doy);
+                if (!r) return `Year ${year}, Day ${doy}`;
+                return r.period.sp ? `${r.period.name}, Year ${year}` : `${r.dayInPeriod} ${r.period.name}, Year ${year}`;
+            } else {
+                let rem = doy, m = 0;
+                while (m < 11 && rem > GREG_DAYS[m]) { rem -= GREG_DAYS[m]; m++; }
+                return `${GREG_MONTHS[m]} ${rem}, ${year}`;
+            }
+        }
+
+        /* ─── Calendar Picker ─── */
+        function openCalPicker(calType, currentAbsDay) {
+            _calPickerType = calType;
+            const overlay = document.getElementById('calPickerOverlay');
+            const monthSel = document.getElementById('cpMonth');
+            const label = document.getElementById('cpMonthLabel');
+
+            label.textContent = calType === 'harptos' ? 'Month / Festival' : 'Month';
+            if (calType === 'harptos') {
+                monthSel.innerHTML = HARPTOS_REAL.map((p, i) => `<option value="${i}">${p.name}${p.sp ? ' ✦' : ''}</option>`).join('');
+            } else {
+                monthSel.innerHTML = GREG_MONTHS.map((m, i) => `<option value="${i}">${m}</option>`).join('');
+            }
+
+            // Pre-fill if we have an existing marker
+            if (currentAbsDay) {
+                const year = Math.floor((currentAbsDay - 1) / 365) + 1;
+                const doy = ((currentAbsDay - 1) % 365) + 1;
+                document.getElementById('cpYear').value = year;
+                if (calType === 'harptos') {
+                    const r = harptDayToPeriod(doy);
+                    if (r) {
+                        const midx = HARPTOS_REAL.indexOf(r.period);
+                        monthSel.value = midx;
+                        document.getElementById('cpDay').value = r.period.sp ? 1 : r.dayInPeriod;
+                    }
+                } else {
+                    let rem = doy, m = 0;
+                    while (m < 11 && rem > GREG_DAYS[m]) { rem -= GREG_DAYS[m]; m++; }
+                    monthSel.value = m;
+                    document.getElementById('cpDay').value = rem;
+                }
+            } else {
+                document.getElementById('cpYear').value = calType === 'harptos' ? 1492 : 2024;
+                monthSel.value = 0;
+                document.getElementById('cpDay').value = 1;
+            }
+
+            onCalPickerMonthChange();
+            updateCalPreview();
+            overlay.classList.add('open');
+        }
+
+        function onCalPickerMonthChange() {
+            const midx = +document.getElementById('cpMonth').value;
+            const dayGrp = document.getElementById('cpDayGroup');
+            const dayInp = document.getElementById('cpDay');
+            if (_calPickerType === 'harptos') {
+                const p = HARPTOS_REAL[midx];
+                if (p && p.sp) { dayGrp.style.display = 'none'; dayInp.value = 1; }
+                else { dayGrp.style.display = ''; }
+            } else {
+                dayGrp.style.display = '';
+                dayInp.max = GREG_DAYS[midx] || 31;
+            }
+            updateCalPreview();
+        }
+
+        function updateCalPreview() {
+            const year = parseInt(document.getElementById('cpYear').value) || 1;
+            const midx = +document.getElementById('cpMonth').value;
+            const day = parseInt(document.getElementById('cpDay').value) || 1;
+            const doy = doyFromForm(midx, day, _calPickerType);
+            _resolvedAbsDay = absDay(year, doy);
+            document.getElementById('cpResult').textContent = formatAbsDay(_resolvedAbsDay, _calPickerType);
+        }
+
+        function closeCalPicker() { document.getElementById('calPickerOverlay').classList.remove('open'); }
+
+        function clearTodayMarker() {
+            _resolvedAbsDay = null;
+            saveMetaMarker(null);
+            closeCalPicker();
+        }
+
+        async function applyCalPicker() {
+            if (!_resolvedAbsDay) return;
+            await saveMetaMarker(String(_resolvedAbsDay));
+            closeCalPicker();
+        }
+
+        async function saveMetaMarker(markerValue) {
+            if (!currentCampaign) return;
+            try {
+                const res = await fetch(`/api/campaigns/${currentCampaign.id}/meta`, {
+                    method: 'PUT', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ today_marker: markerValue })
+                });
+                if (res.ok) {
+                    const meta = await res.json();
+                    // Update display
+                    const display = document.getElementById('todayDisplay');
+                    if (display) {
+                        display.textContent = meta.today_marker
+                            ? formatAbsDay(parseInt(meta.today_marker), currentCampaign._calType || 'harptos')
+                            : '— Not set —';
+                    }
+                    showMsg('todayMsg', '✓ Today marker saved', 'ok');
+                }
+            } catch (e) { showMsg('todayMsg', '✗ ' + e.message, 'err'); }
+        }
+
+        /* ─── Campaign CRUD ─── */
         async function loadCampaigns() {
             initHeaderComponent('userMenuMount');
             await loadUsers();
             try {
-                const response = await fetch('/api/campaigns');
-                campaigns = await response.json();
+                const res = await fetch('/api/campaigns');
+                campaigns = res.ok ? await res.json() : [];
                 renderCampaignList();
-            } catch (error) {
-                console.error('Error loading campaigns:', error);
-            }
+            } catch (e) { console.error(e); }
         }
-
-        function renderCampaignList() {
-            const list = document.getElementById('campaignsList');
-
-            if (campaigns.length === 0) {
-                list.innerHTML = '<div class="empty-state">No campaigns yet</div>';
-                return;
-            }
-
-            list.innerHTML = campaigns.map(c => `
-                <div class="campaign-item ${currentCampaign?.id === c.id ? 'active' : ''}" 
-                     onclick="selectCampaign(${c.id})">
-                    <div class="campaign-name">${c.name}</div>
-                    <div class="campaign-desc">${c.description || 'No description'}</div>
-                </div>
-            `).join('');
-        }
-
-        function selectCampaign(campaignId) {
-            currentCampaign = campaigns.find(c => c.id === campaignId);
-            renderCampaignList();
-            renderCampaignDetails();
-        }
-
-        async function handleCreateCampaign(event) {
-            event.preventDefault();
-            const name = document.getElementById('campaignName').value;
-            const description = document.getElementById('campaignDesc').value;
-            const msg = document.getElementById('createMessage');
-
-            try {
-                const response = await fetch('/api/campaigns', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ name, description })
-                });
-
-                if (response.ok) {
-                    const campaign = await response.json();
-                    msg.innerHTML = '<div class="message success">✓ Campaign created</div>';
-                    document.getElementById('campaignName').value = '';
-                    document.getElementById('campaignDesc').value = '';
-                    loadCampaigns();
-                    setTimeout(() => msg.innerHTML = '', 2000);
-                } else {
-                    const error = await response.json();
-                    msg.innerHTML = `<div class="message error">✗ ${error.error}</div>`;
-                }
-            } catch (error) {
-                msg.innerHTML = `<div class="message error">✗ Error: ${error.message}</div>`;
-            }
-        }
-
-        let allUsers = [];
 
         async function loadUsers() {
             try {
-                const response = await fetch('/api/users');
-                if (response.ok) {
-                    allUsers = await response.json();
-                }
-            } catch (e) {
-                allUsers = [];
-            }
+                const res = await fetch('/api/users');
+                allUsers = res.ok ? await res.json() : [];
+            } catch (e) { allUsers = []; }
         }
 
-        async function loadTimelines(campaignId) {
+        function renderCampaignList() {
+            const el = document.getElementById('campaignsList');
+            if (!campaigns.length) { el.innerHTML = '<div class="empty">No campaigns yet</div>'; return; }
+            el.innerHTML = campaigns.map(c => `
+        <div class="c-item ${currentCampaign?.id === c.id ? 'active' : ''}" onclick="selectCampaign(${c.id})">
+            <div class="c-name">${escHtml(c.name)}</div>
+            <div class="c-cal">${c._calType === 'gregorian' ? 'Gregorian' : 'Harptos'}</div>
+        </div>`).join('');
+        }
+
+        async function handleCreateCampaign() {
+            const name = document.getElementById('campaignName').value.trim();
+            const desc = document.getElementById('campaignDesc').value.trim();
+            const calType = document.getElementById('campaignCalType').value;
+            if (!name) { showMsg('createMsg', '✗ Name required', 'err'); return; }
             try {
-                const response = await fetch(`/api/timeline/${campaignId}`);
-                if (response.ok) return await response.json();
-            } catch (e) { }
-            return [];
+                const res = await fetch('/api/campaigns', {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ name, description: desc, calendar_type: calType })
+                });
+                if (res.ok) {
+                    const c = await res.json();
+                    c._calType = calType;
+                    document.getElementById('campaignName').value = '';
+                    document.getElementById('campaignDesc').value = '';
+                    showMsg('createMsg', '✓ Campaign created', 'ok');
+                    await loadCampaigns();
+                    selectCampaign(c.id);
+                } else {
+                    const e = await res.json();
+                    showMsg('createMsg', '✗ ' + e.error, 'err');
+                }
+            } catch (e) { showMsg('createMsg', '✗ ' + e.message, 'err'); }
+        }
+
+        async function selectCampaign(id) {
+            currentCampaign = campaigns.find(c => c.id === id);
+            if (!currentCampaign) return;
+            renderCampaignList();
+            await renderCampaignDetails();
         }
 
         async function renderCampaignDetails() {
-            if (!currentCampaign) return;
-
-            const details = document.getElementById('campaignDetails');
-            document.getElementById('detailsHeader').textContent = `📋 ${currentCampaign.name}`;
+            const head = document.getElementById('detailHead');
+            const body = document.getElementById('detailBody');
+            head.textContent = `📋 ${currentCampaign.name}`;
+            body.innerHTML = '<div class="empty">Loading…</div>';
 
             try {
-                const [playersResponse, timelines, locationsRes, metaRes] = await Promise.all([
+                const [playersRes, locsRes, metaRes, timelinesRes] = await Promise.all([
                     fetch(`/api/campaigns/${currentCampaign.id}/players`),
-                    loadTimelines(currentCampaign.id),
                     fetch(`/api/campaigns/${currentCampaign.id}/locations`),
-                    fetch(`/api/campaigns/${currentCampaign.id}/meta`)
+                    fetch(`/api/campaigns/${currentCampaign.id}/meta`),
+                    fetch(`/api/campaigns/${currentCampaign.id}/timelines`),
                 ]);
 
-                let players = [];
-                if (playersResponse.ok) {
-                    const data = await playersResponse.json();
-                    players = Array.isArray(data) ? data : [];
-                } else {
-                    const err = await playersResponse.json().catch(() => ({}));
-                    details.innerHTML = `<div class="message error">Error loading players: ${err.error || playersResponse.statusText}</div>`;
-                    return;
-                }
-
-                const locations = locationsRes.ok ? await locationsRes.json() : [];
+                const players = playersRes.ok ? await playersRes.json() : [];
+                const locs = locsRes.ok ? await locsRes.json() : [];
                 const meta = metaRes.ok ? await metaRes.json() : {};
+                const timelines = timelinesRes.ok ? await timelinesRes.json() : [];
 
-                const userOptions = allUsers
-                    .filter(u => u.role === 'player')
-                    .map(u => `<option value="${u.id}">${u.username}</option>`)
-                    .join('');
+                const calType = meta.calendar_type || 'harptos';
+                currentCampaign._calType = calType;
 
-                const timelineHtml = timelines.length === 0
-                    ? '<div class="empty-state">No timeline entries for this campaign</div>'
-                    : `<table>
-                        <thead><tr><th>Date</th><th>Title</th><th>Type</th></tr></thead>
-                        <tbody>
-                        ${timelines.map(t => `
-                            <tr>
-                                <td>${t.date || '—'}</td>
-                                <td>${t.title}</td>
-                                <td><span style="color:var(--gold-dim);font-size:11px;">${t.type}</span></td>
-                            </tr>
-                        `).join('')}
-                        </tbody>
-                    </table>`;
+                // Format current today marker
+                const todayDisplay = meta.today_marker
+                    ? formatAbsDay(parseInt(meta.today_marker), calType)
+                    : '— Not set —';
 
-                const locationsHtml = locations.length === 0
-                    ? '<div class="empty-state" style="padding:10px;">No locations yet</div>'
-                    : `<table>
-                        <thead><tr><th>Name</th><th>Description</th><th></th></tr></thead>
-                        <tbody>
-                        ${locations.map(l => `
-                            <tr>
-                                <td><strong>${escHtml(l.name)}</strong></td>
-                                <td style="font-size:11px;color:var(--text-dim);">${escHtml(l.description || '')}</td>
-                                <td><button class="danger" style="width:auto;padding:3px 6px;margin:0;font-size:.6rem;"
-                                            onclick="deleteLocation(${l.id})">Delete</button></td>
-                            </tr>`).join('')}
-                        </tbody>
-                    </table>`;
+                const userOptions = allUsers.filter(u => u.role === 'player')
+                    .map(u => `<option value="${u.id}">${escHtml(u.username)}</option>`).join('');
 
-                details.innerHTML = `
-                    <div id="playersMessage"></div>
+                body.innerHTML = `
+        <!-- PLAYERS -->
+        <div class="s-title">👤 Players (${players.length})</div>
+        <div id="playersMsg"></div>
+        <div style="display:flex;gap:6px;margin-bottom:8px;flex-wrap:wrap">
+            <input type="text" id="playerName" placeholder="Character name" style="flex:1;min-width:120px">
+            <select id="playerUserId" style="flex:1;min-width:120px">
+                <option value="">— No user —</option>${userOptions}
+            </select>
+            <button onclick="addPlayer()" class="sm">Add</button>
+        </div>
+        ${players.length === 0
+                        ? '<div class="empty">No players yet</div>'
+                        : `<table><thead><tr><th>Character</th><th>User</th><th>Timeline</th><th></th></tr></thead><tbody>
+               ${players.map(p => `<tr>
+                 <td>${escHtml(p.player_name)}</td>
+                 <td>${escHtml(p.username || '—')}</td>
+                 <td style="white-space:nowrap">
+                   <button class="sm" onclick="openPlayerTimeline(${p.id})" title="Open existing timeline" style="margin:0 2px 0 0">📜 View</button>
+                   <button class="sm" onclick="createTimelineForPlayer(${p.id}, '${escHtml(p.player_name).replace(/'/g, "&#39;")}')" title="Create new timeline" style="margin:0">+ New</button>
+                 </td>
+                 <td><button class="sm danger" onclick="deletePlayer(${p.id})">Delete</button></td>
+               </tr>`).join('')}
+               </tbody></table>`}
 
-                    <div class="form-group">
-                        <label>Add Player to Campaign</label>
-                        <input type="text" id="playerName" placeholder="Character name" style="margin-bottom:6px;">
-                        <label>Assign User (optional)</label>
-                        <select id="playerUserId">
-                            <option value="">— No user assigned —</option>
-                            ${userOptions}
-                        </select>
-                        <button onclick="handleCreatePlayer()">Add Player</button>
-                    </div>
+        <!-- SETTINGS -->
+        <div class="s-title" style="margin-top:20px">⚙️ Campaign Settings</div>
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;flex-wrap:wrap">
+            <span style="font-size:.78rem;color:var(--text-dim)">Calendar:</span>
+            <span style="font-family:var(--fd);font-size:.82rem;color:var(--gold)">${calType === 'harptos' ? 'Harptos (D&D / Faerûn)' : 'Gregorian'}</span>
+            <span style="font-size:.68rem;color:var(--text-dim);font-style:italic">(set at creation, cannot change)</span>
+        </div>
 
-                    <h3 style="margin-top:16px;font-size:13px;color:var(--gold);margin-bottom:8px;">
-                        Players (${players.length})
-                    </h3>
-                    ${players.length === 0
-                        ? '<div class="empty-state">No players yet</div>'
-                        : `<table>
-                            <thead><tr><th>Character</th><th>User</th><th>Actions</th></tr></thead>
-                            <tbody>
-                                ${players.map(p => `
-                                    <tr>
-                                        <td>${p.player_name}</td>
-                                        <td>${p.username || '—'}</td>
-                                        <td><button class="danger" style="width:auto;padding:3px 6px;margin:0;"
-                                                    onclick="deletePlayer(${currentCampaign.id}, ${p.id})">Delete</button></td>
-                                    </tr>`).join('')}
-                            </tbody>
-                        </table>`}
+        <!-- TODAY MARKER -->
+        <div class="s-title" style="margin-top:16px">📍 Today Marker</div>
+        <div id="todayMsg"></div>
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px;flex-wrap:wrap">
+            <span id="todayDisplay" style="font-family:var(--fd);font-size:.88rem;color:var(--gold);flex:1">${escHtml(todayDisplay)}</span>
+            <button onclick="openCalPicker('${calType}', ${meta.today_marker ? parseInt(meta.today_marker) : 'null'})" class="sm">📅 Set Date</button>
+        </div>
 
-                    <h3 style="margin-top:20px;font-size:13px;color:var(--gold);margin-bottom:8px;">
-                        📍 Today Marker
-                    </h3>
-                    <div style="display:flex;gap:6px;align-items:center;margin-bottom:4px;">
-                        <input type="text" id="todayMarkerInput" value="${escHtml(meta.today_marker || '')}"
-                               placeholder="e.g., Day 47, 15th of Harvest Moon…"
-                               style="flex:1;font-size:12px;padding:5px 7px;">
-                        <button onclick="saveTodayMarker()" style="width:auto;padding:5px 10px;margin:0;font-size:.65rem;">Save</button>
-                    </div>
-                    <div id="todayMsg" style="font-size:11px;"></div>
+        <!-- LOCATIONS -->
+        <div class="s-title" style="margin-top:20px">🗺️ Locations (${locs.length})</div>
+        <div id="locMsg"></div>
+        <div style="display:flex;gap:6px;margin-bottom:8px">
+            <input type="text" id="locName" placeholder="Location name" style="flex:1">
+            <input type="text" id="locDesc" placeholder="Description" style="flex:2">
+            <button onclick="addLocation()" class="sm">Add</button>
+        </div>
+        ${locs.length === 0
+                        ? '<div class="empty">No locations yet</div>'
+                        : `<table><thead><tr><th>Name</th><th>Description</th><th></th></tr></thead><tbody>
+               ${locs.map(l => `<tr>
+                 <td><strong>${escHtml(l.name)}</strong></td>
+                 <td style="font-size:11px;color:var(--text-dim)">${escHtml(l.description || '')}</td>
+                 <td><button class="sm danger" onclick="deleteLoc(${l.id})">Delete</button></td>
+               </tr>`).join('')}
+               </tbody></table>`}
 
-                    <h3 style="margin-top:20px;font-size:13px;color:var(--gold);margin-bottom:8px;">
-                        🗺️ Locations (${locations.length})
-                    </h3>
-                    <div style="display:flex;gap:6px;margin-bottom:8px;">
-                        <input type="text" id="locNameInput" placeholder="Location name" style="flex:1;font-size:12px;padding:5px 7px;">
-                        <input type="text" id="locDescInput" placeholder="Short description" style="flex:2;font-size:12px;padding:5px 7px;">
-                        <button onclick="handleCreateLocation()" style="width:auto;padding:5px 10px;margin:0;font-size:.65rem;">Add</button>
-                    </div>
-                    <div id="locMsg" style="font-size:11px;margin-bottom:6px;"></div>
-                    ${locationsHtml}
+        <!-- PRIVATE TIMELINES -->
+        <div class="s-title" style="margin-top:20px">📜 Private Timelines (${timelines.length} players)</div>
+        <div id="privTlMsg"></div>
+        ${timelines.length === 0
+                        ? '<div class="empty">No timeline entries yet</div>'
+                        : timelines.map(t => `
+              <div class="tl-card">
+                <div class="tl-card-info">
+                  <div class="tl-pname">${escHtml(t.player_name)}</div>
+                  ${t.username ? `<div class="tl-user">${escHtml(t.username)}</div>` : ''}
+                  <div class="tl-count">${t.entry_count} entr${t.entry_count === 1 ? 'y' : 'ies'}${t.first_year ? ` · Years ${t.first_year}–${t.last_year}` : ''}</div>
+                </div>
+                <button class="sm" onclick="openPlayerTimeline(${t.player_id})">Open Timeline →</button>
+              </div>`).join('')}
 
-                    <h3 style="margin-top:20px;font-size:13px;color:var(--gold);margin-bottom:8px;">
-                        📜 Timeline Entries (${timelines.length})
-                    </h3>
-                    ${timelineHtml}
-
-                    <div style="margin-top:12px;">
-                        <button onclick="window.location.href='/timeline?campaign=${currentCampaign.id}'" style="background:var(--surface2);border:1px solid var(--border2);">
-                            Open Timeline Editor →
-                        </button>
-                        <button class="danger" style="margin-top:6px;" onclick="deleteCampaign(${currentCampaign.id})">
-                            Delete Campaign
-                        </button>
-                    </div>
-                `;
-            } catch (error) {
-                details.innerHTML = `<div class="message error">Error loading campaign details: ${error.message}</div>`;
+        <!-- DANGER -->
+        <div class="s-title" style="margin-top:24px">⚠️ Danger Zone</div>
+        <button onclick="window.location.href='/timeline?campaign=' + currentCampaign.id + '&mode=private'" style="background:var(--surface2);border:1px solid var(--border2);margin-bottom:6px">
+            📜 Open Combined Timeline →
+        </button>
+        <button class="danger" onclick="deleteCampaign()">Delete Campaign</button>
+        `;
+            } catch (e) {
+                body.innerHTML = `<div class="msg err">Error: ${e.message}</div>`;
             }
         }
 
-        async function handleCreatePlayer() {
+        /* ─── Player actions ─── */
+        async function addPlayer() {
             const name = document.getElementById('playerName').value.trim();
             const userId = document.getElementById('playerUserId').value || null;
             if (!name) return;
-
             try {
-                const response = await fetch(`/api/campaigns/${currentCampaign.id}/players`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                const res = await fetch(`/api/campaigns/${currentCampaign.id}/players`, {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ name, userId })
                 });
-
-                if (response.ok) {
-                    document.getElementById('playerName').value = '';
-                    renderCampaignDetails();
-                    const msg = document.getElementById('playersMessage');
-                    msg.innerHTML = '<div class="message success">✓ Player added</div>';
-                    setTimeout(() => msg.innerHTML = '', 2000);
-                } else {
-                    const error = await response.json();
-                    document.getElementById('playersMessage').innerHTML =
-                        `<div class="message error">✗ ${error.error}</div>`;
-                }
-            } catch (error) {
-                document.getElementById('playersMessage').innerHTML =
-                    `<div class="message error">✗ Error: ${error.message}</div>`;
-            }
+                if (res.ok) { document.getElementById('playerName').value = ''; await renderCampaignDetails(); showMsg('playersMsg', '✓ Player added', 'ok'); }
+                else { const e = await res.json(); showMsg('playersMsg', '✗ ' + e.error, 'err'); }
+            } catch (e) { showMsg('playersMsg', '✗ ' + e.message, 'err'); }
         }
 
-        async function deletePlayer(campaignId, playerId) {
-            if (!confirm('Delete this player?')) return;
-
-            try {
-                await fetch(`/api/campaigns/${campaignId}/players/${playerId}`, {
-                    method: 'DELETE'
-                });
-                renderCampaignDetails();
-            } catch (error) {
-                alert('Error: ' + error.message);
-            }
+        async function deletePlayer(playerId) {
+            if (!confirm('Delete this player and all their data?')) return;
+            await fetch(`/api/campaigns/${currentCampaign.id}/players/${playerId}`, { method: 'DELETE' });
+            await renderCampaignDetails();
         }
 
-        async function deleteCampaign(campaignId) {
-            if (!confirm('Delete campaign and all its data?')) return;
-
-            try {
-                await fetch(`/api/campaigns/${campaignId}`, {
-                    method: 'DELETE'
-                });
-                currentCampaign = null;
-                loadCampaigns();
-                document.getElementById('campaignDetails').innerHTML =
-                    '<div class="empty-state">Campaign deleted</div>';
-            } catch (error) {
-                alert('Error: ' + error.message);
-            }
-        }
-
-        function escHtml(str) {
-            return (str || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-        }
-
-        async function saveTodayMarker() {
-            const value = document.getElementById('todayMarkerInput').value.trim();
-            const msgEl = document.getElementById('todayMsg');
-            try {
-                const res = await fetch(`/api/campaigns/${currentCampaign.id}/meta`, {
-                    method: 'PUT',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ today_marker: value })
-                });
-                if (res.ok) {
-                    msgEl.innerHTML = '<span style="color:#9fd49f;">✓ Saved</span>';
-                    setTimeout(() => msgEl.innerHTML = '', 2000);
-                } else {
-                    const e = await res.json();
-                    msgEl.innerHTML = `<span style="color:#d49f9f;">✗ ${e.error || 'Error'}</span>`;
-                }
-            } catch (e) {
-                msgEl.innerHTML = `<span style="color:#d49f9f;">✗ ${e.message}</span>`;
-            }
-        }
-
-        async function handleCreateLocation() {
-            const name = (document.getElementById('locNameInput').value || '').trim();
-            const desc = (document.getElementById('locDescInput').value || '').trim();
-            const msgEl = document.getElementById('locMsg');
+        /* ─── Location actions ─── */
+        async function addLocation() {
+            const name = (document.getElementById('locName').value || '').trim();
+            const desc = (document.getElementById('locDesc').value || '').trim();
             if (!name) return;
             try {
                 const res = await fetch(`/api/campaigns/${currentCampaign.id}/locations`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ name, description: desc })
                 });
-                if (res.ok) {
-                    renderCampaignDetails();
-                } else {
-                    const e = await res.json();
-                    msgEl.innerHTML = `<span style="color:#d49f9f;">✗ ${e.error || 'Error'}</span>`;
-                }
-            } catch (e) {
-                msgEl.innerHTML = `<span style="color:#d49f9f;">✗ ${e.message}</span>`;
-            }
+                if (res.ok) { document.getElementById('locName').value = ''; document.getElementById('locDesc').value = ''; await renderCampaignDetails(); }
+                else { const e = await res.json(); showMsg('locMsg', '✗ ' + e.error, 'err'); }
+            } catch (e) { showMsg('locMsg', '✗ ' + e.message, 'err'); }
         }
 
-        async function deleteLocation(locationId) {
+        async function deleteLoc(locId) {
             if (!confirm('Delete this location?')) return;
-            try {
-                await fetch(`/api/campaigns/${currentCampaign.id}/locations/${locationId}`, { method: 'DELETE' });
-                renderCampaignDetails();
-            } catch (e) {
-                alert('Error: ' + e.message);
-            }
+            await fetch(`/api/campaigns/${currentCampaign.id}/locations/${locId}`, { method: 'DELETE' });
+            await renderCampaignDetails();
         }
+
+        /* ─── Campaign actions ─── */
+        async function deleteCampaign() {
+            if (!confirm(`Delete "${currentCampaign.name}" and ALL its data? This cannot be undone.`)) return;
+            await fetch(`/api/campaigns/${currentCampaign.id}`, { method: 'DELETE' });
+            currentCampaign = null; await loadCampaigns();
+            document.getElementById('detailHead').textContent = 'Select a Campaign';
+            document.getElementById('detailBody').innerHTML = '<div class="empty">Campaign deleted</div>';
+        }
+
+        function openTimeline() {
+            location.href = `/timeline?campaign=${currentCampaign.id}`;
+        }
+        function openPlayerTimeline(playerId) {
+            location.href = `/timeline?campaign=${currentCampaign.id}&player=${playerId}&mode=private`;
+        }
+
+        /* ─── Util ─── */
+        function escHtml(s) { return (s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
+        function showMsg(id, text, type) {
+            const el = document.getElementById(id); if (!el) return;
+            el.innerHTML = `<div class="msg ${type}">${text}</div>`;
+            setTimeout(() => el.innerHTML = '', 2500);
+        }
+
+        /* ─── Enter key support ─── */
+        document.addEventListener('keydown', e => {
+            if (e.key !== 'Enter') return;
+            if (e.target.id === 'campaignName' || e.target.id === 'campaignDesc') handleCreateCampaign();
+            if (e.target.id === 'playerName') addPlayer();
+            if (e.target.id === 'locName' || e.target.id === 'locDesc') addLocation();
+            if (e.target.id === 'cpYear' || e.target.id === 'cpDay') { updateCalPreview(); }
+        });
+
+        /* ─── Close picker on backdrop ─── */
+        document.getElementById('calPickerOverlay').addEventListener('click', e => {
+            if (e.target === document.getElementById('calPickerOverlay')) closeCalPicker();
+        });
+
+        function openPlayerTimeline(playerId) {
+            window.location.href = `/timeline?campaign=${currentCampaign.id}&player=${playerId}&mode=private`;
+        }
+
+        async function createTimelineForPlayer(playerId, playerName) {
+            const name = prompt(`Timeline name for "${playerName}":`, 'Main Story');
+            if (!name || !name.trim()) return;
+            try {
+                const res = await fetch(`/api/player-timelines/${currentCampaign.id}/${playerId}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ name: name.trim() })
+                });
+                if (res.ok) {
+                    const tl = await res.json();
+                    window.location.href = `/timeline?campaign=${currentCampaign.id}&player=${playerId}&timeline=${tl.id}&mode=private`;
+                } else {
+                    const e = await res.json();
+                    alert('Error: ' + (e.error || 'Could not create timeline'));
+                }
+            } catch (e) { alert('Error: ' + e.message); }
+        }
+
+        // Enter key support
+        document.addEventListener('keydown', e => {
+            if (e.key !== 'Enter') return;
+            const t = e.target.id;
+            if (t === 'campaignName' || t === 'campaignDesc') handleCreateCampaign(e);
+            if (t === 'playerName') addPlayer();
+            if (t === 'locName' || t === 'locDesc') addLocation();
+            if (t === 'cpYear' || t === 'cpDay') updateCalPreview();
+        });
+
+        // Esc closes calendar picker
+        document.addEventListener('keydown', e => {
+            if (e.key === 'Escape') closeCalPicker();
+        });
 
         loadCampaigns();
     </script>

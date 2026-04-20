@@ -1,115 +1,269 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Character Sheet — Public View</title>
-  <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700&family=Crimson+Text:ital,wght@0,400;1,400&display=swap" rel="stylesheet">
+  <link
+    href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700&family=Crimson+Text:ital,wght@0,400;1,400&display=swap"
+    rel="stylesheet">
   <style>
-    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0 }
-    :root {
-      --bg: #13100b; --surface: #1e1810; --surface2: #272015;
-      --border: #3d3220; --border2: #554428;
-      --gold: #c9a84c; --gold-dim: #7a6030;
-      --text: #e8dcc0; --text-dim: #a09070;
-      --fd: 'Cinzel','Georgia',serif; --fb: 'Crimson Text','Georgia',serif;
+    *,
+    *::before,
+    *::after {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0
     }
-    html, body { min-height: 100%; background: var(--bg); color: var(--text); font-family: var(--fb); font-size: 15px }
+
+    :root {
+      --bg: #13100b;
+      --surface: #1e1810;
+      --surface2: #272015;
+      --border: #3d3220;
+      --border2: #554428;
+      --gold: #c9a84c;
+      --gold-dim: #7a6030;
+      --text: #e8dcc0;
+      --text-dim: #a09070;
+      --fd: 'Cinzel', 'Georgia', serif;
+      --fb: 'Crimson Text', 'Georgia', serif;
+    }
+
+    html,
+    body {
+      min-height: 100%;
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--fb);
+      font-size: 15px
+    }
 
     .header {
-      background: var(--surface); border-bottom: 2px solid var(--gold-dim);
-      padding: 10px 20px; display: flex; align-items: center; gap: 12px;
-      box-shadow: 0 2px 12px rgba(0,0,0,.5);
+      background: var(--surface);
+      border-bottom: 2px solid var(--gold-dim);
+      padding: 10px 20px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      box-shadow: 0 2px 12px rgba(0, 0, 0, .5);
     }
-    .header h1 { font-family: var(--fd); font-size: 1rem; color: var(--gold); letter-spacing: .08em }
+
+    .header h1 {
+      font-family: var(--fd);
+      font-size: 1rem;
+      color: var(--gold);
+      letter-spacing: .08em
+    }
+
     .header .badge {
-      margin-left: auto; font-size: 11px; font-family: var(--fd); letter-spacing: .06em;
-      background: var(--gold-dim); color: var(--text); padding: 3px 10px; border-radius: 2px;
+      margin-left: auto;
+      font-size: 11px;
+      font-family: var(--fd);
+      letter-spacing: .06em;
+      background: var(--gold-dim);
+      color: var(--text);
+      padding: 3px 10px;
+      border-radius: 2px;
       text-transform: uppercase;
     }
 
-    .container { max-width: 740px; margin: 28px auto; padding: 0 16px 40px }
+    .container {
+      max-width: 740px;
+      margin: 28px auto;
+      padding: 0 16px 40px
+    }
 
     .char-banner {
-      display: flex; gap: 20px; align-items: flex-start;
-      background: var(--surface); border: 1px solid var(--border);
-      border-radius: 2px; padding: 18px; margin-bottom: 20px;
+      display: flex;
+      gap: 20px;
+      align-items: flex-start;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 2px;
+      padding: 18px;
+      margin-bottom: 20px;
     }
+
     .portrait {
-      width: 120px; height: 160px; flex-shrink: 0; border: 2px solid var(--border2);
-      border-radius: 2px; object-fit: cover; background: var(--surface2);
-      display: flex; align-items: center; justify-content: center;
-      font-size: 3rem; overflow: hidden;
+      width: 120px;
+      height: 160px;
+      flex-shrink: 0;
+      border: 2px solid var(--border2);
+      border-radius: 2px;
+      object-fit: cover;
+      background: var(--surface2);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 3rem;
+      overflow: hidden;
     }
-    .portrait img { width: 100%; height: 100%; object-fit: cover }
-    .char-info { flex: 1 }
-    .char-name { font-family: var(--fd); font-size: 1.6rem; color: var(--gold); letter-spacing: .04em; margin-bottom: 6px }
+
+    .portrait img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover
+    }
+
+    .char-info {
+      flex: 1
+    }
+
+    .char-name {
+      font-family: var(--fd);
+      font-size: 1.6rem;
+      color: var(--gold);
+      letter-spacing: .04em;
+      margin-bottom: 6px
+    }
+
     .public-label {
-      display: inline-block; font-size: 10px; font-family: var(--fd); letter-spacing: .08em;
-      background: #1f3d1a; color: #9fd49f; border: 1px solid #3d5a3a;
-      padding: 2px 8px; border-radius: 2px; text-transform: uppercase; margin-bottom: 10px;
+      display: inline-block;
+      font-size: 10px;
+      font-family: var(--fd);
+      letter-spacing: .08em;
+      background: #1f3d1a;
+      color: #9fd49f;
+      border: 1px solid #3d5a3a;
+      padding: 2px 8px;
+      border-radius: 2px;
+      text-transform: uppercase;
+      margin-bottom: 10px;
     }
 
-    .section { background: var(--surface); border: 1px solid var(--border); border-radius: 2px; margin-bottom: 16px }
+    .section {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 2px;
+      margin-bottom: 16px
+    }
+
     .section-head {
-      background: var(--surface2); border-bottom: 1px solid var(--border);
-      padding: 8px 14px; font-family: var(--fd); font-size: .7rem; color: var(--gold);
-      letter-spacing: .08em; text-transform: uppercase;
+      background: var(--surface2);
+      border-bottom: 1px solid var(--border);
+      padding: 8px 14px;
+      font-family: var(--fd);
+      font-size: .7rem;
+      color: var(--gold);
+      letter-spacing: .08em;
+      text-transform: uppercase;
     }
-    .section-body { padding: 14px; line-height: 1.7; white-space: pre-wrap; font-size: 14px }
 
-    .empty { color: var(--text-dim); font-style: italic; font-size: 13px; padding: 14px }
+    .section-body {
+      padding: 14px;
+      line-height: 1.7;
+      white-space: pre-wrap;
+      font-size: 14px
+    }
+
+    .empty {
+      color: var(--text-dim);
+      font-style: italic;
+      font-size: 13px;
+      padding: 14px
+    }
 
     .print-btn {
-      display: block; margin: 0 auto 20px; background: var(--gold-dim); color: var(--text);
-      border: none; padding: 8px 20px; border-radius: 2px; font-family: var(--fd);
-      font-size: .72rem; letter-spacing: .08em; text-transform: uppercase;
-      cursor: pointer; transition: background .15s;
+      display: block;
+      margin: 0 auto 20px;
+      background: var(--gold-dim);
+      color: var(--text);
+      border: none;
+      padding: 8px 20px;
+      border-radius: 2px;
+      font-family: var(--fd);
+      font-size: .72rem;
+      letter-spacing: .08em;
+      text-transform: uppercase;
+      cursor: pointer;
+      transition: background .15s;
     }
-    .print-btn:hover { background: var(--gold); color: var(--bg) }
+
+    .print-btn:hover {
+      background: var(--gold);
+      color: var(--bg)
+    }
 
     .not-found {
-      text-align: center; padding: 60px 20px; color: var(--text-dim); font-style: italic;
+      text-align: center;
+      padding: 60px 20px;
+      color: var(--text-dim);
+      font-style: italic;
     }
-    .not-found span { display: block; font-size: 3rem; margin-bottom: 12px }
+
+    .not-found span {
+      display: block;
+      font-size: 3rem;
+      margin-bottom: 12px
+    }
 
     @media print {
-      .header, .print-btn { display: none }
-      body { background: white; color: #000 }
-      .container { margin: 0; padding: 0 }
-      .char-banner, .section { border: 1px solid #ccc; background: white }
-      .section-head { background: #f0f0f0; color: #333 }
-      .char-name { color: #333 }
-      .portrait { border: 1px solid #ccc; background: #f5f5f5 }
+
+      .header,
+      .print-btn {
+        display: none
+      }
+
+      body {
+        background: white;
+        color: #000
+      }
+
+      .container {
+        margin: 0;
+        padding: 0
+      }
+
+      .char-banner,
+      .section {
+        border: 1px solid #ccc;
+        background: white
+      }
+
+      .section-head {
+        background: #f0f0f0;
+        color: #333
+      }
+
+      .char-name {
+        color: #333
+      }
+
+      .portrait {
+        border: 1px solid #ccc;
+        background: #f5f5f5
+      }
     }
   </style>
 </head>
+
 <body>
-<div class="header">
-  <h1>🧝 Character Sheet</h1>
-  <span class="badge">📢 Public View</span>
-</div>
+  <div class="header">
+    <h1>🧝 Character Sheet</h1>
+    <span class="badge">📢 Public View</span>
+  </div>
 
-<div class="container" id="app">
-  <div class="not-found"><span>⏳</span>Loading…</div>
-</div>
+  <div class="container" id="app">
+    <div class="not-found"><span>⏳</span>Loading…</div>
+  </div>
 
-<script>
-  const playerId = location.pathname.split('/').pop();
+  <script>
+    const playerId = location.pathname.split('/').pop();
 
-  async function load() {
-    const app = document.getElementById('app');
-    try {
-      const res = await fetch(`/api/pc-public/${playerId}`);
-      if (!res.ok) {
-        app.innerHTML = `<div class="not-found"><span>🎲</span><p>Character not found or has no public information yet.</p></div>`;
-        return;
-      }
-      const d = await res.json();
-      document.title = `${d.name || 'Character'} — Public Sheet`;
+    async function load() {
+      const app = document.getElementById('app');
+      try {
+        const res = await fetch(`/api/pc-public/${playerId}`);
+        if (!res.ok) {
+          app.innerHTML = `<div class="not-found"><span>🎲</span><p>Character not found or has no public information yet.</p></div>`;
+          return;
+        }
+        const d = await res.json();
+        document.title = `${d.name || 'Character'} — Public Sheet`;
 
-      app.innerHTML = `
-        <button class="print-btn" onclick="window.print()">🖨 Print / Save PDF</button>
+        app.innerHTML = `
         <div class="char-banner">
           <div class="portrait" id="portraitBox">🧝</div>
           <div class="char-info">
@@ -125,20 +279,21 @@
         </div>
       `;
 
-      if (d.picture_url) {
-        document.getElementById('portraitBox').innerHTML =
-          `<img src="${esc(d.picture_url)}" alt="portrait" onerror="this.parentElement.innerHTML='🧝'">`;
+        if (d.picture_url) {
+          document.getElementById('portraitBox').innerHTML =
+            `<img src="${esc(d.picture_url)}" alt="portrait" onerror="this.parentElement.innerHTML='🧝'">`;
+        }
+      } catch (e) {
+        app.innerHTML = `<div class="not-found"><span>⚠️</span><p>Error loading character: ${e.message}</p></div>`;
       }
-    } catch(e) {
-      app.innerHTML = `<div class="not-found"><span>⚠️</span><p>Error loading character: ${e.message}</p></div>`;
     }
-  }
 
-  function esc(s) {
-    return (s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-  }
+    function esc(s) {
+      return (s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    }
 
-  load();
-</script>
+    load();
+  </script>
 </body>
+
 </html>
