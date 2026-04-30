@@ -1,53 +1,18 @@
 # Small fixes
 ## General
-* Enter key should ADD/SAVE/accept/etc
-* Ensure all the modules have the "Go back" button as a pop up in the right bottom corner 
-* Any endpoint that is protected should redirect to the index.html instead of returning an unauthorized error
+* Add template color selector on all modules among the Login button or the Account button (if logged in)
+* Item Card form should be cleared every time the "Item Type" is changed
+* Refactor CSS code to be DRY
 
-## item-cards
-* Print should only print the end card with format as seen in the browser (look&feel).
-    * If not possible, we can use an image as background as in the `original` module
-
-## Players Character (PC) chart
-### Player Panel
-* Image is missing when generating the PDF to print
-
-## Timeline
-* There should be 2 types of `timeline`: 
-    * public:
-        * Only mode for non-authenticated users
-        * Store data on browser cache
-    * private:
-        * Requires a Campaign to be selected and a Player
-        * Data must be stored on the DB and timeline should belong to a player and a campaign
-        * Today Marker, Calendar type and Locations should be completed from the "Manage Campaign"
-            * Players could not change, delete or add the previous items
-            * Players on the timeline should be a list of the relationships for that specific player and the player itself
-            * The only way to add Players to the timeline is by adding relationships
-        * DM should be able to see timelines on its campaigns (no matter the user that has created them)
-
-## Manage Campaigns
-### General Features
-* Create "private" timelines from this module
-* "Today Marker" should be a calendar same as in the `timeline`. Select the type of Calendar on Campaing creation and the Marker should display a calendar pop-up to select the date
-* Reference already created Timelines (from `timeline` module) into Campaigns
-
-# New Tools
-## Journey Path Map for Campaigns
-A tool to draw your journey on a map. 
-
-### General Features
-* A tool for DM
-* Set a Map as background
-* Use the cities/locations from the Campaign
-* Define Groups/NPCs to track (in addition to the Players)
-* Define a matrix of distances between cities/locations
-* Display the direct paths with the distance and time in hours (walking, flying and by horse) between points
-* Allow to draw the paths taken by the Groups/NPCs/Players
+## Journey Path Map
 * Display the information of the paths
+* Waypoints should contain the name of the location if put/drawn on a location
+    * If put in a place without a location, it should create a new Location and add it to the Campaign
+* Distance should be calculated if possible by the distance between locations
+* onWheel for zoom-in/out should be focused on the pointer as center
+* A waypoint could be edited and linked to an Event on any Timeline for the Campaign
 
-
-# Others
-
-## General
-* Player Profile with read/write for resources created by the player on the assigned campaigns
+## PC Sheet
+* Image for PC should be uploaded and stored on the DB
+    * Limit the size of the image to 106x136px and 100kb
+    * Allow Image URL as alternative
