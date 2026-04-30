@@ -339,6 +339,39 @@
             font-size: 13px
         }
 
+        /* New Timeline modal */
+        .tl-modal-overlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, .7);
+            display: none;
+            align-items: center;
+            justify-content: center;
+            z-index: 100
+        }
+
+        .tl-modal-overlay.open {
+            display: flex
+        }
+
+        .tl-modal {
+            background: var(--surface);
+            border: 1px solid var(--border2);
+            border-radius: 2px;
+            padding: 20px;
+            width: 340px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, .6)
+        }
+
+        .tl-modal h3 {
+            font-family: var(--fd);
+            font-size: .85rem;
+            color: var(--gold);
+            letter-spacing: .08em;
+            text-transform: uppercase;
+            margin-bottom: 14px
+        }
+
         /* Calendar picker modal */
         .cal-modal-overlay {
             position: fixed;
@@ -489,6 +522,22 @@
             <div class="detail-head" id="detailHead">Select a Campaign</div>
             <div class="detail-body" id="detailBody">
                 <div class="empty">Select a campaign from the list</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- New Timeline modal -->
+    <div class="tl-modal-overlay" id="newTlOverlay" onclick="if(event.target===this)closeNewTlModal()">
+        <div class="tl-modal">
+            <h3>📜 New Timeline</h3>
+            <div class="form-group">
+                <label>Timeline Name</label>
+                <input type="text" id="newTlName" placeholder="e.g., Main Story, Side Quest…"
+                    onkeydown="if(event.key==='Enter')confirmNewTl();if(event.key==='Escape')closeNewTlModal();">
+            </div>
+            <div class="btn-row" style="margin-top:14px">
+                <button onclick="closeNewTlModal()">Cancel</button>
+                <button onclick="confirmNewTl()" style="background:var(--gold-dim)">Create</button>
             </div>
         </div>
     </div>
@@ -931,18 +980,33 @@
             window.location.href = `/timeline?campaign=${currentCampaign.id}&player=${playerId}&mode=private`;
         }
 
-        async function createTimelineForPlayer(playerId, playerName) {
-            const name = prompt(`Timeline name for "${playerName}":`, 'Main Story');
-            if (!name || !name.trim()) return;
+        let _newTlPlayerId = null, _newTlPlayerName = '';
+
+        function createTimelineForPlayer(playerId, playerName) {
+            _newTlPlayerId = playerId;
+            _newTlPlayerName = playerName;
+            document.getElementById('newTlName').value = '';
+            document.getElementById('newTlOverlay').classList.add('open');
+            setTimeout(() => document.getElementById('newTlName').focus(), 60);
+        }
+
+        function closeNewTlModal() {
+            document.getElementById('newTlOverlay').classList.remove('open');
+        }
+
+        async function confirmNewTl() {
+            const name = document.getElementById('newTlName').value.trim();
+            if (!name) { document.getElementById('newTlName').focus(); return; }
+            closeNewTlModal();
             try {
-                const res = await fetch(`/api/player-timelines/${currentCampaign.id}/${playerId}`, {
+                const res = await fetch(`/api/player-timelines/${currentCampaign.id}/${_newTlPlayerId}`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ name: name.trim() })
+                    body: JSON.stringify({ name })
                 });
                 if (res.ok) {
                     const tl = await res.json();
-                    window.location.href = `/timeline?campaign=${currentCampaign.id}&player=${playerId}&timeline=${tl.id}&mode=private`;
+                    window.location.href = `/timeline?campaign=${currentCampaign.id}&player=${_newTlPlayerId}&timeline=${tl.id}&mode=private`;
                 } else {
                     const e = await res.json();
                     alert('Error: ' + (e.error || 'Could not create timeline'));
@@ -960,9 +1024,9 @@
             if (t === 'cpYear' || t === 'cpDay') updateCalPreview();
         });
 
-        // Esc closes calendar picker
+        // Esc closes calendar picker and new-timeline modal
         document.addEventListener('keydown', e => {
-            if (e.key === 'Escape') closeCalPicker();
+            if (e.key === 'Escape') { closeCalPicker(); closeNewTlModal(); }
         });
 
         loadCampaigns();

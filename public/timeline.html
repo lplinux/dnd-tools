@@ -1330,6 +1330,19 @@
           <button class="btn sm dn" onclick="deleteProfile()" title="Delete timeline">🗑</button>
         </div>
 
+        <!-- DM Combined: Players & Timelines (shown only in combined mode) -->
+        <div class="s-sec" id="sec-dm-combined" style="display:none">
+          <div class="s-ttl" onclick="toggleSec('dm-combined')">Players &amp; Timelines <span class="s-arr">▾</span>
+          </div>
+          <div class="s-body" id="sb-dm-combined">
+            <div id="dmPlayerList"></div>
+            <div style="padding:6px 10px 8px">
+              <button class="btn sm" onclick="shareDMView()" style="width:100%;font-size:.62rem">🔗 Copy Public
+                Link</button>
+            </div>
+          </div>
+        </div>
+
         <!-- Events list -->
         <div class="s-sec">
           <div class="s-ttl" onclick="toggleSec('events')">
@@ -1438,7 +1451,7 @@
           <span
             style="font-family:var(--fd);font-size:.65rem;letter-spacing:.12em;text-transform:uppercase;color:var(--gold-dim)"
             id="tbl-count"></span>
-          <button class="btn sm gld" onclick="exportCSV()">⬇ Export CSV</button>
+          <button class="btn sm gld" id="exportCsvBtn" onclick="exportCSV()">⬇ Export CSV</button>
         </div>
         <table class="ev-table">
           <thead id="tbl-head"></thead>
@@ -1446,29 +1459,8 @@
         </table>
       </div>
 
-      <!-- DM COMBINED VIEW — all timelines for all players -->
-      <div class="dm-overview" id="dmOverview" style="display:none;flex:1;overflow:hidden">
-        <div style="display:flex;height:100%;overflow:hidden">
-          <!-- Sidebar: player toggles -->
-          <div id="dmSidebar"
-            style="width:220px;flex-shrink:0;background:var(--surface);border-right:1px solid var(--border);overflow-y:auto;padding:10px 0">
-            <div
-              style="font-family:var(--fd);font-size:.65rem;letter-spacing:.1em;text-transform:uppercase;color:var(--gold-dim);padding:6px 12px 10px">
-              Players & Timelines</div>
-            <div id="dmPlayerList"></div>
-          </div>
-          <!-- Main: combined graph area -->
-          <div style="flex:1;overflow:hidden;position:relative" id="dmGraphWrap">
-            <div
-              style="font-family:var(--fd);font-size:.65rem;letter-spacing:.08em;text-transform:uppercase;color:var(--gold-dim);padding:8px 14px;border-bottom:1px solid var(--border);background:var(--surface)">
-              📜 Combined View — Read Only
-            </div>
-            <div id="dmGraphArea" style="flex:1;overflow-y:auto;padding:14px;height:calc(100% - 36px)">
-              <div id="dmAllEntries"></div>
-            </div>
-          </div>
-        </div>
-      </div>
+      <!-- dmOverview: replaced by normal sidebar + tl-area in combined mode -->
+      <div id="dmOverview" style="display:none"></div>
     </div><!-- /app-body -->
   </div><!-- /app -->
 
@@ -2588,10 +2580,10 @@
       const se = sortedEvents();
       document.getElementById('tbl-count').textContent = `${se.length} event${se.length === 1 ? '' : 's'}`;
       document.getElementById('tbl-head').innerHTML = `<tr>
-    <th>Start Date</th><th>End Date</th><th>Title</th><th>Location</th><th>Players</th><th>Description</th><th></th>
+    <th>Start Date</th><th>End Date</th><th>Title</th><th>Location</th><th>Players</th><th>Description</th>${_dmActive ? '' : '<th></th>'}
   </tr>`;
       document.getElementById('tbl-body').innerHTML = se.length === 0
-        ? `<tr><td colspan="7" style="text-align:center;color:var(--text-muted);font-style:italic;padding:24px">No events yet.</td></tr>`
+        ? `<tr><td colspan="${_dmActive ? 6 : 7}" style="text-align:center;color:var(--text-muted);font-style:italic;padding:24px">No events yet.</td></tr>`
         : se.map(ev => {
           const pls = getPlayers(ev);
           const dots = pls.map(p => `<span style="display:inline-flex;align-items:center;gap:3px"><span style="width:8px;height:8px;border-radius:50%;background:${p.color};display:inline-block"></span><span style="color:${p.color}">${esc(p.name)}</span></span>`).join(' ');
@@ -2608,10 +2600,10 @@
           <td>📍 ${esc(ev.location)}</td>
           <td><div class="pl-dots">${dots || '<span style="color:var(--text-muted)">—</span>'}</div></td>
           <td style="font-style:italic">${esc(ev.description || '')}</td>
-          <td style="white-space:nowrap">
+          ${_dmActive ? '' : `<td style="white-space:nowrap">
             <button class="btn sm" onclick="editEvent('${ev.id}')" style="margin-right:4px">Edit</button>
             <button class="btn sm dn" onclick="quickDeleteEvent('${ev.id}')">✕</button>
-          </td>
+          </td>`}
         </tr>`;
         }).join('');
     }
@@ -2726,7 +2718,7 @@
       }
       _evDrag = null;
     }
-    function onEvClick(e, eid) { if (_evDrag && _evDrag.hasMoved) return; openEventModal(eid); }
+    function onEvClick(e, eid) { if (_evDrag && _evDrag.hasMoved) return; if (location.pathname.startsWith('/timeline-public/')) return; openEventModal(eid); }
 
     /* ════════════════════════════════════════
        SCROLL
@@ -2884,10 +2876,43 @@
         <div>👤 ${pls.length ? pdots : '<span style="color:var(--text-muted)">—</span>'}</div>
         ${ev.description ? `<div style="margin-top:8px;font-style:italic;color:var(--text)">"${esc(ev.description)}"</div>` : ''}
       </div>
-      <div class="ma"><button class="btn dn" onclick="deleteEvent('${ev.id}')">Delete</button><button class="btn" onclick="editEvent('${ev.id}')">Edit</button><button class="btn gld" onclick="closeModal()">Close</button></div>`;
+      <div class="ma">
+        ${_dmActive
+            ? `<button class="btn" onclick="editEvent('${ev.id}')">🔗 Connections</button>`
+            : `<button class="btn dn" onclick="deleteEvent('${ev.id}')">Delete</button><button class="btn" onclick="editEvent('${ev.id}')">Edit</button>`
+          }
+        <button class="btn gld" onclick="closeModal()">Close</button>
+      </div>`;
 
       } else if (type === 'edit-event') {
         const ev = data;
+
+        // In combined view only show the connections panel, not full edit
+        if (_dmActive) {
+          const otherEvs = sortedEvents().filter(e => e.id !== ev.id);
+          const mlRowsHtml = otherEvs.map(e => {
+            const linked = (ev.manualLinks || []).includes(e.id);
+            const pls2 = getPlayers(e);
+            const dot = pls2[0] ? `<span style="width:8px;height:8px;border-radius:50%;background:${pls2[0].color};display:inline-block;flex-shrink:0"></span>` : '';
+            return `<label class="pcl ml-row"><input type="checkbox" class="ml-chk" value="${e.id}" ${linked ? 'checked' : ''}>${dot}<span class="ml-label" style="font-size:.78rem">${esc(formatDate(e.year, e.dayOfYear))} – ${esc(e.title)}</span></label>`;
+          }).join('');
+          const linksHtml = otherEvs.length === 0
+            ? `<div style="color:var(--text-muted);font-style:italic;font-size:.82rem;padding:4px">No other events.</div>`
+            : `<div>
+              <input id="ml-search" type="text" placeholder="Filter events…" autocomplete="off"
+                style="width:100%;background:var(--surface2);border:1px solid var(--border);color:var(--text);padding:4px 7px;border-radius:2px;font-family:var(--fb);font-size:.82rem;margin-bottom:4px"
+                oninput="filterManualLinks(this.value)">
+              <div class="mpc" id="ml-list" style="max-height:140px">${mlRowsHtml}</div>
+            </div>`;
+          box.innerHTML = `<h3>🔗 Link Connections</h3>
+        <div style="font-size:.82rem;color:var(--text-dim);margin-bottom:8px">
+          <strong style="color:var(--text)">${esc(ev.title)}</strong>
+          — ${esc(formatDate(ev.year, ev.dayOfYear))}
+        </div>
+        <div class="fr"><label>Connect to events <span style="color:var(--text-muted);font-size:.65rem">(dashed lines)</span></label>${linksHtml}</div>
+        <div class="ma"><button class="btn" onclick="closeModal()">Cancel</button><button class="btn gld" onclick="saveEditEvent('${ev.id}')">Save Links</button></div>`;
+          return;
+        }
         const { midx, day, special } = formMidxFromDoy(ev.dayOfYear, ev.year, cal);
         const sl = sortedLocs();
         const otherEvs = sortedEvents().filter(e => e.id !== ev.id);
@@ -2919,7 +2944,7 @@
         <input id="m-ev-dur" type="text" value="${ev.durationDays > 1 ? formatDuration(ev.durationDays).replace('~', '') : '1d'}"></div>
       <div class="fr"><label>Description</label><textarea id="m-ev-desc" rows="2">${esc(ev.description || '')}</textarea></div>
       <div class="fr"><label>Manual connections <span style="color:var(--text-muted);font-size:.65rem">(dashed lines)</span></label>${linksHtml}</div>
-      <div class="ma"><button class="btn" onclick="openEventModal('${ev.id}')">Cancel</button><button class="btn gld" onclick="saveEditEvent('${ev.id}')">Save</button></div>`;
+      <div class="ma"><button class="btn" onclick="closeModal()">Cancel</button><button class="btn gld" onclick="saveEditEvent('${ev.id}')">Save</button></div>`;
 
       } else if (type === 'set-today') {
         const cal = currentCal();
@@ -3185,6 +3210,7 @@
     let _privEntries = [];
     let _dmAllData = [];    // raw rows from /all endpoint
     let _dmHidden = new Set(); // hidden timeline IDs (DM combined view)
+    let _dmRelNames = {};   // 'rel_X' -> relationship name (populated in loadDMCombinedView)
     const PLAYER_PALETTE = ['#c0392b', '#2980b9', '#27ae60', '#8e44ad', '#e67e22', '#16a085', '#d35400', '#2c3e50', '#7f8c8d', '#f39c12', '#1abc9c', '#e74c3c'];
 
     /* ── API helpers ── */
@@ -3213,16 +3239,19 @@
       const dmOv = document.getElementById('dmOverview');
 
       if (mode === 'public') {
-        sidebar.style.display  = '';
+        _dmActive = false;
+        sidebar.style.display = '';
         sbToggle.style.display = '';
-        tlArea.style.display   = _view === 'graph' ? '' : 'none';
-        tblWrap.style.display  = _view === 'table' ? 'block' : 'none';
-        dmOv.style.display     = 'none';
+        tlArea.style.display = _view === 'graph' ? '' : 'none';
+        tblWrap.style.display = _view === 'table' ? 'block' : 'none';
+        dmOv.style.display = 'none';
         document.getElementById('cal-badge').textContent = currentCal() === 'harptos' ? 'Harptos' : 'Gregorian';
         restoreSidebarSections();
         db = _publicLoadDB();
         renderAll(); initEvDrag();
       } else {
+        _dmActive = false;
+        document.getElementById('sec-dm-combined').style.display = 'none';
         sidebar.style.display = 'none';
         sbToggle.style.display = 'none';
         tlArea.style.display = 'none';
@@ -3242,6 +3271,7 @@
       });
       const profBar = document.querySelector('.prof-bar');
       if (profBar) profBar.style.display = 'none';
+      // sec-dm-combined is only hidden in single-player mode, not locked here
     }
     function restoreSidebarSections() {
       ['players', 'locs', 'today'].forEach(sec => {
@@ -3251,6 +3281,8 @@
       });
       const profBar = document.querySelector('.prof-bar');
       if (profBar) profBar.style.display = '';
+      // Hide combined view section when returning to public mode
+      document.getElementById('sec-dm-combined').style.display = 'none';
     }
 
     /* ── Campaign selector ── */
@@ -3267,8 +3299,8 @@
       document.getElementById('privPlayerSel').innerHTML = '<option value="">— Select Player —</option>';
       hideTimelineSelector();
       _privCampaignId = cid ? parseInt(cid) : null;
-      _privPlayerId = null;
-      _privTimelineId = null;
+      _privPlayerId = null; _privTimelineId = null; _dmActive = false;
+      document.getElementById('sec-dm-combined').style.display = 'none';
       hidePrivCanvas();
 
       if (!cid) { renderPrivStatus(''); return; }
@@ -3424,9 +3456,15 @@
       document.getElementById('tl-area').style.display = 'none';
       document.getElementById('tbl-wrap').style.display = 'none';
       document.getElementById('dmOverview').style.display = 'none';
+      if (!_dmActive) {
+        document.getElementById('sidebar').style.display = 'none';
+        document.getElementById('sb-toggle').style.display = 'none';
+      }
     }
 
     function showPrivCanvas() {
+      _dmActive = false;
+      document.getElementById('sec-dm-combined').style.display = 'none';
       syncPrivToDb();
       const calType = _privCampaignMeta.calendar_type || 'harptos';
       const p = currentProfile();
@@ -3445,6 +3483,7 @@
       document.getElementById('dmOverview').style.display = 'none';
       initMonthUI(); renderAll(); initEvDrag();
       requestAnimationFrame(() => fitAll());
+      _applyDMActiveUI();
     }
 
     function syncPrivToDb() {
@@ -3461,9 +3500,10 @@
         dayOfYear: e.day_of_year,
         durationDays: e.duration_days || 1,
         playerIds: (e.player_ids && e.player_ids.length)
-                        ? e.player_ids
-                        : ['self_' + _privPlayerId],
-        manualLinks: [],
+          ? e.player_ids
+          : ['self_' + _privPlayerId],
+        // manual_links are stored as integers in DB; map to strings to match ev.id
+        manualLinks: (e.manual_links || []).map(id => String(id)),
       }));
       if (_privCampaignMeta.today_marker) {
         const n = parseInt(_privCampaignMeta.today_marker);
@@ -3471,134 +3511,209 @@
       } else { db.todayAbs = null; }
     }
 
-    /* ── DM Combined View ── */
+    /* ══════════════════════════════════════════
+       DM COMBINED VIEW
+       Uses real sidebar (sec-dm-combined) + real tl-area graph.
+    ══════════════════════════════════════════ */
+    let _dmActive = false; // true while DM combined view is showing
+
     async function loadDMCombinedView(campaignId) {
-      const dmOv = document.getElementById('dmOverview');
-      dmOv.style.display = 'flex';
-      document.getElementById('tl-area').style.display = 'none';
-      document.getElementById('tbl-wrap').style.display = 'none';
-      document.getElementById('sidebar').style.display = 'none';
-      document.getElementById('sb-toggle').style.display = 'none';
+      _dmActive = true;
       renderPrivStatus('Loading…');
 
       _dmAllData = await apiGet(`/api/player-timelines/${campaignId}/all`) || [];
       _dmHidden = new Set();
-      renderDMCombinedView();
+
+      // Fetch relationship names for every distinct player so 'rel_X' actors
+      // can be resolved to their real names in the combined view.
+      _dmRelNames = {};
+      const uniquePlayerIds = [...new Set(_dmAllData.map(r => r.player_id).filter(Boolean))];
+      await Promise.all(uniquePlayerIds.map(async pid => {
+        const rels = await apiGet(`/api/pc/${pid}/relationships`) || [];
+        rels.forEach(r => { _dmRelNames['rel_' + r.id] = r.name; });
+      }));
+
+      // Show normal sidebar with the DM section; hide Players/Locs/Today sections
+      document.getElementById('sec-dm-combined').style.display = '';
+      applyPrivSidebarLocks();  // hides players/locs/today/prof-bar but not sec-dm-combined
+      document.getElementById('sidebar').style.display = '';
+      document.getElementById('sb-toggle').style.display = '';
+
+      renderDMCombinedView(); // fills dmPlayerList + builds synthetic db + renders graph
       renderPrivStatus('');
     }
 
     function renderDMCombinedView() {
-      // Build per-timeline colour map and player structure
-      const players = {};
-      let colorIdx = 0;
-      const tlColors = {};
-
+      /* Build players → timelines → entries tree */
+      const players = {}; let ci = 0; const tlColors = {};
       _dmAllData.forEach(row => {
-        if (!players[row.player_id]) {
+        if (!players[row.player_id])
           players[row.player_id] = { name: row.player_name, username: row.username, timelines: {} };
+        const p = players[row.player_id];
+        if (row.timeline_id && !p.timelines[row.timeline_id]) {
+          if (!tlColors[row.timeline_id]) tlColors[row.timeline_id] = PLAYER_PALETTE[ci++ % PLAYER_PALETTE.length];
+          p.timelines[row.timeline_id] = { name: row.timeline_name, color: tlColors[row.timeline_id], entries: [] };
         }
-        if (row.timeline_id && !players[row.player_id].timelines[row.timeline_id]) {
-          if (!tlColors[row.timeline_id]) tlColors[row.timeline_id] = PLAYER_PALETTE[colorIdx++ % PLAYER_PALETTE.length];
-          players[row.player_id].timelines[row.timeline_id] = {
-            name: row.timeline_name, color: tlColors[row.timeline_id], entries: []
-          };
-        }
-        if (row.timeline_id && row.entry_id) {
-          players[row.player_id].timelines[row.timeline_id].entries.push(row);
-        }
+        if (row.timeline_id && row.entry_id)
+          p.timelines[row.timeline_id].entries.push(row);
       });
 
-      // ── Sidebar: hide/show toggles per timeline ──
+      /* Sidebar toggle list */
       const listEl = document.getElementById('dmPlayerList');
-      listEl.innerHTML = Object.entries(players).map(([pid, p]) => {
-        const tlRows = Object.entries(p.timelines).map(([tid, tl]) => {
-          const hidden = _dmHidden.has(parseInt(tid));
-          return `<div class="dm-tl-row">
-            <div class="color-dot" style="background:${tl.color}"></div>
-            <span class="dm-tl-name">${esc(tl.name)}</span>
-            <button class="dm-hide-btn ${hidden ? 'hidden' : ''}" onclick="dmToggleTl(${tid})">${hidden ? 'Show' : 'Hide'}</button>
-          </div>`;
-        }).join('');
-        return `<div class="dm-player-toggle">
-          <div style="font-family:var(--fd);font-size:.72rem;color:var(--gold);letter-spacing:.04em">${esc(p.name)}</div>
-          ${p.username ? `<div style="font-size:.65rem;color:var(--text-dim)">${esc(p.username)}</div>` : ''}
-        </div>${tlRows}`;
-      }).join('') || '<div style="padding:12px;color:var(--text-dim);font-style:italic;font-size:12px">No timelines yet.</div>';
+      if (listEl) {
+        listEl.innerHTML = Object.entries(players).map(([pid, p]) => {
+          const tlRows = Object.entries(p.timelines).map(([tid, tl]) => {
+            const hidden = _dmHidden.has(parseInt(tid));
+            return `<div class="dm-tl-row">
+              <div class="color-dot" style="background:${tl.color}"></div>
+              <span class="dm-tl-name">${esc(tl.name)}</span>
+              <button class="dm-hide-btn${hidden ? ' hidden' : ''}" onclick="dmToggleTl(${tid})">${hidden ? 'Show' : 'Hide'}</button>
+            </div>`;
+          }).join('');
+          return `<div class="dm-player-toggle">
+            <div style="font-family:var(--fd);font-size:.72rem;color:var(--gold);letter-spacing:.04em;padding:4px 10px 0">${esc(p.name)}</div>
+            ${p.username ? `<div style="font-size:.65rem;color:var(--text-dim);padding:0 10px 4px">${esc(p.username)}</div>` : ''}
+          </div>${tlRows}`;
+        }).join('') || '<div style="padding:12px;color:var(--text-dim);font-style:italic;font-size:12px">No timelines yet.</div>';
+      }
 
-      // ── Drive the existing graph renderer with combined data ──
-      // Collect all unique locations from visible entries
+      /* Build synthetic db — one db.player per visible timeline + per actor (relationship) */
       const locSet = new Set();
-      const allVisible = [];
+      const allVis = [];
+      const actorColors = {}; // actorKey -> color (so each relationship gets its own colour per-timeline)
       Object.values(players).forEach(p => {
         Object.entries(p.timelines).forEach(([tid, tl]) => {
           if (!_dmHidden.has(parseInt(tid))) {
             tl.entries.forEach(e => {
               if (e.location) locSet.add(e.location);
-              allVisible.push({ ...e, _color: tl.color, _tlName: tl.name });
+              allVis.push({ ...e, _color: tl.color, _tlName: tl.name, _tid: parseInt(tid) });
             });
           }
         });
       });
 
-      // Build a synthetic db-like object with one player per timeline (for colour coding)
-      const synthPlayers = [];
-      Object.values(players).forEach(p => {
-        Object.entries(p.timelines).forEach(([tid, tl]) => {
-          if (!_dmHidden.has(parseInt(tid))) {
-            synthPlayers.push({ id: 'tl_' + tid, name: p.name + ' / ' + tl.name, color: tl.color });
+      /* One synthetic player per (timeline, actor-playerIds combo) */
+      const synthPlayerMap = {}; // 'tl_X_pid' -> player obj
+      allVis.forEach(e => {
+        // player_ids is stored as array in DB or defaulted to timeline's player
+        const pids = (e.player_ids && e.player_ids.length) ? e.player_ids : ['tl_' + e._tid];
+        pids.forEach(pid => {
+          const key = 'tl_' + e._tid + '_' + pid;
+          if (!synthPlayerMap[key]) {
+            // Determine colour: if pid is 'tl_X' use timeline colour; if 'self_N' or 'rel_N' vary
+            const tlColor = tlColors[e._tid] || '#c9a84c';
+            // Slightly vary colour for different actors within same timeline
+            const colorOffset = Object.keys(synthPlayerMap).filter(k => k.startsWith('tl_' + e._tid)).length;
+            const hue = colorOffset === 0 ? tlColor : PLAYER_PALETTE[(ci + colorOffset) % PLAYER_PALETTE.length];
+            synthPlayerMap[key] = { id: key, name: '', color: hue };
           }
         });
       });
 
-      const synthLocs = [...locSet];
-      if (!synthLocs.length) synthLocs.push('Unknown');
+      const synthPlayers = Object.values(synthPlayerMap);
+      const synthLocs = [...locSet]; if (!synthLocs.length) synthLocs.push('Unknown');
 
-      const synthEvents = allVisible.map(e => ({
-        id:          'dm_' + e.entry_id,
-        title:       e.title,
-        description: e.description || '',
-        location:    e.location || synthLocs[0],
-        year:        e.year,
-        dayOfYear:   e.day_of_year,
-        durationDays: e.duration_days || 1,
-        playerIds:   ['tl_' + e.timeline_id],
-        manualLinks: [],
-      }));
+      // ── Resolve display names for each synthetic player ──
+      // A synthetic player key is 'tl_<tid>_<rawPid>' where rawPid is one of:
+      //   'self_<playerId>'  → the player's own character
+      //   'rel_<relId>'      → a relationship (resolved via _dmRelNames)
+      //   'tl_<tid>'         → legacy fallback
+      const playerCharNameByTid = {}; // timeline_id -> campaign player_name only (no timeline name)
+      Object.values(players).forEach(p => {
+        Object.entries(p.timelines).forEach(([tid]) => {
+          playerCharNameByTid[parseInt(tid)] = p.name;
+        });
+      });
 
-      // Temporarily swap db content to render the combined graph
-      const _savedDb    = { ...db };
-      db.players        = synthPlayers;
-      db.locations      = synthLocs;
-      db.locationOrder  = synthLocs;
-      db.events         = synthEvents;
-      db.todayAbs       = _privCampaignMeta.today_marker ? parseInt(_privCampaignMeta.today_marker) : null;
+      synthPlayers.forEach(sp => {
+        const m = sp.id.match(/^tl_(\d+)_(.+)$/);
+        if (!m) {
+          sp.name = sp.id;
+          return;
+        }
+
+        const tid = parseInt(m[1]);
+        const rawPid = m[2];
+        const charName = playerCharNameByTid[tid] || ('Player ' + tid);
+
+        if (rawPid.startsWith('rel_')) {
+          const relName = _dmRelNames[rawPid];
+          sp.name = relName
+            ? `${relName} (${charName})`
+            : charName;
+        } else {
+          // self_ or fallback
+          sp.name = charName;
+        }
+      });
+
+      db.players = synthPlayers;
+      db.locations = synthLocs;
+      db.locationOrder = synthLocs;
+
+      // Build events, carrying raw manual_links integers for the link pass below
+      const visEntryIds = new Set(allVis.map(e => e.entry_id));
+      db.events = allVis.map(e => {
+        const pids = (e.player_ids && e.player_ids.length) ? e.player_ids : ['tl_' + e._tid];
+        const mappedPids = pids.map(pid => 'tl_' + e._tid + '_' + pid);
+        return {
+          id: 'dm_' + e.entry_id,
+          title: e.title,
+          description: e.description || '',
+          location: e.location || synthLocs[0],
+          year: e.year,
+          dayOfYear: e.day_of_year,
+          durationDays: e.duration_days || 1,
+          playerIds: mappedPids,
+          manualLinks: [],       // filled in the pass below
+          _tid: e._tid,
+          _rawPids: pids,
+          _rawLinks: e.manual_links || [],
+        };
+      });
+
+      // ── Cross-timeline links: use the explicit manual_links stored on each entry.
+      //    Only include a link if the target entry is also visible (both timelines shown).
+      db.events.forEach(dbEv => {
+        dbEv.manualLinks = dbEv._rawLinks
+          .filter(lid => visEntryIds.has(lid))   // target must be visible
+          .map(lid => 'dm_' + lid);
+      });
+      const n = parseInt(_privCampaignMeta.today_marker);
+      db.todayAbs = isNaN(n) ? null : n;
 
       const calType = _privCampaignMeta.calendar_type || 'harptos';
-      const p = currentProfile(); if (p) p.calendarType = calType;
+      const pRef = currentProfile(); if (pRef) pRef.calendarType = calType;
       document.getElementById('cal-badge').textContent = calType === 'harptos' ? 'Harptos' : 'Gregorian';
 
-      // Show the graph area (inside dmGraphWrap) using the existing renderer
-      document.getElementById('tl-area').style.display  = '';
-      document.getElementById('tbl-wrap').style.display = 'none';
+      /* Show graph using normal renderer (same look as individual timelines) */
+      document.getElementById('tl-area').style.display = _view === 'graph' ? '' : 'none';
+      document.getElementById('tbl-wrap').style.display = _view === 'table' ? 'block' : 'none';
 
-      // The graph lives inside app-body. Show sidebar (dm sidebar, not the normal one)
-      document.getElementById('sidebar').style.display   = 'none';
-      document.getElementById('sb-toggle').style.display = 'none';
-
-      initMonthUI();
-      renderTimeline(); // render the actual graph
-      initEvDrag();
+      initMonthUI(); renderAll(); initEvDrag();
       requestAnimationFrame(() => fitAll());
-
-      // Restore db so switching away from DM view works correctly
-      // We keep the synthetic db active while in DM combined view
-      // (it will be replaced by syncPrivToDb when a specific player is selected)
+      _applyDMActiveUI();
     }
 
     function dmToggleTl(tlId) {
-      if (_dmHidden.has(tlId)) _dmHidden.delete(parseInt(tlId));
+      if (_dmHidden.has(parseInt(tlId))) _dmHidden.delete(parseInt(tlId));
       else _dmHidden.add(parseInt(tlId));
       renderDMCombinedView();
+    }
+
+    async function shareDMView() {
+      if (!_privCampaignId) return;
+      // Public link — no auth required, just the campaign ID
+      const token = await fetch(`/api/campaigns/${_privCampaignId}/public-token`)
+        .then(r => r.json())
+        .then(d => d.token);
+
+      const url = `${location.origin}/timeline-public/${token}`;
+      try {
+        await navigator.clipboard.writeText(url);
+        const btn = document.querySelector('[onclick="shareDMView()"]');
+        if (btn) { const o = btn.textContent; btn.textContent = '✓ Copied!'; setTimeout(() => btn.textContent = o, 2000); }
+      } catch (e) { prompt('Copy this link:', url); }
     }
 
     async function dmViewPlayer(playerId) {
@@ -3629,6 +3744,31 @@
       _realSaveDB();
     };
     function _publicLoadDB() { return _realLoadDB(); }
+
+    // /* ── Block event editing + New Event in DM combined view ── */
+    // const _realOpenModal = openModal;
+    // openModal = function (id) {
+    //   if (_dmActive && (id === 'ev-modal' || id === 'm')) return; // read-only
+    //   _realOpenModal(id);
+    // };
+
+    /* ── Hide "Add Event" sidebar section in DM combined view ── */
+    function _applyDMActiveUI() {
+      // Hide the New Event section (first s-sec with the Add Event form)
+      const allSecs = document.querySelectorAll('#sidebar .s-sec');
+      allSecs.forEach(sec => {
+        // The new-event section contains the ev-title input
+        if (sec.querySelector('#ev-title')) {
+          sec.style.display = _dmActive ? 'none' : '';
+        }
+        // The events list section — keep visible but hide delete buttons
+        if (sec.querySelector('#ev-list')) {
+          sec.querySelectorAll('.ev-del, .ev-delete, [onclick*="quickDeleteEvent"]').forEach(btn => {
+            btn.style.display = _dmActive ? 'none' : '';
+          });
+        }
+      });
+    }
 
     /* ── INTERCEPT addEvent ── */
     const _realAddEvent = addEvent;
@@ -3711,6 +3851,39 @@
     /* ── INTERCEPT saveEditEvent ── */
     const _realSaveEditEvent = saveEditEvent;
     saveEditEvent = function (id) {
+      // ── COMBINED VIEW: save only manual_links, find the real timeline entry ──
+      if (_dmActive) {
+        // ev.id is 'dm_<entryId>', checked values are other 'dm_<entryId>' strings
+        const rawId = String(id).replace(/^dm_/, '');
+        // Map checked 'dm_X' values → integer X
+        const _editLinks = [...document.querySelectorAll('.ml-chk:checked')]
+          .map(i => parseInt(String(i.value).replace(/^dm_/, '')))
+          .filter(n => !isNaN(n));
+
+        // Find which timeline owns this entry by scanning _dmAllData
+        const ownerRow = _dmAllData.find(r => String(r.entry_id) === rawId);
+        if (!ownerRow) { alert('Cannot find entry to save.'); return; }
+
+        apiPut(`/api/player-timelines/${ownerRow.timeline_id}/entries/${rawId}`, {
+          title: ownerRow.title,
+          description: ownerRow.description || null,
+          location: ownerRow.location || null,
+          year: ownerRow.year,
+          day_of_year: ownerRow.day_of_year,
+          duration_days: ownerRow.duration_days || 1,
+          player_ids: ownerRow.player_ids || [],
+          manual_links: _editLinks,
+        }).then(updated => {
+          if (!updated) { alert('Error saving links.'); return; }
+          // Patch local _dmAllData so re-renders reflect the new links
+          ownerRow.manual_links = _editLinks;
+          closeModal();
+          renderDMCombinedView();
+        });
+        return;
+      }
+
+      // ── INDIVIDUAL TIMELINE: full save ──
       if (_mode !== 'private') { _realSaveEditEvent(id); return; }
       const entry = _privEntries.find(e => String(e.id) === String(id));
       if (!entry) { _realSaveEditEvent(id); return; }
@@ -3719,7 +3892,11 @@
       const day = +document.getElementById('m-ev-d').value;
       const year = +document.getElementById('m-ev-y').value || entry.year;
       const dayOfYear = doyFromForm(midx, day, year, cal);
-      const _editPids = [...document.querySelectorAll('.mpc input:checked')].map(i => i.value);
+      // Exclude ml-chk inputs so link checkboxes don't bleed into player_ids
+      const _editPids = [...document.querySelectorAll('.mpc input:checked:not(.ml-chk)')]
+        .map(i => i.value);
+      const _editLinks = [...document.querySelectorAll('.ml-chk:checked')]
+        .map(i => parseInt(i.value)).filter(n => !isNaN(n));
       apiPut(`/api/player-timelines/${_privTimelineId}/entries/${entry.id}`, {
         title: document.getElementById('m-ev-t').value.trim() || entry.title,
         description: document.getElementById('m-ev-desc').value.trim(),
@@ -3727,9 +3904,11 @@
         year, day_of_year: dayOfYear,
         duration_days: parseDuration(document.getElementById('m-ev-dur').value),
         player_ids: _editPids.length ? _editPids : entry.player_ids,
+        manual_links: _editLinks,
       }).then(updated => {
-        if (updated && _editPids.length) updated.player_ids = _editPids;
         if (!updated) { alert('Error saving.'); return; }
+        updated.manual_links = _editLinks;
+        if (_editPids.length) updated.player_ids = _editPids;
         Object.assign(entry, updated);
         closeModal(); syncPrivToDb(); renderAll();
       });
@@ -3779,6 +3958,57 @@
     ════════════════════════════════════════ */
     window.addEventListener('load', async () => {
       loadProfiles(); loadUIState();
+
+      // ── PUBLIC COMBINED VIEW (/timeline-public/:token) ──
+      if (location.pathname.startsWith('/timeline-public/')) {
+        const token = location.pathname.split('/').pop();
+
+        // Hide authenticated UI
+        document.getElementById('modeSw').style.display = 'none';
+        const uMount = document.getElementById('userMenuMount');
+        if (uMount) uMount.innerHTML = '';
+
+        // Show a loading indicator in the private canvas area
+        setMode('private');
+        renderPrivStatus('⏳ Loading public timeline…');
+
+        const data = await apiGet(`/api/timeline-public/${token}`);
+        if (!data || data.error) {
+          renderPrivStatus('🔒 This shared link is invalid or has expired.');
+          return;
+        }
+
+        // Title bar
+        const hdr = document.getElementById('privHeader');
+        if (hdr) hdr.textContent = `📜 ${data.campaign_name} — Combined Timeline`;
+
+        // Wire state the combined-view renderer expects
+        _privCampaignMeta = { calendar_type: data.calendar_type };
+        _dmAllData = data.rows;
+        _dmHidden = new Set();
+        _dmRelNames = {};
+        _dmActive = true;
+
+        // Show sidebar with the DM combined section — exactly what loadDMCombinedView does
+        document.getElementById('privSelBar').style.display = 'none';
+        document.getElementById('exportCsvBtn').style.display = 'none';
+        document.getElementById('sec-dm-combined').style.display = '';
+        if (typeof applyPrivSidebarLocks === 'function') applyPrivSidebarLocks();
+        document.getElementById('sidebar').style.display = 'none';
+        document.getElementById('sb-toggle').style.display = 'none';
+        document.getElementById('tl-area').style.display = '';
+        document.getElementById('tbl-wrap').style.display = 'none';
+        document.getElementById('dmOverview').style.display = 'none';
+
+        renderDMCombinedView();
+        renderPrivStatus('');
+
+        // Block any edit/mutate modals — view-event only
+        const _realOM = openModal;
+        openModal = (type, d2) => { if (type === 'view-event') _realOM(type, d2); };
+        return; // skip the rest of the load handler entirely
+      }
+      // ── END PUBLIC VIEW ──
 
       try {
         const r = await fetch('/api/auth/user');

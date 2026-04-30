@@ -655,6 +655,21 @@
         function toggleTypeFields() {
             const type = document.getElementById('formItemType').value;
 
+            // Clear all fields when type changes
+            document.getElementById('formItemName').value = '';
+            document.getElementById('formItemRarity').value = 'rare';
+            document.getElementById('formItemFlavor').value = '';
+            document.getElementById('formItemAttunement').checked = false;
+            document.getElementById('abilitiesEditor').innerHTML = '';
+            // Type-specific fields
+            ['formItemDamage', 'formItemDamageType', 'formItemProperties',
+                'formItemAC', 'formItemUses'].forEach(id => {
+                    const el = document.getElementById(id);
+                    if (el) el.value = '';
+                });
+            const armorType = document.getElementById('formItemArmorType');
+            if (armorType) armorType.selectedIndex = 0;
+
             // Hide all type-specific fields
             document.getElementById('formWeaponFields').style.display = 'none';
             document.getElementById('formArmorFields').style.display = 'none';

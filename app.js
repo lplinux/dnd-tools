@@ -455,7 +455,8 @@ app.get('/api/player-timelines/:campaignId/all', requireAuth, async (req, res) =
               cp.id as player_id, cp.player_name,
               u_assign.username,
               pte.id as entry_id, pte.title, pte.description,
-              pte.location, pte.year, pte.day_of_year, pte.duration_days
+              pte.location, pte.year, pte.day_of_year, pte.duration_days,
+              pte.player_ids, pte.manual_links
        FROM player_timelines pt
        JOIN campaign_players cp ON pt.player_id = cp.id
        LEFT JOIN campaign_user_assignments cua ON cp.id = cua.player_id
@@ -535,7 +536,7 @@ app.post('/api/player-timelines/:timelineId/entries', requireAuth, async (req, r
 // PUT update entry
 app.put('/api/player-timelines/:timelineId/entries/:entryId', requireAuth, async (req, res) => {
   const { timelineId, entryId } = req.params;
-  const { title, description, location, year, day_of_year, duration_days, player_ids } = req.body;
+  const { title, description, location, year, day_of_year, duration_days, player_ids, manual_links } = req.body;
   try {
     const tl = await pool.query('SELECT * FROM player_timelines WHERE id=$1', [timelineId]);
     if (!tl.rows.length) return res.status(404).json({ error: 'Not found' });
@@ -544,13 +545,15 @@ app.put('/api/player-timelines/:timelineId/entries/:entryId', requireAuth, async
       return res.status(403).json({ error: 'Access denied' });
     }
     const updatePids = player_ids && player_ids.length ? player_ids : null;
+    const updateLinks = manual_links != null ? manual_links : null;
     const result = await pool.query(
       `UPDATE player_timeline_entries
        SET title=$1, description=$2, location=$3, year=$4, day_of_year=$5,
-           duration_days=$6, player_ids=COALESCE($7, player_ids), updated_at=CURRENT_TIMESTAMP
-       WHERE id=$8 AND timeline_id=$9 RETURNING *`,
+           duration_days=$6, player_ids=COALESCE($7, player_ids),
+           manual_links=COALESCE($8, manual_links), updated_at=CURRENT_TIMESTAMP
+       WHERE id=$9 AND timeline_id=$10 RETURNING *`,
       [title, description || null, location || null, year, day_of_year,
-        duration_days || 1, updatePids, entryId, timelineId]
+        duration_days || 1, updatePids, updateLinks, entryId, timelineId]
     );
     if (!result.rows.length) return res.status(404).json({ error: 'Entry not found' });
     res.json(result.rows[0]);
@@ -778,9 +781,73 @@ app.get('/api/proxy-image', requireAuth, async (req, res) => {
 // PUT update campaign meta (add calendar_type support)
 
 
-// ============================================
-// ROUTES
-// ============================================
+// ── Timeline combined-view public share ──
+
+// DM generates / retrieves a stable hashed token for a campaign's combined timeline
+app.get('/api/campaigns/:campaignId/public-token', requireRole(['dm', 'admin']), async (req, res) => {
+  const { campaignId } = req.params;
+  try {
+    // DM must own this campaign
+    if (req.session.role === 'dm') {
+      const check = await pool.query('SELECT id FROM campaigns WHERE id=$1 AND dm_user_id=$2', [campaignId, req.session.userId]);
+      if (!check.rows.length) return res.status(403).json({ error: 'Access denied' });
+    }
+    // Upsert share token — deterministic hash of campaignId so same token on repeat calls
+    const token = hashId(parseInt(campaignId)) + crypto.randomBytes(4).toString('hex');
+    const existing = await pool.query('SELECT token FROM campaign_timeline_shares WHERE campaign_id=$1', [campaignId]);
+    let finalToken;
+    if (existing.rows.length) {
+      finalToken = existing.rows[0].token; // reuse stable token
+    } else {
+      await pool.query('INSERT INTO campaign_timeline_shares (campaign_id, token) VALUES ($1,$2)', [campaignId, token]);
+      finalToken = token;
+    }
+    res.json({ token: finalToken });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// Public read-only combined data — no auth required
+app.get('/api/timeline-public/:token', async (req, res) => {
+  try {
+    const share = await pool.query('SELECT campaign_id FROM campaign_timeline_shares WHERE token=$1', [req.params.token]);
+    if (!share.rows.length) return res.status(404).json({ error: 'Not found' });
+    const campaignId = share.rows[0].campaign_id;
+
+    const [metaR, entriesR] = await Promise.all([
+      pool.query(
+        `SELECT c.name, COALESCE(cm.calendar_type,'harptos') AS calendar_type
+         FROM campaigns c
+         LEFT JOIN campaign_meta cm ON cm.campaign_id = c.id
+         WHERE c.id=$1`,
+        [campaignId]
+      ),
+      pool.query(
+        `SELECT pt.id as timeline_id, pt.name as timeline_name,
+                cp.id as player_id, cp.player_name,
+                pte.id as entry_id, pte.title, pte.description,
+                pte.location, pte.year, pte.day_of_year, pte.duration_days,
+                pte.player_ids, pte.manual_links
+         FROM player_timelines pt
+         JOIN campaign_players cp ON pt.player_id = cp.id
+         LEFT JOIN player_timeline_entries pte ON pte.timeline_id = pt.id
+         WHERE pt.campaign_id=$1
+         ORDER BY cp.player_name, pt.name, pte.year ASC, pte.day_of_year ASC`,
+        [campaignId]
+      )
+    ]);
+
+    res.json({
+      campaign_name: metaR.rows[0]?.name || 'Campaign',
+      calendar_type: metaR.rows[0]?.calendar_type || 'harptos',
+      rows: entriesR.rows
+    });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// Page route — serves timeline.html which detects the token and enters public mode
+app.get('/timeline-public/:token', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'timeline.html'));
+});
 
 app.get('/npc-sheet', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'npc-sheet.html'));
@@ -794,7 +861,7 @@ app.get('/split-view', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'split-view.html'));
 });
 
-app.get('/timeline', (req, res) => {
+app.get('/timeline', requireRolePage(['dm', 'player']), (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'timeline.html'));
 });
 
@@ -1264,7 +1331,10 @@ app.delete('/api/journey-maps/:id/trackers/:tid', requireRole(['dm']), async (re
 app.get('/api/journey-maps/:id/paths', requireRole(['dm']), async (req, res) => {
   try {
     const r = await pool.query(
-      `SELECT jp.*, jt.name AS tracker_name, jt.color AS tracker_color, jt.type AS tracker_type
+      `SELECT jp.*,
+              COALESCE(jt.name,  jp.tracker_name_override)  AS tracker_name,
+              COALESCE(jt.color, jp.tracker_color_override) AS tracker_color,
+              jt.type AS tracker_type
        FROM journey_paths jp
        LEFT JOIN journey_trackers jt ON jp.tracker_id = jt.id
        WHERE jp.map_id=$1 ORDER BY jp.created_at ASC`,
@@ -1275,14 +1345,23 @@ app.get('/api/journey-maps/:id/paths', requireRole(['dm']), async (req, res) => 
 });
 
 app.post('/api/journey-maps/:id/paths', requireRole(['dm']), async (req, res) => {
-  const { tracker_id, name, waypoints, distance_miles, notes } = req.body;
+  const { tracker_id, tracker_color, tracker_name, name, waypoints, distance_miles, notes } = req.body;
   try {
+    // If tracker_color/tracker_name provided but no tracker_id (player tracker), store inline
     const r = await pool.query(
-      'INSERT INTO journey_paths (map_id, tracker_id, name, waypoints, distance_miles, notes, created_by) VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *',
-      [req.params.id, tracker_id || null, name || 'Path', JSON.stringify(waypoints || []),
+      `INSERT INTO journey_paths
+         (map_id, tracker_id, tracker_color_override, tracker_name_override, name, waypoints, distance_miles, notes, created_by)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *`,
+      [req.params.id, tracker_id || null,
+      tracker_color || null, tracker_name || null,
+      name || 'Path', JSON.stringify(waypoints || []),
       distance_miles || null, notes || null, req.session.userId]
     );
-    res.json(r.rows[0]);
+    // Merge override color/name into response
+    const row = r.rows[0];
+    row.tracker_color = row.tracker_color_override || row.tracker_color || '#c9a84c';
+    row.tracker_name = row.tracker_name_override || row.tracker_name || null;
+    res.json(row);
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -1526,6 +1605,11 @@ async function initializeDatabase() {
     await pool.query(`
       ALTER TABLE campaign_meta ADD COLUMN IF NOT EXISTS calendar_type VARCHAR(20) DEFAULT 'harptos';
     `);
+    // Migrate: add tracker override columns to journey_paths
+    await pool.query(`
+      ALTER TABLE journey_paths ADD COLUMN IF NOT EXISTS tracker_color_override VARCHAR(20);
+      ALTER TABLE journey_paths ADD COLUMN IF NOT EXISTS tracker_name_override  VARCHAR(255);
+    `);
     // Migrate: add timeline_id to player_timeline_entries if missing
     await pool.query(`
       ALTER TABLE player_timeline_entries ADD COLUMN IF NOT EXISTS timeline_id INTEGER REFERENCES player_timelines(id) ON DELETE CASCADE;
@@ -1602,6 +1686,15 @@ async function initializeDatabase() {
         map_id     INTEGER NOT NULL UNIQUE REFERENCES journey_maps(id) ON DELETE CASCADE,
         token      VARCHAR(255) NOT NULL UNIQUE,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
+
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS campaign_timeline_shares (
+        id          SERIAL PRIMARY KEY,
+        campaign_id INTEGER NOT NULL UNIQUE REFERENCES campaigns(id) ON DELETE CASCADE,
+        token       VARCHAR(255) NOT NULL UNIQUE,
+        created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       );
     `);
 
