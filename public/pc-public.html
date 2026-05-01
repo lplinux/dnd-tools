@@ -279,9 +279,10 @@
         </div>
       `;
 
-        if (d.picture_url) {
+        if (d.picture_data || d.picture_url) {
+          const portraitSrc = d.picture_data || d.picture_url;
           document.getElementById('portraitBox').innerHTML =
-            `<img src="${esc(d.picture_url)}" alt="portrait" onerror="this.parentElement.innerHTML='🧝'">`;
+            `<img src="${esc(portraitSrc)}" alt="portrait" onerror="this.parentElement.innerHTML='🧝'">`;
         }
       } catch (e) {
         app.innerHTML = `<div class="not-found"><span>⚠️</span><p>Error loading character: ${e.message}</p></div>`;

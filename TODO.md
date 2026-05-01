@@ -1,18 +1,24 @@
-# Small fixes
+# TODO
+
 ## General
-* Add template color selector on all modules among the Login button or the Account button (if logged in)
-* Item Card form should be cleared every time the "Item Type" is changed
-* Refactor CSS code to be DRY
+
+- [ ] Add theme/colour selector accessible from all modules (near Login / Account button)
+- [ ] Refactor CSS — extract shared variables and component styles into `styles.css` to reduce duplication across HTML files
+- [ ] Item Card form fields should reset when "Item Type" is changed
 
 ## Journey Path Map
-* Display the information of the paths
-* Waypoints should contain the name of the location if put/drawn on a location
-    * If put in a place without a location, it should create a new Location and add it to the Campaign
-* Distance should be calculated if possible by the distance between locations
-* onWheel for zoom-in/out should be focused on the pointer as center
-* A waypoint could be edited and linked to an Event on any Timeline for the Campaign
+
+- [ ] `onWheel` zoom should be centred on the pointer position, not the viewport origin
+- [ ] Waypoint edit modal: link a waypoint to an Event on any Campaign Timeline
+- [ ] Public view (`journey-map-public.html`): display waypoint location names and linked event info on the read-only map
+
+- [ ] Distance Matrix is not refreshed automatically after saving the distance
+- [ ] Extend a Path needs a shortcut key (added along "Draw Path")
+
+## Manage Campaigns
+
+- [ ] Bulk-import locations from a CSV or text list
 
 ## PC Sheet
-* Image for PC should be uploaded and stored on the DB
-    * Limit the size of the image to 106x136px and 100kb
-    * Allow Image URL as alternative
+
+- [ ] Add a private NPC sheet so the player can handle it's own character sheet (DM should have access as well)

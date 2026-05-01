@@ -837,12 +837,28 @@
     <div class="tab-content" id="tab-character">
       <div id="charMsg"></div>
       <div class="char-header">
-        <div class="char-portrait" id="portraitBox">🧝</div>
+        <div class="char-portrait" id="portraitBox" title="Click to upload image" style="cursor:pointer"
+          onclick="document.getElementById('picFileInput').click()">🧝</div>
         <div class="char-info">
           <input class="char-name-input" id="charName" type="text" placeholder="Character Name…">
+          <!-- Portrait controls -->
           <div class="form-group" style="margin-bottom:6px">
-            <label>Portrait URL</label>
-            <input type="url" id="picUrlInput" placeholder="https://…" oninput="previewPortrait(this.value)">
+            <label>Portrait</label>
+            <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+              <label class="btn" style="padding:4px 10px;font-size:.7rem;cursor:pointer;margin:0"
+                title="Upload an image (Max 412×544 px · 500 KB)">
+                📁 Upload
+                <input type="file" id="picFileInput" accept="image/jpeg,image/png,image/gif,image/webp"
+                  style="display:none" onchange="handlePortraitUpload(this)">
+              </label>
+              <span style="color:var(--text-dim);font-size:.75rem">or</span>
+              <input type="url" id="picUrlInput" placeholder="https://… (image URL)" style="flex:1;min-width:120px"
+                oninput="handlePortraitUrlInput(this.value)">
+              <button class="btn" style="padding:4px 8px;font-size:.7rem;background:var(--red);white-space:nowrap"
+                onclick="clearPortrait()" title="Remove portrait">✕</button>
+            </div>
+            <div id="portraitMsg" style="font-size:.75rem;margin-top:3px;color:var(--text-dim)">Max 412×544 px · 500 KB
+              · JPEG/PNG/GIF/WebP</div>
           </div>
           <div id="pubLinkBox" style="display:none"></div>
         </div>
@@ -1097,7 +1113,12 @@
       document.getElementById('charGoals').value = d.goals || '';
       document.getElementById('charPublicInfo').value = d.public_info || '';
       document.getElementById('charPrivateInfo').value = d.private_info || '';
-      previewPortrait(d.picture_url || '');
+      // picture_data (uploaded) takes priority over picture_url
+      if (d.picture_data) {
+        previewPortrait(d.picture_data);
+      } else {
+        previewPortrait(d.picture_url || '');
+      }
       renderRelList();
     }
 
@@ -1106,6 +1127,97 @@
       box.innerHTML = url?.trim()
         ? `<img src="${url}" alt="portrait" onerror="this.parentElement.innerHTML='🧝'">`
         : '🧝';
+    }
+
+    function handlePortraitUrlInput(url) {
+      // When a URL is typed, clear any uploaded data state and preview
+      charData && (charData.picture_data = null);
+      document.getElementById('portraitMsg').textContent = 'Max 412×544 px · 500 KB · JPEG/PNG/GIF/WebP';
+      document.getElementById('portraitMsg').style.color = 'var(--text-dim)';
+      previewPortrait(url);
+    }
+
+    function clearPortrait() {
+      charData && (charData.picture_data = null);
+      document.getElementById('picUrlInput').value = '';
+      document.getElementById('picFileInput').value = '';
+      document.getElementById('portraitMsg').textContent = 'Max 412×544 px · 500 KB · JPEG/PNG/GIF/WebP';
+      document.getElementById('portraitMsg').style.color = 'var(--text-dim)';
+      previewPortrait('');
+    }
+
+    async function handlePortraitUpload(input) {
+      const file = input.files[0];
+      if (!file) return;
+      const msgEl = document.getElementById('portraitMsg');
+
+      // 1. Size check (500 KB)
+      if (file.size > 500 * 1024) {
+        msgEl.textContent = '✗ Image exceeds 500 KB. Please resize and try again.';
+        msgEl.style.color = 'var(--red-hover)';
+        input.value = '';
+        return;
+      }
+
+      // 2. Read as data URL for dimension check + preview
+      const dataUrl = await new Promise((res, rej) => {
+        const reader = new FileReader();
+        reader.onload = e => res(e.target.result);
+        reader.onerror = rej;
+        reader.readAsDataURL(file);
+      });
+
+      // 3. Dimension check (412x544)
+      await new Promise((res) => {
+        const img = new Image();
+        img.onload = () => {
+          if (img.width > 412 || img.height > 544) {
+            msgEl.textContent = `✗ Image is ${img.width}×${img.height}px. Max is 412×544px`;
+            msgEl.style.color = 'var(--red-hover)';
+            input.value = '';
+            res(false);
+          } else {
+            res(true);
+          }
+        };
+        img.onerror = () => res(false);
+        img.src = dataUrl;
+      }).then(async (ok) => {
+        if (!ok) return;
+
+        // 4. Upload to server
+        msgEl.textContent = '⏳ Uploading…';
+        msgEl.style.color = 'var(--text-dim)';
+
+        const base64 = dataUrl.split(',')[1];
+        const mimeType = file.type;
+
+        try {
+          const res = await fetch(`/api/pc/${currentPlayerId}/portrait`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ data: base64, mimeType })
+          });
+          if (res.ok) {
+            const json = await res.json();
+            // Store uploaded data in charData and clear URL field
+            if (!charData) charData = {};
+            charData.picture_data = json.picture_data;
+            charData.picture_url = null;
+            document.getElementById('picUrlInput').value = '';
+            previewPortrait(json.picture_data);
+            msgEl.textContent = '✓ Portrait saved!';
+            msgEl.style.color = 'var(--green-hover)';
+          } else {
+            const e = await res.json();
+            msgEl.textContent = '✗ ' + (e.error || 'Upload failed');
+            msgEl.style.color = 'var(--red-hover)';
+          }
+        } catch (e) {
+          msgEl.textContent = '✗ ' + e.message;
+          msgEl.style.color = 'var(--red-hover)';
+        }
+      });
     }
 
     async function showSheet() {
@@ -1161,6 +1273,8 @@
 
     // ── Save ──
     async function saveCharacter(section) {
+      // If the character has an uploaded portrait (picture_data) and the URL field is blank,
+      // send picture_url as empty string so the server keeps picture_data intact.
       const payload = {
         picture_url: document.getElementById('picUrlInput').value,
         name: document.getElementById('charName').value,
@@ -1624,10 +1738,10 @@
       const prog = document.getElementById('printProgress');
       overlay.classList.add('active');
 
-      // ── CORS fix: swap portrait src to same-origin proxy ──
+      // ── CORS fix: swap portrait src to same-origin proxy (skip for data URIs — already same-origin) ──
       const portraitImg = document.querySelector('#portraitBox img');
       let originalSrc = null;
-      if (portraitImg && portraitImg.src && !portraitImg.src.startsWith(location.origin)) {
+      if (portraitImg && portraitImg.src && !portraitImg.src.startsWith(location.origin) && !portraitImg.src.startsWith('data:')) {
         originalSrc = portraitImg.src;
         const proxied = `/api/proxy-image?url=${encodeURIComponent(originalSrc)}`;
         portraitImg.src = proxied;

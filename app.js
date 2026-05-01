@@ -919,19 +919,64 @@ app.put('/api/pc/:playerId', requireAuth, async (req, res) => {
     let result;
     if (existing.rows.length === 0) {
       result = await pool.query(
-        `INSERT INTO pc_characters (player_id, name, picture_url, story, traits, flaws, goals, public_info, private_info)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *`,
+        `INSERT INTO pc_characters (player_id, name, picture_url, picture_data, story, traits, flaws, goals, public_info, private_info)
+         VALUES ($1,$2,$3,NULL,$4,$5,$6,$7,$8,$9) RETURNING *`,
         [playerId, name, picture_url, story, traits, flaws, goals, public_info, private_info]
       );
     } else {
+      // If a URL is provided, clear the uploaded picture_data; if URL is empty, keep existing picture_data
+      const clearData = picture_url && picture_url.trim() ? 'NULL' : 'picture_data';
       result = await pool.query(
-        `UPDATE pc_characters SET name=$1, picture_url=$2, story=$3, traits=$4, flaws=$5, goals=$6,
+        `UPDATE pc_characters SET name=$1, picture_url=$2, picture_data=${clearData}, story=$3, traits=$4, flaws=$5, goals=$6,
          public_info=$7, private_info=$8, updated_at=CURRENT_TIMESTAMP
          WHERE player_id=$9 RETURNING *`,
         [name, picture_url, story, traits, flaws, goals, public_info, private_info, playerId]
       );
     }
     res.json(result.rows[0]);
+  } catch (error) { res.status(500).json({ error: error.message }); }
+});
+
+// Upload portrait image (base64, stored in DB)
+app.post('/api/pc/:playerId/portrait', requireAuth, async (req, res) => {
+  const { playerId } = req.params;
+  try {
+    if (!await canAccessPC(req.session.userId, req.session.role, playerId)) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+    const { data, mimeType } = req.body; // data = base64 string, mimeType = e.g. 'image/png'
+    if (!data || !mimeType) return res.status(400).json({ error: 'Missing image data or mimeType' });
+
+    const ALLOWED_TYPES = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
+    if (!ALLOWED_TYPES.includes(mimeType)) {
+      return res.status(400).json({ error: 'Invalid image type. Use JPEG, PNG, GIF, or WebP.' });
+    }
+
+    // Enforce 100 KB size limit on base64 payload (base64 ~4/3 raw bytes)
+    const MAX_B64_CHARS = Math.ceil(100 * 1024 * (4 / 3));
+    if (data.length > MAX_B64_CHARS) {
+      return res.status(400).json({ error: 'Image exceeds 100 KB limit.' });
+    }
+
+    const dataUri = `data:${mimeType};base64,${data}`;
+
+    // Upsert: ensure character row exists, then save picture_data and clear picture_url
+    const existing = await pool.query('SELECT id FROM pc_characters WHERE player_id = $1', [playerId]);
+    let result;
+    if (existing.rows.length === 0) {
+      result = await pool.query(
+        `INSERT INTO pc_characters (player_id, picture_data, picture_url, updated_at)
+         VALUES ($1, $2, NULL, CURRENT_TIMESTAMP) RETURNING *`,
+        [playerId, dataUri]
+      );
+    } else {
+      result = await pool.query(
+        `UPDATE pc_characters SET picture_data=$1, picture_url=NULL, updated_at=CURRENT_TIMESTAMP
+         WHERE player_id=$2 RETURNING *`,
+        [dataUri, playerId]
+      );
+    }
+    res.json({ picture_data: result.rows[0].picture_data });
   } catch (error) { res.status(500).json({ error: error.message }); }
 });
 
@@ -1061,7 +1106,7 @@ app.get('/api/pc-public/:playerToken', async (req, res) => {
   if (!playerId) return res.status(404).json({ error: 'Invalid link' });
   try {
     const result = await pool.query(
-      'SELECT name, picture_url, public_info FROM pc_characters WHERE player_id = $1',
+      'SELECT name, picture_url, picture_data, public_info FROM pc_characters WHERE player_id = $1',
       [playerId]
     );
     if (!result.rows.length) return res.status(404).json({ error: 'Character not found' });
@@ -1097,6 +1142,24 @@ app.post('/api/campaigns/:campaignId/locations', requireRole(['dm']), async (req
     const result = await pool.query(
       'INSERT INTO campaign_locations (campaign_id, name, description) VALUES ($1,$2,$3) RETURNING *',
       [req.params.campaignId, name, description || null]
+    );
+    res.json(result.rows[0]);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.put('/api/campaigns/:campaignId/locations/:locationId', requireRole(['dm']), async (req, res) => {
+  const { name, description } = req.body;
+  if (!name) return res.status(400).json({ error: 'Name required' });
+  try {
+    const result = await pool.query(
+      'UPDATE campaign_locations SET name=$1, description=$2 WHERE id=$3 AND campaign_id=$4 RETURNING *',
+      [name, description || null, req.params.locationId, req.params.campaignId]
+    );
+    if (!result.rows.length) return res.status(404).json({ error: 'Location not found' });
+    // Also sync the name on any journey_map_locations that reference this campaign location
+    await pool.query(
+      'UPDATE journey_map_locations SET name=$1 WHERE campaign_location_id=$2',
+      [name, req.params.locationId]
     );
     res.json(result.rows[0]);
   } catch (e) { res.status(500).json({ error: e.message }); }
@@ -1345,19 +1408,17 @@ app.get('/api/journey-maps/:id/paths', requireRole(['dm']), async (req, res) => 
 });
 
 app.post('/api/journey-maps/:id/paths', requireRole(['dm']), async (req, res) => {
-  const { tracker_id, tracker_color, tracker_name, name, waypoints, distance_miles, notes } = req.body;
+  const { tracker_id, tracker_color, tracker_name, name, waypoints, notes } = req.body;
   try {
-    // If tracker_color/tracker_name provided but no tracker_id (player tracker), store inline
     const r = await pool.query(
       `INSERT INTO journey_paths
-         (map_id, tracker_id, tracker_color_override, tracker_name_override, name, waypoints, distance_miles, notes, created_by)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *`,
+         (map_id, tracker_id, tracker_color_override, tracker_name_override, name, waypoints, notes, created_by)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,
       [req.params.id, tracker_id || null,
       tracker_color || null, tracker_name || null,
       name || 'Path', JSON.stringify(waypoints || []),
-      distance_miles || null, notes || null, req.session.userId]
+      notes || null, req.session.userId]
     );
-    // Merge override color/name into response
     const row = r.rows[0];
     row.tracker_color = row.tracker_color_override || row.tracker_color || '#c9a84c';
     row.tracker_name = row.tracker_name_override || row.tracker_name || null;
@@ -1366,11 +1427,11 @@ app.post('/api/journey-maps/:id/paths', requireRole(['dm']), async (req, res) =>
 });
 
 app.put('/api/journey-maps/:id/paths/:pid', requireRole(['dm']), async (req, res) => {
-  const { name, waypoints, distance_miles, notes } = req.body;
+  const { name, waypoints, notes } = req.body;
   try {
     const r = await pool.query(
-      'UPDATE journey_paths SET name=$1, waypoints=$2, distance_miles=$3, notes=$4 WHERE id=$5 AND map_id=$6 RETURNING *',
-      [name, JSON.stringify(waypoints), distance_miles || null, notes || null, req.params.pid, req.params.id]
+      'UPDATE journey_paths SET name=$1, waypoints=$2, notes=$3 WHERE id=$4 AND map_id=$5 RETURNING *',
+      [name, JSON.stringify(waypoints), notes || null, req.params.pid, req.params.id]
     );
     res.json(r.rows[0]);
   } catch (e) { res.status(500).json({ error: e.message }); }
@@ -1545,6 +1606,7 @@ async function initializeDatabase() {
         player_id INTEGER NOT NULL REFERENCES campaign_players(id) ON DELETE CASCADE,
         name VARCHAR(255),
         picture_url TEXT,
+        picture_data TEXT,
         story TEXT,
         traits TEXT,
         flaws TEXT,
@@ -1617,6 +1679,7 @@ async function initializeDatabase() {
     // Migrate: add player_ids to player_timeline_entries if it doesn't exist
     await pool.query(`
       ALTER TABLE player_timeline_entries ADD COLUMN IF NOT EXISTS player_ids TEXT[] DEFAULT '{}';
+      ALTER TABLE pc_characters ADD COLUMN IF NOT EXISTS picture_data TEXT;
     `);
 
     // Journey Path Maps
@@ -1707,10 +1770,24 @@ async function initializeDatabase() {
 
 app.listen(PORT, async () => {
   await initializeDatabase();
-  console.log(`\n🎲 D&D Tools v3 running at http://localhost:${PORT}`);
-  console.log(`\n📋 Routes:`);
-  console.log(`  🔓 Public: /npc-sheet, /item-cards, /split-view, /timeline`);
-  console.log(`  🔐 Auth: /pc-sheet`);
-  console.log(`  👑 DM: /manage-campaigns, /pdf-viewer`);
-  console.log(`  🛠️ Admin: /user-panel`);
+  console.log(`\n🎲 D&D Tools running at http://localhost:${PORT}`);
+  console.log(`\n📋 Page routes:`);
+  console.log(`  🔓 Public    : /npc-sheet, /item-cards, /split-view`);
+  console.log(`  🔓 Public    : /timeline-public/:token, /journey-map-public/:token, /pc-public/:token`);
+  console.log(`  🎭 Player/DM : /timeline, /pc-sheet`);
+  console.log(`  👑 DM        : /manage-campaigns, /journey-map, /pdf-viewer`);
+  console.log(`  🛠️ Admin     : /user-panel`);
+  console.log(`\n🔌 API groups:`);
+  console.log(`  /api/auth/*                       Auth (login, logout, change-password)`);
+  console.log(`  /api/users/*                      User management (admin)`);
+  console.log(`  /api/campaigns/*                  Campaigns, players, locations, meta`);
+  console.log(`  /api/player-timelines/*           Timeline CRUD`);
+  console.log(`  /api/timeline-private/*           Private player journals`);
+  console.log(`  /api/timeline-public/:token       Public read-only timeline`);
+  console.log(`  /api/pc/*                         PC sheets, relationships, DM notes`);
+  console.log(`  /api/pc-public/:token             Public read-only PC sheet`);
+  console.log(`  /api/journey-maps/*               Journey maps, locations, paths, trackers`);
+  console.log(`  /api/journey-map-public/:token    Public read-only journey map`);
+  console.log(`  /api/pdfs                         PDF file listing`);
+  console.log(`  /api/proxy-image                  External image proxy`);
 });

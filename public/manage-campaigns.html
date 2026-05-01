@@ -469,6 +469,39 @@
             margin-top: 2px
         }
 
+        /* Edit location modal */
+        .loc-modal-overlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, .7);
+            display: none;
+            align-items: center;
+            justify-content: center;
+            z-index: 100
+        }
+
+        .loc-modal-overlay.open {
+            display: flex
+        }
+
+        .loc-modal {
+            background: var(--surface);
+            border: 1px solid var(--border2);
+            border-radius: 2px;
+            padding: 20px;
+            width: 380px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, .6)
+        }
+
+        .loc-modal h3 {
+            font-family: var(--fd);
+            font-size: .85rem;
+            color: var(--gold);
+            letter-spacing: .08em;
+            text-transform: uppercase;
+            margin-bottom: 14px
+        }
+
         @media(max-width:900px) {
             .container {
                 grid-template-columns: 1fr
@@ -796,6 +829,9 @@
 
                 const players = playersRes.ok ? await playersRes.json() : [];
                 const locs = locsRes.ok ? await locsRes.json() : [];
+                // Build a lookup map so editLoc can retrieve data without inline HTML encoding
+                window._locsById = {};
+                locs.forEach(l => { window._locsById[l.id] = { name: l.name, description: l.description || '' }; });
                 const meta = metaRes.ok ? await metaRes.json() : {};
                 const timelines = timelinesRes.ok ? await timelinesRes.json() : [];
 
@@ -865,7 +901,10 @@
                ${locs.map(l => `<tr>
                  <td><strong>${escHtml(l.name)}</strong></td>
                  <td style="font-size:11px;color:var(--text-dim)">${escHtml(l.description || '')}</td>
-                 <td><button class="sm danger" onclick="deleteLoc(${l.id})">Delete</button></td>
+                 <td style="white-space:nowrap">
+                   <button class="sm" onclick="editLoc(${l.id})" style="margin-right:4px">Edit</button>
+                   <button class="sm danger" onclick="deleteLoc(${l.id})">Delete</button>
+                 </td>
                </tr>`).join('')}
                </tbody></table>`}
 
@@ -1029,8 +1068,73 @@
             if (e.key === 'Escape') { closeCalPicker(); closeNewTlModal(); }
         });
 
+        /* ─── Location edit ─── */
+        let _editLocId = null;
+
+        function editLoc(locId) {
+            const loc = window._locsById?.[locId];
+            if (!loc) return;
+            _editLocId = locId;
+            document.getElementById('editLocName').value = loc.name;
+            document.getElementById('editLocDesc').value = loc.description;
+            document.getElementById('editLocMsg').innerHTML = '';
+            document.getElementById('editLocOverlay').classList.add('open');
+            setTimeout(() => document.getElementById('editLocName').focus(), 60);
+        }
+
+        function closeEditLoc() {
+            document.getElementById('editLocOverlay').classList.remove('open');
+            _editLocId = null;
+        }
+
+        async function saveEditLoc() {
+            const name = document.getElementById('editLocName').value.trim();
+            const desc = document.getElementById('editLocDesc').value.trim();
+            if (!name) {
+                document.getElementById('editLocMsg').innerHTML = '<div class="msg err">✗ Name is required</div>';
+                return;
+            }
+            try {
+                const res = await fetch(`/api/campaigns/${currentCampaign.id}/locations/${_editLocId}`, {
+                    method: 'PUT', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ name, description: desc })
+                });
+                if (res.ok) {
+                    closeEditLoc();
+                    await renderCampaignDetails();
+                } else {
+                    const e = await res.json();
+                    document.getElementById('editLocMsg').innerHTML = `<div class="msg err">✗ ${escHtml(e.error)}</div>`;
+                }
+            } catch (e) {
+                document.getElementById('editLocMsg').innerHTML = `<div class="msg err">✗ ${escHtml(e.message)}</div>`;
+            }
+        }
+
         loadCampaigns();
     </script>
+
+    <!-- Edit Location Modal -->
+    <div class="loc-modal-overlay" id="editLocOverlay" onclick="if(event.target===this)closeEditLoc()">
+        <div class="loc-modal">
+            <h3>✏️ Edit Location</h3>
+            <div class="form-group">
+                <label>Name</label>
+                <input type="text" id="editLocName"
+                    onkeydown="if(event.key==='Enter')saveEditLoc();if(event.key==='Escape')closeEditLoc()">
+            </div>
+            <div class="form-group">
+                <label>Description</label>
+                <textarea id="editLocDesc" rows="3" placeholder="Brief description of this location…"
+                    onkeydown="if(event.key==='Escape')closeEditLoc()"></textarea>
+            </div>
+            <div id="editLocMsg"></div>
+            <div class="btn-row" style="margin-top:14px">
+                <button onclick="closeEditLoc()">Cancel</button>
+                <button onclick="saveEditLoc()" style="background:var(--gold-dim)">Save</button>
+            </div>
+        </div>
+    </div>
 </body>
 
 </html>
