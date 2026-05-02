@@ -1106,7 +1106,7 @@ app.get('/api/pc-public/:playerToken', async (req, res) => {
   if (!playerId) return res.status(404).json({ error: 'Invalid link' });
   try {
     const result = await pool.query(
-      'SELECT name, picture_url, picture_data, public_info FROM pc_characters WHERE player_id = $1',
+      'SELECT name, picture_url, public_info FROM pc_characters WHERE player_id = $1',
       [playerId]
     );
     if (!result.rows.length) return res.status(404).json({ error: 'Character not found' });
@@ -1119,6 +1119,39 @@ app.get('/api/pc/:playerId/public-token', requireRole(['dm', 'player']), async (
   const playerId = parseInt(req.params.playerId);
   if (isNaN(playerId)) return res.status(400).json({ error: 'Invalid player ID' });
   res.json({ token: hashId(playerId) });
+});
+
+// ============================================
+// PC STATS SHEET
+// ============================================
+
+app.get('/api/pc/:playerId/stats', requireAuth, async (req, res) => {
+  const { playerId } = req.params;
+  try {
+    if (!await canAccessPC(req.session.userId, req.session.role, playerId))
+      return res.status(403).json({ error: 'Access denied' });
+    const result = await pool.query(
+      'SELECT stats_json FROM pc_char_stats WHERE player_id = $1', [playerId]
+    );
+    res.json(result.rows[0]?.stats_json || {});
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.put('/api/pc/:playerId/stats', requireAuth, async (req, res) => {
+  const { playerId } = req.params;
+  try {
+    if (!await canAccessPC(req.session.userId, req.session.role, playerId))
+      return res.status(403).json({ error: 'Access denied' });
+    const result = await pool.query(
+      `INSERT INTO pc_char_stats (player_id, stats_json, updated_at)
+       VALUES ($1, $2, CURRENT_TIMESTAMP)
+       ON CONFLICT (player_id) DO UPDATE
+       SET stats_json = $2, updated_at = CURRENT_TIMESTAMP
+       RETURNING stats_json`,
+      [playerId, JSON.stringify(req.body)]
+    );
+    res.json(result.rows[0].stats_json);
+  } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 // ============================================
@@ -1639,6 +1672,16 @@ async function initializeDatabase() {
         content TEXT NOT NULL,
         dm_visible BOOLEAN DEFAULT false,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
+
+    // PC Stats Sheet (NPC-style full stats stored as JSON)
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS pc_char_stats (
+        id         SERIAL PRIMARY KEY,
+        player_id  INTEGER NOT NULL UNIQUE REFERENCES campaign_players(id) ON DELETE CASCADE,
+        stats_json JSONB NOT NULL DEFAULT '{}',
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       );
     `);
 

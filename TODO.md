@@ -8,17 +8,14 @@
 
 ## Journey Path Map
 
-- [ ] `onWheel` zoom should be centred on the pointer position, not the viewport origin
-- [ ] Waypoint edit modal: link a waypoint to an Event on any Campaign Timeline
 - [ ] Public view (`journey-map-public.html`): display waypoint location names and linked event info on the read-only map
-
-- [ ] Distance Matrix is not refreshed automatically after saving the distance
-- [ ] Extend a Path needs a shortcut key (added along "Draw Path")
 
 ## Manage Campaigns
 
 - [ ] Bulk-import locations from a CSV or text list
+- [ ] Disable deletion of locations used on Journey Map's Path
 
 ## PC Sheet
 
-- [ ] Add a private NPC sheet so the player can handle it's own character sheet (DM should have access as well)
+- [ ] Caster Type should be blocked depending on the slected Class
+- [ ] Prepare for Multi-Class

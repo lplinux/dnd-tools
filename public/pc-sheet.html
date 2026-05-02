@@ -185,6 +185,11 @@
       display: block
     }
 
+    /* Stats tab needs flex so toolbar + iframe mount stack vertically */
+    #tab-stats.active {
+      display: flex
+    }
+
     /* Cards */
     .card {
       background: var(--surface);
@@ -825,6 +830,7 @@
 
     <div class="tab-bar" id="tabBar" style="display:none">
       <button class="tab-btn active" onclick="showTab('character',this)">⚔️ Character</button>
+      <button class="tab-btn" onclick="showTab('stats',this)">🎲 Stats Sheet</button>
       <button class="tab-btn" onclick="showTab('relations',this)">🌳 Relationships</button>
       <button class="tab-btn" onclick="showTab('public',this)">📢 Public Info</button>
       <button class="tab-btn" id="privateTabBtn" style="display:none" onclick="showTab('private',this)">🔒 Private
@@ -884,6 +890,17 @@
         </div>
       </div>
       <div class="btn-row"><button class="btn" onclick="saveCharacter()">💾 Save Character</button></div>
+    </div>
+
+    <!-- TAB: Stats Sheet (iframe injected dynamically when tab is first opened) -->
+    <div class="tab-content" id="tab-stats" style="padding:0;flex-direction:column">
+      <div id="statsToolbar"
+        style="display:flex;align-items:center;gap:10px;padding:8px 14px;background:var(--surface);border-bottom:1px solid var(--border);flex-shrink:0">
+        <span id="statsSaveMsg" style="font-size:12px;color:var(--text-dim);flex:1"></span>
+        <button class="btn" onclick="statsSheetSave()">💾 Save Stats Sheet</button>
+        <button class="btn danger" onclick="statsSheetClear()">🗑 Clear</button>
+      </div>
+      <div id="npcFrameMount" style="flex:1;overflow-y:auto"></div>
     </div>
 
     <!-- TAB: Relationships -->
@@ -1901,6 +1918,141 @@
     document.getElementById('relModal').addEventListener('click', e => {
       if (e.target === document.getElementById('relModal')) closeRelModal();
     });
+
+    // ══════════════════════════════════════════════════
+    // STATS SHEET — iframe postMessage bridge
+    // ══════════════════════════════════════════════════
+    // State
+    let npcFrameReady = false;
+    let pendingLoad = null;          // stats payload queued before frame was ready
+    let collectResolve = null;          // pending collect() promise resolver
+    let statsLoaded = false;         // true once we have fetched from API for current player
+
+    // Get the live iframe element (created dynamically)
+    const npcFrame = () => document.getElementById('npcSheetFrame');
+
+    // Listen for postMessage replies from the embedded npc-sheet
+    window.addEventListener('message', e => {
+      if (!e.data || typeof e.data !== 'object') return;
+
+      if (e.data.type === 'NPC_READY') {
+        npcFrameReady = true;
+        if (pendingLoad !== null) {
+          npcFrame()?.contentWindow?.postMessage({ type: 'LOAD_STATS', payload: pendingLoad }, '*');
+          pendingLoad = null;
+        }
+      }
+
+      if (e.data.type === 'STATS_DATA' && collectResolve) {
+        const r = collectResolve; collectResolve = null; r(e.data.payload);
+      }
+
+      // Auto-resize the iframe to its full content height so the outer tab scrolls
+      if (e.data.type === 'IFRAME_RESIZE') {
+        const frame = npcFrame();
+        if (frame) frame.style.height = e.data.height + 'px';
+      }
+    });
+
+    // Create (or re-create) the iframe inside #npcFrameMount
+    function spawnNpcFrame() {
+      const mount = document.getElementById('npcFrameMount');
+      const old = document.getElementById('npcSheetFrame');
+      if (old) old.remove();
+      npcFrameReady = false;
+      pendingLoad = null;
+      collectResolve = null;
+
+      const frame = document.createElement('iframe');
+      frame.id = 'npcSheetFrame';
+      frame.src = '/npc-sheet?embedded=1';
+      // Height is driven by IFRAME_RESIZE messages from npc-sheet.
+      // Start at 0; first resize message sets the real height immediately.
+      frame.style.cssText = 'border:none;width:100%;height:0;display:block;overflow:hidden';
+      mount.appendChild(frame);
+    }
+
+    // Send data into iframe (queues if not ready yet)
+    function statsLoad(data) {
+      const frame = npcFrame();
+      if (!frame) return;
+      if (npcFrameReady) {
+        frame.contentWindow.postMessage({ type: 'LOAD_STATS', payload: data }, '*');
+      } else {
+        pendingLoad = data;
+      }
+    }
+
+    // Collect current data from iframe (returns Promise)
+    function statsCollect() {
+      return new Promise((resolve, reject) => {
+        const frame = npcFrame();
+        if (!frame?.contentWindow) return reject(new Error('iframe not ready'));
+        collectResolve = resolve;
+        frame.contentWindow.postMessage({ type: 'COLLECT_STATS' }, '*');
+        setTimeout(() => {
+          if (collectResolve === resolve) { collectResolve = null; reject(new Error('timed out')); }
+        }, 5000);
+      });
+    }
+
+    // Save button
+    async function statsSheetSave() {
+      const msgEl = document.getElementById('statsSaveMsg');
+      if (!currentPlayerId) return;
+      try {
+        msgEl.textContent = '⏳ Saving…'; msgEl.style.color = 'var(--text-dim)';
+        const data = await statsCollect();
+        const res = await fetch(`/api/pc/${currentPlayerId}/stats`, {
+          method: 'PUT', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(data),
+        });
+        if (res.ok) {
+          msgEl.textContent = '✓ Saved'; msgEl.style.color = 'var(--green-hover)';
+        } else {
+          const err = await res.json();
+          msgEl.textContent = '✗ ' + (err.error || 'Error'); msgEl.style.color = 'var(--red-hover)';
+        }
+      } catch (err) {
+        msgEl.textContent = '✗ ' + err.message; msgEl.style.color = 'var(--red-hover)';
+      }
+      setTimeout(() => { msgEl.textContent = ''; }, 3000);
+    }
+
+    // Clear button — wipes the iframe sheet
+    function statsSheetClear() {
+      if (!confirm('Clear the entire Stats Sheet?')) return;
+      statsLoad({});
+    }
+
+    // Override showTab: create the iframe on first visit to stats tab; lazy-load data
+    const _origShowTab = showTab;
+    showTab = function (name, btn) {
+      _origShowTab(name, btn);
+      // _origShowTab manages display via CSS classes (.active).
+      // We must NOT set any inline display style — that would override the CSS.
+
+      if (name === 'stats' && !statsLoaded && currentPlayerId) {
+        statsLoaded = true;
+        spawnNpcFrame();
+        fetch(`/api/pc/${currentPlayerId}/stats`)
+          .then(r => r.ok ? r.json() : {})
+          .then(data => statsLoad(data))
+          .catch(() => { });
+      }
+    };
+
+    // Override loadPlayerSheet: tear down iframe so it resets for the new player
+    const _origLoadPlayerSheet = loadPlayerSheet;
+    loadPlayerSheet = async function () {
+      statsLoaded = false;
+      // Remove the old iframe — it will be re-created when stats tab is next opened
+      const old = document.getElementById('npcSheetFrame');
+      if (old) old.remove();
+      npcFrameReady = false; pendingLoad = null; collectResolve = null;
+      await _origLoadPlayerSheet();
+    };
+    // ── End Stats Sheet bridge ─────────────────────────
 
     init();
   </script>

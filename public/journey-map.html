@@ -734,6 +734,121 @@
       font-size: 11px;
     }
 
+    .wpt-edit-btn {
+      margin-left: auto;
+      background: none;
+      border: 1px solid var(--border2);
+      color: var(--gold-dim);
+      border-radius: 2px;
+      font-size: 9px;
+      padding: 1px 5px;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+
+    .wpt-edit-btn:hover {
+      background: var(--surface2);
+      color: var(--gold);
+    }
+
+    .wpt-event-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      background: var(--surface2);
+      border: 1px solid var(--border2);
+      border-radius: 2px;
+      padding: 1px 5px;
+      font-size: 10px;
+      color: var(--gold);
+      margin-top: 1px;
+    }
+
+    .wpt-event-chip .unlink {
+      cursor: pointer;
+      color: var(--text-muted);
+      margin-left: 3px;
+      font-size: 9px;
+      line-height: 1;
+    }
+
+    .wpt-event-chip .unlink:hover {
+      color: #e06c75;
+    }
+
+    /* Waypoint event modal */
+    .wpt-ev-search {
+      width: 100%;
+      box-sizing: border-box;
+      background: var(--surface3);
+      border: 1px solid var(--border2);
+      color: var(--text);
+      padding: 5px 8px;
+      font-size: 12px;
+      border-radius: 2px;
+      margin-bottom: 8px;
+    }
+
+    .wpt-ev-search:focus {
+      outline: none;
+      border-color: var(--gold-dim);
+    }
+
+    .wpt-ev-tl-group {
+      margin-bottom: 10px;
+    }
+
+    .wpt-ev-tl-name {
+      font-size: 10px;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: .07em;
+      margin-bottom: 4px;
+      padding: 0 2px;
+    }
+
+    .wpt-ev-entry {
+      display: flex;
+      align-items: flex-start;
+      gap: 6px;
+      padding: 5px 7px;
+      border-radius: 2px;
+      cursor: pointer;
+      font-size: 11px;
+      color: var(--text);
+    }
+
+    .wpt-ev-entry:hover {
+      background: var(--surface3);
+    }
+
+    .wpt-ev-entry.selected {
+      background: var(--surface2);
+      outline: 1px solid var(--gold-dim);
+    }
+
+    .wpt-ev-entry .ev-title {
+      font-weight: 600;
+    }
+
+    .wpt-ev-entry .ev-date {
+      font-size: 10px;
+      color: var(--text-muted);
+    }
+
+    .wpt-ev-empty {
+      font-size: 11px;
+      color: var(--text-muted);
+      padding: 8px;
+      text-align: center;
+    }
+
+    .wpt-ev-scroll {
+      max-height: 320px;
+      overflow-y: auto;
+      padding-right: 2px;
+    }
+
     .wpt-arrow {
       color: var(--gold-dim);
       font-size: 10px;
@@ -1043,7 +1158,7 @@
       onmousemove="mapMove(event)" onmouseup="mapUp(event)" ondblclick="mapDblClick(event)" onwheel="mapWheel(event)"
       oncontextmenu="return false">
 
-      <div id="mapViewport">
+      <div id="mapViewport" class="map-viewport">
         <img id="mapImg" class="map-img" src="" style="display:none" onload="onImgLoaded()">
         <svg id="mapSvg" class="map-svg" width="800" height="600">
           <defs>
@@ -1395,6 +1510,18 @@
       document.getElementById('mapViewport').style.transform = `translate(${vpX}px,${vpY}px) scale(${vpScale})`;
     }
     function zoomStep(f) {
+      const area = document.getElementById('mapArea');
+      const aw = area.clientWidth, ah = area.clientHeight;
+      let mx = aw / 2, my = ah / 2;
+      if (selectedLoc) {
+        const loc = placedLocs.find(l => l.id == selectedLoc);
+        if (loc) {
+          mx = vpX + (loc.x / 100) * imgW * vpScale;
+          my = vpY + (loc.y / 100) * imgH * vpScale;
+        }
+      }
+      vpX = mx - (mx - vpX) * f;
+      vpY = my - (my - vpY) * f;
       vpScale = Math.max(0.1, Math.min(10, vpScale * f));
       applyVp();
     }
@@ -1608,7 +1735,7 @@
 
     function mapWheel(e) {
       e.preventDefault();
-      const f = e.deltaY < 0 ? 1.1 : 0.9;
+      const f = e.deltaY < 0 ? 1.05 : 1 / 1.05;
       const rect = document.getElementById('mapArea').getBoundingClientRect();
       const mx = e.clientX - rect.left, my = e.clientY - rect.top;
       vpX = mx - (mx - vpX) * f;
@@ -1963,6 +2090,174 @@
       toast(_namingPath ? 'Path saved' : 'Locations named');
     }
 
+    // ─── Waypoint ↔ Event linking ─────────────────────────────
+    let _wptModal = { pathId: null, wpIdx: null, allEntries: [], selectedIds: new Set() };
+    let _wptEntryMap = {}; // id → entry
+
+    async function openWaypointModal(pathId, wpIdx) {
+      _wptModal.pathId = pathId;
+      _wptModal.wpIdx = wpIdx;
+
+      const p = paths.find(p => p.id == pathId);
+      const wpts = Array.isArray(p.waypoints) ? p.waypoints : JSON.parse(p.waypoints || '[]');
+      const wp = wpts[wpIdx];
+
+      // Pre-populate from existing links (support both old single and new multi shape)
+      if (wp.eventIds) {
+        _wptModal.selectedIds = new Set(wp.eventIds);
+      } else if (wp.eventId) {
+        _wptModal.selectedIds = new Set([wp.eventId]);
+      } else {
+        _wptModal.selectedIds = new Set();
+      }
+
+      const loc = wp.locId ? placedLocs.find(l => l.id == wp.locId) : null;
+      document.getElementById('wptModalTitle').textContent =
+        `Link events — ${loc ? loc.name : `Point ${wpIdx + 1}`}`;
+
+      // Determine player filter: match by tracker name + type, not player_campaign_id (not persisted in DB)
+      let filterPlayerName = null;
+      if (p.tracker_id) {
+        const tracker = trackers.find(t => t.id == p.tracker_id);
+        if (tracker && tracker.type === 'player') {
+          // tracker.name is set to player_name when auto-created in mergeCampaignPlayerTrackers
+          const cp = campaignPlayers.find(c => c.player_name === tracker.name);
+          if (cp) filterPlayerName = cp.player_name;
+        }
+      }
+
+      try {
+        const rows = await apiFetch(`/api/player-timelines/${campaignId}/all`);
+        const seen = new Set();
+        const all = rows
+          .filter(r => r.entry_id && !seen.has(r.entry_id) && seen.add(r.entry_id))
+          .map(r => ({
+            id: r.entry_id,
+            title: r.title,
+            year: r.year,
+            dayOfYear: r.day_of_year,
+            timelineName: r.timeline_name,
+            playerName: r.player_name
+          }));
+
+        _wptEntryMap = {};
+        all.forEach(e => { _wptEntryMap[e.id] = e; });
+
+        _wptModal.allEntries = filterPlayerName
+          ? all.filter(e => e.playerName === filterPlayerName)
+          : all;
+
+        const note = document.getElementById('wptEvFilterNote');
+        if (filterPlayerName) {
+          note.textContent = `Showing events for: ${filterPlayerName}`;
+          note.style.display = '';
+        } else {
+          note.style.display = 'none';
+        }
+      } catch (_) {
+        _wptModal.allEntries = [];
+        _wptEntryMap = {};
+      }
+
+      document.getElementById('wptEvSearch').value = '';
+      renderWptEventList('');
+      openModal('wptEventModal');
+      setTimeout(() => document.getElementById('wptEvSearch').focus(), 60);
+    }
+
+    function renderWptEventList(q) {
+      const container = document.getElementById('wptEvList');
+      q = q.toLowerCase();
+      const entries = _wptModal.allEntries;
+      const filtered = q
+        ? entries.filter(e =>
+          e.title.toLowerCase().includes(q) ||
+          (e.playerName || '').toLowerCase().includes(q) ||
+          (e.timelineName || '').toLowerCase().includes(q))
+        : entries;
+
+      if (!filtered.length) {
+        container.innerHTML = `<div class="wpt-ev-empty">${entries.length ? 'No matching events.' : 'No timeline events found.'}</div>`;
+        return;
+      }
+
+      const groups = {};
+      filtered.forEach(e => {
+        const key = `${e.playerName} — ${e.timelineName}`;
+        if (!groups[key]) groups[key] = [];
+        groups[key].push(e);
+      });
+
+      const selCount = _wptModal.selectedIds.size;
+      container.innerHTML =
+        `<div style="font-size:10px;color:var(--text-muted);padding:0 2px 6px">Click to toggle. ${selCount ? `<strong style="color:var(--gold)">${selCount} selected</strong>` : 'None selected.'}</div>` +
+        Object.entries(groups).map(([gName, gEntries]) => `
+          <div class="wpt-ev-tl-group">
+            <div class="wpt-ev-tl-name">${esc(gName)}</div>
+            ${gEntries.map(e => `
+              <div class="wpt-ev-entry ${_wptModal.selectedIds.has(e.id) ? 'selected' : ''}"
+                   onclick="toggleWptEvent(${e.id})">
+                <span style="font-size:14px;line-height:1">${_wptModal.selectedIds.has(e.id) ? '☑' : '☐'}</span>
+                <div>
+                  <div class="ev-title">${esc(e.title)}</div>
+                  <div class="ev-date">Year ${e.year ?? '?'}, Day ${e.dayOfYear ?? '?'}</div>
+                </div>
+              </div>`).join('')}
+          </div>`).join('');
+    }
+
+    function toggleWptEvent(id) {
+      if (_wptModal.selectedIds.has(id)) {
+        _wptModal.selectedIds.delete(id);
+      } else {
+        _wptModal.selectedIds.add(id);
+      }
+      renderWptEventList(document.getElementById('wptEvSearch').value);
+    }
+
+    async function saveWaypointEvent() {
+      const { pathId, wpIdx, selectedIds } = _wptModal;
+      if (!selectedIds.size) { toast('Select at least one event'); return; }
+      const p = paths.find(p => p.id == pathId);
+      if (!p) return;
+      const wpts = Array.isArray(p.waypoints) ? [...p.waypoints] : JSON.parse(p.waypoints || '[]');
+      const ids = [...selectedIds];
+      const titles = ids.map(id => _wptEntryMap[id]?.title || '');
+      const { eventId: _a, eventTitle: _b, eventIds: _c, eventTitles: _d, ...rest } = wpts[wpIdx];
+      wpts[wpIdx] = { ...rest, eventIds: ids, eventTitles: titles };
+      try {
+        await apiFetch(`/api/journey-maps/${mapId}/paths/${pathId}`, {
+          method: 'PUT',
+          body: JSON.stringify({ name: p.name, waypoints: wpts, notes: p.notes })
+        });
+        p.waypoints = wpts;
+        closeModal('wptEventModal');
+        setRightPanel('path', p);
+        toast(`${ids.length} event${ids.length > 1 ? 's' : ''} linked to waypoint`);
+      } catch (e) { toast(e.message); }
+    }
+
+    async function unlinkWaypointEvent(pathId, wpIdx, eventId) {
+      const p = paths.find(p => p.id == pathId);
+      if (!p) return;
+      const wpts = Array.isArray(p.waypoints) ? [...p.waypoints] : JSON.parse(p.waypoints || '[]');
+      const wp = wpts[wpIdx];
+      const newIds = (wp.eventIds || []).filter(id => id != eventId);
+      const newTitles = (wp.eventTitles || []).filter((_, i) => (wp.eventIds || [])[i] != eventId);
+      const { eventId: _a, eventTitle: _b, eventIds: _c, eventTitles: _d, ...rest } = wp;
+      wpts[wpIdx] = newIds.length
+        ? { ...rest, eventIds: newIds, eventTitles: newTitles }
+        : { ...rest };
+      try {
+        await apiFetch(`/api/journey-maps/${mapId}/paths/${pathId}`, {
+          method: 'PUT',
+          body: JSON.stringify({ name: p.name, waypoints: wpts, notes: p.notes })
+        });
+        p.waypoints = wpts;
+        setRightPanel('path', p);
+      } catch (e) { toast(e.message); }
+    }
+
     function computePathDistance(pts) {
       if (pts.length < 2) return { miles: 0, complete: true };
       let total = 0;
@@ -2123,9 +2418,18 @@
         const wptRows = wpts.map((wp, i) => {
           const loc = wp.locId ? placedLocs.find(l => l.id == wp.locId) : null;
           const lbl = loc ? `📍 ${loc.name}` : `Point ${i + 1}`;
-          return `<div class="wpt-row">
+          // Support both old single-event and new multi-event shape
+          const ids = wp.eventIds || (wp.eventId ? [wp.eventId] : []);
+          const titles = wp.eventTitles || (wp.eventTitle ? [wp.eventTitle] : []);
+          const chips = ids.map((evId, ei) =>
+            `<span class="wpt-event-chip">🗓 ${esc(titles[ei] || 'Event')}
+               <span class="unlink" onclick="unlinkWaypointEvent(${p.id},${i},${evId})" title="Remove">✕</span>
+             </span>`).join('');
+          return `<div class="wpt-row" style="flex-wrap:wrap">
         <span class="wpt-arrow">${i === 0 ? '⊙' : '→'}</span>
-        <span>${esc(lbl)}</span>
+        <span style="flex:1">${esc(lbl)}</span>
+        <button class="wpt-edit-btn" onclick="openWaypointModal(${p.id},${i})">🗓 ${ids.length ? 'Edit events' : 'Link event'}</button>
+        ${chips ? `<div style="width:100%;padding-left:18px;margin-top:3px;display:flex;flex-wrap:wrap;gap:3px">${chips}</div>` : ''}
       </div>`;
         }).join('');
 
@@ -2359,6 +2663,25 @@
       <div id="namingForm"></div>
       <div class="modal-foot">
         <button class="modal-save" onclick="saveNaming()">Save Names</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-bg" id="wptEventModal" style="z-index:115">
+    <div class="modal" style="max-width:480px">
+      <h2 id="wptModalTitle">Link Event to Waypoint</h2>
+      <p style="font-size:12px;color:var(--text-dim);margin-bottom:6px;line-height:1.5">
+        Pick a timeline event to associate with this waypoint.
+      </p>
+      <div id="wptEvFilterNote"
+        style="display:none;font-size:11px;color:var(--gold-dim);margin-bottom:8px;padding:3px 6px;background:var(--surface3);border-radius:2px">
+      </div>
+      <input class="wpt-ev-search" id="wptEvSearch" placeholder="Search events, players, timelines…"
+        oninput="renderWptEventList(this.value)">
+      <div class="wpt-ev-scroll" id="wptEvList"></div>
+      <div class="modal-foot" style="margin-top:12px">
+        <button class="modal-cancel" onclick="closeModal('wptEventModal')">Cancel</button>
+        <button class="modal-save" onclick="saveWaypointEvent()">Link Event</button>
       </div>
     </div>
   </div>
