@@ -3163,14 +3163,99 @@
             const d = JSON.parse(ev.target.result);
             // Support both old format (players/locations/events) and new (profile+db)
             const data = d.db || d;
-            if (data.players && data.locations && data.events) {
+            if (!data.players || !data.locations || !data.events) { alert('Invalid file.'); return; }
+
+            if (_mode === 'private') {
+              _importDataPrivate(data);
+            } else {
               db = data; db.events = db.events.map(migrateEv);
               if (!db.locationOrder || !db.locationOrder.length) db.locationOrder = [...db.locations];
               saveDB(); renderAll();
-            } else alert('Invalid file.');
+            }
           } catch (err) { alert('Parse error: ' + err.message); }
         }; r.readAsText(f);
       }; inp.click();
+    }
+
+    async function _importDataPrivate(data) {
+      if (!_privTimelineId) { alert('Select or create a timeline first, then import.'); return; }
+
+      // ── 1. Validate players ──────────────────────────────────────────────────
+      // Build a name → live player map (case-insensitive)
+      const livePlayerByName = {};
+      _privPlayers.forEach(p => {
+        // Strip leading icon (e.g. "👤 ", "🎭 ", "🧑 ") so names match import data which has no icons
+        const bare = p.name.replace(/^\S+\s+/, '').toLowerCase();
+        livePlayerByName[bare] = p;
+        livePlayerByName[p.name.toLowerCase()] = p; // also keep full form as fallback
+      });
+
+      // Map file player IDs → live player objects; collect unknowns
+      const filePlayerById = {};
+      data.players.forEach(p => { filePlayerById[p.id] = p; });
+
+      const unknownPlayers = data.players
+        .filter(p => !livePlayerByName[p.name.toLowerCase()])
+        .map(p => p.name);
+
+      if (unknownPlayers.length) {
+        const list = unknownPlayers.map(n => '  \u2022 ' + n).join('\n');
+        alert('Import failed \u2014 the following players in the file do not exist in this campaign or as relationships of this character:\n\n' + list + '\n\nAdd them first, then re-import.');
+        return;
+      }
+
+      // ── 2. Validate locations ────────────────────────────────────────────────
+      const liveLocNames = new Set(_privLocations.map(l => l.name.toLowerCase()));
+
+      const fileLocNames = [...new Set(data.events.map(e => e.location).filter(Boolean))];
+      const unknownLocs = fileLocNames.filter(n => !liveLocNames.has(n.toLowerCase()));
+
+      if (unknownLocs.length) {
+        const list = unknownLocs.map(n => '  \u2022 ' + n).join('\n');
+        alert('Import failed \u2014 the following locations in the file do not exist in this campaign:\n\n' + list + '\n\nAdd them in Manage Campaigns, then re-import.');
+        return;
+      }
+
+      // ── 3. Confirm ───────────────────────────────────────────────────────────
+      if (!confirm('Import ' + data.events.length + ' event' + (data.events.length === 1 ? '' : 's') + ' into the current timeline?\n\nExisting events will not be removed.')) return;
+
+      // ── 4. POST each event to the API ─────────────────────────────────────────
+      let saved = 0, failed = 0;
+      for (const ev of data.events) {
+        // Map file playerIds → live player IDs by name
+        const mappedPids = (ev.playerIds || []).map(fid => {
+          const fp = filePlayerById[fid];
+          if (!fp) return null;
+          const live = livePlayerByName[fp.name.toLowerCase()];
+          return live ? String(live.id) : null;
+        }).filter(Boolean);
+
+        // Resolve location name case-insensitively to the live spelling
+        let resolvedLoc = null;
+        if (ev.location) {
+          const liveLoc = _privLocations.find(l => l.name.toLowerCase() === ev.location.toLowerCase());
+          resolvedLoc = liveLoc ? liveLoc.name : null;
+        }
+
+        const entry = await apiPost('/api/player-timelines/' + _privTimelineId + '/entries', {
+          title: ev.title || '(untitled)',
+          description: ev.description || '',
+          location: resolvedLoc,
+          year: ev.year || 1492,
+          day_of_year: ev.dayOfYear || ev.day_of_year || 1,
+          duration_days: ev.durationDays || ev.duration_days || 1,
+          player_ids: mappedPids.length ? mappedPids : ['self_' + _privPlayerId],
+        });
+
+        if (entry) { _privEntries.push(entry); saved++; }
+        else failed++;
+      }
+
+      syncPrivToDb(); renderAll();
+      const msg = failed
+        ? 'Imported ' + saved + ' event' + (saved === 1 ? '' : 's') + '. ' + failed + ' failed \u2014 check the console.'
+        : '\u2713 Imported ' + saved + ' event' + (saved === 1 ? '' : 's') + ' successfully.';
+      alert(msg);
     }
 
     /* ════════════════════════════════════════
@@ -3299,7 +3384,7 @@
       document.getElementById('privPlayerSel').innerHTML = '<option value="">— Select Player —</option>';
       hideTimelineSelector();
       _privCampaignId = cid ? parseInt(cid) : null;
-      _privPlayerId = null; _privTimelineId = null; _dmActive = false;
+      _privPlayerId = null; _privTimelineId = null; _dmActive = false; _dmPlayerId = null; _dmPlayerName = null;
       document.getElementById('sec-dm-combined').style.display = 'none';
       hidePrivCanvas();
 
@@ -3311,11 +3396,30 @@
       const isDMorAdmin = _authUser && (_authUser.role === 'admin' || _authUser.role === 'dm');
 
       if (isDMorAdmin) {
+        // Provision DM player entry (idempotent — returns existing id if already created)
+        const dmRes = await apiPost(`/api/campaigns/${cid}/dm-player`, {});
+        _dmPlayerId = dmRes?.player_id || null;
+        _dmPlayerName = _authUser ? `DM (${_authUser.username})` : 'DM';
+
         const players = await apiGet(`/api/campaigns/${cid}/players`);
+        const regularPlayers = (players || []).filter(p => !p.is_dm_player);
         const sel = document.getElementById('privPlayerSel');
-        document.getElementById('privPlayerLabel').textContent = 'View Player';
-        sel.innerHTML = '<option value="">— All Players (Combined View) —</option>' +
-          (players || []).map(p => `<option value="${p.id}">${esc(p.player_name)}${p.username ? ' (' + esc(p.username) + ')' : ''}</option>`).join('');
+        document.getElementById('privPlayerLabel').textContent = 'View';
+        sel.innerHTML =
+          '<option value="">— All Players (Combined View) —</option>' +
+          (_dmPlayerId
+            ? `<optgroup label="── DM ──">` +
+            `<option value="dm_private_${_dmPlayerId}">🔒 DM Private Timeline</option>` +
+            `<option value="dm_world_${_dmPlayerId}">🌍 World Timeline</option>` +
+            `</optgroup>`
+            : '') +
+          (regularPlayers.length
+            ? `<optgroup label="── Players ──">` +
+            regularPlayers.map(p =>
+              `<option value="${p.id}">${esc(p.player_name)}${p.username ? ' (' + esc(p.username) + ')' : ''}</option>`
+            ).join('') +
+            `</optgroup>`
+            : '');
         await loadDMCombinedView(parseInt(cid));
       } else {
         const players = await apiGet(`/api/campaigns/${cid}/players`);
@@ -3336,11 +3440,56 @@
       if (!cid) return;
 
       const isDMorAdmin = _authUser && (_authUser.role === 'admin' || _authUser.role === 'dm');
+
+      // ── DM Private Timeline ───────────────────────────────────────────────
+      if (pid && pid.startsWith('dm_private_')) {
+        const realPid = parseInt(pid.replace('dm_private_', ''));
+        _privPlayerId = realPid;
+        _privTimelineId = null;
+        renderPrivStatus('Loading DM Private Timeline…');
+        await loadPrivPlayers(realPid);
+        const allTls = await apiGet(`/api/player-timelines/${cid}/${realPid}`) || [];
+        _privTimelines = allTls.filter(t => t.name !== '🌍 World Timeline');
+        renderPrivStatus('');
+        showTimelineSelector(_privTimelines.length === 0);
+        if (_privTimelines.length > 0) {
+          document.getElementById('privTimelineSel').value = _privTimelines[0].id;
+          await onPrivTimelineChange();
+        }
+        return;
+      }
+
+      // ── World Timeline ────────────────────────────────────────────────────
+      if (pid && pid.startsWith('dm_world_')) {
+        const realPid = parseInt(pid.replace('dm_world_', ''));
+        _privPlayerId = realPid;
+        _privTimelineId = null;
+        renderPrivStatus('Loading World Timeline…');
+        await loadPrivPlayers(realPid);
+        let allTls = await apiGet(`/api/player-timelines/${cid}/${realPid}`) || [];
+        let worldTl = allTls.find(t => t.name === '🌍 World Timeline');
+        if (!worldTl) {
+          worldTl = await apiPost(`/api/player-timelines/${cid}/${realPid}`, { name: '🌍 World Timeline' });
+          allTls = await apiGet(`/api/player-timelines/${cid}/${realPid}`) || [];
+          worldTl = allTls.find(t => t.name === '🌍 World Timeline');
+        }
+        _privTimelines = allTls.filter(t => t.name === '🌍 World Timeline');
+        renderPrivStatus('');
+        showTimelineSelector(false);
+        if (worldTl) {
+          document.getElementById('privTimelineSel').value = worldTl.id;
+          await onPrivTimelineChange();
+        }
+        return;
+      }
+
+      // ── No player selected ────────────────────────────────────────────────
       if (!pid) {
         if (isDMorAdmin) await loadDMCombinedView(parseInt(cid));
         return;
       }
 
+      // ── Regular player ────────────────────────────────────────────────────
       _privPlayerId = parseInt(pid);
       _privTimelineId = null;
       renderPrivStatus('Loading…');
@@ -3435,16 +3584,45 @@
 
     /* ── Load player list ── */
     async function loadPrivPlayers(playerId) {
-      const campaigns = await apiGet(`/api/campaigns/${_privCampaignId}/players`) || [];
-      const self = campaigns.find(p => p.id === playerId || p.id === parseInt(playerId));
+      const allCampPlayers = await apiGet(`/api/campaigns/${_privCampaignId}/players`) || [];
+      const self = allCampPlayers.find(p => p.id === playerId || p.id === parseInt(playerId));
+
+      // A DM timeline is identified by matching _dmPlayerId — we cannot rely on
+      // is_dm_player from the players endpoint because that field is filtered out
+      // to prevent DM entries appearing in regular player dropdowns.
+      const isDmTimeline = _dmPlayerId && (parseInt(playerId) === parseInt(_dmPlayerId));
+
       const rels = await apiGet(`/api/pc/${playerId}/relationships`) || [];
+      // When isDmTimeline the DM player row is not in allCampPlayers (filtered out),
+      // so fetch the name from the dm-player provision response we already have.
+      const selfName = self
+        ? self.player_name
+        : (isDmTimeline ? (_dmPlayerName || 'DM') : 'You');
+
       _privPlayers = [
-        { id: 'self_' + playerId, name: self ? self.player_name : 'You', color: PLAYER_PALETTE[0], isSelf: true }
+        { id: 'self_' + playerId, name: selfName, color: PLAYER_PALETTE[0], isSelf: true }
       ];
       rels.forEach((r, i) => _privPlayers.push({
         id: 'rel_' + r.id, name: r.name, color: PLAYER_PALETTE[(i + 1) % PLAYER_PALETTE.length],
         isSelf: false, relType: r.relation_type
       }));
+
+      if (isDmTimeline) {
+        // Add regular campaign players as actors
+        const regularPlayers = allCampPlayers.filter(p => !p.is_dm_player);
+        regularPlayers.forEach((p, i) => _privPlayers.push({
+          id: 'cp_' + p.id, name: '👤 ' + p.player_name,
+          color: PLAYER_PALETTE[(rels.length + i + 1) % PLAYER_PALETTE.length],
+          isSelf: false, isCampaignPlayer: true
+        }));
+        // Add campaign NPCs as actors
+        const npcs = await apiGet(`/api/campaigns/${_privCampaignId}/npcs`) || [];
+        npcs.forEach((n, i) => _privPlayers.push({
+          id: 'npc_' + n.id, name: '🎭 ' + n.name,
+          color: PLAYER_PALETTE[(rels.length + regularPlayers.length + i + 1) % PLAYER_PALETTE.length],
+          isSelf: false, isNpc: true
+        }));
+      }
     }
 
     async function loadPrivEntries(timelineId) {
@@ -3516,6 +3694,8 @@
        Uses real sidebar (sec-dm-combined) + real tl-area graph.
     ══════════════════════════════════════════ */
     let _dmActive = false; // true while DM combined view is showing
+    let _dmPlayerId = null; // DM's own campaign_players.id for the current campaign
+    let _dmPlayerName = null; // DM player display name
 
     async function loadDMCombinedView(campaignId) {
       _dmActive = true;

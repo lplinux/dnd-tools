@@ -455,12 +455,14 @@
     #relCanvas {
       display: block;
       width: 100%;
+      overflow-x: auto;
     }
 
     #relCanvas svg {
       display: block;
       width: 100%;
       height: auto;
+      min-height: 160px;
     }
 
     /* Graph node interactions */
@@ -817,6 +819,10 @@
         <option value="">— Select Player —</option>
       </select>
       <button class="back-btn" id="timelineBtn" onclick="goToTimeline()" style="display:none">📜 Timeline</button>
+      <button class="back-btn" id="exportPcBtn" onclick="exportPcSheet()" style="display:none">⬇ Export</button>
+      <button class="back-btn" id="importPcBtn" onclick="document.getElementById('importPcFile').click()"
+        style="display:none">⬆ Import</button>
+      <input type="file" id="importPcFile" accept=".json" style="display:none" onchange="importPcSheet(this)">
       <button class="back-btn" id="printBtn" onclick="startPrint()" style="display:none">🖨 PDF</button>
       <div id="userMenuMount"></div>
     </div>
@@ -1242,6 +1248,8 @@
       document.getElementById('tabBar').style.display = 'flex';
       document.getElementById('printBtn').style.display = 'inline-block';
       document.getElementById('timelineBtn').style.display = 'inline-block';
+      document.getElementById('exportPcBtn').style.display = 'inline-block';
+      document.getElementById('importPcBtn').style.display = 'inline-block';
 
       // Resolve player object for the current player id
       const playerObj = players.find(p => Number(p.id) === Number(currentPlayerId));
@@ -1287,6 +1295,24 @@
       if (name === 'relations') renderRelGraph();
       if (name === 'dmnotes') renderDmNotes();
     }
+
+    // Re-render the graph only when the relations tab is currently visible
+    function renderRelGraphIfVisible() {
+      const tab = document.getElementById('tab-relations');
+      if (tab && tab.classList.contains('active')) renderRelGraph();
+    }
+
+    // Re-render on container resize so the graph always fills the available width correctly
+    (function initRelGraphResizeObserver() {
+      const wrap = document.getElementById('relCanvas');
+      if (!wrap || !window.ResizeObserver) return;
+      let _roTimer;
+      const ro = new ResizeObserver(() => {
+        clearTimeout(_roTimer);
+        _roTimer = setTimeout(renderRelGraphIfVisible, 80);
+      });
+      ro.observe(wrap);
+    })();
 
     // ── Save ──
     async function saveCharacter(section) {
@@ -1678,7 +1704,7 @@
         });
         if (res.ok) {
           relationships.push(await res.json());
-          renderRelList(); renderRelGraph(); closeRelModal();
+          renderRelList(); renderRelGraphIfVisible(); closeRelModal();
           document.getElementById('relName').value = '';
           document.getElementById('relLink').value = '';
           showMsg('relMsg', '✓ Relation added', 'ok');
@@ -1690,7 +1716,7 @@
       if (!confirm('Remove this relation?')) return;
       await fetch(`/api/pc/${currentPlayerId}/relationships/${relId}`, { method: 'DELETE' });
       relationships = relationships.filter(r => r.id !== relId);
-      renderRelList(); renderRelGraph();
+      renderRelList(); renderRelGraphIfVisible();
     }
 
     // ── DM Notes ──
@@ -1783,7 +1809,7 @@
         const wasActive = el.classList.contains('active');
         el.style.display = 'block';
 
-        if (tabIds[i] === 'tab-relations') renderRelGraph();
+        if (tabIds[i] === 'tab-relations') renderRelGraph(); // always render for print
 
         try {
           const c = await html2canvas(el, {
@@ -1869,6 +1895,40 @@
       location.href = currentCampaignId
         ? `/timeline?campaign=${currentCampaignId}`
         : '/timeline';
+    }
+
+    // ── Export / Import ──
+    async function exportPcSheet() {
+      if (!currentPlayerId) return;
+      try {
+        const res = await fetch(`/api/pc/${currentPlayerId}/export`);
+        if (!res.ok) { const e = await res.json(); showMsg('charMsg', '✗ ' + e.error, 'err'); return; }
+        const data = await res.json();
+        const slug = (data.player_name || 'character').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' }));
+        a.download = `pc-sheet-${slug}.json`;
+        a.click(); URL.revokeObjectURL(a.href);
+      } catch (e) { showMsg('charMsg', '✗ ' + e.message, 'err'); }
+    }
+
+    async function importPcSheet(input) {
+      if (!currentPlayerId) { alert('Select a player first'); input.value = ''; return; }
+      const file = input.files[0]; if (!file) return;
+      input.value = '';
+      let bundle;
+      try { bundle = JSON.parse(await file.text()); } catch { showMsg('charMsg', '✗ Invalid JSON file', 'err'); return; }
+      if (bundle.type !== 'pc-sheet') { showMsg('charMsg', '✗ Not a pc-sheet export file', 'err'); return; }
+      if (!confirm("Import will overwrite this character's data. DM notes will be appended. Continue?")) return;
+      try {
+        const res = await fetch(`/api/pc/${currentPlayerId}/import`, {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(bundle)
+        });
+        const data = await res.json();
+        if (res.ok) { showMsg('charMsg', '✓ Imported successfully', 'ok'); await loadPlayerSheet(); }
+        else { showMsg('charMsg', '✗ ' + data.error, 'err'); }
+      } catch (e) { showMsg('charMsg', '✗ ' + e.message, 'err'); }
     }
 
     // ── Graph tooltip (floating div, event-delegated on relCanvas) ──

@@ -77,6 +77,7 @@
         }
 
         .back-btn {
+            width: auto;
             background: var(--gold-dim);
             color: var(--text);
             border: none;
@@ -514,6 +515,10 @@
     <div class="app-header">
         <div class="app-title">🏰 Manage Campaigns</div>
         <div class="hdr-r">
+            <button class="back-btn" id="exportCampBtn" onclick="exportCampaign()" style="display:none">⬇
+                Export</button>
+            <button class="back-btn" onclick="document.getElementById('importCampFile').click()">⬆ Import</button>
+            <input type="file" id="importCampFile" accept=".json" style="display:none" onchange="importCampaign(this)">
             <div id="userMenuMount"></div>
         </div>
     </div>
@@ -604,7 +609,7 @@
 
     <script>
         /* ─── State ─── */
-        let campaigns = [], currentCampaign = null, allUsers = [], _calPickerType = 'harptos', _resolvedAbsDay = null;
+        let campaigns = [], currentCampaign = null, allUsers = [], currentUserId = null, _calPickerType = 'harptos', _resolvedAbsDay = null;
 
         /* ─── Harptos / Calendar data (duplicated from timeline.html for standalone use) ─── */
         const HARPTOS = [
@@ -755,7 +760,6 @@
 
         /* ─── Campaign CRUD ─── */
         async function loadCampaigns() {
-            initHeaderComponent('userMenuMount');
             await loadUsers();
             try {
                 const res = await fetch('/api/campaigns');
@@ -766,8 +770,13 @@
 
         async function loadUsers() {
             try {
-                const res = await fetch('/api/users');
-                allUsers = res.ok ? await res.json() : [];
+                const [usersRes, meRes] = await Promise.all([
+                    fetch('/api/users'),
+                    fetch('/api/auth/user'),
+                ]);
+                allUsers = usersRes.ok ? await usersRes.json() : [];
+                const me = meRes.ok ? await meRes.json() : {};
+                currentUserId = me?.user?.id ?? null;
             } catch (e) { allUsers = []; }
         }
 
@@ -809,6 +818,7 @@
         async function selectCampaign(id) {
             currentCampaign = campaigns.find(c => c.id === id);
             if (!currentCampaign) return;
+            document.getElementById('exportCampBtn').style.display = '';
             renderCampaignList();
             await renderCampaignDetails();
         }
@@ -819,21 +829,24 @@
             head.textContent = `📋 ${currentCampaign.name}`;
             body.innerHTML = '<div class="empty">Loading…</div>';
 
+            let players = [], locs = [], meta = {}, timelines = [], npcs = [];
             try {
-                const [playersRes, locsRes, metaRes, timelinesRes] = await Promise.all([
+                const [playersRes, locsRes, metaRes, timelinesRes, npcsRes] = await Promise.all([
                     fetch(`/api/campaigns/${currentCampaign.id}/players`),
                     fetch(`/api/campaigns/${currentCampaign.id}/locations`),
                     fetch(`/api/campaigns/${currentCampaign.id}/meta`),
                     fetch(`/api/campaigns/${currentCampaign.id}/timelines`),
+                    fetch(`/api/campaigns/${currentCampaign.id}/npcs`),
                 ]);
 
-                const players = playersRes.ok ? await playersRes.json() : [];
-                const locs = locsRes.ok ? await locsRes.json() : [];
+                players = playersRes.ok ? await playersRes.json() : [];
+                locs = locsRes.ok ? await locsRes.json() : [];
                 // Build a lookup map so editLoc can retrieve data without inline HTML encoding
                 window._locsById = {};
                 locs.forEach(l => { window._locsById[l.id] = { name: l.name, description: l.description || '' }; });
-                const meta = metaRes.ok ? await metaRes.json() : {};
-                const timelines = timelinesRes.ok ? await timelinesRes.json() : [];
+                meta = metaRes.ok ? await metaRes.json() : {};
+                timelines = timelinesRes.ok ? await timelinesRes.json() : [];
+                npcs = npcsRes.ok ? await npcsRes.json() : [];
 
                 const calType = meta.calendar_type || 'harptos';
                 currentCampaign._calType = calType;
@@ -843,7 +856,8 @@
                     ? formatAbsDay(parseInt(meta.today_marker), calType)
                     : '— Not set —';
 
-                const userOptions = allUsers.filter(u => u.role === 'player')
+                const playerUsers = allUsers.filter(u => u.role === 'player');
+                const userOptions = playerUsers
                     .map(u => `<option value="${u.id}">${escHtml(u.username)}</option>`).join('');
 
                 body.innerHTML = `
@@ -859,16 +873,34 @@
         </div>
         ${players.length === 0
                         ? '<div class="empty">No players yet</div>'
-                        : `<table><thead><tr><th>Character</th><th>User</th><th>Timeline</th><th></th></tr></thead><tbody>
-               ${players.map(p => `<tr>
-                 <td>${escHtml(p.player_name)}</td>
-                 <td>${escHtml(p.username || '—')}</td>
-                 <td style="white-space:nowrap">
-                   <button class="sm" onclick="openPlayerTimeline(${p.id})" title="Open existing timeline" style="margin:0 2px 0 0">📜 View</button>
-                   <button class="sm" onclick="createTimelineForPlayer(${p.id}, '${escHtml(p.player_name).replace(/'/g, "&#39;")}')" title="Create new timeline" style="margin:0">+ New</button>
-                 </td>
-                 <td><button class="sm danger" onclick="deletePlayer(${p.id})">Delete</button></td>
-               </tr>`).join('')}
+                        : `<table><thead><tr><th>Character</th><th>User</th><th>Reassign</th><th>Timeline</th><th></th></tr></thead><tbody>
+                        ${players
+                            .slice()
+                            .sort((a, b) => (a.player_name || '').localeCompare(b.player_name || '', undefined, { sensitivity: 'base' }))
+                            .map(p => {
+                                const rowReassignOpts = playerUsers
+                                    .filter(u => u.id !== p.user_id)
+                                    .map(u => `<option value="${u.id}">${escHtml(u.username)}</option>`)
+                                    .join('');
+
+                                return `<tr>
+                            <td>${escHtml(p.player_name)}</td>
+                            <td>${escHtml(p.username || '—')}</td>
+                            <td style="white-space:nowrap">
+                                <div style="display:flex;gap:4px;align-items:center">
+                                <select id="reassign_${p.id}" style="font-size:11px;padding:3px 5px;flex:1;min-width:90px">
+                                    <option value="">— None —</option>${rowReassignOpts}
+                                </select>
+                                <button class="sm" onclick="reassignPlayer(${p.id})" style="margin:0">Save</button>
+                                </div>
+                            </td>
+                            <td style="white-space:nowrap">
+                                <button class="sm" onclick="openPlayerTimeline(${p.id})" title="Open existing timeline" style="margin:0 2px 0 0">📜 View</button>
+                                <button class="sm" onclick="createTimelineForPlayer(${p.id}, '${escHtml(p.player_name).replace(/'/g, "&#39;")}')" title="Create new timeline" style="margin:0">+ New</button>
+                            </td>
+                            <td><button class="sm danger" onclick="deletePlayer(${p.id})">Delete</button></td>
+                            </tr>`;
+                            }).join('')}
                </tbody></table>`}
 
         <!-- SETTINGS -->
@@ -897,16 +929,50 @@
         </div>
         ${locs.length === 0
                         ? '<div class="empty">No locations yet</div>'
-                        : `<table><thead><tr><th>Name</th><th>Description</th><th></th></tr></thead><tbody>
-               ${locs.map(l => `<tr>
+                        : `<table><thead><tr><th>Name</th><th>Description</th><th>Visible</th><th></th></tr></thead><tbody>
+               ${locs
+                            .slice()
+                            .sort((a, b) => a.name.localeCompare(b.name))
+                            .map(l => `<tr style="${l.is_public ? '' : 'opacity:0.5'}">
                  <td><strong>${escHtml(l.name)}</strong></td>
                  <td style="font-size:11px;color:var(--text-dim)">${escHtml(l.description || '')}</td>
+                 <td style="text-align:center">
+                   <button class="sm" title="${l.is_public ? 'Public — click to hide from players' : 'Hidden — click to show to players'}"
+                     onclick="toggleLocVisibility(${l.id}, this)"
+                     style="font-size:13px;padding:2px 7px;background:${l.is_public ? 'var(--gold-dim)' : 'var(--surface2)'};color:${l.is_public ? 'var(--text)' : 'var(--text-dim)'};border:1px solid ${l.is_public ? 'var(--border2)' : 'var(--border)'}">
+                     ${l.is_public ? '🌐' : '🔒'}
+                   </button>
+                 </td>
                  <td style="white-space:nowrap">
                    <button class="sm" onclick="editLoc(${l.id})" style="margin-right:4px">Edit</button>
                    <button class="sm danger" onclick="deleteLoc(${l.id})">Delete</button>
                  </td>
                </tr>`).join('')}
                </tbody></table>`}
+
+        <!-- NPCs (DM-only) -->
+        <div class="s-title" style="margin-top:20px">🎭 NPCs — DM Only (${npcs.length})</div>
+        <div id="npcMsg"></div>
+        <div style="display:flex;gap:6px;margin-bottom:6px">
+            <input type="text" id="npcNames" placeholder="Name, Name, Name… (comma-separated)" style="flex:1">
+            <button onclick="addNpcs()" class="sm">Add</button>
+        </div>
+        <div style="font-size:11px;color:var(--text-dim);margin-bottom:8px;font-style:italic">
+            NPCs are visible only to DMs and can be used as actors in the DM Timeline.
+        </div>
+        ${npcs.length === 0
+                        ? '<div class="empty">No NPCs yet</div>'
+                        : `<div style="display:flex;flex-wrap:wrap;gap:5px;margin-bottom:4px">
+                        ${npcs
+                            .slice()
+                            .sort((a, b) => a.name.localeCompare(b.name))
+                            .map(n => `
+                            <span style="display:inline-flex;align-items:center;gap:4px;background:var(--surface2);border:1px solid var(--border2);border-radius:2px;padding:2px 8px;font-size:12px">
+                            ${escHtml(n.name)}
+                            <span onclick="deleteNpc(${n.id})" title="Remove" style="cursor:pointer;color:var(--text-dim);font-size:10px;margin-left:2px;line-height:1" onmouseover="this.style.color='#e06c75'" onmouseout="this.style.color='var(--text-dim)'">✕</span>
+                            </span>
+                        `).join('')}
+               </div>`}
 
         <!-- PRIVATE TIMELINES -->
         <div class="s-title" style="margin-top:20px">📜 Private Timelines (${timelines.length} players)</div>
@@ -952,8 +1018,32 @@
 
         async function deletePlayer(playerId) {
             if (!confirm('Delete this player and all their data?')) return;
-            await fetch(`/api/campaigns/${currentCampaign.id}/players/${playerId}`, { method: 'DELETE' });
-            await renderCampaignDetails();
+            const res = await fetch(`/api/campaigns/${currentCampaign.id}/players/${playerId}`, { method: 'DELETE' });
+            if (res.ok) {
+                await renderCampaignDetails();
+            } else {
+                const e = await res.json();
+                showMsg('playersMsg', `✗ ${e.error}`, 'err');
+            }
+        }
+
+        async function reassignPlayer(playerId) {
+            const sel = document.getElementById(`reassign_${playerId}`);
+            if (!sel) return;
+            const userId = sel.value || null;
+            try {
+                const res = await fetch(`/api/campaigns/${currentCampaign.id}/players/${playerId}/reassign`, {
+                    method: 'PUT', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ userId })
+                });
+                const data = await res.json();
+                if (res.ok) {
+                    showMsg('playersMsg', userId ? '✓ Player reassigned' : '✓ User unassigned', 'ok');
+                    await renderCampaignDetails();
+                } else {
+                    showMsg('playersMsg', '✗ ' + data.error, 'err');
+                }
+            } catch (e) { showMsg('playersMsg', '✗ ' + e.message, 'err'); }
         }
 
         /* ─── Location actions ─── */
@@ -971,19 +1061,41 @@
             } catch (e) { showMsg('locMsg', '✗ ' + e.message, 'err'); }
         }
 
+        async function toggleLocVisibility(locId, btn) {
+            try {
+                const res = await fetch(`/api/campaigns/${currentCampaign.id}/locations/${locId}/visibility`, { method: 'PATCH' });
+                if (!res.ok) { const e = await res.json(); showMsg('locMsg', '✗ ' + e.error, 'err'); return; }
+                const { is_public } = await res.json();
+                btn.textContent = is_public ? '🌐' : '🔒';
+                btn.title = is_public ? 'Public — click to hide from players' : 'Hidden — click to show to players';
+                btn.style.background = is_public ? 'var(--gold-dim)' : 'var(--surface2)';
+                btn.style.color = is_public ? 'var(--text)' : 'var(--text-dim)';
+                btn.style.border = `1px solid ${is_public ? 'var(--border2)' : 'var(--border)'}`;
+                // Dim the whole row to give a clear visual hint the location is hidden
+                btn.closest('tr').style.opacity = is_public ? '' : '0.5';
+            } catch (e) { showMsg('locMsg', '✗ ' + e.message, 'err'); }
+        }
+
         async function deleteLoc(locId) {
             if (!confirm('Delete this location?')) return;
-            await fetch(`/api/campaigns/${currentCampaign.id}/locations/${locId}`, { method: 'DELETE' });
-            await renderCampaignDetails();
+            const res = await fetch(`/api/campaigns/${currentCampaign.id}/locations/${locId}`, { method: 'DELETE' });
+            if (res.ok) {
+                await renderCampaignDetails();
+            } else {
+                const e = await res.json();
+                showMsg('locMsg', `✗ ${e.error}`, 'err');
+            }
         }
 
         /* ─── Campaign actions ─── */
         async function deleteCampaign() {
             if (!confirm(`Delete "${currentCampaign.name}" and ALL its data? This cannot be undone.`)) return;
             await fetch(`/api/campaigns/${currentCampaign.id}`, { method: 'DELETE' });
-            currentCampaign = null; await loadCampaigns();
+            currentCampaign = null;
+            await loadCampaigns();
             document.getElementById('detailHead').textContent = 'Select a Campaign';
             document.getElementById('detailBody').innerHTML = '<div class="empty">Campaign deleted</div>';
+            document.getElementById('exportCampBtn').style.display = 'none';
         }
 
         function openTimeline() {
@@ -1007,6 +1119,7 @@
             if (e.target.id === 'campaignName' || e.target.id === 'campaignDesc') handleCreateCampaign();
             if (e.target.id === 'playerName') addPlayer();
             if (e.target.id === 'locName' || e.target.id === 'locDesc') addLocation();
+            if (e.target.id === 'npcNames') addNpcs();
             if (e.target.id === 'cpYear' || e.target.id === 'cpDay') { updateCalPreview(); }
         });
 
@@ -1111,6 +1224,71 @@
             }
         }
 
+        /* ─── NPC actions ─── */
+        async function addNpcs() {
+            const raw = (document.getElementById('npcNames').value || '').trim();
+            if (!raw) return;
+            try {
+                const res = await fetch(`/api/campaigns/${currentCampaign.id}/npcs`, {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ names: raw })
+                });
+                if (res.ok) {
+                    document.getElementById('npcNames').value = '';
+                    await renderCampaignDetails();
+                } else {
+                    const e = await res.json();
+                    showMsg('npcMsg', '✗ ' + e.error, 'err');
+                }
+            } catch (e) { showMsg('npcMsg', '✗ ' + e.message, 'err'); }
+        }
+
+        async function deleteNpc(npcId) {
+            const res = await fetch(`/api/campaigns/${currentCampaign.id}/npcs/${npcId}`, { method: 'DELETE' });
+            if (res.ok) {
+                await renderCampaignDetails();
+            } else {
+                const e = await res.json();
+                showMsg('npcMsg', `✗ ${e.error}`, 'err');
+            }
+        }
+
+        /* ─── Export / Import ─── */
+        async function exportCampaign() {
+            if (!currentCampaign) return;
+            try {
+                const res = await fetch(`/api/campaigns/${currentCampaign.id}/export`);
+                if (!res.ok) { const e = await res.json(); showMsg('createMsg', '✗ ' + e.error, 'err'); return; }
+                const data = await res.json();
+                const slug = (currentCampaign.name || 'campaign').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+                const a = document.createElement('a');
+                a.href = URL.createObjectURL(new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' }));
+                a.download = `campaign-${slug}.json`;
+                a.click(); URL.revokeObjectURL(a.href);
+            } catch (e) { showMsg('createMsg', '✗ ' + e.message, 'err'); }
+        }
+
+        async function importCampaign(input) {
+            const file = input.files[0]; if (!file) return;
+            input.value = '';
+            let bundle;
+            try { bundle = JSON.parse(await file.text()); } catch { showMsg('createMsg', '✗ Invalid JSON file', 'err'); return; }
+            if (bundle.type !== 'campaign') { showMsg('createMsg', '✗ Not a campaign export file', 'err'); return; }
+            try {
+                const res = await fetch('/api/campaigns/import', {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(bundle)
+                });
+                const data = await res.json();
+                if (res.ok) {
+                    showMsg('createMsg', '✓ Campaign imported — players with matching usernames have been linked automatically', 'ok');
+                    await loadCampaigns();
+                    selectCampaign(data.campaign_id);
+                } else { showMsg('createMsg', '✗ ' + data.error, 'err'); }
+            } catch (e) { showMsg('createMsg', '✗ ' + e.message, 'err'); }
+        }
+
+        initHeaderComponent('userMenuMount');
         loadCampaigns();
     </script>
 

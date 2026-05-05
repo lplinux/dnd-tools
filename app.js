@@ -382,7 +382,9 @@ app.get('/api/campaigns/:campaignId/players', requireRole(['dm', 'player']), asy
       `SELECT cp.*, cua.user_id, u.username FROM campaign_players cp
        LEFT JOIN campaign_user_assignments cua ON cp.id = cua.player_id
        LEFT JOIN users u ON cua.user_id = u.id
-       WHERE cp.campaign_id = $1 ORDER BY cp.created_at DESC`,
+       WHERE cp.campaign_id = $1
+         AND (cp.is_dm_player IS NULL OR cp.is_dm_player = false)
+       ORDER BY cp.created_at DESC`,
       [campaignId]
     );
 
@@ -425,17 +427,66 @@ app.post('/api/campaigns/:campaignId/players', requireRole(['dm']), async (req, 
 
 app.delete('/api/campaigns/:campaignId/players/:playerId', requireRole(['admin', 'dm']), async (req, res) => {
   const { campaignId, playerId } = req.params;
-
   try {
-    await pool.query(
-      'DELETE FROM campaign_players WHERE id = $1 AND campaign_id = $2',
-      [playerId, campaignId]
+    // Block if player has timeline entries
+    const tlCheck = await pool.query(
+      'SELECT COUNT(*)::int as cnt FROM player_timeline_entries WHERE player_id=$1',
+      [playerId]
     );
-
+    if (tlCheck.rows[0].cnt > 0) {
+      return res.status(409).json({ error: `Player has ${tlCheck.rows[0].cnt} timeline entr${tlCheck.rows[0].cnt === 1 ? 'y' : 'ies'}. Delete their timeline entries first.` });
+    }
+    // Block if player has journey path waypoints referencing them
+    // (journey_trackers are named groups, not per-player — no direct link exists, so no block needed here)
+    await pool.query('DELETE FROM campaign_players WHERE id = $1 AND campaign_id = $2', [playerId, campaignId]);
     res.json({ success: true });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
+});
+
+// Reassign a player to a different (or no) user account
+app.put('/api/campaigns/:campaignId/players/:playerId/reassign', requireRole(['dm']), async (req, res) => {
+  const { campaignId, playerId } = req.params;
+  const { userId } = req.body; // null = unassign
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+
+    // Verify the player belongs to this campaign
+    const check = await client.query(
+      'SELECT id FROM campaign_players WHERE id=$1 AND campaign_id=$2',
+      [playerId, campaignId]
+    );
+    if (!check.rows.length) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'Player not found in this campaign' });
+    }
+
+    // Remove any existing assignment for this player
+    await client.query('DELETE FROM campaign_user_assignments WHERE player_id=$1', [playerId]);
+
+    // Create new assignment if a user was provided
+    if (userId) {
+      // Make sure the user exists
+      const userCheck = await client.query('SELECT id FROM users WHERE id=$1', [userId]);
+      if (!userCheck.rows.length) {
+        await client.query('ROLLBACK');
+        return res.status(404).json({ error: 'User not found' });
+      }
+      await client.query(
+        'INSERT INTO campaign_user_assignments (player_id, user_id) VALUES ($1, $2)',
+        [playerId, userId]
+      );
+    }
+
+    await client.query('COMMIT');
+    res.json({ success: true });
+  } catch (e) {
+    await client.query('ROLLBACK');
+    res.status(500).json({ error: e.message });
+  } finally { client.release(); }
 });
 
 // ============================================
@@ -831,6 +882,7 @@ app.get('/api/timeline-public/:token', async (req, res) => {
          JOIN campaign_players cp ON pt.player_id = cp.id
          LEFT JOIN player_timeline_entries pte ON pte.timeline_id = pt.id
          WHERE pt.campaign_id=$1
+           AND cp.is_dm_player = false
          ORDER BY cp.player_name, pt.name, pte.year ASC, pte.day_of_year ASC`,
         [campaignId]
       )
@@ -952,10 +1004,10 @@ app.post('/api/pc/:playerId/portrait', requireAuth, async (req, res) => {
       return res.status(400).json({ error: 'Invalid image type. Use JPEG, PNG, GIF, or WebP.' });
     }
 
-    // Enforce 100 KB size limit on base64 payload (base64 ~4/3 raw bytes)
-    const MAX_B64_CHARS = Math.ceil(100 * 1024 * (4 / 3));
+    // Enforce 500 KB size limit on base64 payload (base64 ~4/3 raw bytes)
+    const MAX_B64_CHARS = Math.ceil(500 * 1024 * (4 / 3));
     if (data.length > MAX_B64_CHARS) {
-      return res.status(400).json({ error: 'Image exceeds 100 KB limit.' });
+      return res.status(400).json({ error: 'Image exceeds 500 KB limit.' });
     }
 
     const dataUri = `data:${mimeType};base64,${data}`;
@@ -1106,7 +1158,7 @@ app.get('/api/pc-public/:playerToken', async (req, res) => {
   if (!playerId) return res.status(404).json({ error: 'Invalid link' });
   try {
     const result = await pool.query(
-      'SELECT name, picture_url, public_info FROM pc_characters WHERE player_id = $1',
+      'SELECT name, picture_url, picture_data, public_info FROM pc_characters WHERE player_id = $1',
       [playerId]
     );
     if (!result.rows.length) return res.status(404).json({ error: 'Character not found' });
@@ -1160,10 +1212,11 @@ app.put('/api/pc/:playerId/stats', requireAuth, async (req, res) => {
 
 app.get('/api/campaigns/:campaignId/locations', requireRole(['dm', 'player']), async (req, res) => {
   try {
-    const result = await pool.query(
-      'SELECT * FROM campaign_locations WHERE campaign_id = $1 ORDER BY created_at ASC',
-      [req.params.campaignId]
-    );
+    const isDM = req.session.role === 'dm' || req.session.role === 'admin';
+    const query = isDM
+      ? 'SELECT * FROM campaign_locations WHERE campaign_id = $1 ORDER BY created_at ASC'
+      : 'SELECT * FROM campaign_locations WHERE campaign_id = $1 AND is_public = true ORDER BY created_at ASC';
+    const result = await pool.query(query, [req.params.campaignId]);
     res.json(result.rows);
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -1198,8 +1251,39 @@ app.put('/api/campaigns/:campaignId/locations/:locationId', requireRole(['dm']),
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+app.patch('/api/campaigns/:campaignId/locations/:locationId/visibility', requireRole(['dm']), async (req, res) => {
+  try {
+    const result = await pool.query(
+      'UPDATE campaign_locations SET is_public = NOT is_public WHERE id=$1 AND campaign_id=$2 RETURNING id, is_public',
+      [req.params.locationId, req.params.campaignId]
+    );
+    if (!result.rows.length) return res.status(404).json({ error: 'Location not found' });
+    res.json(result.rows[0]);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 app.delete('/api/campaigns/:campaignId/locations/:locationId', requireRole(['dm']), async (req, res) => {
   try {
+    // Block deletion if this location is pinned on any journey map
+    const mapUsed = await pool.query(
+      'SELECT jm.name as map_name FROM journey_map_locations jml JOIN journey_maps jm ON jml.map_id=jm.id WHERE jml.campaign_location_id=$1 LIMIT 1',
+      [req.params.locationId]
+    );
+    if (mapUsed.rows.length) {
+      return res.status(409).json({ error: `Location is in use on Journey Map "${mapUsed.rows[0].map_name}". Remove it from the map first.` });
+    }
+    // Block deletion if referenced by any timeline event
+    const loc = await pool.query('SELECT name FROM campaign_locations WHERE id=$1', [req.params.locationId]);
+    if (loc.rows.length) {
+      const tlUsed = await pool.query(
+        `SELECT COUNT(*)::int as cnt FROM player_timeline_entries
+         WHERE campaign_id=$1 AND location=$2`,
+        [req.params.campaignId, loc.rows[0].name]
+      );
+      if (tlUsed.rows[0].cnt > 0) {
+        return res.status(409).json({ error: `Location "${loc.rows[0].name}" is used in ${tlUsed.rows[0].cnt} timeline event${tlUsed.rows[0].cnt === 1 ? '' : 's'}. Remove those events first.` });
+      }
+    }
     await pool.query('DELETE FROM campaign_locations WHERE id = $1 AND campaign_id = $2',
       [req.params.locationId, req.params.campaignId]);
     res.json({ success: true });
@@ -1208,6 +1292,86 @@ app.delete('/api/campaigns/:campaignId/locations/:locationId', requireRole(['dm'
 
 // ============================================
 // CAMPAIGN META (today_marker, etc.)
+
+// ─── Campaign NPCs (DM-only) ─────────────────────────────────────────────────
+app.get('/api/campaigns/:campaignId/npcs', requireRole(['dm', 'admin']), async (req, res) => {
+  try {
+    const r = await pool.query(
+      'SELECT * FROM campaign_npcs WHERE campaign_id=$1 ORDER BY name ASC',
+      [req.params.campaignId]
+    );
+    res.json(r.rows);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/api/campaigns/:campaignId/npcs', requireRole(['dm', 'admin']), async (req, res) => {
+  const { names } = req.body; // comma-separated string or array
+  if (!names) return res.status(400).json({ error: 'names required' });
+  const list = (Array.isArray(names) ? names : String(names).split(','))
+    .map(n => n.trim()).filter(Boolean);
+  if (!list.length) return res.status(400).json({ error: 'No valid names provided' });
+  try {
+    const inserted = [];
+    for (const name of list) {
+      const r = await pool.query(
+        'INSERT INTO campaign_npcs (campaign_id, name) VALUES ($1,$2) ON CONFLICT (campaign_id, name) DO NOTHING RETURNING *',
+        [req.params.campaignId, name]
+      );
+      if (r.rows.length) inserted.push(r.rows[0]);
+    }
+    res.json(inserted);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.delete('/api/campaigns/:campaignId/npcs/:npcId', requireRole(['dm', 'admin']), async (req, res) => {
+  try {
+    const { npcId, campaignId } = req.params;
+    // Block if this NPC is referenced as an actor in any timeline entry
+    const npcKey = `npc_${npcId}`;
+    const tlCheck = await pool.query(
+      `SELECT COUNT(*)::int as cnt FROM player_timeline_entries
+       WHERE campaign_id=$1 AND $2 = ANY(player_ids)`,
+      [campaignId, npcKey]
+    );
+    if (tlCheck.rows[0].cnt > 0) {
+      return res.status(409).json({
+        error: `This NPC is used as an actor in ${tlCheck.rows[0].cnt} timeline event${tlCheck.rows[0].cnt === 1 ? '' : 's'}. Remove those entries first.`
+      });
+    }
+    await pool.query('DELETE FROM campaign_npcs WHERE id=$1 AND campaign_id=$2',
+      [npcId, campaignId]);
+    res.json({ success: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ─── DM Player entry — auto-provision a campaign_players row for the DM ──────
+// Returns the DM's own player_id (creates one if missing)
+app.post('/api/campaigns/:campaignId/dm-player', requireRole(['dm', 'admin']), async (req, res) => {
+  const { campaignId } = req.params;
+  try {
+    // Find or create a special DM player entry
+    let r = await pool.query(
+      `SELECT cp.id FROM campaign_players cp
+       JOIN campaign_user_assignments cua ON cua.player_id = cp.id
+       WHERE cp.campaign_id=$1 AND cua.user_id=$2 AND cp.is_dm_player=true`,
+      [campaignId, req.session.userId]
+    );
+    if (r.rows.length) return res.json({ player_id: r.rows[0].id });
+
+    // Create DM player entry
+    const user = await pool.query('SELECT username FROM users WHERE id=$1', [req.session.userId]);
+    const dmName = `DM (${user.rows[0]?.username || 'DM'})`;
+    const player = await pool.query(
+      'INSERT INTO campaign_players (campaign_id, player_name, is_dm_player) VALUES ($1,$2,true) RETURNING id',
+      [campaignId, dmName]
+    );
+    await pool.query(
+      'INSERT INTO campaign_user_assignments (player_id, user_id) VALUES ($1,$2)',
+      [player.rows[0].id, req.session.userId]
+    );
+    res.json({ player_id: player.rows[0].id });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
 // ============================================
 
 app.get('/api/campaigns/:campaignId/meta', requireRole(['dm', 'player']), async (req, res) => {
@@ -1548,6 +1712,247 @@ app.get('/api/pdfs', requireRole(['dm']), async (req, res) => {
   }
 });
 
+
+// ============================================
+// EXPORT / IMPORT — CAMPAIGN
+// ============================================
+
+// Export a full campaign snapshot (players, locations, meta, npcs)
+app.get('/api/campaigns/:id/export', requireRole(['dm']), async (req, res) => {
+  const { id } = req.params;
+  try {
+    const check = await pool.query('SELECT * FROM campaigns WHERE id=$1 AND dm_user_id=$2', [id, req.session.userId]);
+    if (!check.rows.length) return res.status(403).json({ error: 'Access denied' });
+    const campaign = check.rows[0];
+
+    const [playersRes, locsRes, metaRes, npcsRes] = await Promise.all([
+      pool.query(
+        `SELECT cp.player_name, u.username
+         FROM campaign_players cp
+         LEFT JOIN campaign_user_assignments cua ON cp.id = cua.player_id
+         LEFT JOIN users u ON cua.user_id = u.id
+         WHERE cp.campaign_id = $1 AND (cp.is_dm_player IS NULL OR cp.is_dm_player = false)
+         ORDER BY cp.created_at ASC`, [id]
+      ),
+      pool.query('SELECT name, description FROM campaign_locations WHERE campaign_id=$1 ORDER BY created_at ASC', [id]),
+      pool.query('SELECT today_marker, calendar_type FROM campaign_meta WHERE campaign_id=$1', [id]),
+      pool.query('SELECT name FROM campaign_npcs WHERE campaign_id=$1 ORDER BY name ASC', [id]),
+    ]);
+
+    res.json({
+      version: 2,
+      exported_at: new Date().toISOString(),
+      type: 'campaign',
+      campaign: {
+        name: campaign.name,
+        description: campaign.description || '',
+        calendar_type: metaRes.rows[0]?.calendar_type || 'harptos',
+        today_marker: metaRes.rows[0]?.today_marker || null,
+      },
+      players: playersRes.rows.map(p => ({ player_name: p.player_name, username: p.username || null })),
+      locations: locsRes.rows.map(l => ({ name: l.name, description: l.description || '' })),
+      npcs: npcsRes.rows.map(n => n.name),
+    });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// Import a campaign snapshot — creates a new campaign, restores players (with user links), locations, and npcs
+app.post('/api/campaigns/import', requireRole(['dm']), async (req, res) => {
+  const bundle = req.body;
+  if (bundle.type !== 'campaign') return res.status(400).json({ error: 'Not a campaign export file' });
+  const { campaign, players = [], locations = [], npcs = [] } = bundle;
+  if (!campaign?.name) return res.status(400).json({ error: 'Missing campaign name' });
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+
+    const campRes = await client.query(
+      'INSERT INTO campaigns (name, description, dm_user_id) VALUES ($1, $2, $3) RETURNING id',
+      [campaign.name + ' (Imported)', campaign.description || '', req.session.userId]
+    );
+    const newId = campRes.rows[0].id;
+
+    await client.query(
+      'INSERT INTO campaign_meta (campaign_id, calendar_type, today_marker) VALUES ($1, $2, $3)',
+      [newId, campaign.calendar_type || 'harptos', campaign.today_marker || null]
+    );
+
+    // Pre-fetch all users once so we can resolve usernames to IDs
+    const allUsersRes = await client.query('SELECT id, username FROM users');
+    const userByName = {};
+    for (const u of allUsersRes.rows) userByName[u.username.toLowerCase()] = u.id;
+
+    for (const p of players) {
+      const playerRes = await client.query(
+        'INSERT INTO campaign_players (campaign_id, player_name) VALUES ($1, $2) RETURNING id',
+        [newId, p.player_name]
+      );
+      const playerId = playerRes.rows[0].id;
+      // Resolve username → user_id and create the assignment
+      if (p.username) {
+        const resolvedUserId = userByName[p.username.toLowerCase()];
+        if (resolvedUserId) {
+          await client.query(
+            'INSERT INTO campaign_user_assignments (player_id, user_id) VALUES ($1, $2)',
+            [playerId, resolvedUserId]
+          );
+        }
+      }
+    }
+
+    for (const l of locations) {
+      await client.query(
+        'INSERT INTO campaign_locations (campaign_id, name, description) VALUES ($1, $2, $3)',
+        [newId, l.name, l.description || '']
+      );
+    }
+
+    // Import NPCs (v2 format: array of name strings; tolerate objects with .name for forward compat)
+    for (const n of npcs) {
+      const name = typeof n === 'string' ? n : n?.name;
+      if (name) {
+        await client.query(
+          'INSERT INTO campaign_npcs (campaign_id, name) VALUES ($1, $2) ON CONFLICT (campaign_id, name) DO NOTHING',
+          [newId, name]
+        );
+      }
+    }
+
+    await client.query('COMMIT');
+    res.json({ success: true, campaign_id: newId });
+  } catch (e) {
+    await client.query('ROLLBACK');
+    res.status(500).json({ error: e.message });
+  } finally { client.release(); }
+});
+
+// ============================================
+// EXPORT / IMPORT — PC SHEET
+// ============================================
+
+// Export a full PC sheet (character, relationships, stats, dm-notes)
+app.get('/api/pc/:playerId/export', requireRole(['dm', 'player']), async (req, res) => {
+  const { playerId } = req.params;
+  const isPrivileged = ['dm', 'admin'].includes(req.session.role);
+  try {
+    if (!await canAccessPC(req.session.userId, req.session.role, playerId))
+      return res.status(403).json({ error: 'Access denied' });
+
+    const [charRes, relRes, statsRes, notesRes, playerRes] = await Promise.all([
+      pool.query('SELECT * FROM pc_characters WHERE player_id=$1', [playerId]),
+      pool.query(
+        `SELECT name, relation_type, link, is_family FROM pc_relationships
+         WHERE character_id = (SELECT id FROM pc_characters WHERE player_id=$1)
+         ORDER BY created_at ASC`, [playerId]
+      ),
+      pool.query('SELECT stats_json FROM pc_char_stats WHERE player_id=$1', [playerId]),
+      pool.query(
+        `SELECT content, dm_visible FROM pc_dm_notes
+         WHERE character_id = (SELECT id FROM pc_characters WHERE player_id=$1)
+         ${isPrivileged ? '' : 'AND dm_visible = true'}
+         ORDER BY created_at ASC`, [playerId]
+      ),
+      pool.query('SELECT player_name FROM campaign_players WHERE id=$1', [playerId]),
+    ]);
+
+    const char = charRes.rows[0] || {};
+    res.json({
+      version: 1,
+      exported_at: new Date().toISOString(),
+      type: 'pc-sheet',
+      player_name: playerRes.rows[0]?.player_name || '',
+      character: {
+        name: char.name || '',
+        picture_url: char.picture_url || '',
+        story: char.story || '',
+        traits: char.traits || '',
+        flaws: char.flaws || '',
+        goals: char.goals || '',
+        public_info: char.public_info || '',
+        private_info: isPrivileged ? (char.private_info || '') : '',
+      },
+      relationships: relRes.rows,
+      stats: statsRes.rows[0]?.stats_json || {},
+      dm_notes: notesRes.rows,
+    });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// Import a PC sheet into an existing player slot — overwrites character + relationships + stats, appends DM notes
+app.post('/api/pc/:playerId/import', requireRole(['dm', 'player']), async (req, res) => {
+  const { playerId } = req.params;
+  const bundle = req.body;
+  if (bundle.type !== 'pc-sheet') return res.status(400).json({ error: 'Not a pc-sheet export file' });
+
+  try {
+    if (!await canAccessPC(req.session.userId, req.session.role, playerId))
+      return res.status(403).json({ error: 'Access denied' });
+
+    const { character = {}, relationships = [], stats = {}, dm_notes = [] } = bundle;
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+
+      // Upsert character
+      const existing = await client.query('SELECT id FROM pc_characters WHERE player_id=$1', [playerId]);
+      let charId;
+      if (existing.rows.length) {
+        charId = existing.rows[0].id;
+        await client.query(
+          `UPDATE pc_characters SET name=$1, picture_url=$2, story=$3, traits=$4,
+           flaws=$5, goals=$6, public_info=$7, private_info=$8, updated_at=CURRENT_TIMESTAMP
+           WHERE id=$9`,
+          [character.name || '', character.picture_url || '', character.story || '',
+          character.traits || '', character.flaws || '', character.goals || '',
+          character.public_info || '', character.private_info || '', charId]
+        );
+      } else {
+        const ins = await client.query(
+          `INSERT INTO pc_characters (player_id, name, picture_url, story, traits, flaws, goals, public_info, private_info)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING id`,
+          [playerId, character.name || '', character.picture_url || '', character.story || '',
+            character.traits || '', character.flaws || '', character.goals || '',
+            character.public_info || '', character.private_info || '']
+        );
+        charId = ins.rows[0].id;
+      }
+
+      // Replace relationships
+      await client.query('DELETE FROM pc_relationships WHERE character_id=$1', [charId]);
+      for (const r of relationships) {
+        await client.query(
+          'INSERT INTO pc_relationships (character_id, name, relation_type, link, is_family) VALUES ($1,$2,$3,$4,$5)',
+          [charId, r.name, r.relation_type, r.link || '', r.is_family || false]
+        );
+      }
+
+      // Upsert stats
+      if (stats && Object.keys(stats).length) {
+        await client.query(
+          `INSERT INTO pc_char_stats (player_id, stats_json, updated_at) VALUES ($1,$2,CURRENT_TIMESTAMP)
+           ON CONFLICT (player_id) DO UPDATE SET stats_json=$2, updated_at=CURRENT_TIMESTAMP`,
+          [playerId, JSON.stringify(stats)]
+        );
+      }
+
+      // Append DM notes (do not wipe existing notes)
+      for (const n of dm_notes) {
+        await client.query(
+          'INSERT INTO pc_dm_notes (character_id, content, dm_visible) VALUES ($1,$2,$3)',
+          [charId, n.content || '', n.dm_visible ?? true]
+        );
+      }
+
+      await client.query('COMMIT');
+      res.json({ success: true });
+    } catch (e) {
+      await client.query('ROLLBACK');
+      throw e;
+    } finally { client.release(); }
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 // ============================================
 // DATABASE INITIALIZATION
 // ============================================
@@ -1585,6 +1990,7 @@ async function initializeDatabase() {
         id SERIAL PRIMARY KEY,
         campaign_id INTEGER NOT NULL REFERENCES campaigns(id) ON DELETE CASCADE,
         player_name VARCHAR(255) NOT NULL,
+        is_dm_player BOOLEAN NOT NULL DEFAULT false,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       );
     `);
@@ -1706,25 +2112,6 @@ async function initializeDatabase() {
         updated_at    TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       );
     `);
-    // Migrate: add calendar_type if it doesn't exist yet
-    await pool.query(`
-      ALTER TABLE campaign_meta ADD COLUMN IF NOT EXISTS calendar_type VARCHAR(20) DEFAULT 'harptos';
-    `);
-    // Migrate: add tracker override columns to journey_paths
-    await pool.query(`
-      ALTER TABLE journey_paths ADD COLUMN IF NOT EXISTS tracker_color_override VARCHAR(20);
-      ALTER TABLE journey_paths ADD COLUMN IF NOT EXISTS tracker_name_override  VARCHAR(255);
-    `);
-    // Migrate: add timeline_id to player_timeline_entries if missing
-    await pool.query(`
-      ALTER TABLE player_timeline_entries ADD COLUMN IF NOT EXISTS timeline_id INTEGER REFERENCES player_timelines(id) ON DELETE CASCADE;
-    `);
-    // Migrate: add player_ids to player_timeline_entries if it doesn't exist
-    await pool.query(`
-      ALTER TABLE player_timeline_entries ADD COLUMN IF NOT EXISTS player_ids TEXT[] DEFAULT '{}';
-      ALTER TABLE pc_characters ADD COLUMN IF NOT EXISTS picture_data TEXT;
-    `);
-
     // Journey Path Maps
     await pool.query(`
       CREATE TABLE IF NOT EXISTS journey_maps (
@@ -1802,6 +2189,42 @@ async function initializeDatabase() {
         token       VARCHAR(255) NOT NULL UNIQUE,
         created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       );
+    `);
+    // Migrate: add calendar_type if it doesn't exist yet
+    await pool.query(`
+      ALTER TABLE campaign_meta ADD COLUMN IF NOT EXISTS calendar_type VARCHAR(20) DEFAULT 'harptos';
+    `);
+    // Migrate: add tracker override columns to journey_paths
+    await pool.query(`
+      ALTER TABLE journey_paths ADD COLUMN IF NOT EXISTS tracker_color_override VARCHAR(20);
+      ALTER TABLE journey_paths ADD COLUMN IF NOT EXISTS tracker_name_override  VARCHAR(255);
+    `);
+    // Migrate: add timeline_id to player_timeline_entries if missing
+    await pool.query(`
+      ALTER TABLE player_timeline_entries ADD COLUMN IF NOT EXISTS timeline_id INTEGER REFERENCES player_timelines(id) ON DELETE CASCADE;
+    `);
+    // Migrate: add player_ids to player_timeline_entries if it doesn't exist
+    await pool.query(`
+      ALTER TABLE player_timeline_entries ADD COLUMN IF NOT EXISTS player_ids TEXT[] DEFAULT '{}';
+      ALTER TABLE pc_characters ADD COLUMN IF NOT EXISTS picture_data TEXT;
+    `);
+    // Migrate: DM player flag and NPCs
+    await pool.query(`
+      ALTER TABLE campaign_players ADD COLUMN IF NOT EXISTS is_dm_player BOOLEAN NOT NULL DEFAULT false;
+    `);
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS campaign_npcs (
+        id          SERIAL PRIMARY KEY,
+        campaign_id INTEGER NOT NULL REFERENCES campaigns(id) ON DELETE CASCADE,
+        name        VARCHAR(255) NOT NULL,
+        created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE (campaign_id, name)
+      );
+    `);
+
+    // Migrate: location visibility (is_public)
+    await pool.query(`
+      ALTER TABLE campaign_locations ADD COLUMN IF NOT EXISTS is_public BOOLEAN NOT NULL DEFAULT true;
     `);
 
     console.log('✓ Database initialized');

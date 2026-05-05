@@ -4,6 +4,9 @@
   "main": "app.js",
   "scripts": {
     "start": "node app.js",
+    "setup-db": "node scripts/setup-db.js",
+    "create-admin": "node scripts/create-admin.js",
+    "setup": "npm install && node scripts/setup-db.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "author": "",

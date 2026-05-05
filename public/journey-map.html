@@ -1037,6 +1037,9 @@
     </select>
     <button class="hdr-btn" onclick="openNewMap()">+ New Map</button>
     <button class="hdr-btn" id="shareBtn" onclick="shareMap()" style="display:none">🔗 Share</button>
+    <button class="hdr-btn" id="exportMapBtn" onclick="exportMap()" style="display:none">⬇ Export</button>
+    <button class="hdr-btn" onclick="document.getElementById('importMapFile').click()">⬆ Import Map</button>
+    <input type="file" id="importMapFile" accept=".json" style="display:none" onchange="importMap(this)">
     <button class="hdr-btn danger" id="delMapBtn" onclick="deleteMap()" style="display:none">🗑</button>
     <div class="hdr-r">
       <button class="back-btn" onclick="location.href='/'">← Back</button>
@@ -1329,6 +1332,7 @@
       mapId = document.getElementById('mapSel').value || null;
       resetMapState();
       document.getElementById('shareBtn').style.display = mapId ? '' : 'none';
+      document.getElementById('exportMapBtn').style.display = mapId ? '' : 'none';
       document.getElementById('delMapBtn').style.display = mapId ? '' : 'none';
       if (!mapId) return;
       try {
@@ -1434,6 +1438,7 @@
         maps.forEach(m => sel.appendChild(new Option(m.name, m.id)));
         resetMapState();
         document.getElementById('shareBtn').style.display = 'none';
+        document.getElementById('exportMapBtn').style.display = 'none';
         document.getElementById('delMapBtn').style.display = 'none';
         toast('Map deleted');
       } catch (e) { toast(e.message); }
@@ -2478,6 +2483,114 @@
     // ═══════════════════════════════════════════════════════
     // SVG RENDER
     // ═══════════════════════════════════════════════════════
+    // ── Export / Import ──────────────────────────────────────
+    async function exportMap() {
+      if (!mapId) return;
+      const [locsRes, distsRes, trackRes, pathsRes] = await Promise.all([
+        apiFetch(`/api/journey-maps/${mapId}/locations`),
+        apiFetch(`/api/journey-maps/${mapId}/distances`),
+        apiFetch(`/api/journey-maps/${mapId}/trackers`),
+        apiFetch(`/api/journey-maps/${mapId}/paths`),
+      ]);
+      const mapMeta = maps.find(m => m.id == mapId) || {};
+      const bundle = {
+        version: 1,
+        exported_at: new Date().toISOString(),
+        type: 'journey-map',
+        map: { name: mapMeta.name || 'Map', description: mapMeta.description || '' },
+        locations: locsRes,
+        distances: distsRes,
+        trackers: trackRes,
+        paths: pathsRes,
+        // Note: map background image is not included — re-upload after import
+      };
+      const slug = (mapMeta.name || 'map').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(new Blob([JSON.stringify(bundle, null, 2)], { type: 'application/json' }));
+      a.download = `journey-map-${slug}.json`;
+      a.click(); URL.revokeObjectURL(a.href);
+    }
+
+    async function importMap(input) {
+      if (!campaignId) { toast('Select a campaign first'); input.value = ''; return; }
+      const file = input.files[0];
+      if (!file) return;
+      input.value = '';
+      let bundle;
+      try { bundle = JSON.parse(await file.text()); } catch { toast('Invalid JSON file'); return; }
+      if (bundle.type !== 'journey-map') { toast('Not a journey map export file'); return; }
+
+      const { map: mapMeta, locations = [], distances = [], trackers = [], paths = [] } = bundle;
+
+      try {
+        toast('Importing…');
+
+        // 1 – Create map
+        const newMap = await apiFetch(`/api/campaigns/${campaignId}/journey-maps`, {
+          method: 'POST',
+          body: JSON.stringify({ name: (mapMeta.name || 'Map') + ' (Imported)', description: mapMeta.description || '' })
+        });
+
+        // 2 – Locations: old id → new id map
+        const locIdMap = {};
+        for (const l of locations) {
+          // Each journey_map_location may have a campaign_location_id — create a fresh campaign location too
+          const campLoc = await apiFetch(`/api/campaigns/${campaignId}/locations`, {
+            method: 'POST',
+            body: JSON.stringify({ name: l.name, description: l.description || '' })
+          });
+          const mapLoc = await apiFetch(`/api/journey-maps/${newMap.id}/locations`, {
+            method: 'POST',
+            body: JSON.stringify({ campaign_location_id: campLoc.id, name: l.name, x: l.x, y: l.y })
+          });
+          locIdMap[l.id] = mapLoc.id;
+        }
+
+        // 3 – Trackers: old id → new id map
+        const trackerIdMap = {};
+        for (const t of trackers) {
+          const nt = await apiFetch(`/api/journey-maps/${newMap.id}/trackers`, {
+            method: 'POST',
+            body: JSON.stringify({ name: t.name, type: t.type || 'group', color: t.color })
+          });
+          trackerIdMap[t.id] = nt.id;
+        }
+
+        // 4 – Distances (remap location IDs)
+        for (const d of distances) {
+          const fl = locIdMap[d.from_loc_id], tl = locIdMap[d.to_loc_id];
+          if (!fl || !tl) continue;
+          await apiFetch(`/api/journey-maps/${newMap.id}/distances`, {
+            method: 'PUT',
+            body: JSON.stringify({ from_loc_id: fl, to_loc_id: tl, distance_miles: d.distance_miles })
+          });
+        }
+
+        // 5 – Paths (remap waypoint locIds and tracker_id)
+        for (const p of paths) {
+          const wpts = (Array.isArray(p.waypoints) ? p.waypoints : JSON.parse(p.waypoints || '[]'))
+            .map(w => ({ ...w, locId: w.locId ? (locIdMap[w.locId] || null) : null }));
+          await apiFetch(`/api/journey-maps/${newMap.id}/paths`, {
+            method: 'POST',
+            body: JSON.stringify({
+              name: p.name,
+              notes: p.notes,
+              tracker_id: p.tracker_id ? (trackerIdMap[p.tracker_id] || null) : null,
+              waypoints: wpts,
+            })
+          });
+        }
+
+        // Reload and switch to new map
+        maps = await apiFetch(`/api/campaigns/${campaignId}/journey-maps`);
+        renderMapList();
+        const sel = document.getElementById('mapSel');
+        sel.value = newMap.id;
+        await onMapChange();
+        toast(`Map "${newMap.name}" imported — re-upload the background image if needed`);
+      } catch (e) { toast('Import failed: ' + e.message); }
+    }
+
     function renderAll() { renderPaths(); renderPins(); renderLocList(); renderTrackerList(); renderPathList(); }
 
     function openDistMatrixModal() {
