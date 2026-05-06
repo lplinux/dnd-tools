@@ -185,6 +185,11 @@
       display: block
     }
 
+    /* Stats tab needs flex so toolbar + iframe mount stack vertically */
+    #tab-stats.active {
+      display: flex
+    }
+
     /* Cards */
     .card {
       background: var(--surface);
@@ -450,12 +455,14 @@
     #relCanvas {
       display: block;
       width: 100%;
+      overflow-x: auto;
     }
 
     #relCanvas svg {
       display: block;
       width: 100%;
       height: auto;
+      min-height: 160px;
     }
 
     /* Graph node interactions */
@@ -812,6 +819,10 @@
         <option value="">— Select Player —</option>
       </select>
       <button class="back-btn" id="timelineBtn" onclick="goToTimeline()" style="display:none">📜 Timeline</button>
+      <button class="back-btn" id="exportPcBtn" onclick="exportPcSheet()" style="display:none">⬇ Export</button>
+      <button class="back-btn" id="importPcBtn" onclick="document.getElementById('importPcFile').click()"
+        style="display:none">⬆ Import</button>
+      <input type="file" id="importPcFile" accept=".json" style="display:none" onchange="importPcSheet(this)">
       <button class="back-btn" id="printBtn" onclick="startPrint()" style="display:none">🖨 PDF</button>
       <div id="userMenuMount"></div>
     </div>
@@ -825,6 +836,7 @@
 
     <div class="tab-bar" id="tabBar" style="display:none">
       <button class="tab-btn active" onclick="showTab('character',this)">⚔️ Character</button>
+      <button class="tab-btn" onclick="showTab('stats',this)">🎲 Stats Sheet</button>
       <button class="tab-btn" onclick="showTab('relations',this)">🌳 Relationships</button>
       <button class="tab-btn" onclick="showTab('public',this)">📢 Public Info</button>
       <button class="tab-btn" id="privateTabBtn" style="display:none" onclick="showTab('private',this)">🔒 Private
@@ -837,12 +849,28 @@
     <div class="tab-content" id="tab-character">
       <div id="charMsg"></div>
       <div class="char-header">
-        <div class="char-portrait" id="portraitBox">🧝</div>
+        <div class="char-portrait" id="portraitBox" title="Click to upload image" style="cursor:pointer"
+          onclick="document.getElementById('picFileInput').click()">🧝</div>
         <div class="char-info">
           <input class="char-name-input" id="charName" type="text" placeholder="Character Name…">
+          <!-- Portrait controls -->
           <div class="form-group" style="margin-bottom:6px">
-            <label>Portrait URL</label>
-            <input type="url" id="picUrlInput" placeholder="https://…" oninput="previewPortrait(this.value)">
+            <label>Portrait</label>
+            <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+              <label class="btn" style="padding:4px 10px;font-size:.7rem;cursor:pointer;margin:0"
+                title="Upload an image (Max 412×544 px · 500 KB)">
+                📁 Upload
+                <input type="file" id="picFileInput" accept="image/jpeg,image/png,image/gif,image/webp"
+                  style="display:none" onchange="handlePortraitUpload(this)">
+              </label>
+              <span style="color:var(--text-dim);font-size:.75rem">or</span>
+              <input type="url" id="picUrlInput" placeholder="https://… (image URL)" style="flex:1;min-width:120px"
+                oninput="handlePortraitUrlInput(this.value)">
+              <button class="btn" style="padding:4px 8px;font-size:.7rem;background:var(--red);white-space:nowrap"
+                onclick="clearPortrait()" title="Remove portrait">✕</button>
+            </div>
+            <div id="portraitMsg" style="font-size:.75rem;margin-top:3px;color:var(--text-dim)">Max 412×544 px · 500 KB
+              · JPEG/PNG/GIF/WebP</div>
           </div>
           <div id="pubLinkBox" style="display:none"></div>
         </div>
@@ -868,6 +896,17 @@
         </div>
       </div>
       <div class="btn-row"><button class="btn" onclick="saveCharacter()">💾 Save Character</button></div>
+    </div>
+
+    <!-- TAB: Stats Sheet (iframe injected dynamically when tab is first opened) -->
+    <div class="tab-content" id="tab-stats" style="padding:0;flex-direction:column">
+      <div id="statsToolbar"
+        style="display:flex;align-items:center;gap:10px;padding:8px 14px;background:var(--surface);border-bottom:1px solid var(--border);flex-shrink:0">
+        <span id="statsSaveMsg" style="font-size:12px;color:var(--text-dim);flex:1"></span>
+        <button class="btn" onclick="statsSheetSave()">💾 Save Stats Sheet</button>
+        <button class="btn danger" onclick="statsSheetClear()">🗑 Clear</button>
+      </div>
+      <div id="npcFrameMount" style="flex:1;overflow-y:auto"></div>
     </div>
 
     <!-- TAB: Relationships -->
@@ -1097,7 +1136,12 @@
       document.getElementById('charGoals').value = d.goals || '';
       document.getElementById('charPublicInfo').value = d.public_info || '';
       document.getElementById('charPrivateInfo').value = d.private_info || '';
-      previewPortrait(d.picture_url || '');
+      // picture_data (uploaded) takes priority over picture_url
+      if (d.picture_data) {
+        previewPortrait(d.picture_data);
+      } else {
+        previewPortrait(d.picture_url || '');
+      }
       renderRelList();
     }
 
@@ -1108,11 +1152,104 @@
         : '🧝';
     }
 
+    function handlePortraitUrlInput(url) {
+      // When a URL is typed, clear any uploaded data state and preview
+      charData && (charData.picture_data = null);
+      document.getElementById('portraitMsg').textContent = 'Max 412×544 px · 500 KB · JPEG/PNG/GIF/WebP';
+      document.getElementById('portraitMsg').style.color = 'var(--text-dim)';
+      previewPortrait(url);
+    }
+
+    function clearPortrait() {
+      charData && (charData.picture_data = null);
+      document.getElementById('picUrlInput').value = '';
+      document.getElementById('picFileInput').value = '';
+      document.getElementById('portraitMsg').textContent = 'Max 412×544 px · 500 KB · JPEG/PNG/GIF/WebP';
+      document.getElementById('portraitMsg').style.color = 'var(--text-dim)';
+      previewPortrait('');
+    }
+
+    async function handlePortraitUpload(input) {
+      const file = input.files[0];
+      if (!file) return;
+      const msgEl = document.getElementById('portraitMsg');
+
+      // 1. Size check (500 KB)
+      if (file.size > 500 * 1024) {
+        msgEl.textContent = '✗ Image exceeds 500 KB. Please resize and try again.';
+        msgEl.style.color = 'var(--red-hover)';
+        input.value = '';
+        return;
+      }
+
+      // 2. Read as data URL for dimension check + preview
+      const dataUrl = await new Promise((res, rej) => {
+        const reader = new FileReader();
+        reader.onload = e => res(e.target.result);
+        reader.onerror = rej;
+        reader.readAsDataURL(file);
+      });
+
+      // 3. Dimension check (412x544)
+      await new Promise((res) => {
+        const img = new Image();
+        img.onload = () => {
+          if (img.width > 412 || img.height > 544) {
+            msgEl.textContent = `✗ Image is ${img.width}×${img.height}px. Max is 412×544px`;
+            msgEl.style.color = 'var(--red-hover)';
+            input.value = '';
+            res(false);
+          } else {
+            res(true);
+          }
+        };
+        img.onerror = () => res(false);
+        img.src = dataUrl;
+      }).then(async (ok) => {
+        if (!ok) return;
+
+        // 4. Upload to server
+        msgEl.textContent = '⏳ Uploading…';
+        msgEl.style.color = 'var(--text-dim)';
+
+        const base64 = dataUrl.split(',')[1];
+        const mimeType = file.type;
+
+        try {
+          const res = await fetch(`/api/pc/${currentPlayerId}/portrait`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ data: base64, mimeType })
+          });
+          if (res.ok) {
+            const json = await res.json();
+            // Store uploaded data in charData and clear URL field
+            if (!charData) charData = {};
+            charData.picture_data = json.picture_data;
+            charData.picture_url = null;
+            document.getElementById('picUrlInput').value = '';
+            previewPortrait(json.picture_data);
+            msgEl.textContent = '✓ Portrait saved!';
+            msgEl.style.color = 'var(--green-hover)';
+          } else {
+            const e = await res.json();
+            msgEl.textContent = '✗ ' + (e.error || 'Upload failed');
+            msgEl.style.color = 'var(--red-hover)';
+          }
+        } catch (e) {
+          msgEl.textContent = '✗ ' + e.message;
+          msgEl.style.color = 'var(--red-hover)';
+        }
+      });
+    }
+
     async function showSheet() {
       document.getElementById('emptyState').style.display = 'none';
       document.getElementById('tabBar').style.display = 'flex';
       document.getElementById('printBtn').style.display = 'inline-block';
       document.getElementById('timelineBtn').style.display = 'inline-block';
+      document.getElementById('exportPcBtn').style.display = 'inline-block';
+      document.getElementById('importPcBtn').style.display = 'inline-block';
 
       // Resolve player object for the current player id
       const playerObj = players.find(p => Number(p.id) === Number(currentPlayerId));
@@ -1159,8 +1296,28 @@
       if (name === 'dmnotes') renderDmNotes();
     }
 
+    // Re-render the graph only when the relations tab is currently visible
+    function renderRelGraphIfVisible() {
+      const tab = document.getElementById('tab-relations');
+      if (tab && tab.classList.contains('active')) renderRelGraph();
+    }
+
+    // Re-render on container resize so the graph always fills the available width correctly
+    (function initRelGraphResizeObserver() {
+      const wrap = document.getElementById('relCanvas');
+      if (!wrap || !window.ResizeObserver) return;
+      let _roTimer;
+      const ro = new ResizeObserver(() => {
+        clearTimeout(_roTimer);
+        _roTimer = setTimeout(renderRelGraphIfVisible, 80);
+      });
+      ro.observe(wrap);
+    })();
+
     // ── Save ──
     async function saveCharacter(section) {
+      // If the character has an uploaded portrait (picture_data) and the URL field is blank,
+      // send picture_url as empty string so the server keeps picture_data intact.
       const payload = {
         picture_url: document.getElementById('picUrlInput').value,
         name: document.getElementById('charName').value,
@@ -1547,7 +1704,7 @@
         });
         if (res.ok) {
           relationships.push(await res.json());
-          renderRelList(); renderRelGraph(); closeRelModal();
+          renderRelList(); renderRelGraphIfVisible(); closeRelModal();
           document.getElementById('relName').value = '';
           document.getElementById('relLink').value = '';
           showMsg('relMsg', '✓ Relation added', 'ok');
@@ -1559,7 +1716,7 @@
       if (!confirm('Remove this relation?')) return;
       await fetch(`/api/pc/${currentPlayerId}/relationships/${relId}`, { method: 'DELETE' });
       relationships = relationships.filter(r => r.id !== relId);
-      renderRelList(); renderRelGraph();
+      renderRelList(); renderRelGraphIfVisible();
     }
 
     // ── DM Notes ──
@@ -1624,10 +1781,10 @@
       const prog = document.getElementById('printProgress');
       overlay.classList.add('active');
 
-      // ── CORS fix: swap portrait src to same-origin proxy ──
+      // ── CORS fix: swap portrait src to same-origin proxy (skip for data URIs — already same-origin) ──
       const portraitImg = document.querySelector('#portraitBox img');
       let originalSrc = null;
-      if (portraitImg && portraitImg.src && !portraitImg.src.startsWith(location.origin)) {
+      if (portraitImg && portraitImg.src && !portraitImg.src.startsWith(location.origin) && !portraitImg.src.startsWith('data:')) {
         originalSrc = portraitImg.src;
         const proxied = `/api/proxy-image?url=${encodeURIComponent(originalSrc)}`;
         portraitImg.src = proxied;
@@ -1652,7 +1809,7 @@
         const wasActive = el.classList.contains('active');
         el.style.display = 'block';
 
-        if (tabIds[i] === 'tab-relations') renderRelGraph();
+        if (tabIds[i] === 'tab-relations') renderRelGraph(); // always render for print
 
         try {
           const c = await html2canvas(el, {
@@ -1740,6 +1897,40 @@
         : '/timeline';
     }
 
+    // ── Export / Import ──
+    async function exportPcSheet() {
+      if (!currentPlayerId) return;
+      try {
+        const res = await fetch(`/api/pc/${currentPlayerId}/export`);
+        if (!res.ok) { const e = await res.json(); showMsg('charMsg', '✗ ' + e.error, 'err'); return; }
+        const data = await res.json();
+        const slug = (data.player_name || 'character').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' }));
+        a.download = `pc-sheet-${slug}.json`;
+        a.click(); URL.revokeObjectURL(a.href);
+      } catch (e) { showMsg('charMsg', '✗ ' + e.message, 'err'); }
+    }
+
+    async function importPcSheet(input) {
+      if (!currentPlayerId) { alert('Select a player first'); input.value = ''; return; }
+      const file = input.files[0]; if (!file) return;
+      input.value = '';
+      let bundle;
+      try { bundle = JSON.parse(await file.text()); } catch { showMsg('charMsg', '✗ Invalid JSON file', 'err'); return; }
+      if (bundle.type !== 'pc-sheet') { showMsg('charMsg', '✗ Not a pc-sheet export file', 'err'); return; }
+      if (!confirm("Import will overwrite this character's data. DM notes will be appended. Continue?")) return;
+      try {
+        const res = await fetch(`/api/pc/${currentPlayerId}/import`, {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(bundle)
+        });
+        const data = await res.json();
+        if (res.ok) { showMsg('charMsg', '✓ Imported successfully', 'ok'); await loadPlayerSheet(); }
+        else { showMsg('charMsg', '✗ ' + data.error, 'err'); }
+      } catch (e) { showMsg('charMsg', '✗ ' + e.message, 'err'); }
+    }
+
     // ── Graph tooltip (floating div, event-delegated on relCanvas) ──
     (function setupGraphTooltip() {
       const tip = document.getElementById('graphTooltip');
@@ -1787,6 +1978,141 @@
     document.getElementById('relModal').addEventListener('click', e => {
       if (e.target === document.getElementById('relModal')) closeRelModal();
     });
+
+    // ══════════════════════════════════════════════════
+    // STATS SHEET — iframe postMessage bridge
+    // ══════════════════════════════════════════════════
+    // State
+    let npcFrameReady = false;
+    let pendingLoad = null;          // stats payload queued before frame was ready
+    let collectResolve = null;          // pending collect() promise resolver
+    let statsLoaded = false;         // true once we have fetched from API for current player
+
+    // Get the live iframe element (created dynamically)
+    const npcFrame = () => document.getElementById('npcSheetFrame');
+
+    // Listen for postMessage replies from the embedded npc-sheet
+    window.addEventListener('message', e => {
+      if (!e.data || typeof e.data !== 'object') return;
+
+      if (e.data.type === 'NPC_READY') {
+        npcFrameReady = true;
+        if (pendingLoad !== null) {
+          npcFrame()?.contentWindow?.postMessage({ type: 'LOAD_STATS', payload: pendingLoad }, '*');
+          pendingLoad = null;
+        }
+      }
+
+      if (e.data.type === 'STATS_DATA' && collectResolve) {
+        const r = collectResolve; collectResolve = null; r(e.data.payload);
+      }
+
+      // Auto-resize the iframe to its full content height so the outer tab scrolls
+      if (e.data.type === 'IFRAME_RESIZE') {
+        const frame = npcFrame();
+        if (frame) frame.style.height = e.data.height + 'px';
+      }
+    });
+
+    // Create (or re-create) the iframe inside #npcFrameMount
+    function spawnNpcFrame() {
+      const mount = document.getElementById('npcFrameMount');
+      const old = document.getElementById('npcSheetFrame');
+      if (old) old.remove();
+      npcFrameReady = false;
+      pendingLoad = null;
+      collectResolve = null;
+
+      const frame = document.createElement('iframe');
+      frame.id = 'npcSheetFrame';
+      frame.src = '/npc-sheet?embedded=1';
+      // Height is driven by IFRAME_RESIZE messages from npc-sheet.
+      // Start at 0; first resize message sets the real height immediately.
+      frame.style.cssText = 'border:none;width:100%;height:0;display:block;overflow:hidden';
+      mount.appendChild(frame);
+    }
+
+    // Send data into iframe (queues if not ready yet)
+    function statsLoad(data) {
+      const frame = npcFrame();
+      if (!frame) return;
+      if (npcFrameReady) {
+        frame.contentWindow.postMessage({ type: 'LOAD_STATS', payload: data }, '*');
+      } else {
+        pendingLoad = data;
+      }
+    }
+
+    // Collect current data from iframe (returns Promise)
+    function statsCollect() {
+      return new Promise((resolve, reject) => {
+        const frame = npcFrame();
+        if (!frame?.contentWindow) return reject(new Error('iframe not ready'));
+        collectResolve = resolve;
+        frame.contentWindow.postMessage({ type: 'COLLECT_STATS' }, '*');
+        setTimeout(() => {
+          if (collectResolve === resolve) { collectResolve = null; reject(new Error('timed out')); }
+        }, 5000);
+      });
+    }
+
+    // Save button
+    async function statsSheetSave() {
+      const msgEl = document.getElementById('statsSaveMsg');
+      if (!currentPlayerId) return;
+      try {
+        msgEl.textContent = '⏳ Saving…'; msgEl.style.color = 'var(--text-dim)';
+        const data = await statsCollect();
+        const res = await fetch(`/api/pc/${currentPlayerId}/stats`, {
+          method: 'PUT', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(data),
+        });
+        if (res.ok) {
+          msgEl.textContent = '✓ Saved'; msgEl.style.color = 'var(--green-hover)';
+        } else {
+          const err = await res.json();
+          msgEl.textContent = '✗ ' + (err.error || 'Error'); msgEl.style.color = 'var(--red-hover)';
+        }
+      } catch (err) {
+        msgEl.textContent = '✗ ' + err.message; msgEl.style.color = 'var(--red-hover)';
+      }
+      setTimeout(() => { msgEl.textContent = ''; }, 3000);
+    }
+
+    // Clear button — wipes the iframe sheet
+    function statsSheetClear() {
+      if (!confirm('Clear the entire Stats Sheet?')) return;
+      statsLoad({});
+    }
+
+    // Override showTab: create the iframe on first visit to stats tab; lazy-load data
+    const _origShowTab = showTab;
+    showTab = function (name, btn) {
+      _origShowTab(name, btn);
+      // _origShowTab manages display via CSS classes (.active).
+      // We must NOT set any inline display style — that would override the CSS.
+
+      if (name === 'stats' && !statsLoaded && currentPlayerId) {
+        statsLoaded = true;
+        spawnNpcFrame();
+        fetch(`/api/pc/${currentPlayerId}/stats`)
+          .then(r => r.ok ? r.json() : {})
+          .then(data => statsLoad(data))
+          .catch(() => { });
+      }
+    };
+
+    // Override loadPlayerSheet: tear down iframe so it resets for the new player
+    const _origLoadPlayerSheet = loadPlayerSheet;
+    loadPlayerSheet = async function () {
+      statsLoaded = false;
+      // Remove the old iframe — it will be re-created when stats tab is next opened
+      const old = document.getElementById('npcSheetFrame');
+      if (old) old.remove();
+      npcFrameReady = false; pendingLoad = null; collectResolve = null;
+      await _origLoadPlayerSheet();
+    };
+    // ── End Stats Sheet bridge ─────────────────────────
 
     init();
   </script>

@@ -1332,6 +1332,193 @@
       recalcAll();
     }
 
+    /* ── COLLECT all sheet data into a plain object ── */
+    function collectSheet() {
+      const abilities = {};
+      AB_IDS.forEach(id => {
+        abilities[id] = {
+          score: parseInt($(id + 'Score')?.value) || 10,
+          st_prof: $(id + 'STprof')?.checked || false,
+        };
+      });
+      const spellNames = {};
+      document.querySelectorAll('#spellBody input.spell-name-inp').forEach(inp => {
+        spellNames[inp.dataset.lvl] = inp.value;
+      });
+      const legendaryRes = [1, 2, 3, 4, 5].map(n => {
+        const cb = document.getElementById('lr' + n);
+        return cb ? cb.checked : false;
+      });
+      return {
+        char_name: $('charName')?.value || '',
+        char_class: $('charClass')?.value || '',
+        subclass: $('charSubclass')?.value || '',
+        race: $('charRace')?.value || '',
+        sex: $('charSex')?.value || '',
+        alignment: $('charAlignment')?.value || '',
+        level: $('charLevel')?.value || '',
+        cr: $('charCR')?.value || '',
+        caster_type: $('casterType')?.value || 'none',
+        spell_ability: $('spellAbility')?.value || '',
+        slot_reset: $('slotReset')?.value || 'Long Rest',
+        hp: $('coreHP')?.value || '',
+        ac: $('coreAC')?.value || '',
+        speed: $('coreSpeed')?.value || '',
+        senses: $('coreSenses')?.value || '',
+        langs: $('coreLangs')?.value || '',
+        abilities,
+        skill_profs: { ...skProf },
+        tags: JSON.parse(JSON.stringify(tagData)),
+        personality: $('personality')?.value || '',
+        spec_traits: $('specTraits')?.value || '',
+        features: $('features')?.value || '',
+        equipment: $('equipment')?.value || '',
+        actions: $('actions')?.value || '',
+        bonus_actions: $('bonusActions')?.value || '',
+        legendary_res: legendaryRes,
+        leg_actions: $('legActions')?.value || '',
+        lair_actions: $('lairActions')?.value || '',
+        special_abilities: $('specialAbilities')?.value || '',
+        dm_notes: $('dmNotes')?.value || '',
+        spell_names: spellNames,
+      };
+    }
+
+    /* ── POPULATE sheet from a plain object ── */
+    function populateSheet(d) {
+      if (!d || !Object.keys(d).length) return;
+      const set = (id, val) => { const el = $(id); if (el) el.value = val || ''; };
+      set('charName', d.char_name);
+      set('charClass', d.char_class);
+      set('charSubclass', d.subclass);
+      set('charRace', d.race);
+      set('charSex', d.sex);
+      set('charAlignment', d.alignment);
+      set('charLevel', d.level);
+      set('charCR', d.cr);
+      set('coreHP', d.hp);
+      set('coreAC', d.ac);
+      set('coreSpeed', d.speed);
+      set('coreSenses', d.senses);
+      set('coreLangs', d.langs);
+      set('personality', d.personality);
+      set('specTraits', d.spec_traits);
+      set('features', d.features);
+      set('equipment', d.equipment);
+      set('actions', d.actions);
+      set('bonusActions', d.bonus_actions);
+      set('legActions', d.leg_actions);
+      set('lairActions', d.lair_actions);
+      set('specialAbilities', d.special_abilities);
+      set('dmNotes', d.dm_notes);
+
+      if (Array.isArray(d.legendary_res)) {
+        [1, 2, 3, 4, 5].forEach((n, i) => { const cb = document.getElementById('lr' + n); if (cb) cb.checked = !!d.legendary_res[i]; });
+      }
+      if (d.abilities) {
+        AB_IDS.forEach(id => {
+          const a = d.abilities[id] || {};
+          const sc = $(id + 'Score'); if (sc) sc.value = a.score ?? 10;
+          const st = $(id + 'STprof'); if (st) st.checked = !!a.st_prof;
+        });
+      }
+      if (d.skill_profs) {
+        SKILLS.forEach(([n]) => { skProf[n] = d.skill_profs[n] || 0; });
+      }
+      if (d.tags) {
+        ['resist', 'immune', 'vuln', 'condimmune', 'damagetype'].forEach(k => {
+          tagData[k] = Array.isArray(d.tags[k]) ? [...d.tags[k]] : [];
+        });
+        // Re-render tag chips in all tag boxes
+        document.querySelectorAll('.tag-field').forEach(mount => {
+          const box = mount.querySelector('.tag-box');
+          if (!box) return;
+          const inp = box.querySelector('.tag-input');
+          const key = mount.id.replace('tf-', '');
+          if (!tagData[key]) return;
+          Array.from(box.children).forEach(c => { if (c !== inp) box.removeChild(c); });
+          tagData[key].forEach(t => {
+            const chip = document.createElement('span'); chip.className = 'tag'; chip.textContent = t;
+            const x = document.createElement('button'); x.className = 'tag-x'; x.textContent = '×';
+            x.addEventListener('mousedown', e => { e.preventDefault(); tagData[key] = tagData[key].filter(i => i !== t); chip.remove(); });
+            chip.appendChild(x); box.insertBefore(chip, inp);
+          });
+        });
+      }
+      // Caster / spell handling
+      const ct = d.caster_type || 'none';
+      const isSpell = ct !== 'none';
+      const casterRow = $('casterRow'), spellSec = $('spellSection');
+      if (casterRow) casterRow.style.display = isSpell ? 'flex' : 'none';
+      if (spellSec) spellSec.style.display = isSpell ? 'block' : 'none';
+      if (isSpell) {
+        set('casterType', ct);
+        set('spellAbility', d.spell_ability);
+        set('slotReset', d.slot_reset);
+        buildSpellSlots(ct);
+        if (d.spell_names) {
+          document.querySelectorAll('#spellBody input.spell-name-inp').forEach(inp => {
+            if (d.spell_names[inp.dataset.lvl] !== undefined) inp.value = d.spell_names[inp.dataset.lvl];
+          });
+        }
+      }
+      recalcAll();
+      // Auto-resize all textareas
+      document.querySelectorAll('textarea').forEach(ta => {
+        ta.style.height = 'auto';
+        ta.style.height = ta.scrollHeight + 'px';
+      });
+    }
+
+    /* ── EMBEDDED MODE (postMessage bridge) ── */
+    const isEmbedded = new URLSearchParams(location.search).get('embedded') === '1';
+    if (isEmbedded) {
+      // Hide the standalone toolbar — PC sheet provides Save/Clear
+      const toolbar = document.querySelector('.toolbar');
+      if (toolbar) toolbar.style.display = 'none';
+
+      // Keep the parchment background; just remove outer shadow/border
+      document.body.style.cssText = 'padding:0 0 20px;background:#1a1208';
+      const sheet = document.querySelector('.sheet');
+      if (sheet) {
+        sheet.style.boxShadow = 'none';
+        sheet.style.border = 'none';
+        sheet.style.margin = '0 auto';
+      }
+
+      // ── Resize helper: report full content height to parent ──
+      function sendResize() {
+        const h = document.documentElement.scrollHeight || document.body.scrollHeight;
+        window.parent.postMessage({ type: 'IFRAME_RESIZE', height: h }, '*');
+      }
+
+      // ResizeObserver catches spell-slot rows, tag chips, textarea growth, etc.
+      if (window.ResizeObserver) {
+        new ResizeObserver(() => sendResize()).observe(document.body);
+      }
+      // Fallback: fire on any interaction that might change layout
+      document.addEventListener('input', () => setTimeout(sendResize, 50));
+      document.addEventListener('change', () => setTimeout(sendResize, 50));
+      document.addEventListener('click', () => setTimeout(sendResize, 100));
+
+      // Listen for messages from the parent PC sheet
+      window.addEventListener('message', e => {
+        if (!e.data || typeof e.data !== 'object') return;
+        if (e.data.type === 'LOAD_STATS') {
+          populateSheet(e.data.payload || {});
+          // Re-measure after content settles
+          setTimeout(sendResize, 200);
+        }
+        if (e.data.type === 'COLLECT_STATS') {
+          e.source.postMessage({ type: 'STATS_DATA', payload: collectSheet() }, e.origin || '*');
+        }
+      });
+
+      // Tell the parent we are ready and send initial height once layout settles
+      window.parent.postMessage({ type: 'NPC_READY' }, '*');
+      setTimeout(sendResize, 250);
+    }
+
     /* AUTO-RESIZE */
     document.addEventListener('input', e => {
       if (e.target.tagName === 'TEXTAREA') { e.target.style.height = 'auto'; e.target.style.height = e.target.scrollHeight + 'px'; }

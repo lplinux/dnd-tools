@@ -734,6 +734,121 @@
       font-size: 11px;
     }
 
+    .wpt-edit-btn {
+      margin-left: auto;
+      background: none;
+      border: 1px solid var(--border2);
+      color: var(--gold-dim);
+      border-radius: 2px;
+      font-size: 9px;
+      padding: 1px 5px;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+
+    .wpt-edit-btn:hover {
+      background: var(--surface2);
+      color: var(--gold);
+    }
+
+    .wpt-event-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      background: var(--surface2);
+      border: 1px solid var(--border2);
+      border-radius: 2px;
+      padding: 1px 5px;
+      font-size: 10px;
+      color: var(--gold);
+      margin-top: 1px;
+    }
+
+    .wpt-event-chip .unlink {
+      cursor: pointer;
+      color: var(--text-muted);
+      margin-left: 3px;
+      font-size: 9px;
+      line-height: 1;
+    }
+
+    .wpt-event-chip .unlink:hover {
+      color: #e06c75;
+    }
+
+    /* Waypoint event modal */
+    .wpt-ev-search {
+      width: 100%;
+      box-sizing: border-box;
+      background: var(--surface3);
+      border: 1px solid var(--border2);
+      color: var(--text);
+      padding: 5px 8px;
+      font-size: 12px;
+      border-radius: 2px;
+      margin-bottom: 8px;
+    }
+
+    .wpt-ev-search:focus {
+      outline: none;
+      border-color: var(--gold-dim);
+    }
+
+    .wpt-ev-tl-group {
+      margin-bottom: 10px;
+    }
+
+    .wpt-ev-tl-name {
+      font-size: 10px;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: .07em;
+      margin-bottom: 4px;
+      padding: 0 2px;
+    }
+
+    .wpt-ev-entry {
+      display: flex;
+      align-items: flex-start;
+      gap: 6px;
+      padding: 5px 7px;
+      border-radius: 2px;
+      cursor: pointer;
+      font-size: 11px;
+      color: var(--text);
+    }
+
+    .wpt-ev-entry:hover {
+      background: var(--surface3);
+    }
+
+    .wpt-ev-entry.selected {
+      background: var(--surface2);
+      outline: 1px solid var(--gold-dim);
+    }
+
+    .wpt-ev-entry .ev-title {
+      font-weight: 600;
+    }
+
+    .wpt-ev-entry .ev-date {
+      font-size: 10px;
+      color: var(--text-muted);
+    }
+
+    .wpt-ev-empty {
+      font-size: 11px;
+      color: var(--text-muted);
+      padding: 8px;
+      text-align: center;
+    }
+
+    .wpt-ev-scroll {
+      max-height: 320px;
+      overflow-y: auto;
+      padding-right: 2px;
+    }
+
     .wpt-arrow {
       color: var(--gold-dim);
       font-size: 10px;
@@ -922,6 +1037,9 @@
     </select>
     <button class="hdr-btn" onclick="openNewMap()">+ New Map</button>
     <button class="hdr-btn" id="shareBtn" onclick="shareMap()" style="display:none">🔗 Share</button>
+    <button class="hdr-btn" id="exportMapBtn" onclick="exportMap()" style="display:none">⬇ Export</button>
+    <button class="hdr-btn" onclick="document.getElementById('importMapFile').click()">⬆ Import Map</button>
+    <input type="file" id="importMapFile" accept=".json" style="display:none" onchange="importMap(this)">
     <button class="hdr-btn danger" id="delMapBtn" onclick="deleteMap()" style="display:none">🗑</button>
     <div class="hdr-r">
       <button class="back-btn" onclick="location.href='/'">← Back</button>
@@ -949,8 +1067,8 @@
               Pan <kbd>H</kbd></button>
             <button class="tool-btn" id="tool-place" onclick="setTool('place')" title="Place Location [P]"><span
                 class="tool-icon">📍</span> Place Location <kbd>P</kbd></button>
-            <button class="tool-btn" id="tool-draw" onclick="setTool('draw')" title="Draw Path [D]"> <span
-                class="tool-icon">✏️</span> Draw
+            <button class="tool-btn" id="tool-draw" onclick="setTool('draw')" title="Draw or Extend Path [D]"> <span
+                class="tool-icon">✏️</span> Draw/Extend
               Path <kbd>D</kbd></button>
             <button class="tool-btn" id="tool-delete" onclick="setTool('delete')" title="Delete [X]"><span
                 class="tool-icon">✂️</span> Delete <kbd>X</kbd>
@@ -1043,7 +1161,7 @@
       onmousemove="mapMove(event)" onmouseup="mapUp(event)" ondblclick="mapDblClick(event)" onwheel="mapWheel(event)"
       oncontextmenu="return false">
 
-      <div id="mapViewport">
+      <div id="mapViewport" class="map-viewport">
         <img id="mapImg" class="map-img" src="" style="display:none" onload="onImgLoaded()">
         <svg id="mapSvg" class="map-svg" width="800" height="600">
           <defs>
@@ -1149,6 +1267,7 @@
     let isDraggingWP = null; // { pathId, wpIdx, origX, origY, startSX, startSY }
     let campaignPlayers = []; // locked trackers from campaign
     let isDrawing = false, drawPts = []; // {x%, y%}
+    let extendingPathId = null; // when set, finishPath() will PUT to this path instead of POST
     let distEdit = null; // { fromId, toId }
 
     // Pending "place from list" selection
@@ -1213,6 +1332,7 @@
       mapId = document.getElementById('mapSel').value || null;
       resetMapState();
       document.getElementById('shareBtn').style.display = mapId ? '' : 'none';
+      document.getElementById('exportMapBtn').style.display = mapId ? '' : 'none';
       document.getElementById('delMapBtn').style.display = mapId ? '' : 'none';
       if (!mapId) return;
       try {
@@ -1318,6 +1438,7 @@
         maps.forEach(m => sel.appendChild(new Option(m.name, m.id)));
         resetMapState();
         document.getElementById('shareBtn').style.display = 'none';
+        document.getElementById('exportMapBtn').style.display = 'none';
         document.getElementById('delMapBtn').style.display = 'none';
         toast('Map deleted');
       } catch (e) { toast(e.message); }
@@ -1394,6 +1515,18 @@
       document.getElementById('mapViewport').style.transform = `translate(${vpX}px,${vpY}px) scale(${vpScale})`;
     }
     function zoomStep(f) {
+      const area = document.getElementById('mapArea');
+      const aw = area.clientWidth, ah = area.clientHeight;
+      let mx = aw / 2, my = ah / 2;
+      if (selectedLoc) {
+        const loc = placedLocs.find(l => l.id == selectedLoc);
+        if (loc) {
+          mx = vpX + (loc.x / 100) * imgW * vpScale;
+          my = vpY + (loc.y / 100) * imgH * vpScale;
+        }
+      }
+      vpX = mx - (mx - vpX) * f;
+      vpY = my - (my - vpY) * f;
       vpScale = Math.max(0.1, Math.min(10, vpScale * f));
       applyVp();
     }
@@ -1430,9 +1563,16 @@
       select: 'Click to select. Drag location pins to reposition.',
       pan: 'Click and drag to pan. Scroll to zoom.',
       place: 'Click map to place the selected location at that position.',
-      draw: 'Select a tracker, then click to add waypoints. Double-click or Enter to finish.',
+      draw: 'Select a tracker, then click to add waypoints. Double-click or Enter to finish. With a path selected, activates Extend mode.',
       delete: 'Click any pin or path to delete it.'
     };
+    function expandSection(hd) {
+      if (hd && hd.classList.contains('collapsed')) {
+        hd.classList.remove('collapsed');
+        hd.nextElementSibling.classList.remove('collapsed');
+      }
+    }
+
     function setTool(t) {
       activeTool = t;
       document.querySelectorAll('.tool-btn').forEach(b => b.classList.remove('active'));
@@ -1440,7 +1580,34 @@
       const area = document.getElementById('mapArea');
       area.className = 'map-area tool-' + t;
       document.getElementById('toolHint').textContent = TOOL_HINTS[t] || '';
-      if (t !== 'draw') { isDrawing = false; drawPts = []; document.getElementById('drawPreview').setAttribute('points', ''); }
+      if (t !== 'draw') {
+        isDrawing = false; drawPts = []; extendingPathId = null;
+        document.getElementById('drawPreview').setAttribute('points', '');
+      }
+      if (t === 'draw') {
+        // Always expand the Trackers sidebar section
+        document.querySelectorAll('.sb-hd').forEach(hd => {
+          if (hd.textContent.trim().startsWith('Trackers')) expandSection(hd);
+        });
+        // If a path is selected, pre-seed drawPts with its last waypoint so we extend it
+        if (selectedPath) {
+          const p = paths.find(p => p.id == selectedPath);
+          if (p) {
+            const wpts = Array.isArray(p.waypoints) ? p.waypoints : JSON.parse(p.waypoints || '[]');
+            if (wpts.length) {
+              extendingPathId = selectedPath;
+              // Auto-select the path's own tracker so the draw guard passes
+              if (p.tracker_id) {
+                activeTracker = p.tracker_id;
+                renderTrackerList();
+              }
+              drawPts = [{ ...wpts[wpts.length - 1] }]; // start from last waypoint
+              isDrawing = true;
+              toast('Extending path — click to add waypoints');
+            }
+          }
+        }
+      }
     }
 
     // ═══════════════════════════════════════════════════════
@@ -1573,7 +1740,7 @@
 
     function mapWheel(e) {
       e.preventDefault();
-      const f = e.deltaY < 0 ? 1.1 : 0.9;
+      const f = e.deltaY < 0 ? 1.05 : 1 / 1.05;
       const rect = document.getElementById('mapArea').getBoundingClientRect();
       const mx = e.clientX - rect.left, my = e.clientY - rect.top;
       vpX = mx - (mx - vpX) * f;
@@ -1610,9 +1777,17 @@
       if (!isDraggingWP) return;
       const p = paths.find(p => p.id == isDraggingWP.pathId);
       if (p) {
+        const wpts = Array.isArray(p.waypoints) ? [...p.waypoints] : JSON.parse(p.waypoints || '[]');
+        const wp = wpts[isDraggingWP.wpIdx];
+        // Re-evaluate snap: if now on a pin, attach locId; if moved off, clear it
+        const snap = snapToPinPct(wp.x, wp.y);
+        wpts[isDraggingWP.wpIdx] = snap
+          ? { ...wp, locId: snap.locId }
+          : { x: wp.x, y: wp.y }; // drop locId when not on a pin
+        p.waypoints = wpts;
         apiFetch(`/api/journey-maps/${mapId}/paths/${p.id}`, {
           method: 'PUT',
-          body: JSON.stringify({ waypoints: p.waypoints, name: p.name, distance_miles: p.distance_miles, notes: p.notes, tracker_id: p.tracker_id })
+          body: JSON.stringify({ waypoints: p.waypoints, name: p.name, notes: p.notes, tracker_id: p.tracker_id })
         }).then(() => renderPaths()).catch(err => toast(err.message));
       }
       isDraggingWP = null;
@@ -1656,7 +1831,7 @@
         });
         placedLocs.push(loc);
         buildLocationSelectors(); // remove newly-pinned from dropdown
-        renderPins(); renderLocList(); renderDistMatrix(); renderDistMatrixSidebar();
+        renderPins(); renderLocList();
         toast(`"${name}" placed`);
       } catch (e) { toast(e.message); }
     }
@@ -1759,30 +1934,337 @@
     // ═══════════════════════════════════════════════════════
     async function finishPath() {
       if (!isDrawing || drawPts.length < 2) {
-        isDrawing = false; drawPts = [];
+        isDrawing = false; drawPts = []; extendingPathId = null;
         document.getElementById('drawPreview').setAttribute('points', '');
         return;
       }
       const tracker = trackers.find(t => t.id == activeTracker);
-      const name = (tracker ? tracker.name + ' — ' : '') + 'Path';
-      // Try to compute distance from placed locations on waypoints
-      const dist = computePathDistance(drawPts);
+      const defaultName = (tracker ? tracker.name + ' — ' : '') + 'Path';
       try {
-        const p = await apiFetch(`/api/journey-maps/${mapId}/paths`, {
-          method: 'POST',
-          body: JSON.stringify({ tracker_id: activeTracker, name, waypoints: drawPts, distance_miles: dist || null })
-        });
-        // Reload paths to get tracker info joined
-        paths = await apiFetch(`/api/journey-maps/${mapId}/paths`);
-        renderPaths(); renderPathList();
-        selectPath(p.id);
-        toast('Path saved — click to edit notes/distance');
+        const { pts: resolvedPts, newLocs } = await ensureWaypointLocations(drawPts);
+
+        if (extendingPathId) {
+          // Extending an existing path — append new waypoints (skip the seeded first point)
+          const existing = paths.find(p => p.id == extendingPathId);
+          const existingWpts = Array.isArray(existing.waypoints)
+            ? existing.waypoints : JSON.parse(existing.waypoints || '[]');
+          const merged = [...existingWpts, ...resolvedPts.slice(1)];
+          await apiFetch(`/api/journey-maps/${mapId}/paths/${extendingPathId}`, {
+            method: 'PUT',
+            body: JSON.stringify({ waypoints: merged, name: existing.name, notes: existing.notes })
+          });
+          paths = await apiFetch(`/api/journey-maps/${mapId}/paths`);
+          renderPaths(); renderPathList();
+          selectPath(extendingPathId);
+          if (newLocs.length) {
+            openNamingModal(newLocs, null /* no path rename when extending */);
+          } else {
+            toast('Path extended');
+          }
+        } else {
+          // New path — ask for name via modal (combined with any new-location naming)
+          const p = await apiFetch(`/api/journey-maps/${mapId}/paths`, {
+            method: 'POST',
+            body: JSON.stringify({ tracker_id: activeTracker, name: defaultName, waypoints: resolvedPts })
+          });
+          paths = await apiFetch(`/api/journey-maps/${mapId}/paths`);
+          renderPaths(); renderPathList();
+          selectPath(p.id);
+          // Always open modal so user can name the path; new locs go in the same modal
+          openNamingModal(newLocs, p);
+        }
       } catch (e) { toast(e.message); }
-      isDrawing = false; drawPts = [];
+      isDrawing = false; drawPts = []; extendingPathId = null;
       document.getElementById('drawPreview').setAttribute('points', '');
     }
 
+    // For each waypoint:
+    //   • If it already has a locId (snapped to an existing pin) → keep it as-is
+    //   • If it sits on top of a placed pin (within snap threshold) → attach that locId
+    //   • Otherwise → create a new campaign_location + journey_map_location and attach the new locId
+    // Returns { pts: resolvedPoints, newLocs: [{ campLocId, mapLocId, index }] }
+    async function ensureWaypointLocations(pts) {
+      const resolved = [];
+      const newLocs = [];   // newly created locs that need a user-supplied name
+      let counter = 1;
+      for (const pt of pts) {
+        if (pt.locId) { resolved.push(pt); continue; }
+
+        const snap = snapToPinPct(pt.x, pt.y);
+        if (snap) { resolved.push({ ...pt, locId: snap.locId }); continue; }
+
+        // New location — use a placeholder name; user will rename via modal
+        const placeholder = `Waypoint ${counter++}`;
+        try {
+          const campLoc = await apiFetch(`/api/campaigns/${campaignId}/locations`, {
+            method: 'POST',
+            body: JSON.stringify({ name: placeholder, description: '' })
+          });
+          const mapLoc = await apiFetch(`/api/journey-maps/${mapId}/locations`, {
+            method: 'POST',
+            body: JSON.stringify({ campaign_location_id: campLoc.id, name: placeholder, x: pt.x, y: pt.y })
+          });
+          campaignLocs.push(campLoc);
+          placedLocs.push(mapLoc);
+          resolved.push({ ...pt, locId: mapLoc.id });
+          newLocs.push({ campLocId: campLoc.id, mapLocId: mapLoc.id, placeholder });
+        } catch (e) {
+          console.warn('Could not create location for waypoint:', e.message);
+          resolved.push(pt);
+        }
+      }
+      buildLocationSelectors();
+      renderPins();
+      renderLocList();
+      return { pts: resolved, newLocs };
+    }
+
+    // ─── Naming modal ────────────────────────────────────────
+    let _namingQueue = [];   // [{ campLocId, mapLocId, placeholder }]
+    let _namingPath = null; // path object to rename, or null when extending
+
+    function openNamingModal(newLocs, pathObj) {
+      _namingQueue = newLocs;
+      _namingPath = pathObj || null;
+      const modal = document.getElementById('namingModal');
+      const form = document.getElementById('namingForm');
+      let html = '';
+      if (_namingPath) {
+        html += `<div class="modal-group">
+          <label>Path Name</label>
+          <input id="nlPathName" value="${esc(_namingPath.name || '')}"
+            onkeydown="if(event.key==='Enter')saveNaming()"
+            style="margin-bottom:4px">
+        </div>`;
+      }
+      html += newLocs.map((loc, i) => `
+        <div class="modal-group" style="${_namingPath || i > 0 ? 'margin-top:10px;padding-top:10px;border-top:1px solid var(--border)' : ''}">
+          <label>New Location ${i + 1} — Name</label>
+          <input id="nlName_${i}" value="${esc(loc.placeholder)}"
+            onkeydown="if(event.key==='Enter')saveNaming()"
+            style="margin-bottom:4px">
+          <label style="margin-top:4px">Description <span style="font-size:10px;text-transform:none;letter-spacing:0;color:var(--text-muted)">(optional)</span></label>
+          <input id="nlDesc_${i}" placeholder="e.g. A ruined tower at the crossroads…"
+            onkeydown="if(event.key==='Enter')saveNaming()">
+        </div>`).join('');
+      // If there's nothing to fill in (extending with no new locs), skip the modal entirely
+      if (!_namingPath && newLocs.length === 0) { toast('Path extended'); return; }
+      form.innerHTML = html;
+      modal.classList.add('open');
+      setTimeout(() => (document.getElementById('nlPathName') || document.getElementById('nlName_0'))?.focus(), 60);
+    }
+
+    async function saveNaming() {
+      const modal = document.getElementById('namingModal');
+      // Rename path if present
+      if (_namingPath) {
+        const newName = (document.getElementById('nlPathName')?.value || '').trim() || _namingPath.name;
+        if (newName !== _namingPath.name) {
+          try {
+            await apiFetch(`/api/journey-maps/${mapId}/paths/${_namingPath.id}`, {
+              method: 'PUT',
+              body: JSON.stringify({ name: newName, waypoints: _namingPath.waypoints, notes: _namingPath.notes })
+            });
+            const local = paths.find(p => p.id == _namingPath.id);
+            if (local) local.name = newName;
+          } catch (e) { toast('Could not rename path: ' + e.message); }
+        }
+      }
+      // Rename auto-created locations
+      for (let i = 0; i < _namingQueue.length; i++) {
+        const { campLocId, mapLocId } = _namingQueue[i];
+        const name = (document.getElementById(`nlName_${i}`)?.value || '').trim() || `Waypoint ${i + 1}`;
+        const desc = (document.getElementById(`nlDesc_${i}`)?.value || '').trim();
+        try {
+          await apiFetch(`/api/campaigns/${campaignId}/locations/${campLocId}`, {
+            method: 'PUT',
+            body: JSON.stringify({ name, description: desc })
+          });
+          const cl = campaignLocs.find(l => l.id == campLocId);
+          if (cl) { cl.name = name; cl.description = desc; }
+          const ml = placedLocs.find(l => l.id == mapLocId);
+          if (ml) ml.name = name;
+        } catch (e) { toast('Could not rename location: ' + e.message); }
+      }
+      modal.classList.remove('open');
+      buildLocationSelectors();
+      renderPins();
+      renderLocList();
+      renderPaths();
+      renderPathList();
+      toast(_namingPath ? 'Path saved' : 'Locations named');
+    }
+
+    // ─── Waypoint ↔ Event linking ─────────────────────────────
+    let _wptModal = { pathId: null, wpIdx: null, allEntries: [], selectedIds: new Set() };
+    let _wptEntryMap = {}; // id → entry
+
+    async function openWaypointModal(pathId, wpIdx) {
+      _wptModal.pathId = pathId;
+      _wptModal.wpIdx = wpIdx;
+
+      const p = paths.find(p => p.id == pathId);
+      const wpts = Array.isArray(p.waypoints) ? p.waypoints : JSON.parse(p.waypoints || '[]');
+      const wp = wpts[wpIdx];
+
+      // Pre-populate from existing links (support both old single and new multi shape)
+      if (wp.eventIds) {
+        _wptModal.selectedIds = new Set(wp.eventIds);
+      } else if (wp.eventId) {
+        _wptModal.selectedIds = new Set([wp.eventId]);
+      } else {
+        _wptModal.selectedIds = new Set();
+      }
+
+      const loc = wp.locId ? placedLocs.find(l => l.id == wp.locId) : null;
+      document.getElementById('wptModalTitle').textContent =
+        `Link events — ${loc ? loc.name : `Point ${wpIdx + 1}`}`;
+
+      // Determine player filter: match by tracker name + type, not player_campaign_id (not persisted in DB)
+      let filterPlayerName = null;
+      if (p.tracker_id) {
+        const tracker = trackers.find(t => t.id == p.tracker_id);
+        if (tracker && tracker.type === 'player') {
+          // tracker.name is set to player_name when auto-created in mergeCampaignPlayerTrackers
+          const cp = campaignPlayers.find(c => c.player_name === tracker.name);
+          if (cp) filterPlayerName = cp.player_name;
+        }
+      }
+
+      try {
+        const rows = await apiFetch(`/api/player-timelines/${campaignId}/all`);
+        const seen = new Set();
+        const all = rows
+          .filter(r => r.entry_id && !seen.has(r.entry_id) && seen.add(r.entry_id))
+          .map(r => ({
+            id: r.entry_id,
+            title: r.title,
+            year: r.year,
+            dayOfYear: r.day_of_year,
+            timelineName: r.timeline_name,
+            playerName: r.player_name
+          }));
+
+        _wptEntryMap = {};
+        all.forEach(e => { _wptEntryMap[e.id] = e; });
+
+        _wptModal.allEntries = filterPlayerName
+          ? all.filter(e => e.playerName === filterPlayerName)
+          : all;
+
+        const note = document.getElementById('wptEvFilterNote');
+        if (filterPlayerName) {
+          note.textContent = `Showing events for: ${filterPlayerName}`;
+          note.style.display = '';
+        } else {
+          note.style.display = 'none';
+        }
+      } catch (_) {
+        _wptModal.allEntries = [];
+        _wptEntryMap = {};
+      }
+
+      document.getElementById('wptEvSearch').value = '';
+      renderWptEventList('');
+      openModal('wptEventModal');
+      setTimeout(() => document.getElementById('wptEvSearch').focus(), 60);
+    }
+
+    function renderWptEventList(q) {
+      const container = document.getElementById('wptEvList');
+      q = q.toLowerCase();
+      const entries = _wptModal.allEntries;
+      const filtered = q
+        ? entries.filter(e =>
+          e.title.toLowerCase().includes(q) ||
+          (e.playerName || '').toLowerCase().includes(q) ||
+          (e.timelineName || '').toLowerCase().includes(q))
+        : entries;
+
+      if (!filtered.length) {
+        container.innerHTML = `<div class="wpt-ev-empty">${entries.length ? 'No matching events.' : 'No timeline events found.'}</div>`;
+        return;
+      }
+
+      const groups = {};
+      filtered.forEach(e => {
+        const key = `${e.playerName} — ${e.timelineName}`;
+        if (!groups[key]) groups[key] = [];
+        groups[key].push(e);
+      });
+
+      const selCount = _wptModal.selectedIds.size;
+      container.innerHTML =
+        `<div style="font-size:10px;color:var(--text-muted);padding:0 2px 6px">Click to toggle. ${selCount ? `<strong style="color:var(--gold)">${selCount} selected</strong>` : 'None selected.'}</div>` +
+        Object.entries(groups).map(([gName, gEntries]) => `
+          <div class="wpt-ev-tl-group">
+            <div class="wpt-ev-tl-name">${esc(gName)}</div>
+            ${gEntries.map(e => `
+              <div class="wpt-ev-entry ${_wptModal.selectedIds.has(e.id) ? 'selected' : ''}"
+                   onclick="toggleWptEvent(${e.id})">
+                <span style="font-size:14px;line-height:1">${_wptModal.selectedIds.has(e.id) ? '☑' : '☐'}</span>
+                <div>
+                  <div class="ev-title">${esc(e.title)}</div>
+                  <div class="ev-date">Year ${e.year ?? '?'}, Day ${e.dayOfYear ?? '?'}</div>
+                </div>
+              </div>`).join('')}
+          </div>`).join('');
+    }
+
+    function toggleWptEvent(id) {
+      if (_wptModal.selectedIds.has(id)) {
+        _wptModal.selectedIds.delete(id);
+      } else {
+        _wptModal.selectedIds.add(id);
+      }
+      renderWptEventList(document.getElementById('wptEvSearch').value);
+    }
+
+    async function saveWaypointEvent() {
+      const { pathId, wpIdx, selectedIds } = _wptModal;
+      if (!selectedIds.size) { toast('Select at least one event'); return; }
+      const p = paths.find(p => p.id == pathId);
+      if (!p) return;
+      const wpts = Array.isArray(p.waypoints) ? [...p.waypoints] : JSON.parse(p.waypoints || '[]');
+      const ids = [...selectedIds];
+      const titles = ids.map(id => _wptEntryMap[id]?.title || '');
+      const { eventId: _a, eventTitle: _b, eventIds: _c, eventTitles: _d, ...rest } = wpts[wpIdx];
+      wpts[wpIdx] = { ...rest, eventIds: ids, eventTitles: titles };
+      try {
+        await apiFetch(`/api/journey-maps/${mapId}/paths/${pathId}`, {
+          method: 'PUT',
+          body: JSON.stringify({ name: p.name, waypoints: wpts, notes: p.notes })
+        });
+        p.waypoints = wpts;
+        closeModal('wptEventModal');
+        setRightPanel('path', p);
+        toast(`${ids.length} event${ids.length > 1 ? 's' : ''} linked to waypoint`);
+      } catch (e) { toast(e.message); }
+    }
+
+    async function unlinkWaypointEvent(pathId, wpIdx, eventId) {
+      const p = paths.find(p => p.id == pathId);
+      if (!p) return;
+      const wpts = Array.isArray(p.waypoints) ? [...p.waypoints] : JSON.parse(p.waypoints || '[]');
+      const wp = wpts[wpIdx];
+      const newIds = (wp.eventIds || []).filter(id => id != eventId);
+      const newTitles = (wp.eventTitles || []).filter((_, i) => (wp.eventIds || [])[i] != eventId);
+      const { eventId: _a, eventTitle: _b, eventIds: _c, eventTitles: _d, ...rest } = wp;
+      wpts[wpIdx] = newIds.length
+        ? { ...rest, eventIds: newIds, eventTitles: newTitles }
+        : { ...rest };
+      try {
+        await apiFetch(`/api/journey-maps/${mapId}/paths/${pathId}`, {
+          method: 'PUT',
+          body: JSON.stringify({ name: p.name, waypoints: wpts, notes: p.notes })
+        });
+        p.waypoints = wpts;
+        setRightPanel('path', p);
+      } catch (e) { toast(e.message); }
+    }
+
     function computePathDistance(pts) {
+      if (pts.length < 2) return { miles: 0, complete: true };
       let total = 0;
       for (let i = 0; i < pts.length - 1; i++) {
         const a = pts[i], b = pts[i + 1];
@@ -1792,8 +2274,10 @@
             (d.from_loc_id == b.locId && d.to_loc_id == a.locId));
           if (d) { total += parseFloat(d.distance_miles); continue; }
         }
+        // This segment is missing a locId or has no distance entry yet
+        return { miles: null, complete: false };
       }
-      return total;
+      return { miles: +total.toFixed(2), complete: true };
     }
 
     function selectPath(id) {
@@ -1816,12 +2300,7 @@
     async function savePathField(pathId, field, value) {
       const p = paths.find(p => p.id == pathId);
       if (!p) return;
-      const payload = {};
-      payload[field] = value;
-      payload.waypoints = p.waypoints;
-      payload.distance_miles = p.distance_miles;
-      payload.notes = p.notes;
-      payload.name = p.name;
+      const payload = { waypoints: p.waypoints, notes: p.notes, name: p.name };
       Object.assign(payload, { [field]: value });
       try {
         const updated = await apiFetch(`/api/journey-maps/${mapId}/paths/${pathId}`, {
@@ -1878,31 +2357,11 @@
         distances.push({ map_id: mapId, from_loc_id: distEdit.fromId, to_loc_id: distEdit.toId, distance_miles: miles });
         distances.push({ map_id: mapId, from_loc_id: distEdit.toId, to_loc_id: distEdit.fromId, distance_miles: miles });
         closeModal('distModal');
-        renderPaths(); // re-render path labels
-        renderDistMatrixSidebar();
+        renderPaths(); // re-render path labels (distance now known)
+        renderDistMatrixModal(); // refresh the full modal if it's open
         if (selectedLoc) setRightPanel('loc', placedLocs.find(l => l.id == selectedLoc));
         toast(`Distance saved: ${miles} mi`);
       } catch (e) { toast(e.message); }
-    }
-
-    function buildDistMatrix() {
-      if (placedLocs.length < 2) return '<div class="rp-empty">Add at least 2 locations to define distances.</div>';
-      let html = '<table class="dist-matrix"><thead><tr><th></th>';
-      placedLocs.forEach(l => { html += `<th title="${esc(l.name)}">${esc(l.name.substring(0, 8))}…</th>`; });
-      html += '</tr></thead><tbody>';
-      placedLocs.forEach(from => {
-        html += `<tr><th>${esc(from.name.substring(0, 8))}…</th>`;
-        placedLocs.forEach(to => {
-          if (from.id == to.id) { html += '<td class="self">—</td>'; return; }
-          const d = distances.find(d =>
-            (d.from_loc_id == from.id && d.to_loc_id == to.id) ||
-            (d.from_loc_id == to.id && d.to_loc_id == from.id));
-          const val = d ? `${d.distance_miles} mi` : '+';
-          html += `<td class="editable" onclick="openDistEdit(${from.id},${to.id})" title="Click to set distance">${val}</td>`;
-        });
-        html += '</tr>';
-      });
-      return html + '</tbody></table>';
     }
 
     // ═══════════════════════════════════════════════════════
@@ -1915,11 +2374,7 @@
       if (!type) {
         head.textContent = 'Details';
         body.innerHTML = `
-      <div class="rp-empty">Select a location or path for details.</div>
-      <div class="info-card" style="margin-top:10px">
-        <h3>📏 Distance Matrix</h3>
-        ${buildDistMatrix()}
-      </div>`;
+      <div class="rp-empty">Select a location or path for details.</div>`;
         return;
       }
 
@@ -1960,16 +2415,32 @@
         const p = data;
         const tracker = trackers.find(t => t.id == p.tracker_id);
         const wpts = Array.isArray(p.waypoints) ? p.waypoints : JSON.parse(p.waypoints || '[]');
-        const dist = p.distance_miles ? parseFloat(p.distance_miles) : null;
+        const distInfo = computePathDistance(wpts);
         head.textContent = '🛤️ ' + (p.name || 'Path');
+        head.innerHTML += ` <button onclick="setTool('draw')"
+          style="float:right;font-size:10px;padding:2px 8px;background:var(--surface3);border:1px solid var(--border2);color:var(--gold);border-radius:2px;cursor:pointer"
+          title="Continue drawing from the last waypoint">+ Extend</button>`;
         const wptRows = wpts.map((wp, i) => {
           const loc = wp.locId ? placedLocs.find(l => l.id == wp.locId) : null;
           const lbl = loc ? `📍 ${loc.name}` : `Point ${i + 1}`;
-          return `<div class="wpt-row">
+          // Support both old single-event and new multi-event shape
+          const ids = wp.eventIds || (wp.eventId ? [wp.eventId] : []);
+          const titles = wp.eventTitles || (wp.eventTitle ? [wp.eventTitle] : []);
+          const chips = ids.map((evId, ei) =>
+            `<span class="wpt-event-chip">🗓 ${esc(titles[ei] || 'Event')}
+               <span class="unlink" onclick="unlinkWaypointEvent(${p.id},${i},${evId})" title="Remove">✕</span>
+             </span>`).join('');
+          return `<div class="wpt-row" style="flex-wrap:wrap">
         <span class="wpt-arrow">${i === 0 ? '⊙' : '→'}</span>
-        <span>${esc(lbl)}</span>
+        <span style="flex:1">${esc(lbl)}</span>
+        <button class="wpt-edit-btn" onclick="openWaypointModal(${p.id},${i})">🗓 ${ids.length ? 'Edit events' : 'Link event'}</button>
+        ${chips ? `<div style="width:100%;padding-left:18px;margin-top:3px;display:flex;flex-wrap:wrap;gap:3px">${chips}</div>` : ''}
       </div>`;
         }).join('');
+
+        const distDisplay = distInfo.complete
+          ? `<span class="info-val">${distInfo.miles} mi</span>`
+          : `<span class="info-val" style="color:var(--text-muted)">?? <span style="font-size:10px;font-style:italic">(set distances in matrix)</span></span>`;
 
         body.innerHTML = `
       <div class="info-card">
@@ -1977,21 +2448,15 @@
         <div class="info-row"><span class="info-lbl">Tracker</span>
           <span class="info-val" style="color:${p.tracker_color || '#c9a84c'}">${esc(p.tracker_name || '—')}</span></div>
         <div class="info-row"><span class="info-lbl">Waypoints</span><span class="info-val">${wpts.length}</span></div>
-        <div class="info-row"><span class="info-lbl">Distance</span>
-          <span class="info-val">
-            <input type="number" value="${dist || ''}" min="0" step="0.1" placeholder="miles"
-              style="width:80px;background:var(--surface3);border:1px solid var(--border2);color:var(--text);padding:2px 5px;border-radius:2px;font-size:12px"
-              onchange="savePathField(${p.id},'distance_miles',parseFloat(this.value)||null)">
-          </span>
-        </div>
+        <div class="info-row"><span class="info-lbl">Distance</span>${distDisplay}</div>
       </div>
-      ${dist ? `
+      ${distInfo.complete ? `
       <div class="info-card">
         <h3>⏱ Travel Times</h3>
         <div class="travel-grid">
-          <div class="travel-badge"><span class="t-icon">🚶</span><div class="t-time">${fmtTime(dist / SPEEDS.walk)}</div><div class="t-lbl">Walking</div></div>
-          <div class="travel-badge"><span class="t-icon">🐎</span><div class="t-time">${fmtTime(dist / SPEEDS.horse)}</div><div class="t-lbl">Horse</div></div>
-          <div class="travel-badge"><span class="t-icon">🦅</span><div class="t-time">${fmtTime(dist / SPEEDS.fly)}</div><div class="t-lbl">Flying</div></div>
+          <div class="travel-badge"><span class="t-icon">🚶</span><div class="t-time">${fmtTime(distInfo.miles / SPEEDS.walk)}</div><div class="t-lbl">Walking</div></div>
+          <div class="travel-badge"><span class="t-icon">🐎</span><div class="t-time">${fmtTime(distInfo.miles / SPEEDS.horse)}</div><div class="t-lbl">Horse</div></div>
+          <div class="travel-badge"><span class="t-icon">🦅</span><div class="t-time">${fmtTime(distInfo.miles / SPEEDS.fly)}</div><div class="t-lbl">Flying</div></div>
         </div>
       </div>` : ''}
       ${wpts.length ? `<div class="info-card"><h3>📍 Waypoints</h3><div class="wpt-list">${wptRows}</div></div>` : ''}
@@ -2018,7 +2483,115 @@
     // ═══════════════════════════════════════════════════════
     // SVG RENDER
     // ═══════════════════════════════════════════════════════
-    function renderAll() { renderPaths(); renderPins(); renderLocList(); renderTrackerList(); renderPathList(); renderDistMatrixSidebar(); }
+    // ── Export / Import ──────────────────────────────────────
+    async function exportMap() {
+      if (!mapId) return;
+      const [locsRes, distsRes, trackRes, pathsRes] = await Promise.all([
+        apiFetch(`/api/journey-maps/${mapId}/locations`),
+        apiFetch(`/api/journey-maps/${mapId}/distances`),
+        apiFetch(`/api/journey-maps/${mapId}/trackers`),
+        apiFetch(`/api/journey-maps/${mapId}/paths`),
+      ]);
+      const mapMeta = maps.find(m => m.id == mapId) || {};
+      const bundle = {
+        version: 1,
+        exported_at: new Date().toISOString(),
+        type: 'journey-map',
+        map: { name: mapMeta.name || 'Map', description: mapMeta.description || '' },
+        locations: locsRes,
+        distances: distsRes,
+        trackers: trackRes,
+        paths: pathsRes,
+        // Note: map background image is not included — re-upload after import
+      };
+      const slug = (mapMeta.name || 'map').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(new Blob([JSON.stringify(bundle, null, 2)], { type: 'application/json' }));
+      a.download = `journey-map-${slug}.json`;
+      a.click(); URL.revokeObjectURL(a.href);
+    }
+
+    async function importMap(input) {
+      if (!campaignId) { toast('Select a campaign first'); input.value = ''; return; }
+      const file = input.files[0];
+      if (!file) return;
+      input.value = '';
+      let bundle;
+      try { bundle = JSON.parse(await file.text()); } catch { toast('Invalid JSON file'); return; }
+      if (bundle.type !== 'journey-map') { toast('Not a journey map export file'); return; }
+
+      const { map: mapMeta, locations = [], distances = [], trackers = [], paths = [] } = bundle;
+
+      try {
+        toast('Importing…');
+
+        // 1 – Create map
+        const newMap = await apiFetch(`/api/campaigns/${campaignId}/journey-maps`, {
+          method: 'POST',
+          body: JSON.stringify({ name: (mapMeta.name || 'Map') + ' (Imported)', description: mapMeta.description || '' })
+        });
+
+        // 2 – Locations: old id → new id map
+        const locIdMap = {};
+        for (const l of locations) {
+          // Each journey_map_location may have a campaign_location_id — create a fresh campaign location too
+          const campLoc = await apiFetch(`/api/campaigns/${campaignId}/locations`, {
+            method: 'POST',
+            body: JSON.stringify({ name: l.name, description: l.description || '' })
+          });
+          const mapLoc = await apiFetch(`/api/journey-maps/${newMap.id}/locations`, {
+            method: 'POST',
+            body: JSON.stringify({ campaign_location_id: campLoc.id, name: l.name, x: l.x, y: l.y })
+          });
+          locIdMap[l.id] = mapLoc.id;
+        }
+
+        // 3 – Trackers: old id → new id map
+        const trackerIdMap = {};
+        for (const t of trackers) {
+          const nt = await apiFetch(`/api/journey-maps/${newMap.id}/trackers`, {
+            method: 'POST',
+            body: JSON.stringify({ name: t.name, type: t.type || 'group', color: t.color })
+          });
+          trackerIdMap[t.id] = nt.id;
+        }
+
+        // 4 – Distances (remap location IDs)
+        for (const d of distances) {
+          const fl = locIdMap[d.from_loc_id], tl = locIdMap[d.to_loc_id];
+          if (!fl || !tl) continue;
+          await apiFetch(`/api/journey-maps/${newMap.id}/distances`, {
+            method: 'PUT',
+            body: JSON.stringify({ from_loc_id: fl, to_loc_id: tl, distance_miles: d.distance_miles })
+          });
+        }
+
+        // 5 – Paths (remap waypoint locIds and tracker_id)
+        for (const p of paths) {
+          const wpts = (Array.isArray(p.waypoints) ? p.waypoints : JSON.parse(p.waypoints || '[]'))
+            .map(w => ({ ...w, locId: w.locId ? (locIdMap[w.locId] || null) : null }));
+          await apiFetch(`/api/journey-maps/${newMap.id}/paths`, {
+            method: 'POST',
+            body: JSON.stringify({
+              name: p.name,
+              notes: p.notes,
+              tracker_id: p.tracker_id ? (trackerIdMap[p.tracker_id] || null) : null,
+              waypoints: wpts,
+            })
+          });
+        }
+
+        // Reload and switch to new map
+        maps = await apiFetch(`/api/campaigns/${campaignId}/journey-maps`);
+        renderMapList();
+        const sel = document.getElementById('mapSel');
+        sel.value = newMap.id;
+        await onMapChange();
+        toast(`Map "${newMap.name}" imported — re-upload the background image if needed`);
+      } catch (e) { toast('Import failed: ' + e.message); }
+    }
+
+    function renderAll() { renderPaths(); renderPins(); renderLocList(); renderTrackerList(); renderPathList(); }
 
     function openDistMatrixModal() {
       renderDistMatrixModal();
@@ -2064,32 +2637,6 @@
       el.innerHTML = html + '</tbody></table>';
     }
 
-    function renderDistMatrixSidebar() {
-      const el = document.getElementById('sbDistMatrix');
-      if (!el) return;
-      if (placedLocs.length < 2) { el.innerHTML = '<div class="hint">Place at least 2 locations.</div>'; return; }
-      let html = '<table class="dist-matrix" style="font-size:10px;width:100%"><thead><tr><th></th>';
-      placedLocs.forEach(l => {
-        const lbl = l.name.length > 6 ? l.name.slice(0, 6) + '…' : l.name;
-        html += `<th title="${esc(l.name)}">${esc(lbl)}</th>`;
-      });
-      html += '</tr></thead><tbody>';
-      placedLocs.forEach(from => {
-        const flbl = from.name.length > 6 ? from.name.slice(0, 6) + '…' : from.name;
-        html += `<tr><th title="${esc(from.name)}">${esc(flbl)}</th>`;
-        placedLocs.forEach(to => {
-          if (from.id === to.id) { html += '<td class="self">—</td>'; return; }
-          const d = distances.find(d =>
-            (d.from_loc_id == from.id && d.to_loc_id == to.id) || (d.from_loc_id == to.id && d.to_loc_id == from.id));
-          const val = d ? `${d.distance_miles}mi` : '<span style="color:var(--gold-dim)">+</span>';
-          html += `<td class="editable" onclick="openDistEdit(${from.id},${to.id})"
-            title="${esc(from.name)} ↔ ${esc(to.name)}">${val}</td>`;
-        });
-        html += '</tr>';
-      });
-      el.innerHTML = html + '</tbody></table>';
-    }
-
     function renderPins() {
       const g = document.getElementById('pinsG');
       g.innerHTML = placedLocs.map(loc => {
@@ -2117,14 +2664,14 @@
         const mid = wpts[Math.floor(wpts.length / 2)];
         const ms = pctToSvg(mid.x, mid.y);
 
-        // Info labels: name + distance + travel times
+        // Info labels: name + distance + travel times (all computed on the fly)
         let labels = '';
-        if (p.distance_miles) {
-          const mi = parseFloat(p.distance_miles);
-          if (p.name) labels += `<text class="path-dist-label" x="${ms.x}" y="${ms.y - 22}" fill="${color}">${esc(p.name)}</text>`;
-          labels += `<text class="path-dist-label" x="${ms.x}" y="${ms.y - 8}">${mi}mi  🚶${fmtTime(mi / SPEEDS.walk)} 🐎${fmtTime(mi / SPEEDS.horse)} 🦅${fmtTime(mi / SPEEDS.fly)}</text>`;
-        } else if (p.name) {
-          labels += `<text class="path-dist-label" x="${ms.x}" y="${ms.y - 10}" fill="${color}">${esc(p.name)}</text>`;
+        const distInfo = computePathDistance(wpts);
+        if (p.name) labels += `<text class="path-dist-label" x="${ms.x}" y="${ms.y - 22}" fill="${color}">${esc(p.name)}</text>`;
+        if (distInfo.complete) {
+          labels += `<text class="path-dist-label" x="${ms.x}" y="${ms.y - 8}">${distInfo.miles}mi  🚶${fmtTime(distInfo.miles / SPEEDS.walk)} 🐎${fmtTime(distInfo.miles / SPEEDS.horse)} 🦅${fmtTime(distInfo.miles / SPEEDS.fly)}</text>`;
+        } else {
+          labels += `<text class="path-dist-label" x="${ms.x}" y="${ms.y - 8}" style="fill:#a09070">??mi</text>`;
         }
 
         // Waypoint drag handles (only for selected path)
@@ -2135,14 +2682,46 @@
             data-path-id="${p.id}" data-wp-idx="${i}" style="cursor:move"/>`;
         }).join('') : '';
 
+        // Build per-segment hover tooltip and midpoint distance labels
+        const segmentLabels = [];
+        const tooltipLines = [p.name || 'Path'];
+        for (let i = 0; i < wpts.length - 1; i++) {
+          const a = wpts[i], b = wpts[i + 1];
+          const aLoc = a.locId ? placedLocs.find(l => l.id == a.locId) : null;
+          const bLoc = b.locId ? placedLocs.find(l => l.id == b.locId) : null;
+          const aName = aLoc ? aLoc.name : `Point ${i + 1}`;
+          const bName = bLoc ? bLoc.name : `Point ${i + 2}`;
+          let segDist = null;
+          if (a.locId && b.locId) {
+            const d = distances.find(d =>
+              (d.from_loc_id == a.locId && d.to_loc_id == b.locId) ||
+              (d.from_loc_id == b.locId && d.to_loc_id == a.locId));
+            if (d) segDist = parseFloat(d.distance_miles);
+          }
+          const distStr = segDist !== null ? `${segDist}mi` : '??';
+          tooltipLines.push(`${aName} → ${bName}: ${distStr}`);
+          // Midpoint of this segment for an inline label (only if > 2 waypoints)
+          if (wpts.length > 2 && segDist !== null) {
+            const sa = pctToSvg(a.x, a.y), sb = pctToSvg(b.x, b.y);
+            segmentLabels.push(`<text class="path-dist-label"
+              x="${(sa.x + sb.x) / 2}" y="${(sa.y + sb.y) / 2 - 6}"
+              style="font-size:9px;fill:var(--text-muted)">${segDist}mi</text>`);
+          }
+        }
+        const tooltipText = tooltipLines.join('&#10;'); // SVG title newline
+
         return `
       <polyline points="${pts}" stroke="transparent" stroke-width="14" fill="none"
-        style="cursor:pointer" data-path-id="${p.id}"/>
+        style="cursor:pointer" data-path-id="${p.id}">
+        <title>${tooltipText}</title>
+      </polyline>
       <polyline points="${pts}" data-path-id="${p.id}"
         class="svg-path-line" stroke="${color}"
         stroke-width="${sel ? 3.5 : 2}" opacity="${sel ? 1 : 0.72}"
-        marker-end="url(#arrowhead)"/>
-      ${labels}${handles}`;
+        marker-end="url(#arrowhead)">
+        <title>${tooltipText}</title>
+      </polyline>
+      ${labels}${segmentLabels.join('')}${handles}`;
       }).join('');
     }
 
@@ -2181,18 +2760,44 @@
     function esc(s) { return (s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
 
     // ─── render distance matrix in right panel ───
-    function renderDistMatrix() {
-      const body = document.getElementById('rpBody');
-      if (selectedLoc || selectedPath) return; // don't overwrite a selection panel
-      setRightPanel(null, null);
-      renderDistMatrixSidebar();
-    }
-
     // ═══════════════════════════════════════════════════════
     // START
     // ═══════════════════════════════════════════════════════
     init();
   </script>
+
+  <!-- NAMING MODAL — rename auto-created waypoint locations -->
+  <div class="modal-bg" id="namingModal">
+    <div class="modal" style="max-width:460px">
+      <h2>✏️ Name Path & Locations</h2>
+      <p style="font-size:12px;color:var(--text-dim);margin-bottom:14px;line-height:1.5">
+        Give the path a name. Any waypoints placed on empty space also need a location name.
+      </p>
+      <div id="namingForm"></div>
+      <div class="modal-foot">
+        <button class="modal-save" onclick="saveNaming()">Save Names</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-bg" id="wptEventModal" style="z-index:115">
+    <div class="modal" style="max-width:480px">
+      <h2 id="wptModalTitle">Link Event to Waypoint</h2>
+      <p style="font-size:12px;color:var(--text-dim);margin-bottom:6px;line-height:1.5">
+        Pick a timeline event to associate with this waypoint.
+      </p>
+      <div id="wptEvFilterNote"
+        style="display:none;font-size:11px;color:var(--gold-dim);margin-bottom:8px;padding:3px 6px;background:var(--surface3);border-radius:2px">
+      </div>
+      <input class="wpt-ev-search" id="wptEvSearch" placeholder="Search events, players, timelines…"
+        oninput="renderWptEventList(this.value)">
+      <div class="wpt-ev-scroll" id="wptEvList"></div>
+      <div class="modal-foot" style="margin-top:12px">
+        <button class="modal-cancel" onclick="closeModal('wptEventModal')">Cancel</button>
+        <button class="modal-save" onclick="saveWaypointEvent()">Link Event</button>
+      </div>
+    </div>
+  </div>
 
   <!-- Distance Matrix Modal -->
   <div class="modal-bg" id="distMatrixModal" style="z-index:90">
