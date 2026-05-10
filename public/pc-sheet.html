@@ -400,6 +400,38 @@
       align-items: flex-start;
     }
 
+    /* ── Relations tab: make the graph fill the full available height ── */
+    #tab-relations.active {
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      /* let the graph scroll internally, not the whole tab */
+    }
+
+    #tab-relations .rel-card {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      margin-bottom: 0;
+    }
+
+    #tab-relations .rel-card .card-body {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      padding-bottom: 8px;
+    }
+
+    #tab-relations .rel-graph-container {
+      flex: 1;
+      min-height: 0;
+      /* critical: lets flex children shrink below content size */
+      align-items: stretch;
+      margin-bottom: 0;
+    }
+
     .rel-legend {
       width: 118px;
       flex-shrink: 0;
@@ -449,20 +481,57 @@
       border: 1px solid var(--border);
       border-radius: 2px;
       overflow: hidden;
-      min-height: 180px;
+      min-height: 220px;
+      position: relative;
     }
 
     #relCanvas {
       display: block;
       width: 100%;
-      overflow-x: auto;
+      height: 100%;
     }
 
     #relCanvas svg {
       display: block;
       width: 100%;
-      height: auto;
-      min-height: 160px;
+      height: 100%;
+      cursor: grab;
+      user-select: none;
+    }
+
+    #relCanvas svg.dragging {
+      cursor: grabbing;
+    }
+
+    .graph-zoom-controls {
+      position: absolute;
+      bottom: 8px;
+      right: 8px;
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+      z-index: 10;
+    }
+
+    .graph-zoom-controls button {
+      width: 24px;
+      height: 24px;
+      background: var(--surface);
+      border: 1px solid var(--border2);
+      border-radius: 2px;
+      color: var(--gold);
+      font-size: 13px;
+      line-height: 1;
+      cursor: pointer;
+      padding: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .graph-zoom-controls button:hover {
+      background: var(--surface2);
+      border-color: var(--gold-dim);
     }
 
     /* Graph node interactions */
@@ -912,7 +981,7 @@
     <!-- TAB: Relationships -->
     <div class="tab-content" id="tab-relations">
       <div id="relMsg"></div>
-      <div class="card">
+      <div class="card rel-card">
         <div class="card-head">🌳 Family Tree & Relationship Matrix</div>
         <div class="card-body">
           <div class="rel-list" id="relList"></div>
@@ -978,7 +1047,7 @@
   <!-- Relation Modal -->
   <div class="modal-overlay" id="relModal">
     <div class="modal">
-      <div class="modal-title">Add Relation</div>
+      <div class="modal-title" id="relModalTitle">Add Relation</div>
       <div class="form-group"><label>Name</label><input type="text" id="relName" placeholder="e.g., Elara Moonwhisper">
       </div>
       <div class="form-row">
@@ -998,11 +1067,36 @@
             <option value="Other">Other</option>
           </select>
         </div>
+        <div class="form-group">
+          <label>Status <span style="color:var(--text-dim);font-size:11px">— optional</span></label>
+          <input type="text" id="relStatus" list="relStatusList" placeholder="Alive, Dead, Missing…">
+          <datalist id="relStatusList">
+            <option value="Alive">
+            <option value="Dead">
+            <option value="Deceased">
+            <option value="Missing">
+            <option value="Unknown">
+          </datalist>
+        </div>
       </div>
       <div class="form-group"><label>Link / Reference (optional)</label><input type="text" id="relLink"
           placeholder="URL or note"></div>
+      <div class="form-group">
+        <label>Child of (optional) <span style="color:var(--text-dim);font-size:11px">— e.g. "Father's
+            Mentor"</span></label>
+        <select id="relParent">
+          <option value="">— Top-level (no parent) —</option>
+        </select>
+      </div>
+      <div class="form-group" id="relDmOnlyRow" style="display:none">
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+          <input type="checkbox" id="relDmOnly" style="width:auto;margin:0">
+          <span>🔒 Hidden from player <span style="color:var(--text-dim);font-size:11px">(DM only — won't appear on the
+              player's sheet or timelines)</span></span>
+        </label>
+      </div>
       <div class="btn-row">
-        <button class="btn" onclick="submitRelation()">Add</button>
+        <button class="btn" id="relSubmitBtn" onclick="submitRelation()">Add</button>
         <button class="btn danger" onclick="closeRelModal()">Cancel</button>
       </div>
     </div>
@@ -1373,12 +1467,69 @@
       }
 
       const ORDER = ['Grandparent', 'Parent', 'Sibling', 'Child', 'Grandchild', 'Mentor', 'Ally', 'Friend', 'Other', 'Rival', 'Enemy'];
-      const sorted = [...relationships].sort((a, b) => {
+      const TYPE_ICON = {
+        Grandparent: '🧓', Parent: '👨‍👩‍👧', Sibling: '👫', Child: '👶', Grandchild: '🌱',
+        Mentor: '🎓', Friend: '🤝', Ally: '🛡️', Rival: '🗡️', Enemy: '⚔️', Other: '👤'
+      };
+
+      // Build children lookup
+      const childrenOf = {};
+      relationships.forEach(r => {
+        if (r.parent_id) {
+          if (!childrenOf[r.parent_id]) childrenOf[r.parent_id] = [];
+          childrenOf[r.parent_id].push(r);
+        }
+      });
+
+      // Render a single chip
+      function relChip(r, isChild) {
+        let linkHtml = '';
+        if (r.link) {
+          const lt = detectLinkType(r.link);
+          if (lt === 'image') {
+            const safe = escAttr(r.link);
+            const tip = escAttr('🖼 Click to view image\n' + r.link.substring(0, 60) + (r.link.length > 60 ? '…' : ''));
+            linkHtml = `<span class="link-badge link-badge-img" data-tip="${tip}" onclick="openImagePopup('${safe}')">🖼 Image</span>`;
+          } else if (lt === 'url') {
+            const safe = escAttr(r.link);
+            const tip = escAttr(r.link.length > 55 ? r.link.substring(0, 55) + '…' : r.link);
+            linkHtml = `<a class="link-badge" href="${escHtml(r.link)}" target="_blank" data-tip="${tip}">↗ Link</a>`;
+          }
+        }
+        const isDMCreated = r.created_by_role === 'dm';
+        const canDelete = isDMorAdmin() || !isDMCreated;
+        const canEdit = isDMorAdmin() || !isDMCreated;
+        const canToggleVis = isDMorAdmin() && isDMCreated;
+        const childIndent = isChild ? 'margin-left:18px;margin-top:4px;' : '';
+        const chipStyle = (r.is_dm_only ? 'opacity:0.75;border-style:dashed;' : '') + childIndent;
+        // Status badge
+        const statusLabel = r.status_label || '';
+        const statusIcon = statusLabel.toLowerCase() === 'alive' ? '🟢'
+          : (statusLabel.toLowerCase() === 'dead' || statusLabel.toLowerCase() === 'deceased') ? '💀'
+            : statusLabel ? '🏷️' : '';
+        const statusBadge = statusLabel
+          ? `<span style="font-size:9px;background:rgba(255,255,255,.07);border-radius:3px;padding:1px 5px;color:var(--text-dim);margin-left:4px">${statusIcon} ${escHtml(statusLabel)}</span>`
+          : '';
+        return `
+          <div class="rel-chip" style="${chipStyle}">
+            ${isChild ? '<span style="font-size:10px;color:var(--text-dim);margin-right:4px">↳</span>' : ''}
+            <strong>${escHtml(r.name)}</strong>
+            ${r.is_dm_only ? '<span style="font-size:10px;color:var(--text-dim);background:var(--surface2);border:1px solid var(--border);border-radius:2px;padding:1px 5px;margin-left:4px" title="Hidden from player">🔒 DM only</span>' : ''}
+            ${statusBadge}
+            ${linkHtml}
+            ${canToggleVis ? `<button class="btn sm" onclick="toggleRelVisibility(${r.id})" title="${r.is_dm_only ? 'Make visible to player' : 'Hide from player'}" style="margin-left:4px;font-size:10px;padding:1px 6px">${r.is_dm_only ? '👁 Unhide' : '🔒 Hide'}</button>` : ''}
+            ${canEdit ? `<button class="btn sm" onclick="openRelModal(${r.id})" title="Edit relation" style="margin-left:4px;font-size:10px;padding:1px 6px">✏️</button>` : ''}
+            ${canDelete ? `<button class="btn sm danger" onclick="deleteRelation(${r.id})" style="margin-left:auto">×</button>` : ''}
+          </div>`;
+      }
+
+      // Group top-level rels by type
+      const topLevel = relationships.filter(r => !r.parent_id);
+      const sorted = [...topLevel].sort((a, b) => {
         const ai = ORDER.indexOf(a.relation_type) === -1 ? 99 : ORDER.indexOf(a.relation_type);
         const bi = ORDER.indexOf(b.relation_type) === -1 ? 99 : ORDER.indexOf(b.relation_type);
         return ai !== bi ? ai - bi : (a.name || '').localeCompare(b.name || '');
       });
-
       const groups = {};
       sorted.forEach(r => {
         const t = r.relation_type || 'Other';
@@ -1386,38 +1537,14 @@
         groups[t].push(r);
       });
 
-      const TYPE_ICON = {
-        Grandparent: '🧓', Parent: '👨‍👩‍👧', Sibling: '👫', Child: '👶', Grandchild: '🌱',
-        Mentor: '🎓', Friend: '🤝', Ally: '🛡️', Rival: '🗡️', Enemy: '⚔️', Other: '👤'
-      };
-
       list.innerHTML = Object.entries(groups).map(([type, rels]) => `
         <div class="rel-type-group">
           <div class="rel-type-label">${TYPE_ICON[type] || '👤'} ${type}</div>
           <div class="rel-list" style="margin-bottom:0">
-            ${rels.map(r => {
-        let linkHtml = '';
-        if (r.link) {
-          const lt = detectLinkType(r.link);
-          if (lt === 'image') {
-            const safe = escAttr(r.link);
-            const tip = escAttr('🖼 Click to view image\n' + r.link.substring(0, 60) + (r.link.length > 60 ? '…' : ''));
-            linkHtml = `<span class="link-badge link-badge-img" data-tip="${tip}"
-                    onclick="openImagePopup('${safe}')">🖼 Image</span>`;
-          } else if (lt === 'url') {
-            const safe = escAttr(r.link);
-            const tip = escAttr(r.link.length > 55 ? r.link.substring(0, 55) + '…' : r.link);
-            linkHtml = `<a class="link-badge" href="${escHtml(r.link)}" target="_blank"
-                    data-tip="${tip}">↗ Link</a>`;
-          }
-        }
-        return `
-              <div class="rel-chip">
-                <strong>${escHtml(r.name)}</strong>
-                ${linkHtml}
-                <button class="btn sm danger" onclick="deleteRelation(${r.id})" style="margin-left:auto">×</button>
-              </div>`;
-      }).join('')}
+            ${rels.map(r =>
+        relChip(r, false) +
+        (childrenOf[r.id] || []).map(c => relChip(c, true)).join('')
+      ).join('')}
           </div>
         </div>`).join('');
     }
@@ -1469,9 +1596,11 @@
         Rival: '#d860d8', Enemy: '#d85868', Other: '#c0b888'
       };
 
-      // ── Split into family / social ──
-      const family = relationships.filter(r => FAMILY_TYPES.has(r.relation_type));
-      const social = relationships.filter(r => !FAMILY_TYPES.has(r.relation_type));
+      // ── Split into family / social, separating top-level from children ──
+      const family = relationships.filter(r => FAMILY_TYPES.has(r.relation_type) && !r.parent_id);
+      const famChildren = relationships.filter(r => FAMILY_TYPES.has(r.relation_type) && r.parent_id);
+      const social = relationships.filter(r => !FAMILY_TYPES.has(r.relation_type) && !r.parent_id);
+      const socChildren = relationships.filter(r => !FAMILY_TYPES.has(r.relation_type) && r.parent_id);
 
       // ── Position family nodes by tier ──
       const byTier = {};
@@ -1487,14 +1616,12 @@
         const y = t * TH;
         const n = nodes.length;
         if (t === 0) {
-          // Siblings: alternate left/right around Self at X=0
           nodes.forEach((r, i) => {
             const sign = (i % 2 === 0) ? -1 : 1;
             const dist = (Math.floor(i / 2) + 1) * HS;
             famNodes.push({ r, x: sign * dist, y: 0 });
           });
         } else {
-          // All other tiers: spread horizontally centred on X=0
           const startX = -(n - 1) * HS / 2;
           nodes.forEach((r, i) => {
             famNodes.push({ r, x: startX + i * HS, y });
@@ -1503,8 +1630,6 @@
       });
 
       // ── Position social nodes: fan to the RIGHT ──
-      // Anchor the fan from Self (0,0), pointing rightward
-      // Offset so the fan doesn't overlap the family tree
       const famMaxAbsX = famNodes.length ? Math.max(...famNodes.map(p => Math.abs(p.x))) : 0;
       const famAnchorX = famMaxAbsX > 0 ? famMaxAbsX + NR + 28 : SR + 28;
 
@@ -1522,8 +1647,39 @@
         });
       }
 
+      // ── Position child nodes near their parent ──
+      // Build a temporary posById from top-level nodes to anchor child placement
+      const tempPosById = {};
+      [...famNodes, ...socNodes].forEach(n => { tempPosById[n.r.id] = { x: n.x, y: n.y }; });
+
+      const childNodes = [];
+      const CHILD_R = 68; // orbit radius around parent
+      // Group children by parent so we can spread siblings of the same parent evenly
+      const childrenByParent = {};
+      [...famChildren, ...socChildren].forEach(r => {
+        if (!childrenByParent[r.parent_id]) childrenByParent[r.parent_id] = [];
+        childrenByParent[r.parent_id].push(r);
+      });
+      Object.entries(childrenByParent).forEach(([parentIdStr, children]) => {
+        const parentId = parseInt(parentIdStr);
+        const parentPos = tempPosById[parentId];
+        if (!parentPos) return; // orphaned child — skip
+        // Direction from Self(0,0) → parent, so children fan away from centre
+        const baseAngle = Math.atan2(parentPos.y, parentPos.x);
+        const spread = Math.PI / 5; // 36° total spread per child group
+        const step = children.length === 1 ? 0 : spread / (children.length - 1);
+        children.forEach((r, i) => {
+          const angle = children.length === 1 ? baseAngle : baseAngle - spread / 2 + i * step;
+          childNodes.push({
+            r,
+            x: parentPos.x + CHILD_R * Math.cos(angle),
+            y: parentPos.y + CHILD_R * Math.sin(angle)
+          });
+        });
+      });
+
       // ── Compute viewBox ──
-      const allNodes = [...famNodes, ...socNodes];
+      const allNodes = [...famNodes, ...socNodes, ...childNodes];
       const xs = allNodes.map(n => n.x);
       const ys = allNodes.map(n => n.y);
       const minX = (xs.length ? Math.min(...xs) : -SR) - NR - PAD;
@@ -1606,6 +1762,27 @@
           stroke="${ring}" stroke-width="1.1" opacity="0.45"/>`;
       });
 
+      // ── Build child edges (from parent node edge → child node edge) ──
+      // Build full posById now that childNodes are positioned
+      const posById = {};
+      [...famNodes, ...socNodes, ...childNodes].forEach(n => { posById[n.r.id] = { x: n.x, y: n.y }; });
+
+      let childEdges = '';
+      childNodes.forEach(({ r, x, y }) => {
+        const parentPos = posById[r.parent_id];
+        if (!parentPos) return;
+        const ring = RING[r.relation_type] || '#605840';
+        const dx = x - parentPos.x;
+        const dy = y - parentPos.y;
+        const len = Math.sqrt(dx * dx + dy * dy) || 1;
+        const sx = parentPos.x + (dx / len) * NR;
+        const sy = parentPos.y + (dy / len) * NR;
+        const ex = x - (dx / len) * NR;
+        const ey = y - (dy / len) * NR;
+        childEdges += `<line x1="${sx}" y1="${sy}" x2="${ex}" y2="${ey}"
+          stroke="${ring}" stroke-width="1.1" stroke-dasharray="4 2" opacity="0.5"/>`;
+      });
+
       // ── Section separators (subtle background bands for family tiers) ──
       let bands = '';
       Object.entries(byTier).forEach(([tierStr, nodes]) => {
@@ -1648,18 +1825,85 @@
           fill="#c9a84c" font-family="Cinzel,Georgia,serif" font-size="10" font-weight="bold"
           paint-order="stroke" stroke="#4a3010" stroke-width="2.5">${escHtml(selfName)}</text>`;
 
-      // ── Assemble SVG ──
-      wrap.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg"
-        viewBox="${minX} ${minY} ${VW} ${VH}"
-        style="width:100%;height:auto;display:block;min-height:160px;max-height:540px">
-        ${bands}
-        ${divider}
-        ${famEdges}
-        ${socEdges}
-        ${[...famNodes, ...socNodes].map(nodeEl).join('')}
-        ${selfEl}
-        ${sectionLabels}
-      </svg>`;
+      // ── Assemble SVG with pan/zoom ──
+      // Store the "fit" viewBox so we can reset to it
+      const fitVB = { x: minX, y: minY, w: VW, h: VH };
+
+      wrap.innerHTML = `
+        <svg id="relSvg" xmlns="http://www.w3.org/2000/svg"
+          viewBox="${minX} ${minY} ${VW} ${VH}">
+          ${bands}
+          ${divider}
+          ${famEdges}
+          ${socEdges}
+          ${childEdges}
+          ${[...famNodes, ...socNodes, ...childNodes].map(nodeEl).join('')}
+          ${selfEl}
+          ${sectionLabels}
+        </svg>
+        <div class="graph-zoom-controls">
+          <button id="relZoomIn"  title="Zoom in">+</button>
+          <button id="relZoomOut" title="Zoom out">−</button>
+          <button id="relFit"     title="Fit to screen" style="font-size:9px">⤢</button>
+        </div>`;
+
+      // ── Pan / zoom logic ──
+      const svg = wrap.querySelector('#relSvg');
+      let vb = { ...fitVB };
+
+      function setVB() {
+        svg.setAttribute('viewBox', `${vb.x} ${vb.y} ${vb.w} ${vb.h}`);
+      }
+
+      function zoomAround(cx, cy, factor) {
+        // cx/cy are in SVG user-space coordinates
+        vb.x = cx - (cx - vb.x) * factor;
+        vb.y = cy - (cy - vb.y) * factor;
+        vb.w *= factor;
+        vb.h *= factor;
+        setVB();
+      }
+
+      function svgPoint(clientX, clientY) {
+        const rect = svg.getBoundingClientRect();
+        return {
+          x: vb.x + (clientX - rect.left) / rect.width * vb.w,
+          y: vb.y + (clientY - rect.top) / rect.height * vb.h
+        };
+      }
+
+      // Wheel zoom
+      svg.addEventListener('wheel', e => {
+        e.preventDefault();
+        const factor = e.deltaY < 0 ? 0.85 : 1.18;
+        const p = svgPoint(e.clientX, e.clientY);
+        zoomAround(p.x, p.y, factor);
+      }, { passive: false });
+
+      // Drag pan
+      let drag = null;
+      svg.addEventListener('pointerdown', e => {
+        if (e.button !== 0) return;
+        drag = { startX: e.clientX, startY: e.clientY, vbx: vb.x, vby: vb.y };
+        svg.classList.add('dragging');
+        svg.setPointerCapture(e.pointerId);
+      });
+      svg.addEventListener('pointermove', e => {
+        if (!drag) return;
+        const rect = svg.getBoundingClientRect();
+        const scaleX = vb.w / rect.width;
+        const scaleY = vb.h / rect.height;
+        vb.x = drag.vbx - (e.clientX - drag.startX) * scaleX;
+        vb.y = drag.vby - (e.clientY - drag.startY) * scaleY;
+        setVB();
+      });
+      svg.addEventListener('pointerup', () => { drag = null; svg.classList.remove('dragging'); });
+      svg.addEventListener('pointerleave', () => { drag = null; svg.classList.remove('dragging'); });
+
+      // Buttons
+      wrap.querySelector('#relZoomIn').addEventListener('click', () => zoomAround(vb.x + vb.w / 2, vb.y + vb.h / 2, 0.75));
+      wrap.querySelector('#relZoomOut').addEventListener('click', () => zoomAround(vb.x + vb.w / 2, vb.y + vb.h / 2, 1.33));
+      wrap.querySelector('#relFit').addEventListener('click', () => { vb = { ...fitVB }; setVB(); });
 
       // ── Legend ──
       if (legendEl) {
@@ -1688,26 +1932,87 @@
       document.getElementById('imgPopupImg').src = '';
     }
 
-    function openRelModal() { document.getElementById('relModal').classList.add('active'); document.getElementById('relName').focus(); }
-    function closeRelModal() { document.getElementById('relModal').classList.remove('active'); }
+    let _editRelId = null; // null = add mode, number = edit mode
+
+    function openRelModal(editRelId) {
+      _editRelId = editRelId || null;
+      const isEdit = !!_editRelId;
+      // Populate parent selector — exclude the edited entry itself to avoid circular parent
+      const parentSel = document.getElementById('relParent');
+      const topLevel = relationships.filter(r => !r.parent_id && r.id !== _editRelId);
+      parentSel.innerHTML = '<option value="">— Top-level (no parent) —</option>' +
+        topLevel.map(r => `<option value="${r.id}">${escHtml(r.relation_type ? r.relation_type + ': ' : '') + escHtml(r.name)}</option>`).join('');
+      document.getElementById('relDmOnlyRow').style.display = isDMorAdmin() ? '' : 'none';
+
+      if (isEdit) {
+        // Pre-fill fields from the existing relationship
+        const r = relationships.find(rel => rel.id === _editRelId);
+        if (!r) return;
+        document.getElementById('relModalTitle').textContent = '✏️ Edit Relation';
+        document.getElementById('relSubmitBtn').textContent = 'Save';
+        document.getElementById('relName').value = r.name || '';
+        document.getElementById('relType').value = r.relation_type || 'Other';
+        document.getElementById('relStatus').value = r.status_label || '';
+        document.getElementById('relLink').value = r.link || '';
+        document.getElementById('relParent').value = r.parent_id || '';
+        if (isDMorAdmin()) document.getElementById('relDmOnly').checked = !!r.is_dm_only;
+      } else {
+        document.getElementById('relModalTitle').textContent = 'Add Relation';
+        document.getElementById('relSubmitBtn').textContent = 'Add';
+        document.getElementById('relName').value = '';
+        document.getElementById('relType').value = 'Friend';
+        document.getElementById('relStatus').value = '';
+        document.getElementById('relLink').value = '';
+        document.getElementById('relParent').value = '';
+        document.getElementById('relDmOnly').checked = false;
+      }
+      document.getElementById('relModal').classList.add('active');
+      document.getElementById('relName').focus();
+    }
+    function closeRelModal() {
+      document.getElementById('relModal').classList.remove('active');
+      _editRelId = null;
+    }
 
     async function submitRelation() {
       const name = document.getElementById('relName').value.trim();
       if (!name) return;
       const rel_type = document.getElementById('relType').value;
+      const status_label = document.getElementById('relStatus').value.trim() || null;
       const FAMILY_TYPES = ['Grandparent', 'Parent', 'Sibling', 'Child', 'Grandchild'];
       const is_family = FAMILY_TYPES.includes(rel_type);
+      const is_dm_only = isDMorAdmin() && document.getElementById('relDmOnly').checked;
+      const parent_id = parseInt(document.getElementById('relParent').value) || null;
+      const link = document.getElementById('relLink').value;
+
       try {
-        const res = await fetch(`/api/pc/${currentPlayerId}/relationships`, {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ name, relation_type: rel_type, link: document.getElementById('relLink').value, is_family })
-        });
-        if (res.ok) {
-          relationships.push(await res.json());
-          renderRelList(); renderRelGraphIfVisible(); closeRelModal();
-          document.getElementById('relName').value = '';
-          document.getElementById('relLink').value = '';
-          showMsg('relMsg', '✓ Relation added', 'ok');
+        if (_editRelId) {
+          // Edit mode — PATCH only the editable fields
+          const res = await fetch(`/api/pc/${currentPlayerId}/relationships/${_editRelId}`, {
+            method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ relation_type: rel_type, status_label, link, parent_id, name })
+          });
+          if (res.ok) {
+            const updated = await res.json();
+            const idx = relationships.findIndex(r => r.id === _editRelId);
+            if (idx !== -1) relationships[idx] = updated;
+            renderRelList(); renderRelGraphIfVisible(); closeRelModal();
+            showMsg('relMsg', '✓ Relation updated', 'ok');
+          } else {
+            const e = await res.json();
+            showMsg('relMsg', '✗ ' + (e.error || 'Update failed'), 'err');
+          }
+        } else {
+          // Add mode — POST
+          const res = await fetch(`/api/pc/${currentPlayerId}/relationships`, {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name, relation_type: rel_type, link, is_family, is_dm_only, parent_id, status_label })
+          });
+          if (res.ok) {
+            relationships.push(await res.json());
+            renderRelList(); renderRelGraphIfVisible(); closeRelModal();
+            showMsg('relMsg', '✓ Relation added', 'ok');
+          }
         }
       } catch (e) { showMsg('relMsg', '✗ ' + e.message, 'err'); }
     }
@@ -1717,6 +2022,18 @@
       await fetch(`/api/pc/${currentPlayerId}/relationships/${relId}`, { method: 'DELETE' });
       relationships = relationships.filter(r => r.id !== relId);
       renderRelList(); renderRelGraphIfVisible();
+    }
+
+    async function toggleRelVisibility(relId) {
+      try {
+        const res = await fetch(`/api/pc/${currentPlayerId}/relationships/${relId}/visibility`, { method: 'PATCH' });
+        if (!res.ok) { const e = await res.json(); showMsg('relMsg', '✗ ' + e.error, 'err'); return; }
+        const { is_dm_only } = await res.json();
+        const rel = relationships.find(r => r.id === relId);
+        if (rel) rel.is_dm_only = is_dm_only;
+        renderRelList(); renderRelGraphIfVisible();
+        showMsg('relMsg', is_dm_only ? '🔒 Relationship hidden from player' : '👁 Relationship now visible to player', 'ok');
+      } catch (e) { showMsg('relMsg', '✗ ' + e.message, 'err'); }
     }
 
     // ── DM Notes ──
@@ -1970,7 +2287,7 @@
     // ── Enter key handlers ──
     document.addEventListener('keydown', e => {
       if (e.key !== 'Enter') return;
-      if (e.target.id === 'relName' || e.target.id === 'relLink') submitRelation();
+      if (e.target.id === 'relName' || e.target.id === 'relLink' || e.target.id === 'relStatus') submitRelation();
       if (e.target.id === 'dmNoteContent' && e.ctrlKey) addDmNote(); // Ctrl+Enter for textarea
     });
 

@@ -2,1317 +2,2039 @@
 <html lang="en">
 
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>🏰 Manage Campaigns</title>
-    <link
-        href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700&family=Crimson+Text:ital,wght@0,400;1,400&display=swap"
-        rel="stylesheet">
-    <script src="/header-component.js"></script>
-    <style>
-        *,
-        *::before,
-        *::after {
-            box-sizing: border-box;
-            margin: 0;
-            padding: 0
-        }
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>🏰 Manage Campaigns</title>
+  <link
+    href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700&family=Crimson+Text:ital,wght@0,400;1,400&display=swap"
+    rel="stylesheet">
+  <script src="/header-component.js"></script>
+  <style>
+    *,
+    *::before,
+    *::after {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0
+    }
 
-        :root {
-            --bg: #13100b;
-            --surface: #1e1810;
-            --surface2: #272015;
-            --surface3: #30281a;
-            --border: #3d3220;
-            --border2: #554428;
-            --gold: #c9a84c;
-            --gold-dim: #7a6030;
-            --text: #e8dcc0;
-            --text-dim: #a09070;
-            --red: #8b3a3a;
-            --red-hover: #a83a3a;
-            --fd: 'Cinzel', 'Georgia', serif;
-            --fb: 'Crimson Text', 'Georgia', serif;
-        }
+    :root {
+      --bg: #13100b;
+      --surface: #1e1810;
+      --surface2: #272015;
+      --surface3: #30281a;
+      --border: #3d3220;
+      --border2: #554428;
+      --gold: #c9a84c;
+      --gold-dim: #7a6030;
+      --gold-glow: rgba(201, 168, 76, .12);
+      --text: #e8dcc0;
+      --text-dim: #a09070;
+      --text-muted: #6a5a40;
+      --red: #8b3a3a;
+      --red-hover: #a83a3a;
+      --green: #1f3d1a;
+      --green-t: #9fd49f;
+      --fd: 'Cinzel', 'Georgia', serif;
+      --fb: 'Crimson Text', 'Georgia', serif;
+    }
 
-        html,
-        body {
-            height: 100%;
-            overflow: hidden
-        }
+    html,
+    body {
+      height: 100%;
+      overflow: hidden
+    }
 
-        body {
-            font-family: var(--fb);
-            background: var(--bg);
-            color: var(--text);
-            font-size: 15px;
-            display: flex;
-            flex-direction: column
-        }
+    body {
+      font-family: var(--fb);
+      background: var(--bg);
+      color: var(--text);
+      font-size: 15px;
+      display: flex;
+      flex-direction: column
+    }
 
-        /* Header */
-        .app-header {
-            background: var(--surface);
-            border-bottom: 2px solid var(--gold-dim);
-            padding: 7px 14px;
-            display: flex;
-            align-items: center;
-            gap: 10px;
-            flex-shrink: 0;
-            box-shadow: 0 2px 12px rgba(0, 0, 0, .5)
-        }
+    .app-header {
+      background: var(--surface);
+      border-bottom: 2px solid var(--gold-dim);
+      padding: 7px 14px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-shrink: 0;
+      box-shadow: 0 2px 12px rgba(0, 0, 0, .5)
+    }
 
-        .app-title {
-            font-family: var(--fd);
-            font-size: .95rem;
-            color: var(--gold);
-            letter-spacing: .08em
-        }
+    .app-title {
+      font-family: var(--fd);
+      font-size: .95rem;
+      color: var(--gold);
+      letter-spacing: .08em
+    }
 
-        .hdr-r {
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            margin-left: auto
-        }
+    .hdr-r {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-left: auto
+    }
 
-        .back-btn {
-            width: auto;
-            background: var(--gold-dim);
-            color: var(--text);
-            border: none;
-            padding: 6px 12px;
-            border-radius: 2px;
-            font-family: var(--fd);
-            font-size: .7rem;
-            letter-spacing: .06em;
-            text-transform: uppercase;
-            cursor: pointer;
-            transition: background .15s
-        }
+    .hdr-btn {
+      background: var(--gold-dim);
+      color: var(--text);
+      border: none;
+      padding: 6px 12px;
+      border-radius: 2px;
+      font-family: var(--fd);
+      font-size: .68rem;
+      letter-spacing: .06em;
+      text-transform: uppercase;
+      cursor: pointer;
+      transition: background .15s
+    }
 
-        .back-btn:hover {
-            background: var(--gold);
-            color: var(--bg)
-        }
+    .hdr-btn:hover {
+      background: var(--gold);
+      color: var(--bg)
+    }
 
-        /* Layout */
-        .container {
-            flex: 1;
-            overflow: hidden;
-            display: grid;
-            grid-template-columns: 300px 1fr;
-            gap: 0
-        }
+    .layout {
+      flex: 1;
+      display: grid;
+      grid-template-columns: 280px 1fr;
+      overflow: hidden
+    }
 
-        .panel {
-            background: var(--surface);
-            border-right: 1px solid var(--border);
-            display: flex;
-            flex-direction: column;
-            overflow: hidden
-        }
+    .sidebar {
+      background: var(--surface);
+      border-right: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden
+    }
 
-        .panel-head {
-            background: var(--surface2);
-            border-bottom: 1px solid var(--border);
-            padding: 10px 14px;
-            font-family: var(--fd);
-            font-size: .75rem;
-            color: var(--gold);
-            letter-spacing: .08em;
-            text-transform: uppercase;
-            flex-shrink: 0
-        }
+    .sb-head {
+      background: var(--surface2);
+      border-bottom: 1px solid var(--border);
+      padding: 10px 14px;
+      font-family: var(--fd);
+      font-size: .72rem;
+      color: var(--gold);
+      letter-spacing: .08em;
+      text-transform: uppercase;
+      flex-shrink: 0
+    }
 
-        .panel-body {
-            flex: 1;
-            overflow-y: auto;
-            padding: 14px
-        }
+    .sb-body {
+      flex: 1;
+      overflow-y: auto;
+      padding: 12px
+    }
 
-        .detail-panel {
-            display: flex;
-            flex-direction: column;
-            overflow: hidden
-        }
+    .c-item {
+      padding: 9px 12px;
+      border-bottom: 1px solid var(--border);
+      cursor: pointer;
+      transition: background .12s
+    }
 
-        .detail-head {
-            background: var(--surface2);
-            border-bottom: 1px solid var(--border);
-            padding: 10px 14px;
-            font-family: var(--fd);
-            font-size: .75rem;
-            color: var(--gold);
-            letter-spacing: .08em;
-            text-transform: uppercase;
-            flex-shrink: 0
-        }
+    .c-item:hover {
+      background: var(--surface2)
+    }
 
-        .detail-body {
-            flex: 1;
-            overflow-y: auto;
-            padding: 16px
-        }
+    .c-item.active {
+      background: var(--surface2);
+      border-left: 3px solid var(--gold);
+      padding-left: 9px
+    }
 
-        /* Campaign list */
-        .c-item {
-            padding: 10px 12px;
-            border-bottom: 1px solid var(--border);
-            cursor: pointer;
-            transition: background .12s
-        }
+    .c-name {
+      font-family: var(--fd);
+      font-size: .8rem;
+      color: var(--gold);
+      letter-spacing: .04em
+    }
 
-        .c-item:hover {
-            background: var(--surface2)
-        }
+    .c-cal {
+      font-size: .67rem;
+      color: var(--text-dim);
+      margin-top: 1px;
+      font-style: italic
+    }
 
-        .c-item.active {
-            background: var(--surface2);
-            border-left: 3px solid var(--gold);
-            padding-left: 9px
-        }
+    .form-group {
+      margin-bottom: 10px
+    }
 
-        .c-name {
-            font-family: var(--fd);
-            font-size: .82rem;
-            color: var(--gold);
-            letter-spacing: .04em
-        }
+    .form-group label {
+      display: block;
+      font-size: .65rem;
+      color: var(--text-dim);
+      margin-bottom: 3px;
+      font-family: var(--fd);
+      letter-spacing: .04em;
+      text-transform: uppercase
+    }
 
-        .c-cal {
-            font-size: .68rem;
-            color: var(--text-dim);
-            margin-top: 2px;
-            font-style: italic
-        }
+    input[type=text],
+    input[type=number],
+    textarea,
+    select {
+      width: 100%;
+      background: var(--surface2);
+      border: 1px solid var(--border2);
+      color: var(--text);
+      padding: 6px 8px;
+      border-radius: 2px;
+      font-family: var(--fb);
+      font-size: 14px;
+      transition: border-color .15s
+    }
 
-        /* Form elements */
-        .form-group {
-            margin-bottom: 10px
-        }
+    input:focus,
+    textarea:focus,
+    select:focus {
+      outline: none;
+      border-color: var(--gold-dim)
+    }
 
-        .form-group label {
-            display: block;
-            font-size: .68rem;
-            color: var(--text-dim);
-            margin-bottom: 3px;
-            font-family: var(--fd);
-            letter-spacing: .04em;
-            text-transform: uppercase
-        }
+    textarea {
+      resize: vertical;
+      min-height: 60px
+    }
 
-        input[type=text],
-        input[type=password],
-        textarea,
-        select {
-            width: 100%;
-            background: var(--surface2);
-            border: 1px solid var(--border2);
-            color: var(--text);
-            padding: 6px 8px;
-            border-radius: 2px;
-            font-family: var(--fb);
-            font-size: 14px;
-            transition: border-color .15s
-        }
+    button {
+      background: var(--gold-dim);
+      color: var(--text);
+      border: none;
+      padding: 7px 12px;
+      border-radius: 2px;
+      font-family: var(--fd);
+      font-size: .68rem;
+      letter-spacing: .06em;
+      text-transform: uppercase;
+      cursor: pointer;
+      transition: background .15s;
+      margin-top: 6px
+    }
 
-        input:focus,
-        textarea:focus,
-        select:focus {
-            outline: none;
-            border-color: var(--gold-dim)
-        }
+    button:hover {
+      background: var(--gold);
+      color: var(--bg)
+    }
 
-        textarea {
-            resize: vertical;
-            min-height: 60px
-        }
+    button.danger {
+      background: var(--red)
+    }
 
-        button {
-            width: 100%;
-            background: var(--gold-dim);
-            color: var(--text);
-            border: none;
-            padding: 7px 12px;
-            border-radius: 2px;
-            font-family: var(--fd);
-            font-size: .68rem;
-            letter-spacing: .06em;
-            text-transform: uppercase;
-            cursor: pointer;
-            transition: background .15s;
-            margin-top: 6px
-        }
+    button.danger:hover {
+      background: var(--red-hover)
+    }
 
-        button:hover {
-            background: var(--gold);
-            color: var(--bg)
-        }
+    button.sm {
+      padding: 4px 8px;
+      font-size: .62rem;
+      margin-top: 0
+    }
 
-        button.danger {
-            background: var(--red)
-        }
+    button.ghost {
+      background: transparent;
+      border: 1px solid var(--border2);
+      color: var(--text-dim)
+    }
 
-        button.danger:hover {
-            background: var(--red-hover)
-        }
+    button.ghost:hover {
+      border-color: var(--gold-dim);
+      color: var(--text)
+    }
 
-        button.sm {
-            padding: 4px 8px;
-            font-size: .62rem;
-            margin-top: 0;
-            width: auto
-        }
+    .msg {
+      padding: 6px 10px;
+      border-radius: 2px;
+      font-size: 12px;
+      margin-bottom: 8px
+    }
 
-        /* Section titles */
-        .s-title {
-            font-family: var(--fd);
-            font-size: .7rem;
-            color: var(--gold);
-            letter-spacing: .08em;
-            text-transform: uppercase;
-            margin: 16px 0 8px;
-            border-bottom: 1px solid var(--border);
-            padding-bottom: 4px;
-            display: flex;
-            align-items: center;
-            justify-content: space-between
-        }
+    .msg.ok {
+      background: var(--green);
+      color: var(--green-t);
+      border: 1px solid #3d5a3a
+    }
 
-        .s-title:first-child {
-            margin-top: 0
-        }
+    .msg.err {
+      background: #3d1f1f;
+      color: #d49f9f;
+      border: 1px solid #5a3d3d
+    }
 
-        /* Tables */
-        table {
-            width: 100%;
-            border-collapse: collapse;
-            font-size: 12px;
-            margin-bottom: 8px
-        }
+    .empty {
+      padding: 16px;
+      text-align: center;
+      color: var(--text-muted);
+      font-style: italic;
+      font-size: 13px
+    }
 
-        th {
-            background: var(--surface2);
-            padding: 5px 8px;
-            text-align: left;
-            font-family: var(--fd);
-            font-size: .62rem;
-            letter-spacing: .06em;
-            color: var(--text-dim);
-            border-bottom: 1px solid var(--border)
-        }
+    .detail-panel {
+      display: flex;
+      flex-direction: column;
+      overflow: hidden
+    }
 
-        td {
-            padding: 6px 8px;
-            border-bottom: 1px solid var(--border)
-        }
+    .detail-head {
+      background: var(--surface2);
+      border-bottom: 1px solid var(--border);
+      padding: 10px 16px;
+      font-family: var(--fd);
+      font-size: .8rem;
+      color: var(--gold);
+      letter-spacing: .06em;
+      text-transform: uppercase;
+      flex-shrink: 0
+    }
 
-        tr:hover td {
-            background: var(--surface2)
-        }
+    .detail-body {
+      flex: 1;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column
+    }
 
-        /* Messages */
-        .msg {
-            padding: 6px 10px;
-            border-radius: 2px;
-            font-size: 12px;
-            margin-bottom: 8px
-        }
+    /* TABS */
+    .tab-bar {
+      display: flex;
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      flex-shrink: 0;
+      overflow-x: auto
+    }
 
-        .msg.ok {
-            background: #1f3d1a;
-            color: #9fd49f;
-            border: 1px solid #3d5a3a
-        }
+    .tab-bar::-webkit-scrollbar {
+      height: 3px
+    }
 
-        .msg.err {
-            background: #3d1f1f;
-            color: #d49f9f;
-            border: 1px solid #5a3d3d
-        }
+    .tab-btn {
+      font-family: var(--fd);
+      font-size: .63rem;
+      letter-spacing: .06em;
+      text-transform: uppercase;
+      padding: 9px 13px;
+      border: none;
+      background: none;
+      color: var(--text-dim);
+      cursor: pointer;
+      border-bottom: 2px solid transparent;
+      transition: all .15s;
+      white-space: nowrap;
+      margin-top: 0
+    }
 
-        .empty {
-            padding: 12px;
-            text-align: center;
-            color: var(--text-dim);
-            font-style: italic;
-            font-size: 13px
-        }
+    .tab-btn:hover {
+      color: var(--text);
+      background: var(--surface2)
+    }
 
-        /* New Timeline modal */
-        .tl-modal-overlay {
-            position: fixed;
-            inset: 0;
-            background: rgba(0, 0, 0, .7);
-            display: none;
-            align-items: center;
-            justify-content: center;
-            z-index: 100
-        }
+    .tab-btn.active {
+      color: var(--gold);
+      border-bottom-color: var(--gold);
+      background: var(--surface2)
+    }
 
-        .tl-modal-overlay.open {
-            display: flex
-        }
+    .tab-content {
+      flex: 1;
+      overflow-y: auto;
+      padding: 16px
+    }
 
-        .tl-modal {
-            background: var(--surface);
-            border: 1px solid var(--border2);
-            border-radius: 2px;
-            padding: 20px;
-            width: 340px;
-            box-shadow: 0 8px 32px rgba(0, 0, 0, .6)
-        }
+    .tab-pane {
+      display: none
+    }
 
-        .tl-modal h3 {
-            font-family: var(--fd);
-            font-size: .85rem;
-            color: var(--gold);
-            letter-spacing: .08em;
-            text-transform: uppercase;
-            margin-bottom: 14px
-        }
+    .tab-pane.active {
+      display: block
+    }
 
-        /* Calendar picker modal */
-        .cal-modal-overlay {
-            position: fixed;
-            inset: 0;
-            background: rgba(0, 0, 0, .7);
-            display: none;
-            align-items: center;
-            justify-content: center;
-            z-index: 100
-        }
+    .s-title {
+      font-family: var(--fd);
+      font-size: .68rem;
+      color: var(--gold);
+      letter-spacing: .08em;
+      text-transform: uppercase;
+      margin: 16px 0 8px;
+      border-bottom: 1px solid var(--border);
+      padding-bottom: 4px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between
+    }
 
-        .cal-modal-overlay.open {
-            display: flex
-        }
+    .s-title:first-child {
+      margin-top: 0
+    }
 
-        .cal-modal {
-            background: var(--surface);
-            border: 1px solid var(--border2);
-            border-radius: 2px;
-            padding: 20px;
-            width: 340px;
-            box-shadow: 0 8px 32px rgba(0, 0, 0, .6)
-        }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 12px;
+      margin-bottom: 8px
+    }
 
-        .cal-modal h3 {
-            font-family: var(--fd);
-            font-size: .85rem;
-            color: var(--gold);
-            letter-spacing: .08em;
-            text-transform: uppercase;
-            margin-bottom: 14px
-        }
+    th {
+      background: var(--surface2);
+      padding: 5px 8px;
+      text-align: left;
+      font-family: var(--fd);
+      font-size: .6rem;
+      letter-spacing: .06em;
+      color: var(--text-dim);
+      border-bottom: 1px solid var(--border)
+    }
 
-        .cal-row {
-            display: flex;
-            gap: 10px;
-            margin-bottom: 10px
-        }
+    td {
+      padding: 5px 8px;
+      border-bottom: 1px solid var(--border);
+      vertical-align: middle
+    }
 
-        .cal-row .form-group {
-            flex: 1;
-            margin-bottom: 0
-        }
+    tr:hover td {
+      background: var(--surface2)
+    }
 
-        .cal-result {
-            background: var(--surface2);
-            border: 1px solid var(--border);
-            padding: 8px 10px;
-            border-radius: 2px;
-            font-family: var(--fd);
-            font-size: .78rem;
-            color: var(--gold);
-            text-align: center;
-            margin-bottom: 12px;
-            min-height: 32px
-        }
+    .tl-card {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 2px;
+      padding: 9px 12px;
+      margin-bottom: 7px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px
+    }
 
-        .btn-row {
-            display: flex;
-            gap: 8px
-        }
+    .tl-pname {
+      font-family: var(--fd);
+      font-size: .76rem;
+      color: var(--gold)
+    }
 
-        .btn-row button {
-            flex: 1;
-            margin-top: 0
-        }
+    .tl-user {
+      font-size: .7rem;
+      color: var(--text-dim)
+    }
 
-        /* Timeline list */
-        .tl-card {
-            background: var(--surface2);
-            border: 1px solid var(--border);
-            border-radius: 2px;
-            padding: 10px 12px;
-            margin-bottom: 8px;
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            gap: 10px
-        }
+    .tl-count {
+      font-size: .7rem;
+      color: var(--text-dim);
+      margin-top: 1px
+    }
 
-        .tl-card-info .tl-pname {
-            font-family: var(--fd);
-            font-size: .78rem;
-            color: var(--gold)
-        }
+    .irow {
+      display: flex;
+      gap: 6px;
+      margin-bottom: 8px;
+      align-items: center;
+      flex-wrap: wrap
+    }
 
-        .tl-card-info .tl-user {
-            font-size: .7rem;
-            color: var(--text-dim)
-        }
+    .irow input {
+      flex: 1;
+      min-width: 80px
+    }
 
-        .tl-card-info .tl-count {
-            font-size: .7rem;
-            color: var(--text-dim);
-            margin-top: 2px
-        }
+    /* Compact size/type select */
+    select.compact-type {
+      width: auto;
+      flex: 0 0 auto;
+      font-size: 12px;
+      padding: 4px 6px;
+      min-width: 0
+    }
 
-        /* Edit location modal */
-        .loc-modal-overlay {
-            position: fixed;
-            inset: 0;
-            background: rgba(0, 0, 0, .7);
-            display: none;
-            align-items: center;
-            justify-content: center;
-            z-index: 100
-        }
+    .loc-search {
+      position: relative;
+      margin-bottom: 8px
+    }
 
-        .loc-modal-overlay.open {
-            display: flex
-        }
+    .loc-search .search-icon {
+      position: absolute;
+      left: 8px;
+      top: 50%;
+      transform: translateY(-50%);
+      font-size: 12px;
+      pointer-events: none;
+      color: var(--text-muted)
+    }
 
-        .loc-modal {
-            background: var(--surface);
-            border: 1px solid var(--border2);
-            border-radius: 2px;
-            padding: 20px;
-            width: 380px;
-            box-shadow: 0 8px 32px rgba(0, 0, 0, .6)
-        }
+    .loc-search input {
+      padding-left: 26px
+    }
 
-        .loc-modal h3 {
-            font-family: var(--fd);
-            font-size: .85rem;
-            color: var(--gold);
-            letter-spacing: .08em;
-            text-transform: uppercase;
-            margin-bottom: 14px
-        }
+    .npc-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      background: var(--surface2);
+      border: 1px solid var(--border2);
+      border-radius: 2px;
+      padding: 2px 8px;
+      font-size: 12px;
+      margin: 2px
+    }
 
-        @media(max-width:900px) {
-            .container {
-                grid-template-columns: 1fr
-            }
-        }
-    </style>
+    .npc-chip .x {
+      cursor: pointer;
+      color: var(--text-muted);
+      font-size: 10px
+    }
+
+    .npc-chip .x:hover {
+      color: #e06c75
+    }
+
+    .settings-block {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 2px;
+      padding: 12px 14px;
+      margin-bottom: 12px
+    }
+
+    .settings-block h3 {
+      font-family: var(--fd);
+      font-size: .68rem;
+      color: var(--gold);
+      letter-spacing: .06em;
+      text-transform: uppercase;
+      margin-bottom: 8px
+    }
+
+    .btn-row {
+      display: flex;
+      gap: 8px
+    }
+
+    .btn-row button {
+      flex: 1;
+      margin-top: 0
+    }
+
+    .cal-result {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      padding: 7px 10px;
+      border-radius: 2px;
+      font-family: var(--fd);
+      font-size: .76rem;
+      color: var(--gold);
+      text-align: center;
+      margin-bottom: 10px;
+      min-height: 30px
+    }
+
+    .cal-row {
+      display: flex;
+      gap: 10px;
+      margin-bottom: 10px
+    }
+
+    .cal-row .form-group {
+      flex: 1;
+      margin-bottom: 0
+    }
+
+    /* CHARACTER TREE */
+    .player-group {
+      margin-bottom: 14px
+    }
+
+    .player-group-head {
+      font-family: var(--fd);
+      font-size: .72rem;
+      color: var(--gold);
+      letter-spacing: .04em;
+      padding: 5px 0;
+      border-bottom: 1px solid var(--border);
+      margin-bottom: 6px
+    }
+
+    .rel-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      background: var(--surface3);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 2px 9px;
+      font-size: 11px;
+      margin: 2px;
+      cursor: default
+    }
+
+    .rel-pill.family {
+      border-color: #5a4a2a
+    }
+
+    .tree-canvas-wrap {
+      border: 1px solid var(--border);
+      border-radius: 2px;
+      background: #0e0c08;
+      overflow: hidden;
+      position: relative;
+      height: 600px;
+      margin-bottom: 10px;
+      cursor: grab
+    }
+
+    .tree-canvas-wrap.panning {
+      cursor: grabbing
+    }
+
+    .tree-canvas-wrap canvas {
+      display: block
+    }
+
+    .tree-zoom-ctrl {
+      position: absolute;
+      top: 8px;
+      right: 8px;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      z-index: 5
+    }
+
+    .tree-zoom-btn {
+      background: rgba(30, 24, 16, .85);
+      border: 1px solid var(--border2);
+      color: var(--text-dim);
+      width: 26px;
+      height: 26px;
+      border-radius: 2px;
+      font-size: 15px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      line-height: 1;
+      padding: 0;
+      margin: 0
+    }
+
+    .tree-zoom-btn:hover {
+      border-color: var(--gold-dim);
+      color: var(--gold)
+    }
+
+    .tree-tooltip {
+      position: absolute;
+      pointer-events: none;
+      background: rgba(19, 16, 11, .92);
+      border: 1px solid var(--border2);
+      border-radius: 3px;
+      padding: 6px 10px;
+      font-size: 11px;
+      color: var(--text);
+      max-width: 200px;
+      display: none;
+      z-index: 10;
+      line-height: 1.5
+    }
+
+    .tree-tooltip strong {
+      font-family: var(--fd);
+      font-size: .7rem;
+      color: var(--gold);
+      display: block;
+      margin-bottom: 2px
+    }
+
+    .tree-legend {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      font-size: 11px;
+      color: var(--text-dim);
+      margin-bottom: 12px
+    }
+
+    .tree-legend span {
+      display: flex;
+      align-items: center;
+      gap: 5px
+    }
+
+    .tree-legend i.dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      display: inline-block
+    }
+
+    .tree-legend i.line {
+      width: 22px;
+      height: 2px;
+      display: inline-block;
+      border-radius: 1px
+    }
+
+    .conn-list {
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+      margin-bottom: 8px
+    }
+
+    .conn-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 2px;
+      padding: 6px 10px;
+      font-size: 12px;
+      flex-wrap: wrap
+    }
+
+    .conn-from-to {
+      color: var(--text-dim);
+      flex: 3;
+      min-width: 120px
+    }
+
+    .conn-lbl-badge {
+      font-family: var(--fd);
+      font-size: .6rem;
+      color: var(--gold-dim);
+      letter-spacing: .04em;
+      background: var(--surface3);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 1px 8px;
+      white-space: nowrap
+    }
+
+    /* MODALS */
+    .overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, .72);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      z-index: 200
+    }
+
+    .overlay.open {
+      display: flex
+    }
+
+    .modal {
+      background: var(--surface);
+      border: 1px solid var(--border2);
+      border-radius: 3px;
+      padding: 20px;
+      width: 420px;
+      max-width: 94vw;
+      box-shadow: 0 8px 32px rgba(0, 0, 0, .6)
+    }
+
+    .modal h3 {
+      font-family: var(--fd);
+      font-size: .85rem;
+      color: var(--gold);
+      letter-spacing: .08em;
+      text-transform: uppercase;
+      margin-bottom: 14px
+    }
+
+    ::-webkit-scrollbar {
+      width: 5px;
+      height: 5px
+    }
+
+    ::-webkit-scrollbar-track {
+      background: var(--surface)
+    }
+
+    ::-webkit-scrollbar-thumb {
+      background: var(--border2);
+      border-radius: 3px
+    }
+  </style>
 </head>
 
 <body>
-    <div class="app-header">
-        <div class="app-title">🏰 Manage Campaigns</div>
-        <div class="hdr-r">
-            <button class="back-btn" id="exportCampBtn" onclick="exportCampaign()" style="display:none">⬇
-                Export</button>
-            <button class="back-btn" onclick="document.getElementById('importCampFile').click()">⬆ Import</button>
-            <input type="file" id="importCampFile" accept=".json" style="display:none" onchange="importCampaign(this)">
-            <div id="userMenuMount"></div>
+
+  <div class="app-header">
+    <div class="app-title">🏰 Manage Campaigns</div>
+    <div class="hdr-r">
+      <button class="hdr-btn" id="exportCampBtn" onclick="exportCampaign()" style="display:none">⬇ Export</button>
+      <button class="hdr-btn" onclick="document.getElementById('importCampFile').click()">⬆ Import</button>
+      <input type="file" id="importCampFile" accept=".json" style="display:none" onchange="importCampaign(this)">
+      <div id="userMenuMount"></div>
+    </div>
+  </div>
+
+  <div class="layout">
+    <div class="sidebar">
+      <div class="sb-head">Campaigns</div>
+      <div class="sb-body">
+        <div id="createMsg"></div>
+        <div class="s-title" style="margin-top:0">New Campaign</div>
+        <div class="form-group">
+          <label>Name</label>
+          <input type="text" id="campaignName" placeholder="e.g., Lost Mines…"
+            onkeydown="if(event.key==='Enter')handleCreateCampaign()">
         </div>
+        <div class="form-group">
+          <label>Description</label>
+          <textarea id="campaignDesc" rows="2" placeholder="Brief description…"></textarea>
+        </div>
+        <div class="form-group">
+          <label>Calendar Type <span style="color:var(--red);font-size:10px">(cannot change later)</span></label>
+          <select id="campaignCalType">
+            <option value="harptos">Harptos (D&D / Faerûn)</option>
+            <option value="gregorian">Gregorian</option>
+          </select>
+        </div>
+        <button onclick="handleCreateCampaign()" style="width:100%;margin-top:4px">Create Campaign</button>
+        <div class="s-title" style="margin-top:18px">Your Campaigns</div>
+        <div id="campaignsList">
+          <div class="empty">No campaigns yet</div>
+        </div>
+      </div>
     </div>
 
-    <div class="container">
-        <!-- Left: Campaign list + create form -->
-        <div class="panel">
-            <div class="panel-head">Campaigns</div>
-            <div class="panel-body">
-                <div id="createMsg"></div>
-                <div class="s-title" style="margin-top:0">New Campaign</div>
-                <div class="form-group">
-                    <label>Name</label>
-                    <input type="text" id="campaignName" placeholder="e.g., Lost Mines…">
-                </div>
-                <div class="form-group">
-                    <label>Description</label>
-                    <textarea id="campaignDesc" rows="2" placeholder="Brief description…"></textarea>
-                </div>
-                <div class="form-group">
-                    <label>Calendar Type <span style="color:var(--red);font-size:10px">(cannot change
-                            later)</span></label>
-                    <select id="campaignCalType">
-                        <option value="harptos">Harptos (D&D / Faerûn)</option>
-                        <option value="gregorian">Gregorian</option>
-                    </select>
-                </div>
-                <button onclick="handleCreateCampaign()">Create Campaign</button>
-
-                <div class="s-title" style="margin-top:20px">Your Campaigns</div>
-                <div id="campaignsList">
-                    <div class="empty">No campaigns yet</div>
-                </div>
-            </div>
-        </div>
-
-        <!-- Right: Campaign details -->
-        <div class="detail-panel">
-            <div class="detail-head" id="detailHead">Select a Campaign</div>
-            <div class="detail-body" id="detailBody">
-                <div class="empty">Select a campaign from the list</div>
-            </div>
-        </div>
+    <div class="detail-panel" id="detailPanel">
+      <div class="detail-head" id="detailHead">Select a Campaign</div>
+      <div class="detail-body" id="detailBody">
+        <div class="empty" style="padding:40px">Select a campaign from the list</div>
+      </div>
     </div>
+  </div>
 
-    <!-- New Timeline modal -->
-    <div class="tl-modal-overlay" id="newTlOverlay" onclick="if(event.target===this)closeNewTlModal()">
-        <div class="tl-modal">
-            <h3>📜 New Timeline</h3>
-            <div class="form-group">
-                <label>Timeline Name</label>
-                <input type="text" id="newTlName" placeholder="e.g., Main Story, Side Quest…"
-                    onkeydown="if(event.key==='Enter')confirmNewTl();if(event.key==='Escape')closeNewTlModal();">
-            </div>
-            <div class="btn-row" style="margin-top:14px">
-                <button onclick="closeNewTlModal()">Cancel</button>
-                <button onclick="confirmNewTl()" style="background:var(--gold-dim)">Create</button>
-            </div>
-        </div>
+  <!-- New Timeline Modal -->
+  <div class="overlay" id="newTlOverlay" onclick="if(event.target===this)closeNewTlModal()">
+    <div class="modal">
+      <h3>📜 New Timeline</h3>
+      <div class="form-group">
+        <label>Timeline Name</label>
+        <input type="text" id="newTlName" placeholder="e.g., Main Story…"
+          onkeydown="if(event.key==='Enter')confirmNewTl();if(event.key==='Escape')closeNewTlModal()">
+      </div>
+      <div class="btn-row" style="margin-top:12px">
+        <button class="ghost" onclick="closeNewTlModal()">Cancel</button>
+        <button onclick="confirmNewTl()">Create</button>
+      </div>
     </div>
+  </div>
 
-    <!-- Calendar picker modal (for Today Marker) -->
-    <div class="cal-modal-overlay" id="calPickerOverlay">
-        <div class="cal-modal">
-            <h3>📅 Set Today Marker</h3>
-            <div class="cal-row">
-                <div class="form-group">
-                    <label>Year</label>
-                    <input type="number" id="cpYear" value="1492" min="1" oninput="updateCalPreview()">
-                </div>
-                <div class="form-group" id="cpDayGroup">
-                    <label>Day</label>
-                    <input type="number" id="cpDay" value="1" min="1" max="30" oninput="updateCalPreview()">
-                </div>
-            </div>
-            <div class="form-group">
-                <label id="cpMonthLabel">Month / Festival</label>
-                <select id="cpMonth" onchange="onCalPickerMonthChange()"></select>
-            </div>
-            <div class="cal-result" id="cpResult">—</div>
-            <div class="btn-row">
-                <button onclick="closeCalPicker()">Cancel</button>
-                <button onclick="clearTodayMarker()" class="danger">Clear</button>
-                <button onclick="applyCalPicker()" style="background:var(--gold-dim)">Set Marker</button>
-            </div>
+  <!-- Calendar Picker Modal -->
+  <div class="overlay" id="calPickerOverlay" onclick="if(event.target===this)closeCalPicker()">
+    <div class="modal">
+      <h3>📅 Set Today Marker</h3>
+      <div class="cal-row">
+        <div class="form-group">
+          <label>Year</label>
+          <input type="number" id="cpYear" value="1492" min="1" oninput="updateCalPreview()">
         </div>
+        <div class="form-group" id="cpDayGroup">
+          <label>Day</label>
+          <input type="number" id="cpDay" value="1" min="1" max="30" oninput="updateCalPreview()">
+        </div>
+      </div>
+      <div class="form-group">
+        <label id="cpMonthLabel">Month / Festival</label>
+        <select id="cpMonth" onchange="onCalPickerMonthChange()"></select>
+      </div>
+      <div class="cal-result" id="cpResult">—</div>
+      <div class="btn-row">
+        <button class="ghost" onclick="closeCalPicker()">Cancel</button>
+        <button class="danger" onclick="clearTodayMarker()">Clear</button>
+        <button onclick="applyCalPicker()">Set Marker</button>
+      </div>
     </div>
+  </div>
 
-    <script>
-        /* ─── State ─── */
-        let campaigns = [], currentCampaign = null, allUsers = [], currentUserId = null, _calPickerType = 'harptos', _resolvedAbsDay = null;
+  <!-- Edit Location Modal -->
+  <div class="overlay" id="editLocOverlay" onclick="if(event.target===this)closeEditLoc()">
+    <div class="modal">
+      <h3>✏️ Edit Location</h3>
+      <div class="form-group">
+        <label>Name</label>
+        <input type="text" id="editLocName"
+          onkeydown="if(event.key==='Enter')saveEditLoc();if(event.key==='Escape')closeEditLoc()">
+      </div>
+      <div class="form-group">
+        <label>Size / Type</label>
+        <select id="editLocSizeType">
+          <option value="">— none —</option>
+          <option value="huge">Huge</option>
+          <option value="big">Big</option>
+          <option value="medium">Medium</option>
+          <option value="small">Small</option>
+          <option value="village">Village</option>
+          <option value="inn">Inn</option>
+          <option value="post">Post</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Description</label>
+        <textarea id="editLocDesc" rows="3"></textarea>
+      </div>
+      <div id="editLocMsg"></div>
+      <div class="btn-row" style="margin-top:12px">
+        <button class="ghost" onclick="closeEditLoc()">Cancel</button>
+        <button onclick="saveEditLoc()">Save</button>
+      </div>
+    </div>
+  </div>
 
-        /* ─── Harptos / Calendar data (duplicated from timeline.html for standalone use) ─── */
-        const HARPTOS = [
-            { name: 'Hammer', sd: 1, days: 30, sp: false }, { name: 'Midwinter', sd: 31, days: 1, sp: true },
-            { name: 'Alturiak', sd: 32, days: 30, sp: false }, { name: 'Ches', sd: 62, days: 30, sp: false },
-            { name: 'Tarsakh', sd: 92, days: 30, sp: false }, { name: 'Greengrass', sd: 122, days: 1, sp: true },
-            { name: 'Mirtul', sd: 123, days: 30, sp: false }, { name: 'Kythorn', sd: 153, days: 30, sp: false },
-            { name: 'Flamerule', sd: 183, days: 30, sp: false }, { name: 'Midsummer', sd: 213, days: 1, sp: true },
-            { name: 'Flamerule II', sd: 214, days: 0, sp: false }, // leap placeholder, skip
-            { name: 'Eleasias', sd: 214, days: 30, sp: false }, { name: 'Eleint', sd: 244, days: 30, sp: false },
-            { name: 'Highharvestide', sd: 274, days: 1, sp: true }, { name: 'Marpenoth', sd: 275, days: 30, sp: false },
-            { name: 'Uktar', sd: 305, days: 30, sp: false }, { name: 'Feast of Moon', sd: 335, days: 1, sp: true },
-            { name: 'Nightal', sd: 336, days: 30, sp: false },
-        ];
-        const HARPTOS_REAL = HARPTOS.filter(p => p.days > 0);
-        const GREG_MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
-        const GREG_DAYS = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+  <!-- Add / Edit DM Cross-Connection Modal -->
+  <div class="overlay" id="addConnOverlay" onclick="if(event.target===this)closeAddConn()">
+    <div class="modal">
+      <h3 id="connModalTitle">🔗 DM Cross-Connection</h3>
+      <p id="connModalDesc" style="font-size:12px;color:var(--text-dim);margin-bottom:12px">Link two relationship
+        entries across any
+        players. Only the DM can see these connections.</p>
+      <div class="form-group" id="connFromRow">
+        <label>From relationship</label>
+        <select id="connFrom"></select>
+      </div>
+      <div class="form-group">
+        <label>Connection label</label>
+        <input type="text" id="connLabel" placeholder="e.g., is secretly allied with, seeks revenge on…"
+          onkeydown="if(event.key==='Escape')closeAddConn()">
+      </div>
+      <div class="form-group" id="connToRow">
+        <label>To relationship</label>
+        <select id="connTo"></select>
+      </div>
+      <div class="form-group">
+        <label>Notes (DM only, optional)</label>
+        <textarea id="connNotes" rows="2"></textarea>
+      </div>
+      <div id="connMsg"></div>
+      <div class="btn-row" style="margin-top:12px">
+        <button class="ghost" onclick="closeAddConn()">Cancel</button>
+        <button id="connSubmitBtn" onclick="saveConn()">Add Connection</button>
+      </div>
+    </div>
+  </div>
 
-        function absDay(year, doy) { return (year - 1) * 365 + doy; }
-        function harptDayToPeriod(doy) {
-            for (const p of HARPTOS_REAL) if (doy >= p.sd && doy < p.sd + p.days) return { period: p, dayInPeriod: doy - p.sd + 1 };
-            return null;
-        }
-        function doyFromForm(midx, day, calType) {
-            if (calType === 'harptos') {
-                const p = HARPTOS_REAL[midx]; return p ? p.sd + (p.sp ? 0 : Math.max(0, day - 1)) : 1;
-            } else {
-                let doy = 0;
-                for (let i = 0; i < midx; i++) doy += GREG_DAYS[i];
-                return doy + Math.max(1, day);
-            }
-        }
-        function formatAbsDay(absD, calType) {
-            const year = Math.floor((absD - 1) / 365) + 1;
-            const doy = ((absD - 1) % 365) + 1;
-            if (calType === 'harptos') {
-                const r = harptDayToPeriod(doy);
-                if (!r) return `Year ${year}, Day ${doy}`;
-                return r.period.sp ? `${r.period.name}, Year ${year}` : `${r.dayInPeriod} ${r.period.name}, Year ${year}`;
-            } else {
-                let rem = doy, m = 0;
-                while (m < 11 && rem > GREG_DAYS[m]) { rem -= GREG_DAYS[m]; m++; }
-                return `${GREG_MONTHS[m]} ${rem}, ${year}`;
-            }
-        }
+  <script>
+    // ═══ STATE ═══════════════════════════════════════════════════════════
+    let campaigns = [], currentCampaign = null, allUsers = [], currentUserId = null;
+    let _calPickerType = 'harptos', _resolvedAbsDay = null;
+    let _newTlPlayerId = null;
+    let _editLocId = null;
+    let _activeTab = 'players';
+    let _treeData = null;
 
-        /* ─── Calendar Picker ─── */
-        function openCalPicker(calType, currentAbsDay) {
-            _calPickerType = calType;
-            const overlay = document.getElementById('calPickerOverlay');
-            const monthSel = document.getElementById('cpMonth');
-            const label = document.getElementById('cpMonthLabel');
+    // ═══ CALENDAR ════════════════════════════════════════════════════════
+    const HARPTOS = [
+      { name: 'Hammer', sd: 1, days: 30, sp: false }, { name: 'Midwinter', sd: 31, days: 1, sp: true },
+      { name: 'Alturiak', sd: 32, days: 30, sp: false }, { name: 'Ches', sd: 62, days: 30, sp: false },
+      { name: 'Tarsakh', sd: 92, days: 30, sp: false }, { name: 'Greengrass', sd: 122, days: 1, sp: true },
+      { name: 'Mirtul', sd: 123, days: 30, sp: false }, { name: 'Kythorn', sd: 153, days: 30, sp: false },
+      { name: 'Flamerule', sd: 183, days: 30, sp: false }, { name: 'Midsummer', sd: 213, days: 1, sp: true },
+      { name: 'Eleasias', sd: 214, days: 30, sp: false }, { name: 'Eleint', sd: 244, days: 30, sp: false },
+      { name: 'Highharvestide', sd: 274, days: 1, sp: true }, { name: 'Marpenoth', sd: 275, days: 30, sp: false },
+      { name: 'Uktar', sd: 305, days: 30, sp: false }, { name: 'Feast of Moon', sd: 335, days: 1, sp: true },
+      { name: 'Nightal', sd: 336, days: 30, sp: false },
+    ];
+    const GREG_MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+    const GREG_DAYS = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
 
-            label.textContent = calType === 'harptos' ? 'Month / Festival' : 'Month';
-            if (calType === 'harptos') {
-                monthSel.innerHTML = HARPTOS_REAL.map((p, i) => `<option value="${i}">${p.name}${p.sp ? ' ✦' : ''}</option>`).join('');
-            } else {
-                monthSel.innerHTML = GREG_MONTHS.map((m, i) => `<option value="${i}">${m}</option>`).join('');
-            }
+    function absDay(year, doy) { return (year - 1) * 365 + doy; }
+    function harptDayToPeriod(doy) { for (const p of HARPTOS) if (doy >= p.sd && doy < p.sd + p.days) return { period: p, dayInPeriod: doy - p.sd + 1 }; return null; }
+    function doyFromForm(midx, day, calType) {
+      if (calType === 'harptos') { const p = HARPTOS[midx]; return p ? p.sd + (p.sp ? 0 : Math.max(0, day - 1)) : 1; }
+      let doy = 0; for (let i = 0; i < midx; i++)doy += GREG_DAYS[i]; return doy + Math.max(1, day);
+    }
+    function formatAbsDay(absD, calType) {
+      const year = Math.floor((absD - 1) / 365) + 1, doy = ((absD - 1) % 365) + 1;
+      if (calType === 'harptos') { const r = harptDayToPeriod(doy); if (!r) return `Year ${year}, Day ${doy}`; return r.period.sp ? `${r.period.name}, Year ${year}` : `${r.dayInPeriod} ${r.period.name}, Year ${year}`; }
+      let rem = doy, m = 0; while (m < 11 && rem > GREG_DAYS[m]) { rem -= GREG_DAYS[m]; m++; } return `${GREG_MONTHS[m]} ${rem}, ${year}`;
+    }
+    function openCalPicker(calType, currentAbsDay) {
+      _calPickerType = calType;
+      const monthSel = document.getElementById('cpMonth');
+      document.getElementById('cpMonthLabel').textContent = calType === 'harptos' ? 'Month / Festival' : 'Month';
+      if (calType === 'harptos') monthSel.innerHTML = HARPTOS.map((p, i) => `<option value="${i}">${p.name}${p.sp ? ' ✦' : ''}</option>`).join('');
+      else monthSel.innerHTML = GREG_MONTHS.map((m, i) => `<option value="${i}">${m}</option>`).join('');
+      if (currentAbsDay) {
+        const year = Math.floor((currentAbsDay - 1) / 365) + 1, doy = ((currentAbsDay - 1) % 365) + 1;
+        document.getElementById('cpYear').value = year;
+        if (calType === 'harptos') { const r = harptDayToPeriod(doy); if (r) { monthSel.value = HARPTOS.indexOf(r.period); document.getElementById('cpDay').value = r.period.sp ? 1 : r.dayInPeriod; } }
+        else { let rem = doy, m = 0; while (m < 11 && rem > GREG_DAYS[m]) { rem -= GREG_DAYS[m]; m++; } monthSel.value = m; document.getElementById('cpDay').value = rem; }
+      } else { document.getElementById('cpYear').value = calType === 'harptos' ? 1492 : 2024; monthSel.value = 0; document.getElementById('cpDay').value = 1; }
+      onCalPickerMonthChange(); updateCalPreview();
+      document.getElementById('calPickerOverlay').classList.add('open');
+    }
+    function onCalPickerMonthChange() {
+      const midx = +document.getElementById('cpMonth').value, dayGrp = document.getElementById('cpDayGroup'), dayInp = document.getElementById('cpDay');
+      if (_calPickerType === 'harptos') { const p = HARPTOS[midx]; if (p && p.sp) { dayGrp.style.display = 'none'; dayInp.value = 1; } else dayGrp.style.display = ''; }
+      else { dayGrp.style.display = ''; dayInp.max = GREG_DAYS[midx] || 31; }
+      updateCalPreview();
+    }
+    function updateCalPreview() {
+      const year = parseInt(document.getElementById('cpYear').value) || 1, midx = +document.getElementById('cpMonth').value, day = parseInt(document.getElementById('cpDay').value) || 1;
+      const doy = doyFromForm(midx, day, _calPickerType); _resolvedAbsDay = absDay(year, doy);
+      document.getElementById('cpResult').textContent = formatAbsDay(_resolvedAbsDay, _calPickerType);
+    }
+    function closeCalPicker() { document.getElementById('calPickerOverlay').classList.remove('open'); }
+    function clearTodayMarker() { _resolvedAbsDay = null; saveMetaMarker(null); closeCalPicker(); }
+    async function applyCalPicker() { if (!_resolvedAbsDay) return; await saveMetaMarker(String(_resolvedAbsDay)); closeCalPicker(); }
+    async function saveMetaMarker(val) {
+      if (!currentCampaign) return;
+      try {
+        const res = await fetch(`/api/campaigns/${currentCampaign.id}/meta`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ today_marker: val }) });
+        if (res.ok) { const meta = await res.json(); const el = document.getElementById('todayDisplay'); if (el) el.textContent = meta.today_marker ? formatAbsDay(parseInt(meta.today_marker), currentCampaign._calType || 'harptos') : '— Not set —'; showMsg('todayMsg', '✓ Saved', 'ok'); }
+      } catch (e) { showMsg('todayMsg', '✗ ' + e.message, 'err'); }
+    }
 
-            // Pre-fill if we have an existing marker
-            if (currentAbsDay) {
-                const year = Math.floor((currentAbsDay - 1) / 365) + 1;
-                const doy = ((currentAbsDay - 1) % 365) + 1;
-                document.getElementById('cpYear').value = year;
-                if (calType === 'harptos') {
-                    const r = harptDayToPeriod(doy);
-                    if (r) {
-                        const midx = HARPTOS_REAL.indexOf(r.period);
-                        monthSel.value = midx;
-                        document.getElementById('cpDay').value = r.period.sp ? 1 : r.dayInPeriod;
-                    }
-                } else {
-                    let rem = doy, m = 0;
-                    while (m < 11 && rem > GREG_DAYS[m]) { rem -= GREG_DAYS[m]; m++; }
-                    monthSel.value = m;
-                    document.getElementById('cpDay').value = rem;
-                }
-            } else {
-                document.getElementById('cpYear').value = calType === 'harptos' ? 1492 : 2024;
-                monthSel.value = 0;
-                document.getElementById('cpDay').value = 1;
-            }
+    // ═══ INIT ════════════════════════════════════════════════════════════
+    async function init() {
+      await initHeaderComponent('userMenuMount');
+      await loadUsers();
+      await loadCampaigns();
+    }
+    async function loadUsers() {
+      try {
+        const [ur, mr] = await Promise.all([fetch('/api/users'), fetch('/api/auth/user')]);
+        allUsers = ur.ok ? await ur.json() : [];
+        currentUserId = mr.ok ? (await mr.json())?.user?.id ?? null : null;
+      } catch (e) { allUsers = []; }
+    }
+    async function loadCampaigns() {
+      try { const r = await fetch('/api/campaigns'); campaigns = r.ok ? await r.json() : []; renderCampaignList(); } catch (e) { console.error(e); }
+    }
+    function renderCampaignList() {
+      const el = document.getElementById('campaignsList');
+      if (!campaigns.length) { el.innerHTML = '<div class="empty">No campaigns yet</div>'; return; }
+      el.innerHTML = campaigns.map(c => `<div class="c-item ${currentCampaign?.id === c.id ? 'active' : ''}" onclick="selectCampaign(${c.id})">
+    <div class="c-name">${esc(c.name)}</div>
+    <div class="c-cal">${c._calType === 'gregorian' ? 'Gregorian' : 'Harptos'}</div>
+  </div>`).join('');
+    }
+    async function handleCreateCampaign() {
+      const name = document.getElementById('campaignName').value.trim(), desc = document.getElementById('campaignDesc').value.trim(), calType = document.getElementById('campaignCalType').value;
+      if (!name) { showMsg('createMsg', '✗ Name required', 'err'); return; }
+      try {
+        const res = await fetch('/api/campaigns', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, description: desc, calendar_type: calType }) });
+        if (res.ok) { const c = await res.json(); c._calType = calType; document.getElementById('campaignName').value = ''; document.getElementById('campaignDesc').value = ''; showMsg('createMsg', '✓ Created', 'ok'); await loadCampaigns(); selectCampaign(c.id); }
+        else { const e = await res.json(); showMsg('createMsg', '✗ ' + e.error, 'err'); }
+      } catch (e) { showMsg('createMsg', '✗ ' + e.message, 'err'); }
+    }
+    async function selectCampaign(id) {
+      currentCampaign = campaigns.find(c => c.id === id); if (!currentCampaign) return;
+      document.getElementById('exportCampBtn').style.display = '';
+      renderCampaignList();
+      await renderCampaignDetails();
+    }
 
-            onCalPickerMonthChange();
-            updateCalPreview();
-            overlay.classList.add('open');
-        }
+    // ═══ MAIN RENDER ═════════════════════════════════════════════════════
+    async function renderCampaignDetails() {
+      document.getElementById('detailHead').textContent = `📋 ${currentCampaign.name}`;
+      document.getElementById('detailBody').innerHTML = '<div class="empty">Loading…</div>';
+      let players = [], locs = [], meta = {}, timelines = [], npcs = [];
+      try {
+        const [pR, lR, mR, tR, nR] = await Promise.all([
+          fetch(`/api/campaigns/${currentCampaign.id}/players`),
+          fetch(`/api/campaigns/${currentCampaign.id}/locations`),
+          fetch(`/api/campaigns/${currentCampaign.id}/meta`),
+          fetch(`/api/campaigns/${currentCampaign.id}/timelines`),
+          fetch(`/api/campaigns/${currentCampaign.id}/npcs`),
+        ]);
+        players = pR.ok ? await pR.json() : [];
+        locs = lR.ok ? await lR.json() : [];
+        meta = mR.ok ? await mR.json() : {};
+        timelines = tR.ok ? await tR.json() : [];
+        npcs = nR.ok ? await nR.json() : [];
+        window._locsById = {}; locs.forEach(l => { window._locsById[l.id] = l; });
+        currentCampaign._calType = meta.calendar_type || 'harptos';
+        const calType = currentCampaign._calType;
+        const todayDisplay = meta.today_marker ? formatAbsDay(parseInt(meta.today_marker), calType) : '— Not set —';
+        const playerUsers = allUsers.filter(u => u.role === 'player');
+        const userOpts = playerUsers.map(u => `<option value="${u.id}">${esc(u.username)}</option>`).join('');
 
-        function onCalPickerMonthChange() {
-            const midx = +document.getElementById('cpMonth').value;
-            const dayGrp = document.getElementById('cpDayGroup');
-            const dayInp = document.getElementById('cpDay');
-            if (_calPickerType === 'harptos') {
-                const p = HARPTOS_REAL[midx];
-                if (p && p.sp) { dayGrp.style.display = 'none'; dayInp.value = 1; }
-                else { dayGrp.style.display = ''; }
-            } else {
-                dayGrp.style.display = '';
-                dayInp.max = GREG_DAYS[midx] || 31;
-            }
-            updateCalPreview();
-        }
+        document.getElementById('detailBody').innerHTML = `
+      <div class="tab-bar" id="tabBar">
+        <button class="tab-btn" data-tab="players" onclick="switchTab('players')">👤 Players (${players.length})</button>
+        <button class="tab-btn" data-tab="locations" onclick="switchTab('locations')">🗺️ Locations (${locs.length})</button>
+        <button class="tab-btn" data-tab="npcs" onclick="switchTab('npcs')">🎭 NPCs (${npcs.length})</button>
+        <button class="tab-btn" data-tab="timelines" onclick="switchTab('timelines')">📜 Timelines (${timelines.length})</button>
+        <button class="tab-btn" data-tab="chartree" onclick="switchTab('chartree')">🌳 Char Tree</button>
+        <button class="tab-btn" data-tab="settings" onclick="switchTab('settings')">⚙️ Settings</button>
+      </div>
+      <div class="tab-content">
+        ${buildPlayersTab(players, playerUsers, userOpts)}
+        ${buildLocationsTab(locs)}
+        ${buildNpcsTab(npcs)}
+        ${buildTimelinesTab(timelines)}
+        <div class="tab-pane" data-tab="chartree" id="charTreePane"><div class="empty">Loading…</div></div>
+        ${buildSettingsTab(calType, todayDisplay, meta)}
+      </div>`;
 
-        function updateCalPreview() {
-            const year = parseInt(document.getElementById('cpYear').value) || 1;
-            const midx = +document.getElementById('cpMonth').value;
-            const day = parseInt(document.getElementById('cpDay').value) || 1;
-            const doy = doyFromForm(midx, day, _calPickerType);
-            _resolvedAbsDay = absDay(year, doy);
-            document.getElementById('cpResult').textContent = formatAbsDay(_resolvedAbsDay, _calPickerType);
-        }
+        switchTab(_activeTab);
+        if (_activeTab === 'chartree') loadCharTree();
+      } catch (e) {
+        document.getElementById('detailBody').innerHTML = `<div class="msg err" style="margin:16px">Error: ${esc(e.message)}</div>`;
+      }
+    }
 
-        function closeCalPicker() { document.getElementById('calPickerOverlay').classList.remove('open'); }
+    function switchTab(tab) {
+      _activeTab = tab;
+      document.querySelectorAll('.tab-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
+      document.querySelectorAll('.tab-pane').forEach(p => p.classList.toggle('active', p.dataset.tab === tab));
+      if (tab === 'chartree' && document.getElementById('charTreePane')?.innerHTML.includes('Loading')) loadCharTree();
+    }
 
-        function clearTodayMarker() {
-            _resolvedAbsDay = null;
-            saveMetaMarker(null);
-            closeCalPicker();
-        }
+    // ═══ TAB: PLAYERS ════════════════════════════════════════════════════
+    function buildPlayersTab(players, playerUsers, userOpts) {
+      const sorted = [...players].sort((a, b) => (a.player_name || '').localeCompare(b.player_name || ''));
+      return `<div class="tab-pane" data-tab="players">
+    <div id="playersMsg"></div>
+    <div class="irow">
+      <input type="text" id="playerName" placeholder="Character name" style="flex:2">
+      <select id="playerUserId" style="flex:2"><option value="">— No user —</option>${userOpts}</select>
+      <button class="sm" onclick="addPlayer()">Add</button>
+    </div>
+    ${!sorted.length ? '<div class="empty">No players yet</div>' : `
+    <table><thead><tr><th>Character</th><th>User</th><th>Reassign</th><th>Timeline</th><th></th></tr></thead><tbody>
+    ${sorted.map(p => {
+        const rowOpts = playerUsers.filter(u => u.id !== p.user_id).map(u => `<option value="${u.id}">${esc(u.username)}</option>`).join('');
+        return `<tr>
+        <td>${esc(p.player_name)}</td><td>${esc(p.username || '—')}</td>
+        <td><div style="display:flex;gap:4px">
+          <select id="reassign_${p.id}" style="font-size:11px;padding:3px 5px"><option value="">— None —</option>${rowOpts}</select>
+          <button class="sm" onclick="reassignPlayer(${p.id})" style="margin:0">Save</button>
+        </div></td>
+        <td style="white-space:nowrap">
+          <button class="sm" onclick="openPlayerTimeline(${p.id})" style="margin:0 2px 0 0">📜 View</button>
+          <button class="sm" onclick="createTimelineForPlayer(${p.id},'${esc(p.player_name).replace(/'/g, "&#39;")}')" style="margin:0">+ New</button>
+        </td>
+        <td><button class="sm danger" onclick="deletePlayer(${p.id})">Delete</button></td>
+      </tr>`;
+      }).join('')}
+    </tbody></table>`}
+  </div>`;
+    }
 
-        async function applyCalPicker() {
-            if (!_resolvedAbsDay) return;
-            await saveMetaMarker(String(_resolvedAbsDay));
-            closeCalPicker();
-        }
-
-        async function saveMetaMarker(markerValue) {
-            if (!currentCampaign) return;
-            try {
-                const res = await fetch(`/api/campaigns/${currentCampaign.id}/meta`, {
-                    method: 'PUT', headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ today_marker: markerValue })
-                });
-                if (res.ok) {
-                    const meta = await res.json();
-                    // Update display
-                    const display = document.getElementById('todayDisplay');
-                    if (display) {
-                        display.textContent = meta.today_marker
-                            ? formatAbsDay(parseInt(meta.today_marker), currentCampaign._calType || 'harptos')
-                            : '— Not set —';
-                    }
-                    showMsg('todayMsg', '✓ Today marker saved', 'ok');
-                }
-            } catch (e) { showMsg('todayMsg', '✗ ' + e.message, 'err'); }
-        }
-
-        /* ─── Campaign CRUD ─── */
-        async function loadCampaigns() {
-            await loadUsers();
-            try {
-                const res = await fetch('/api/campaigns');
-                campaigns = res.ok ? await res.json() : [];
-                renderCampaignList();
-            } catch (e) { console.error(e); }
-        }
-
-        async function loadUsers() {
-            try {
-                const [usersRes, meRes] = await Promise.all([
-                    fetch('/api/users'),
-                    fetch('/api/auth/user'),
-                ]);
-                allUsers = usersRes.ok ? await usersRes.json() : [];
-                const me = meRes.ok ? await meRes.json() : {};
-                currentUserId = me?.user?.id ?? null;
-            } catch (e) { allUsers = []; }
-        }
-
-        function renderCampaignList() {
-            const el = document.getElementById('campaignsList');
-            if (!campaigns.length) { el.innerHTML = '<div class="empty">No campaigns yet</div>'; return; }
-            el.innerHTML = campaigns.map(c => `
-        <div class="c-item ${currentCampaign?.id === c.id ? 'active' : ''}" onclick="selectCampaign(${c.id})">
-            <div class="c-name">${escHtml(c.name)}</div>
-            <div class="c-cal">${c._calType === 'gregorian' ? 'Gregorian' : 'Harptos'}</div>
-        </div>`).join('');
-        }
-
-        async function handleCreateCampaign() {
-            const name = document.getElementById('campaignName').value.trim();
-            const desc = document.getElementById('campaignDesc').value.trim();
-            const calType = document.getElementById('campaignCalType').value;
-            if (!name) { showMsg('createMsg', '✗ Name required', 'err'); return; }
-            try {
-                const res = await fetch('/api/campaigns', {
-                    method: 'POST', headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ name, description: desc, calendar_type: calType })
-                });
-                if (res.ok) {
-                    const c = await res.json();
-                    c._calType = calType;
-                    document.getElementById('campaignName').value = '';
-                    document.getElementById('campaignDesc').value = '';
-                    showMsg('createMsg', '✓ Campaign created', 'ok');
-                    await loadCampaigns();
-                    selectCampaign(c.id);
-                } else {
-                    const e = await res.json();
-                    showMsg('createMsg', '✗ ' + e.error, 'err');
-                }
-            } catch (e) { showMsg('createMsg', '✗ ' + e.message, 'err'); }
-        }
-
-        async function selectCampaign(id) {
-            currentCampaign = campaigns.find(c => c.id === id);
-            if (!currentCampaign) return;
-            document.getElementById('exportCampBtn').style.display = '';
-            renderCampaignList();
-            await renderCampaignDetails();
-        }
-
-        async function renderCampaignDetails() {
-            const head = document.getElementById('detailHead');
-            const body = document.getElementById('detailBody');
-            head.textContent = `📋 ${currentCampaign.name}`;
-            body.innerHTML = '<div class="empty">Loading…</div>';
-
-            let players = [], locs = [], meta = {}, timelines = [], npcs = [];
-            try {
-                const [playersRes, locsRes, metaRes, timelinesRes, npcsRes] = await Promise.all([
-                    fetch(`/api/campaigns/${currentCampaign.id}/players`),
-                    fetch(`/api/campaigns/${currentCampaign.id}/locations`),
-                    fetch(`/api/campaigns/${currentCampaign.id}/meta`),
-                    fetch(`/api/campaigns/${currentCampaign.id}/timelines`),
-                    fetch(`/api/campaigns/${currentCampaign.id}/npcs`),
-                ]);
-
-                players = playersRes.ok ? await playersRes.json() : [];
-                locs = locsRes.ok ? await locsRes.json() : [];
-                // Build a lookup map so editLoc can retrieve data without inline HTML encoding
-                window._locsById = {};
-                locs.forEach(l => { window._locsById[l.id] = { name: l.name, description: l.description || '' }; });
-                meta = metaRes.ok ? await metaRes.json() : {};
-                timelines = timelinesRes.ok ? await timelinesRes.json() : [];
-                npcs = npcsRes.ok ? await npcsRes.json() : [];
-
-                const calType = meta.calendar_type || 'harptos';
-                currentCampaign._calType = calType;
-
-                // Format current today marker
-                const todayDisplay = meta.today_marker
-                    ? formatAbsDay(parseInt(meta.today_marker), calType)
-                    : '— Not set —';
-
-                const playerUsers = allUsers.filter(u => u.role === 'player');
-                const userOptions = playerUsers
-                    .map(u => `<option value="${u.id}">${escHtml(u.username)}</option>`).join('');
-
-                body.innerHTML = `
-        <!-- PLAYERS -->
-        <div class="s-title">👤 Players (${players.length})</div>
-        <div id="playersMsg"></div>
-        <div style="display:flex;gap:6px;margin-bottom:8px;flex-wrap:wrap">
-            <input type="text" id="playerName" placeholder="Character name" style="flex:1;min-width:120px">
-            <select id="playerUserId" style="flex:1;min-width:120px">
-                <option value="">— No user —</option>${userOptions}
-            </select>
-            <button onclick="addPlayer()" class="sm">Add</button>
-        </div>
-        ${players.length === 0
-                        ? '<div class="empty">No players yet</div>'
-                        : `<table><thead><tr><th>Character</th><th>User</th><th>Reassign</th><th>Timeline</th><th></th></tr></thead><tbody>
-                        ${players
-                            .slice()
-                            .sort((a, b) => (a.player_name || '').localeCompare(b.player_name || '', undefined, { sensitivity: 'base' }))
-                            .map(p => {
-                                const rowReassignOpts = playerUsers
-                                    .filter(u => u.id !== p.user_id)
-                                    .map(u => `<option value="${u.id}">${escHtml(u.username)}</option>`)
-                                    .join('');
-
-                                return `<tr>
-                            <td>${escHtml(p.player_name)}</td>
-                            <td>${escHtml(p.username || '—')}</td>
-                            <td style="white-space:nowrap">
-                                <div style="display:flex;gap:4px;align-items:center">
-                                <select id="reassign_${p.id}" style="font-size:11px;padding:3px 5px;flex:1;min-width:90px">
-                                    <option value="">— None —</option>${rowReassignOpts}
-                                </select>
-                                <button class="sm" onclick="reassignPlayer(${p.id})" style="margin:0">Save</button>
-                                </div>
-                            </td>
-                            <td style="white-space:nowrap">
-                                <button class="sm" onclick="openPlayerTimeline(${p.id})" title="Open existing timeline" style="margin:0 2px 0 0">📜 View</button>
-                                <button class="sm" onclick="createTimelineForPlayer(${p.id}, '${escHtml(p.player_name).replace(/'/g, "&#39;")}')" title="Create new timeline" style="margin:0">+ New</button>
-                            </td>
-                            <td><button class="sm danger" onclick="deletePlayer(${p.id})">Delete</button></td>
-                            </tr>`;
-                            }).join('')}
-               </tbody></table>`}
-
-        <!-- SETTINGS -->
-        <div class="s-title" style="margin-top:20px">⚙️ Campaign Settings</div>
-        <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;flex-wrap:wrap">
-            <span style="font-size:.78rem;color:var(--text-dim)">Calendar:</span>
-            <span style="font-family:var(--fd);font-size:.82rem;color:var(--gold)">${calType === 'harptos' ? 'Harptos (D&D / Faerûn)' : 'Gregorian'}</span>
-            <span style="font-size:.68rem;color:var(--text-dim);font-style:italic">(set at creation, cannot change)</span>
-        </div>
-
-        <!-- TODAY MARKER -->
-        <div class="s-title" style="margin-top:16px">📍 Today Marker</div>
-        <div id="todayMsg"></div>
-        <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px;flex-wrap:wrap">
-            <span id="todayDisplay" style="font-family:var(--fd);font-size:.88rem;color:var(--gold);flex:1">${escHtml(todayDisplay)}</span>
-            <button onclick="openCalPicker('${calType}', ${meta.today_marker ? parseInt(meta.today_marker) : 'null'})" class="sm">📅 Set Date</button>
-        </div>
-
-        <!-- LOCATIONS -->
-        <div class="s-title" style="margin-top:20px">🗺️ Locations (${locs.length})</div>
-        <div id="locMsg"></div>
-        <div style="display:flex;gap:6px;margin-bottom:8px">
-            <input type="text" id="locName" placeholder="Location name" style="flex:1">
-            <input type="text" id="locDesc" placeholder="Description" style="flex:2">
-            <button onclick="addLocation()" class="sm">Add</button>
-        </div>
-        ${locs.length === 0
-                        ? '<div class="empty">No locations yet</div>'
-                        : `<table><thead><tr><th>Name</th><th>Description</th><th>Visible</th><th></th></tr></thead><tbody>
-               ${locs
-                            .slice()
-                            .sort((a, b) => a.name.localeCompare(b.name))
-                            .map(l => `<tr style="${l.is_public ? '' : 'opacity:0.5'}">
-                 <td><strong>${escHtml(l.name)}</strong></td>
-                 <td style="font-size:11px;color:var(--text-dim)">${escHtml(l.description || '')}</td>
-                 <td style="text-align:center">
-                   <button class="sm" title="${l.is_public ? 'Public — click to hide from players' : 'Hidden — click to show to players'}"
-                     onclick="toggleLocVisibility(${l.id}, this)"
-                     style="font-size:13px;padding:2px 7px;background:${l.is_public ? 'var(--gold-dim)' : 'var(--surface2)'};color:${l.is_public ? 'var(--text)' : 'var(--text-dim)'};border:1px solid ${l.is_public ? 'var(--border2)' : 'var(--border)'}">
-                     ${l.is_public ? '🌐' : '🔒'}
-                   </button>
-                 </td>
-                 <td style="white-space:nowrap">
-                   <button class="sm" onclick="editLoc(${l.id})" style="margin-right:4px">Edit</button>
-                   <button class="sm danger" onclick="deleteLoc(${l.id})">Delete</button>
-                 </td>
-               </tr>`).join('')}
-               </tbody></table>`}
-
-        <!-- NPCs (DM-only) -->
-        <div class="s-title" style="margin-top:20px">🎭 NPCs — DM Only (${npcs.length})</div>
-        <div id="npcMsg"></div>
-        <div style="display:flex;gap:6px;margin-bottom:6px">
-            <input type="text" id="npcNames" placeholder="Name, Name, Name… (comma-separated)" style="flex:1">
-            <button onclick="addNpcs()" class="sm">Add</button>
-        </div>
-        <div style="font-size:11px;color:var(--text-dim);margin-bottom:8px;font-style:italic">
-            NPCs are visible only to DMs and can be used as actors in the DM Timeline.
-        </div>
-        ${npcs.length === 0
-                        ? '<div class="empty">No NPCs yet</div>'
-                        : `<div style="display:flex;flex-wrap:wrap;gap:5px;margin-bottom:4px">
-                        ${npcs
-                            .slice()
-                            .sort((a, b) => a.name.localeCompare(b.name))
-                            .map(n => `
-                            <span style="display:inline-flex;align-items:center;gap:4px;background:var(--surface2);border:1px solid var(--border2);border-radius:2px;padding:2px 8px;font-size:12px">
-                            ${escHtml(n.name)}
-                            <span onclick="deleteNpc(${n.id})" title="Remove" style="cursor:pointer;color:var(--text-dim);font-size:10px;margin-left:2px;line-height:1" onmouseover="this.style.color='#e06c75'" onmouseout="this.style.color='var(--text-dim)'">✕</span>
-                            </span>
-                        `).join('')}
-               </div>`}
-
-        <!-- PRIVATE TIMELINES -->
-        <div class="s-title" style="margin-top:20px">📜 Private Timelines (${timelines.length} players)</div>
-        <div id="privTlMsg"></div>
-        ${timelines.length === 0
-                        ? '<div class="empty">No timeline entries yet</div>'
-                        : timelines.map(t => `
-              <div class="tl-card">
-                <div class="tl-card-info">
-                  <div class="tl-pname">${escHtml(t.player_name)}</div>
-                  ${t.username ? `<div class="tl-user">${escHtml(t.username)}</div>` : ''}
-                  <div class="tl-count">${t.entry_count} entr${t.entry_count === 1 ? 'y' : 'ies'}${t.first_year ? ` · Years ${t.first_year}–${t.last_year}` : ''}</div>
-                </div>
-                <button class="sm" onclick="openPlayerTimeline(${t.player_id})">Open Timeline →</button>
-              </div>`).join('')}
-
-        <!-- DANGER -->
-        <div class="s-title" style="margin-top:24px">⚠️ Danger Zone</div>
-        <button onclick="window.location.href='/timeline?campaign=' + currentCampaign.id + '&mode=private'" style="background:var(--surface2);border:1px solid var(--border2);margin-bottom:6px">
-            📜 Open Combined Timeline →
+    // ═══ TAB: LOCATIONS ══════════════════════════════════════════════════
+    function buildLocationsTab(locs) {
+      const sorted = [...locs].sort((a, b) => a.name.localeCompare(b.name));
+      const rows = sorted.map(l => {
+        const sl = l.size_type ? l.size_type.charAt(0).toUpperCase() + l.size_type.slice(1) : '—';
+        return `<tr class="loc-row" data-name="${(l.name || '').toLowerCase()}" style="${l.is_public ? '' : 'opacity:0.5'}">
+      <td><strong>${esc(l.name)}</strong></td>
+      <td><span style="font-size:11px;color:var(--text-dim)">${sl}</span></td>
+      <td style="font-size:11px;color:var(--text-dim);max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(l.description || '')}</td>
+      <td style="text-align:center">
+        <button class="sm" onclick="toggleLocVisibility(${l.id},this)" title="${l.is_public ? 'Public' : 'Hidden'}"
+          style="font-size:12px;padding:2px 7px;margin:0;background:${l.is_public ? 'var(--gold-dim)' : 'var(--surface2)'};border:1px solid ${l.is_public ? 'var(--border2)' : 'var(--border)'}">
+          ${l.is_public ? '🌐' : '🔒'}
         </button>
-        <button class="danger" onclick="deleteCampaign()">Delete Campaign</button>
-        `;
-            } catch (e) {
-                body.innerHTML = `<div class="msg err">Error: ${e.message}</div>`;
-            }
-        }
-
-        /* ─── Player actions ─── */
-        async function addPlayer() {
-            const name = document.getElementById('playerName').value.trim();
-            const userId = document.getElementById('playerUserId').value || null;
-            if (!name) return;
-            try {
-                const res = await fetch(`/api/campaigns/${currentCampaign.id}/players`, {
-                    method: 'POST', headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ name, userId })
-                });
-                if (res.ok) { document.getElementById('playerName').value = ''; await renderCampaignDetails(); showMsg('playersMsg', '✓ Player added', 'ok'); }
-                else { const e = await res.json(); showMsg('playersMsg', '✗ ' + e.error, 'err'); }
-            } catch (e) { showMsg('playersMsg', '✗ ' + e.message, 'err'); }
-        }
-
-        async function deletePlayer(playerId) {
-            if (!confirm('Delete this player and all their data?')) return;
-            const res = await fetch(`/api/campaigns/${currentCampaign.id}/players/${playerId}`, { method: 'DELETE' });
-            if (res.ok) {
-                await renderCampaignDetails();
-            } else {
-                const e = await res.json();
-                showMsg('playersMsg', `✗ ${e.error}`, 'err');
-            }
-        }
-
-        async function reassignPlayer(playerId) {
-            const sel = document.getElementById(`reassign_${playerId}`);
-            if (!sel) return;
-            const userId = sel.value || null;
-            try {
-                const res = await fetch(`/api/campaigns/${currentCampaign.id}/players/${playerId}/reassign`, {
-                    method: 'PUT', headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ userId })
-                });
-                const data = await res.json();
-                if (res.ok) {
-                    showMsg('playersMsg', userId ? '✓ Player reassigned' : '✓ User unassigned', 'ok');
-                    await renderCampaignDetails();
-                } else {
-                    showMsg('playersMsg', '✗ ' + data.error, 'err');
-                }
-            } catch (e) { showMsg('playersMsg', '✗ ' + e.message, 'err'); }
-        }
-
-        /* ─── Location actions ─── */
-        async function addLocation() {
-            const name = (document.getElementById('locName').value || '').trim();
-            const desc = (document.getElementById('locDesc').value || '').trim();
-            if (!name) return;
-            try {
-                const res = await fetch(`/api/campaigns/${currentCampaign.id}/locations`, {
-                    method: 'POST', headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ name, description: desc })
-                });
-                if (res.ok) { document.getElementById('locName').value = ''; document.getElementById('locDesc').value = ''; await renderCampaignDetails(); }
-                else { const e = await res.json(); showMsg('locMsg', '✗ ' + e.error, 'err'); }
-            } catch (e) { showMsg('locMsg', '✗ ' + e.message, 'err'); }
-        }
-
-        async function toggleLocVisibility(locId, btn) {
-            try {
-                const res = await fetch(`/api/campaigns/${currentCampaign.id}/locations/${locId}/visibility`, { method: 'PATCH' });
-                if (!res.ok) { const e = await res.json(); showMsg('locMsg', '✗ ' + e.error, 'err'); return; }
-                const { is_public } = await res.json();
-                btn.textContent = is_public ? '🌐' : '🔒';
-                btn.title = is_public ? 'Public — click to hide from players' : 'Hidden — click to show to players';
-                btn.style.background = is_public ? 'var(--gold-dim)' : 'var(--surface2)';
-                btn.style.color = is_public ? 'var(--text)' : 'var(--text-dim)';
-                btn.style.border = `1px solid ${is_public ? 'var(--border2)' : 'var(--border)'}`;
-                // Dim the whole row to give a clear visual hint the location is hidden
-                btn.closest('tr').style.opacity = is_public ? '' : '0.5';
-            } catch (e) { showMsg('locMsg', '✗ ' + e.message, 'err'); }
-        }
-
-        async function deleteLoc(locId) {
-            if (!confirm('Delete this location?')) return;
-            const res = await fetch(`/api/campaigns/${currentCampaign.id}/locations/${locId}`, { method: 'DELETE' });
-            if (res.ok) {
-                await renderCampaignDetails();
-            } else {
-                const e = await res.json();
-                showMsg('locMsg', `✗ ${e.error}`, 'err');
-            }
-        }
-
-        /* ─── Campaign actions ─── */
-        async function deleteCampaign() {
-            if (!confirm(`Delete "${currentCampaign.name}" and ALL its data? This cannot be undone.`)) return;
-            await fetch(`/api/campaigns/${currentCampaign.id}`, { method: 'DELETE' });
-            currentCampaign = null;
-            await loadCampaigns();
-            document.getElementById('detailHead').textContent = 'Select a Campaign';
-            document.getElementById('detailBody').innerHTML = '<div class="empty">Campaign deleted</div>';
-            document.getElementById('exportCampBtn').style.display = 'none';
-        }
-
-        function openTimeline() {
-            location.href = `/timeline?campaign=${currentCampaign.id}`;
-        }
-        function openPlayerTimeline(playerId) {
-            location.href = `/timeline?campaign=${currentCampaign.id}&player=${playerId}&mode=private`;
-        }
-
-        /* ─── Util ─── */
-        function escHtml(s) { return (s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
-        function showMsg(id, text, type) {
-            const el = document.getElementById(id); if (!el) return;
-            el.innerHTML = `<div class="msg ${type}">${text}</div>`;
-            setTimeout(() => el.innerHTML = '', 2500);
-        }
-
-        /* ─── Enter key support ─── */
-        document.addEventListener('keydown', e => {
-            if (e.key !== 'Enter') return;
-            if (e.target.id === 'campaignName' || e.target.id === 'campaignDesc') handleCreateCampaign();
-            if (e.target.id === 'playerName') addPlayer();
-            if (e.target.id === 'locName' || e.target.id === 'locDesc') addLocation();
-            if (e.target.id === 'npcNames') addNpcs();
-            if (e.target.id === 'cpYear' || e.target.id === 'cpDay') { updateCalPreview(); }
-        });
-
-        /* ─── Close picker on backdrop ─── */
-        document.getElementById('calPickerOverlay').addEventListener('click', e => {
-            if (e.target === document.getElementById('calPickerOverlay')) closeCalPicker();
-        });
-
-        function openPlayerTimeline(playerId) {
-            window.location.href = `/timeline?campaign=${currentCampaign.id}&player=${playerId}&mode=private`;
-        }
-
-        let _newTlPlayerId = null, _newTlPlayerName = '';
-
-        function createTimelineForPlayer(playerId, playerName) {
-            _newTlPlayerId = playerId;
-            _newTlPlayerName = playerName;
-            document.getElementById('newTlName').value = '';
-            document.getElementById('newTlOverlay').classList.add('open');
-            setTimeout(() => document.getElementById('newTlName').focus(), 60);
-        }
-
-        function closeNewTlModal() {
-            document.getElementById('newTlOverlay').classList.remove('open');
-        }
-
-        async function confirmNewTl() {
-            const name = document.getElementById('newTlName').value.trim();
-            if (!name) { document.getElementById('newTlName').focus(); return; }
-            closeNewTlModal();
-            try {
-                const res = await fetch(`/api/player-timelines/${currentCampaign.id}/${_newTlPlayerId}`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ name })
-                });
-                if (res.ok) {
-                    const tl = await res.json();
-                    window.location.href = `/timeline?campaign=${currentCampaign.id}&player=${_newTlPlayerId}&timeline=${tl.id}&mode=private`;
-                } else {
-                    const e = await res.json();
-                    alert('Error: ' + (e.error || 'Could not create timeline'));
-                }
-            } catch (e) { alert('Error: ' + e.message); }
-        }
-
-        // Enter key support
-        document.addEventListener('keydown', e => {
-            if (e.key !== 'Enter') return;
-            const t = e.target.id;
-            if (t === 'campaignName' || t === 'campaignDesc') handleCreateCampaign(e);
-            if (t === 'playerName') addPlayer();
-            if (t === 'locName' || t === 'locDesc') addLocation();
-            if (t === 'cpYear' || t === 'cpDay') updateCalPreview();
-        });
-
-        // Esc closes calendar picker and new-timeline modal
-        document.addEventListener('keydown', e => {
-            if (e.key === 'Escape') { closeCalPicker(); closeNewTlModal(); }
-        });
-
-        /* ─── Location edit ─── */
-        let _editLocId = null;
-
-        function editLoc(locId) {
-            const loc = window._locsById?.[locId];
-            if (!loc) return;
-            _editLocId = locId;
-            document.getElementById('editLocName').value = loc.name;
-            document.getElementById('editLocDesc').value = loc.description;
-            document.getElementById('editLocMsg').innerHTML = '';
-            document.getElementById('editLocOverlay').classList.add('open');
-            setTimeout(() => document.getElementById('editLocName').focus(), 60);
-        }
-
-        function closeEditLoc() {
-            document.getElementById('editLocOverlay').classList.remove('open');
-            _editLocId = null;
-        }
-
-        async function saveEditLoc() {
-            const name = document.getElementById('editLocName').value.trim();
-            const desc = document.getElementById('editLocDesc').value.trim();
-            if (!name) {
-                document.getElementById('editLocMsg').innerHTML = '<div class="msg err">✗ Name is required</div>';
-                return;
-            }
-            try {
-                const res = await fetch(`/api/campaigns/${currentCampaign.id}/locations/${_editLocId}`, {
-                    method: 'PUT', headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ name, description: desc })
-                });
-                if (res.ok) {
-                    closeEditLoc();
-                    await renderCampaignDetails();
-                } else {
-                    const e = await res.json();
-                    document.getElementById('editLocMsg').innerHTML = `<div class="msg err">✗ ${escHtml(e.error)}</div>`;
-                }
-            } catch (e) {
-                document.getElementById('editLocMsg').innerHTML = `<div class="msg err">✗ ${escHtml(e.message)}</div>`;
-            }
-        }
-
-        /* ─── NPC actions ─── */
-        async function addNpcs() {
-            const raw = (document.getElementById('npcNames').value || '').trim();
-            if (!raw) return;
-            try {
-                const res = await fetch(`/api/campaigns/${currentCampaign.id}/npcs`, {
-                    method: 'POST', headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ names: raw })
-                });
-                if (res.ok) {
-                    document.getElementById('npcNames').value = '';
-                    await renderCampaignDetails();
-                } else {
-                    const e = await res.json();
-                    showMsg('npcMsg', '✗ ' + e.error, 'err');
-                }
-            } catch (e) { showMsg('npcMsg', '✗ ' + e.message, 'err'); }
-        }
-
-        async function deleteNpc(npcId) {
-            const res = await fetch(`/api/campaigns/${currentCampaign.id}/npcs/${npcId}`, { method: 'DELETE' });
-            if (res.ok) {
-                await renderCampaignDetails();
-            } else {
-                const e = await res.json();
-                showMsg('npcMsg', `✗ ${e.error}`, 'err');
-            }
-        }
-
-        /* ─── Export / Import ─── */
-        async function exportCampaign() {
-            if (!currentCampaign) return;
-            try {
-                const res = await fetch(`/api/campaigns/${currentCampaign.id}/export`);
-                if (!res.ok) { const e = await res.json(); showMsg('createMsg', '✗ ' + e.error, 'err'); return; }
-                const data = await res.json();
-                const slug = (currentCampaign.name || 'campaign').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
-                const a = document.createElement('a');
-                a.href = URL.createObjectURL(new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' }));
-                a.download = `campaign-${slug}.json`;
-                a.click(); URL.revokeObjectURL(a.href);
-            } catch (e) { showMsg('createMsg', '✗ ' + e.message, 'err'); }
-        }
-
-        async function importCampaign(input) {
-            const file = input.files[0]; if (!file) return;
-            input.value = '';
-            let bundle;
-            try { bundle = JSON.parse(await file.text()); } catch { showMsg('createMsg', '✗ Invalid JSON file', 'err'); return; }
-            if (bundle.type !== 'campaign') { showMsg('createMsg', '✗ Not a campaign export file', 'err'); return; }
-            try {
-                const res = await fetch('/api/campaigns/import', {
-                    method: 'POST', headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(bundle)
-                });
-                const data = await res.json();
-                if (res.ok) {
-                    showMsg('createMsg', '✓ Campaign imported — players with matching usernames have been linked automatically', 'ok');
-                    await loadCampaigns();
-                    selectCampaign(data.campaign_id);
-                } else { showMsg('createMsg', '✗ ' + data.error, 'err'); }
-            } catch (e) { showMsg('createMsg', '✗ ' + e.message, 'err'); }
-        }
-
-        initHeaderComponent('userMenuMount');
-        loadCampaigns();
-    </script>
-
-    <!-- Edit Location Modal -->
-    <div class="loc-modal-overlay" id="editLocOverlay" onclick="if(event.target===this)closeEditLoc()">
-        <div class="loc-modal">
-            <h3>✏️ Edit Location</h3>
-            <div class="form-group">
-                <label>Name</label>
-                <input type="text" id="editLocName"
-                    onkeydown="if(event.key==='Enter')saveEditLoc();if(event.key==='Escape')closeEditLoc()">
-            </div>
-            <div class="form-group">
-                <label>Description</label>
-                <textarea id="editLocDesc" rows="3" placeholder="Brief description of this location…"
-                    onkeydown="if(event.key==='Escape')closeEditLoc()"></textarea>
-            </div>
-            <div id="editLocMsg"></div>
-            <div class="btn-row" style="margin-top:14px">
-                <button onclick="closeEditLoc()">Cancel</button>
-                <button onclick="saveEditLoc()" style="background:var(--gold-dim)">Save</button>
-            </div>
-        </div>
+      </td>
+      <td style="white-space:nowrap">
+        <button class="sm" onclick="editLoc(${l.id})" style="margin:0 3px 0 0">Edit</button>
+        <button class="sm danger" onclick="deleteLoc(${l.id})" style="margin:0">Del</button>
+      </td>
+    </tr>`;
+      }).join('');
+      return `<div class="tab-pane" data-tab="locations">
+    <div id="locMsg"></div>
+    <div class="irow">
+      <input type="text" id="locName" placeholder="Location name" style="flex:2">
+      <select id="locSizeType" class="compact-type">
+        <option value="">— type —</option>
+        <option value="huge">Huge</option><option value="big">Big</option>
+        <option value="medium">Medium</option><option value="small">Small</option>
+        <option value="village">Village</option><option value="inn">Inn</option>
+        <option value="post">Post</option>
+      </select>
+      <input type="text" id="locDesc" placeholder="Description" style="flex:3">
+      <button class="sm" onclick="addLocation()">Add</button>
     </div>
+    <div class="loc-search">
+      <span class="search-icon">🔍</span>
+      <input type="text" id="locSearch" placeholder="Search locations…" oninput="filterLocs(this.value)">
+    </div>
+    ${!sorted.length ? '<div class="empty">No locations yet</div>' : `
+    <table><thead><tr><th>Name</th><th>Type</th><th>Description</th><th>Visible</th><th></th></tr></thead>
+    <tbody id="locTbody">${rows}</tbody></table>`}
+  </div>`;
+    }
+    function filterLocs(q) {
+      const lq = q.toLowerCase();
+      document.querySelectorAll('.loc-row').forEach(r => r.style.display = r.dataset.name.includes(lq) ? '' : 'none');
+    }
+
+    // ═══ TAB: NPCs ═══════════════════════════════════════════════════════
+    function buildNpcsTab(npcs) {
+      const sorted = [...npcs].sort((a, b) => a.name.localeCompare(b.name));
+      return `<div class="tab-pane" data-tab="npcs">
+    <div id="npcMsg"></div>
+    <div class="irow">
+      <input type="text" id="npcNames" placeholder="Name, Name… (comma-separated)" style="flex:1">
+      <button class="sm" onclick="addNpcs()">Add</button>
+    </div>
+    <p style="font-size:11px;color:var(--text-dim);margin-bottom:10px;font-style:italic">NPCs are DM-only and can be used as actors in the DM Timeline.</p>
+    ${!sorted.length ? '<div class="empty">No NPCs yet</div>' : `<div style="display:flex;flex-wrap:wrap;gap:4px">
+    ${sorted.map(n => `<span class="npc-chip">${esc(n.name)}<span class="x" onclick="deleteNpc(${n.id})">✕</span></span>`).join('')}
+    </div>`}
+  </div>`;
+    }
+
+    // ═══ TAB: TIMELINES ══════════════════════════════════════════════════
+    function buildTimelinesTab(timelines) {
+      return `<div class="tab-pane" data-tab="timelines">
+    <div id="privTlMsg"></div>
+    <button class="ghost sm" style="margin-bottom:12px;margin-top:0" onclick="window.location.href='/timeline?campaign='+currentCampaign.id+'&mode=private'">📜 Open Combined Timeline →</button>
+    ${!timelines.length ? '<div class="empty">No timeline entries yet</div>' : timelines.map(t => `
+      <div class="tl-card">
+        <div>
+          <div class="tl-pname">${esc(t.player_name)}</div>
+          ${t.username ? `<div class="tl-user">${esc(t.username)}</div>` : ''}
+          <div class="tl-count">${t.entry_count} entr${t.entry_count === 1 ? 'y' : 'ies'}${t.first_year ? ` · Years ${t.first_year}–${t.last_year}` : ''}</div>
+        </div>
+        <button class="sm" onclick="openPlayerTimeline(${t.player_id})">Open →</button>
+      </div>`).join('')}
+  </div>`;
+    }
+
+    // ═══ TAB: CHARACTER TREE ═════════════════════════════════════════════
+    async function loadCharTree() {
+      const pane = document.getElementById('charTreePane');
+      if (!pane) return;
+      pane.innerHTML = '<div class="empty">Loading…</div>';
+      try {
+        const r = await fetch(`/api/campaigns/${currentCampaign.id}/char-tree`);
+        if (!r.ok) throw new Error((await r.json()).error);
+        _treeData = await r.json();
+        renderCharTree();
+      } catch (e) { pane.innerHTML = `<div class="msg err">Error: ${esc(e.message)}</div>`; }
+    }
+
+    function renderCharTree() {
+      const { players, relationships, npcs = [], cross_connections } = _treeData;
+      const pane = document.getElementById('charTreePane');
+
+      // Build ALL-entities options: players (p_N), relationships (r_N), NPCs (n_N)
+      const playerEntOpts = players.map(p =>
+        `<option value="p_${p.player_id}">⚔️ [Player] ${esc(p.char_name || p.player_name)}</option>`
+      ).join('');
+      const relEntOpts = relationships.map(r =>
+        `<option value="r_${r.id}">[${esc(r.player_name)}] ${esc(r.name)}${r.relation_type ? ' (' + esc(r.relation_type) + ')' : ''}</option>`
+      ).join('');
+      const npcEntOpts = npcs.map(n =>
+        `<option value="n_${n.id}">🎭 [NPC] ${esc(n.name)}</option>`
+      ).join('');
+      window._connAllOpts = [
+        playerEntOpts ? `<optgroup label="⚔️ Players">${playerEntOpts}</optgroup>` : '',
+        relEntOpts ? `<optgroup label="👤 Relationships">${relEntOpts}</optgroup>` : '',
+        npcEntOpts ? `<optgroup label="🎭 NPCs">${npcEntOpts}</optgroup>` : '',
+      ].join('') || '<option value="" disabled>No entities found</option>';
+
+      // Group relationships by player
+      const byPlayer = {};
+      players.forEach(p => { byPlayer[p.player_id] = { ...p, rels: [] }; });
+      relationships.forEach(r => { if (byPlayer[r.player_id]) byPlayer[r.player_id].rels.push(r); });
+
+      const groupsHtml = players.length ? players.map(p => {
+        const rels = byPlayer[p.player_id]?.rels || [];
+        const charLabel = p.char_name ? `<span style="color:var(--text-dim);font-size:.65rem;margin-left:6px">(${esc(p.char_name)})</span>` : '';
+        function statusBadge(label) {
+          if (!label) return '';
+          const l = label.toLowerCase();
+          const icon = l === 'alive' ? '🟢' : (l === 'dead' || l === 'deceased') ? '💀' : '🏷️';
+          return ` <span style="font-size:9px;background:rgba(255,255,255,.07);border-radius:3px;padding:1px 4px;color:var(--text-muted)">${icon} ${esc(label)}</span>`;
+        }
+        const pills = rels.map(r => `<span class="rel-pill ${r.is_family ? 'family' : ''}">${r.is_family ? '👨‍👩‍👧' : '👤'} <strong>${esc(r.name)}</strong>${r.relation_type ? ` <span style="color:var(--text-muted);font-size:10px">· ${esc(r.relation_type)}</span>` : ''}${statusBadge(r.status_label)}</span>`).join('');
+        return `<div class="player-group">
+      <div class="player-group-head">⚔️ ${esc(p.player_name)}${charLabel}</div>
+      ${rels.length ? `<div>${pills}</div>` : '<div style="font-size:11px;color:var(--text-muted);padding:4px 0">No relationships on PC sheet yet.</div>'}
+    </div>`;
+      }).join('') : '<div class="empty">No players in this campaign.</div>';
+
+      // Resolve entity label for cross-connections (handles p_, r_, n_ types)
+      function resolveLabel(entityType, entityId) {
+        if (entityType === 'player') {
+          const p = players.find(p => p.player_id == entityId);
+          return p ? `⚔️ [Player] ${esc(p.char_name || p.player_name)}` : `Player #${entityId}`;
+        }
+        if (entityType === 'npc') {
+          const n = npcs.find(n => n.id == entityId);
+          return n ? `🎭 [NPC] ${esc(n.name)}` : `NPC #${entityId}`;
+        }
+        const r = relationships.find(r => r.id == entityId);
+        return r ? `[${esc(r.player_name)}] ${esc(r.name)}` : `Rel #${entityId}`;
+      }
+
+      const connHtml = cross_connections.length ? cross_connections.map(c => {
+        const fLbl = resolveLabel(c.from_entity_type, c.from_entity_id);
+        const tLbl = resolveLabel(c.to_entity_type, c.to_entity_id);
+        const fromKey = c.from_entity_type === 'player' ? `p_${c.from_entity_id}`
+          : c.from_entity_type === 'npc' ? `n_${c.from_entity_id}`
+            : `r_${c.from_entity_id}`;
+        const toKey = c.to_entity_type === 'player' ? `p_${c.to_entity_id}`
+          : c.to_entity_type === 'npc' ? `n_${c.to_entity_id}`
+            : `r_${c.to_entity_id}`;
+        return `<div class="conn-row">
+      <div class="conn-from-to">${fLbl}</div>
+      <span class="conn-lbl-badge">⟶ ${esc(c.label)}</span>
+      <div class="conn-from-to">${tLbl}</div>
+      ${c.notes ? `<div style="font-size:10px;color:var(--text-muted);flex:1;min-width:80px;font-style:italic">${esc(c.notes)}</div>` : ''}
+      <button class="sm" style="flex-shrink:0;margin:0;margin-right:4px" title="Edit connection"
+        onclick="openEditConn(${c.id}, '${esc(c.label)}', '${esc(c.notes || '')}', '${fromKey}', '${toKey}')">✏️</button>
+      <button class="sm danger" style="flex-shrink:0;margin:0" onclick="deleteConn(${c.id})">✕</button>
+    </div>`;
+      }).join('') : '<div class="empty" style="padding:8px">No DM connections yet.</div>';
+
+      const npcLegend = npcs.length
+        ? `<span><i class="dot" style="background:#2d3a1a;border:2px solid #7ab050"></i> NPC</span>`
+        : '';
+
+      pane.innerHTML = `
+    <div class="s-title" style="margin-top:0">Character Relationship Overview</div>
+    <p style="font-size:11px;color:var(--text-dim);margin-bottom:10px">Scroll to zoom · Drag to pan · Hover nodes for details. 👨‍👩‍👧 = family.</p>
+    <div class="tree-canvas-wrap" id="treeCanvasWrap">
+      <canvas id="treeCanvas"></canvas>
+      <div class="tree-zoom-ctrl">
+        <button class="tree-zoom-btn" onclick="treeZoomStep(1.25)" title="Zoom in">+</button>
+        <button class="tree-zoom-btn" onclick="treeZoomStep(0.8)" title="Zoom out">−</button>
+        <button class="tree-zoom-btn" onclick="treeZoomReset()" title="Reset view" style="font-size:11px">⊡</button>
+      </div>
+      <div class="tree-tooltip" id="treeTooltip"></div>
+    </div>
+    <div class="tree-legend">
+      <span><i class="dot" style="background:#c9a84c;border:2px solid #c9a84c"></i> Player character</span>
+      <span><i class="dot" style="background:#2a3d4a;border:2px solid #6ab5e0"></i> Relationship</span>
+      ${npcLegend}
+      <span><i class="line" style="background:rgba(90,70,40,.6)"></i> PC relation</span>
+      <span><i class="line" style="background:#b05050;border-top:2px dashed #b05050;height:0"></i> DM cross-link</span>
+    </div>
+    ${groupsHtml}
+    <div class="s-title">🔗 DM-Only Cross Connections
+      <button class="sm" onclick="openAddConn()">+ Add Connection</button>
+    </div>
+    <div class="conn-list">${connHtml}</div>`;
+
+      // Defer draw until wrap has real dimensions
+      function attemptDraw(attempts) {
+        const wrap = document.getElementById('treeCanvasWrap');
+        if (!wrap) return;
+        if (wrap.clientWidth > 0) { initTreeCanvas(players, relationships, npcs, cross_connections); }
+        else if (attempts > 0) { requestAnimationFrame(() => attemptDraw(attempts - 1)); }
+      }
+      requestAnimationFrame(() => attemptDraw(10));
+    }
+
+    // ═══ CANVAS TREE — zoom / pan / hover ════════════════════════════════
+    let _treeVP = { scale: 1, ox: 0, oy: 0 }; // viewport state
+    let _treeNodes = {};   // id→{x,y,label,type,...}  (world coords)
+    let _treePlayers, _treeRels, _treeNpcs, _treeCross; // cached data for redraw
+
+    function initTreeCanvas(players, relationships, npcs, crossConns) {
+      _treePlayers = players; _treeRels = relationships; _treeNpcs = npcs; _treeCross = crossConns;
+      const wrap = document.getElementById('treeCanvasWrap');
+      const canvas = document.getElementById('treeCanvas');
+      if (!wrap || !canvas) return;
+      const W = wrap.clientWidth, H = wrap.clientHeight || 600;
+      canvas.width = W; canvas.height = H;
+
+      _treeNodes = {};
+
+      // ── Layout constants ──────────────────────────────────────────────
+      const TH = 90;        // tier height (world units, vertical)
+      const HS = 82;        // horizontal spread within a tier
+      const NR = 12;        // normal node radius (world units)
+      const PR = 16;        // player node radius
+      const SOC_R = 110;    // social fan radius
+      const SOC_ANG = 55;   // half-angle of social fan (degrees)
+      const PLAYER_SPACING_X = 420; // horizontal gap between player columns
+
+      const FAMILY_TYPES = new Set(['Grandparent', 'Parent', 'Sibling', 'Child', 'Grandchild']);
+      const TIER_MAP = { Grandparent: -2, Parent: -1, Sibling: 0, Child: 1, Grandchild: 2 };
+
+      // Which NPC IDs are actually referenced in any cross-connection?
+      const connectedNpcIds = new Set();
+      crossConns.forEach(c => {
+        if (c.from_entity_type === 'npc') connectedNpcIds.add(c.from_entity_id);
+        if (c.to_entity_type === 'npc') connectedNpcIds.add(c.to_entity_id);
+      });
+
+      // ── Place nodes for each player (horizontal columns) ─────────────
+      const totalW = (players.length - 1) * PLAYER_SPACING_X;
+      const startX = -totalW / 2;
+
+      players.forEach((p, pi) => {
+        const bandCX = startX + pi * PLAYER_SPACING_X; // world-X centre for this player column
+
+        // Player character node at the vertical centre of its column
+        _treeNodes[`p_${p.player_id}`] = {
+          x: bandCX, y: 0,
+          label: p.char_name || p.player_name,
+          type: 'player', r: PR,
+          tooltip: `Player: ${p.player_name}${p.char_name ? '\nCharacter: ' + p.char_name : ''}`
+        };
+
+        const pRels = relationships.filter(r => r.player_id === p.player_id);
+        const family = pRels.filter(r => FAMILY_TYPES.has(r.relation_type));
+        const social = pRels.filter(r => !FAMILY_TYPES.has(r.relation_type));
+
+        // ── Family nodes by tier (vertical, centred on bandCX) ───────
+        const byTier = {};
+        family.forEach(r => {
+          const t = TIER_MAP[r.relation_type] ?? 0;
+          if (!byTier[t]) byTier[t] = [];
+          byTier[t].push(r);
+        });
+
+        Object.entries(byTier).forEach(([tierStr, nodes]) => {
+          const t = parseInt(tierStr);
+          const wy = t * TH; // world-Y for this tier (relative to player row at y=0)
+          const n = nodes.length;
+
+          if (t === 0) {
+            // Siblings: alternate left/right around bandCX
+            nodes.forEach((r, i) => {
+              const sign = (i % 2 === 0) ? -1 : 1;
+              const dist = (Math.floor(i / 2) + 1) * HS;
+              _treeNodes[`r_${r.id}`] = {
+                x: bandCX + sign * dist, y: wy,
+                label: r.name, type: 'rel',
+                relType: r.relation_type, isFamily: true, r: NR,
+                bandCX,
+                tooltip: `${r.name}\nType: ${r.relation_type}\n👨‍👩‍👧 Family\nPlayer: ${r.player_name}`
+              };
+            });
+          } else {
+            // Other tiers: spread around bandCX
+            const startXt = bandCX - (n - 1) * HS / 2;
+            nodes.forEach((r, i) => {
+              _treeNodes[`r_${r.id}`] = {
+                x: startXt + i * HS, y: wy,
+                label: r.name, type: 'rel',
+                relType: r.relation_type, isFamily: true, r: NR,
+                bandCX,
+                tooltip: `${r.name}\nType: ${r.relation_type}\n👨‍👩‍👧 Family\nPlayer: ${r.player_name}`
+              };
+            });
+          }
+        });
+
+        // ── Social nodes: fan to the right of this player's column ───
+        if (social.length > 0) {
+          // Find rightmost family node in this column
+          const colFamNodes = Object.values(_treeNodes).filter(n =>
+            n.type === 'rel' && n.bandCX === bandCX && n.isFamily);
+          const famMaxX = colFamNodes.length
+            ? Math.max(...colFamNodes.map(n => n.x))
+            : bandCX;
+          const anchorX = famMaxX + NR + 30;
+          const halfAng = SOC_ANG * (Math.PI / 180);
+          const step = social.length === 1 ? 0 : (2 * halfAng) / (social.length - 1);
+          social.forEach((r, i) => {
+            const angle = social.length === 1 ? 0 : -halfAng + i * step;
+            _treeNodes[`r_${r.id}`] = {
+              x: anchorX + SOC_R * Math.cos(angle),
+              y: SOC_R * Math.sin(angle),
+              label: r.name, type: 'rel',
+              relType: r.relation_type, isFamily: false, r: NR,
+              bandCX,
+              tooltip: `${r.name}\nType: ${r.relation_type || 'Other'}\nPlayer: ${r.player_name}`
+            };
+          });
+        }
+      });
+
+      // ── NPC nodes: only those referenced in cross-connections ─────────
+      const connectedNpcs = npcs.filter(n => connectedNpcIds.has(n.id));
+      if (connectedNpcs.length) {
+        // Find the lowest Y (most positive = lowest on screen) across all nodes
+        const allYs = Object.values(_treeNodes).map(n => n.y);
+        const bottomY = allYs.length ? Math.max(...allYs) : 0;
+        const npcY = bottomY + TH + 40;
+        const spacing = Math.min(100, 500 / Math.max(connectedNpcs.length, 1));
+        const totalNpcW = spacing * (connectedNpcs.length - 1);
+        connectedNpcs.forEach((n, ni) => {
+          _treeNodes[`n_${n.id}`] = {
+            x: -totalNpcW / 2 + ni * spacing,
+            y: npcY,
+            label: n.name, type: 'npc', r: NR,
+            tooltip: `NPC: ${n.name}`
+          };
+        });
+      }
+
+      // ── Centre viewport on bounding box ──────────────────────────────
+      const xs = Object.values(_treeNodes).map(n => n.x);
+      const ys = Object.values(_treeNodes).map(n => n.y);
+      if (xs.length) {
+        const bbMx = (Math.min(...xs) + Math.max(...xs)) / 2;
+        const bbMy = (Math.min(...ys) + Math.max(...ys)) / 2;
+        // Scale to fit
+        const bbW = Math.max(...xs) - Math.min(...xs) + 120;
+        const bbH = Math.max(...ys) - Math.min(...ys) + 120;
+        const fitScale = Math.min(W / bbW, H / bbH, 1.2);
+        _treeVP = { scale: fitScale, ox: W / 2 - bbMx * fitScale, oy: H / 2 - bbMy * fitScale };
+      } else {
+        _treeVP = { scale: 1, ox: W / 2, oy: H / 2 };
+      }
+
+      // ── Canvas interaction events ─────────────────────────────────────
+      canvas._treeListeners?.forEach(([evt, fn]) => canvas.removeEventListener(evt, fn));
+      canvas._treeListeners = [];
+      function on(evt, fn, opts) { canvas.addEventListener(evt, fn, opts); canvas._treeListeners.push([evt, fn]); }
+
+      let dragging = false, dragStart = null;
+      on('mousedown', e => {
+        if (e.button !== 0) return;
+        dragging = true; dragStart = { x: e.offsetX - _treeVP.ox, y: e.offsetY - _treeVP.oy };
+        wrap.classList.add('panning');
+      });
+      on('mousemove', e => {
+        if (dragging && dragStart) {
+          _treeVP.ox = e.offsetX - dragStart.x;
+          _treeVP.oy = e.offsetY - dragStart.y;
+          drawTree(canvas);
+        }
+        const tt = document.getElementById('treeTooltip');
+        if (!tt) return;
+        const hit = hitTest(e.offsetX, e.offsetY, canvas);
+        if (hit) {
+          tt.style.display = 'block';
+          tt.style.left = (e.offsetX + 14) + 'px';
+          tt.style.top = (e.offsetY + 10) + 'px';
+          const lines = hit.tooltip ? hit.tooltip.split('\n').filter(Boolean) : [hit.label];
+          tt.innerHTML = `<strong>${esc(lines[0])}</strong>${lines.slice(1).map(l => `<span>${esc(l)}</span>`).join('')}`;
+        } else {
+          tt.style.display = 'none';
+        }
+      });
+      on('mouseup', () => { dragging = false; wrap.classList.remove('panning'); });
+      on('mouseleave', () => {
+        dragging = false; wrap.classList.remove('panning');
+        const tt = document.getElementById('treeTooltip'); if (tt) tt.style.display = 'none';
+      });
+      on('wheel', e => {
+        e.preventDefault();
+        const zf = e.deltaY < 0 ? 1.12 : 0.9;
+        _treeVP.ox = e.offsetX - (e.offsetX - _treeVP.ox) * zf;
+        _treeVP.oy = e.offsetY - (e.offsetY - _treeVP.oy) * zf;
+        _treeVP.scale *= zf;
+        drawTree(canvas);
+      }, { passive: false });
+
+      drawTree(canvas);
+    }
+
+    function hitTest(mx, my, canvas) {
+      for (const n of Object.values(_treeNodes)) {
+        const r = (n.r || 9) * _treeVP.scale;
+        const sx = n.x * _treeVP.scale + _treeVP.ox;
+        const sy = n.y * _treeVP.scale + _treeVP.oy;
+        if ((mx - sx) ** 2 + (my - sy) ** 2 <= r * r) return n;
+      }
+      return null;
+    }
+
+    function treeZoomStep(factor) {
+      const wrap = document.getElementById('treeCanvasWrap');
+      const canvas = document.getElementById('treeCanvas');
+      if (!wrap || !canvas) return;
+      const cx = canvas.width / 2, cy = canvas.height / 2;
+      _treeVP.ox = cx - (cx - _treeVP.ox) * factor;
+      _treeVP.oy = cy - (cy - _treeVP.oy) * factor;
+      _treeVP.scale *= factor;
+      drawTree(canvas);
+    }
+
+    function treeZoomReset() {
+      const canvas = document.getElementById('treeCanvas');
+      if (!canvas) return;
+      const W = canvas.width, H = canvas.height;
+      const xs = Object.values(_treeNodes).map(n => n.x);
+      const ys = Object.values(_treeNodes).map(n => n.y);
+      if (!xs.length) return;
+      const mx = (Math.min(...xs) + Math.max(...xs)) / 2;
+      const my = (Math.min(...ys) + Math.max(...ys)) / 2;
+      _treeVP = { scale: 1, ox: W / 2 - mx, oy: H / 2 - my };
+      drawTree(canvas);
+    }
+
+    function drawTree(canvas) {
+      const ctx = canvas.getContext('2d');
+      const W = canvas.width, H = canvas.height;
+      ctx.clearRect(0, 0, W, H);
+
+      function sx(x) { return x * _treeVP.scale + _treeVP.ox; }
+      function sy(y) { return y * _treeVP.scale + _treeVP.oy; }
+      const sc = _treeVP.scale;
+
+      if (!_treePlayers?.length && !Object.keys(_treeNodes).length) {
+        ctx.font = '13px Cinzel,serif';
+        ctx.fillStyle = 'rgba(160,144,112,.5)';
+        ctx.textAlign = 'center';
+        ctx.fillText('No players found', W / 2, H / 2);
+        return;
+      }
+
+      const TIER_MAP = { Grandparent: -2, Parent: -1, Sibling: 0, Child: 1, Grandchild: 2 };
+      const FAMILY_TYPES = new Set(Object.keys(TIER_MAP));
+      const TH = 90;
+      const PLAYER_SPACING_X = 420;
+
+      // ── Draw family tree structural lines per player ──────────────────
+      (_treePlayers || []).forEach((p) => {
+        const pn = _treeNodes[`p_${p.player_id}`];
+        if (!pn) return;
+        const bandCX = pn.x;
+
+        const pRels = (_treeRels || []).filter(r => r.player_id === p.player_id);
+
+        // Group family nodes by tier
+        const byTier = {};
+        pRels.filter(r => FAMILY_TYPES.has(r.relation_type)).forEach(r => {
+          const t = TIER_MAP[r.relation_type];
+          if (!byTier[t]) byTier[t] = [];
+          const n = _treeNodes[`r_${r.id}`];
+          if (n) byTier[t].push(n);
+        });
+
+        Object.entries(byTier).forEach(([tierStr, nodes]) => {
+          const t = parseInt(tierStr);
+          const tierY = t * TH;
+
+          // Horizontal bar linking multiple nodes on same tier
+          if (nodes.length > 1) {
+            const xs2 = nodes.map(n => n.x);
+            ctx.beginPath();
+            ctx.moveTo(sx(Math.min(...xs2)), sy(tierY));
+            ctx.lineTo(sx(Math.max(...xs2)), sy(tierY));
+            ctx.strokeStyle = 'rgba(90,70,40,.3)';
+            ctx.lineWidth = 1;
+            ctx.setLineDash([3, 3]);
+            ctx.stroke();
+          }
+
+          // Vertical spine from player Y to tier Y, at column midpoint X
+          const midX = nodes.reduce((s, n) => s + n.x, 0) / nodes.length;
+          const fromY = t < 0 ? tierY : 0;   // tier is above or below player row
+          const toY = t < 0 ? 0 : tierY;
+          ctx.beginPath();
+          ctx.moveTo(sx(midX), sy(fromY));
+          ctx.lineTo(sx(midX), sy(toY));
+          ctx.strokeStyle = 'rgba(90,70,40,.35)';
+          ctx.lineWidth = 1;
+          ctx.setLineDash([3, 3]);
+          ctx.stroke();
+        });
+        ctx.setLineDash([]);
+
+        // Social relation edges — plain line from player to node
+        pRels.filter(r => !FAMILY_TYPES.has(r.relation_type)).forEach(r => {
+          const rn = _treeNodes[`r_${r.id}`];
+          if (!rn) return;
+          ctx.beginPath();
+          ctx.moveTo(sx(pn.x), sy(pn.y));
+          ctx.lineTo(sx(rn.x), sy(rn.y));
+          ctx.strokeStyle = 'rgba(60,100,120,.4)';
+          ctx.lineWidth = 1;
+          ctx.setLineDash([]);
+          ctx.stroke();
+        });
+      });
+
+      // ── NPC separator line ────────────────────────────────────────────
+      const npcNodes = Object.entries(_treeNodes).filter(([k]) => k.startsWith('n_')).map(([, n]) => n);
+      if (npcNodes.length) {
+        const minNpcY = Math.min(...npcNodes.map(n => n.y));
+        const sepY = sy(minNpcY - 30);
+        if (sepY > 0 && sepY < H) {
+          ctx.beginPath();
+          ctx.moveTo(20, sepY); ctx.lineTo(W - 20, sepY);
+          ctx.strokeStyle = 'rgba(90,70,40,.25)';
+          ctx.lineWidth = 1; ctx.setLineDash([6, 4]); ctx.stroke();
+          ctx.setLineDash([]);
+          ctx.font = `${Math.max(8, Math.round(9 * sc))}px Cinzel,serif`;
+          ctx.fillStyle = 'rgba(122,96,48,.6)';
+          ctx.textAlign = 'center';
+          ctx.fillText('NPCs', W / 2, sepY - 4);
+        }
+      }
+
+      // ── DM cross-connections (dashed red) ─────────────────────────────
+      ctx.setLineDash([]);
+      (_treeCross || []).forEach(c => {
+        const keyA = c.from_entity_type === 'player' ? `p_${c.from_entity_id}` : c.from_entity_type === 'npc' ? `n_${c.from_entity_id}` : `r_${c.from_entity_id}`;
+        const keyB = c.to_entity_type === 'player' ? `p_${c.to_entity_id}` : c.to_entity_type === 'npc' ? `n_${c.to_entity_id}` : `r_${c.to_entity_id}`;
+        const a = _treeNodes[keyA], b = _treeNodes[keyB];
+        if (!a || !b) return;
+        ctx.beginPath();
+        ctx.moveTo(sx(a.x), sy(a.y));
+        ctx.lineTo(sx(b.x), sy(b.y));
+        ctx.strokeStyle = 'rgba(176,80,80,.8)';
+        ctx.lineWidth = 1.5 * sc;
+        ctx.setLineDash([5, 3]);
+        ctx.stroke();
+        ctx.setLineDash([]);
+        const mx = (sx(a.x) + sx(b.x)) / 2, my = (sy(a.y) + sy(b.y)) / 2;
+        const fontSize = Math.max(7, Math.round(9 * sc));
+        ctx.font = `${fontSize}px Cinzel,serif`;
+        ctx.fillStyle = 'rgba(210,110,110,.95)';
+        ctx.textAlign = 'center';
+        const lbl = c.label.length > 16 ? c.label.slice(0, 14) + '…' : c.label;
+        // White halo for readability
+        ctx.strokeStyle = 'rgba(0,0,0,.5)';
+        ctx.lineWidth = 2.5;
+        ctx.strokeText(lbl, mx, my - 5 * sc);
+        ctx.fillText(lbl, mx, my - 5 * sc);
+      });
+      ctx.setLineDash([]);
+
+      // ── Tier labels (per player column, only if scale ≥ 0.5) ─────────
+      if (sc >= 0.5) {
+        const TIER_LABELS = { '-2': 'Grandparent', '-1': 'Parent', '0': 'Sibling', '1': 'Child', '2': 'Grandchild' };
+        (_treePlayers || []).forEach((p) => {
+          const pn = _treeNodes[`p_${p.player_id}`];
+          if (!pn) return;
+          Object.entries(TIER_LABELS).forEach(([t, lbl]) => {
+            const tierY = parseInt(t) * TH;
+            const screenY = sy(tierY);
+            if (screenY < -10 || screenY > H + 10) return;
+            const screenX = sx(pn.x);
+            if (screenX < -10 || screenX > W + 10) return;
+            ctx.font = `${Math.max(7, Math.round(8 * sc))}px Cinzel,serif`;
+            ctx.fillStyle = 'rgba(100,80,40,.35)';
+            ctx.textAlign = 'center';
+            ctx.fillText(lbl, screenX, screenY - (t === '-2' ? 20 : t === '-1' ? 20 : 20) * sc);
+          });
+        });
+      }
+
+      // ── Draw all nodes ────────────────────────────────────────────────
+      Object.values(_treeNodes).forEach(n => {
+        const r = (n.r || 9) * sc;
+        ctx.beginPath();
+        ctx.arc(sx(n.x), sy(n.y), r, 0, Math.PI * 2);
+        if (n.type === 'player') ctx.fillStyle = '#7a6030';
+        else if (n.type === 'npc') ctx.fillStyle = '#2d3a1a';
+        else if (n.isFamily) ctx.fillStyle = '#3a2e1a';
+        else ctx.fillStyle = '#1e3040';
+        ctx.fill();
+        if (n.type === 'player') ctx.strokeStyle = '#c9a84c';
+        else if (n.type === 'npc') ctx.strokeStyle = '#7ab050';
+        else if (n.isFamily) ctx.strokeStyle = '#a08040';
+        else ctx.strokeStyle = '#6ab5e0';
+        ctx.lineWidth = (n.type === 'player' ? 2 : 1.5) * sc;
+        ctx.stroke();
+
+        // Label
+        const fontSize = Math.max(7, Math.round((n.type === 'player' ? 9 : 8) * sc));
+        ctx.font = n.type === 'player' ? `bold ${fontSize}px Cinzel,serif` : `${fontSize}px Cinzel,serif`;
+        ctx.fillStyle = n.type === 'player' ? '#c9a84c' : n.type === 'npc' ? '#9aba70' : n.isFamily ? '#c0a870' : '#8ab5c0';
+        ctx.textAlign = 'center';
+        const lbl = (n.label || '?').length > 13 ? (n.label || '?').slice(0, 12) + '…' : (n.label || '?');
+
+        // Relation type label above node (only family, only if zoomed enough)
+        if (n.type === 'rel' && n.isFamily && n.relType && sc >= 0.55) {
+          const smallFont = Math.max(6, Math.round(7 * sc));
+          ctx.font = `${smallFont}px Cinzel,serif`;
+          ctx.fillStyle = 'rgba(160,136,80,.7)';
+          ctx.fillText(n.relType, sx(n.x), sy(n.y) - r - 3 * sc);
+        }
+
+        ctx.font = n.type === 'player' ? `bold ${fontSize}px Cinzel,serif` : `${fontSize}px Cinzel,serif`;
+        ctx.fillStyle = n.type === 'player' ? '#c9a84c' : n.type === 'npc' ? '#9aba70' : n.isFamily ? '#c0a870' : '#8ab5c0';
+        ctx.fillText(lbl, sx(n.x), sy(n.y) + r + 10 * sc);
+      });
+    }
+
+    // ═══ TAB: SETTINGS ═══════════════════════════════════════════════════
+    function buildSettingsTab(calType, todayDisplay, meta) {
+      return `<div class="tab-pane" data-tab="settings">
+    <div class="settings-block">
+      <h3>📅 Calendar</h3>
+      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+        <span style="font-size:.78rem;color:var(--text-dim)">Type:</span>
+        <span style="font-family:var(--fd);font-size:.82rem;color:var(--gold)">${calType === 'harptos' ? 'Harptos (D&D / Faerûn)' : 'Gregorian'}</span>
+        <span style="font-size:.67rem;color:var(--text-muted);font-style:italic">(set at creation — cannot change)</span>
+      </div>
+    </div>
+    <div class="settings-block">
+      <h3>📍 Today Marker</h3>
+      <div id="todayMsg"></div>
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px;flex-wrap:wrap">
+        <span id="todayDisplay" style="font-family:var(--fd);font-size:.88rem;color:var(--gold);flex:1">${esc(todayDisplay)}</span>
+        <button class="sm" style="margin:0" onclick="openCalPicker('${calType}',${meta.today_marker ? parseInt(meta.today_marker) : 'null'})">📅 Set Date</button>
+      </div>
+    </div>
+    <div class="settings-block">
+      <h3>⚠️ Danger Zone</h3>
+      <p style="font-size:12px;color:var(--text-dim);margin-bottom:10px">Deleting a campaign permanently removes all players, locations, timelines, paths and maps.</p>
+      <button class="danger" onclick="deleteCampaign()">🗑 Delete Campaign</button>
+    </div>
+  </div>`;
+    }
+
+    // ═══ PLAYERS CRUD ════════════════════════════════════════════════════
+    async function addPlayer() {
+      const name = document.getElementById('playerName').value.trim(), userId = document.getElementById('playerUserId').value || null;
+      if (!name) return;
+      try {
+        const res = await fetch(`/api/campaigns/${currentCampaign.id}/players`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, userId }) });
+        if (res.ok) { document.getElementById('playerName').value = ''; await renderCampaignDetails(); showMsg('playersMsg', '✓ Player added', 'ok'); }
+        else { const e = await res.json(); showMsg('playersMsg', '✗ ' + e.error, 'err'); }
+      } catch (e) { showMsg('playersMsg', '✗ ' + e.message, 'err'); }
+    }
+    async function deletePlayer(id) {
+      if (!confirm('Delete this player and all their data?')) return;
+      const res = await fetch(`/api/campaigns/${currentCampaign.id}/players/${id}`, { method: 'DELETE' });
+      if (res.ok) await renderCampaignDetails();
+      else { const e = await res.json(); showMsg('playersMsg', '✗ ' + e.error, 'err'); }
+    }
+    async function reassignPlayer(playerId) {
+      const sel = document.getElementById(`reassign_${playerId}`); if (!sel) return;
+      try {
+        const res = await fetch(`/api/campaigns/${currentCampaign.id}/players/${playerId}/reassign`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ userId: sel.value || null }) });
+        const data = await res.json();
+        if (res.ok) { showMsg('playersMsg', sel.value ? '✓ Reassigned' : '✓ Unassigned', 'ok'); await renderCampaignDetails(); }
+        else showMsg('playersMsg', '✗ ' + data.error, 'err');
+      } catch (e) { showMsg('playersMsg', '✗ ' + e.message, 'err'); }
+    }
+    function openPlayerTimeline(playerId) { location.href = `/timeline?campaign=${currentCampaign.id}&player=${playerId}&mode=private`; }
+    function createTimelineForPlayer(playerId, playerName) {
+      _newTlPlayerId = playerId;
+      document.getElementById('newTlName').value = '';
+      document.getElementById('newTlOverlay').classList.add('open');
+      setTimeout(() => document.getElementById('newTlName').focus(), 60);
+    }
+    function closeNewTlModal() { document.getElementById('newTlOverlay').classList.remove('open'); }
+    async function confirmNewTl() {
+      const name = document.getElementById('newTlName').value.trim(); if (!name) return;
+      closeNewTlModal();
+      try {
+        const res = await fetch(`/api/player-timelines/${currentCampaign.id}/${_newTlPlayerId}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name }) });
+        if (res.ok) { const tl = await res.json(); location.href = `/timeline?campaign=${currentCampaign.id}&player=${_newTlPlayerId}&timeline=${tl.id}&mode=private`; }
+        else { const e = await res.json(); alert('Error: ' + (e.error || 'Could not create timeline')); }
+      } catch (e) { alert('Error: ' + e.message); }
+    }
+
+    // ═══ LOCATIONS CRUD ══════════════════════════════════════════════════
+    async function addLocation() {
+      const name = (document.getElementById('locName').value || '').trim();
+      const desc = (document.getElementById('locDesc').value || '').trim();
+      const sizeType = (document.getElementById('locSizeType').value || '').trim();
+      if (!name) return;
+      try {
+        const res = await fetch(`/api/campaigns/${currentCampaign.id}/locations`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, description: desc, size_type: sizeType || null }) });
+        if (res.ok) { document.getElementById('locName').value = ''; document.getElementById('locDesc').value = ''; document.getElementById('locSizeType').value = ''; await renderCampaignDetails(); }
+        else { const e = await res.json(); showMsg('locMsg', '✗ ' + e.error, 'err'); }
+      } catch (e) { showMsg('locMsg', '✗ ' + e.message, 'err'); }
+    }
+    async function toggleLocVisibility(locId, btn) {
+      try {
+        const res = await fetch(`/api/campaigns/${currentCampaign.id}/locations/${locId}/visibility`, { method: 'PATCH' });
+        if (!res.ok) { const e = await res.json(); showMsg('locMsg', '✗ ' + e.error, 'err'); return; }
+        const { is_public } = await res.json();
+        btn.textContent = is_public ? '🌐' : '🔒'; btn.title = is_public ? 'Public' : 'Hidden';
+        btn.style.background = is_public ? 'var(--gold-dim)' : 'var(--surface2)';
+        btn.style.border = `1px solid ${is_public ? 'var(--border2)' : 'var(--border)'}`;
+        btn.closest('tr').style.opacity = is_public ? '' : '0.5';
+      } catch (e) { showMsg('locMsg', '✗ ' + e.message, 'err'); }
+    }
+    async function deleteLoc(locId) {
+      if (!confirm('Delete this location?')) return;
+      const res = await fetch(`/api/campaigns/${currentCampaign.id}/locations/${locId}`, { method: 'DELETE' });
+      if (res.ok) await renderCampaignDetails();
+      else { const e = await res.json(); showMsg('locMsg', '✗ ' + e.error, 'err'); }
+    }
+    function editLoc(locId) {
+      const loc = window._locsById?.[locId]; if (!loc) return;
+      _editLocId = locId;
+      document.getElementById('editLocName').value = loc.name;
+      document.getElementById('editLocDesc').value = loc.description || '';
+      document.getElementById('editLocSizeType').value = loc.size_type || '';
+      document.getElementById('editLocMsg').innerHTML = '';
+      document.getElementById('editLocOverlay').classList.add('open');
+      setTimeout(() => document.getElementById('editLocName').focus(), 60);
+    }
+    function closeEditLoc() { document.getElementById('editLocOverlay').classList.remove('open'); _editLocId = null; }
+    async function saveEditLoc() {
+      const name = document.getElementById('editLocName').value.trim();
+      const desc = document.getElementById('editLocDesc').value.trim();
+      const sizeType = document.getElementById('editLocSizeType').value.trim();
+      if (!name) { document.getElementById('editLocMsg').innerHTML = '<div class="msg err">✗ Name required</div>'; return; }
+      try {
+        const res = await fetch(`/api/campaigns/${currentCampaign.id}/locations/${_editLocId}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, description: desc, size_type: sizeType || null }) });
+        if (res.ok) { closeEditLoc(); await renderCampaignDetails(); }
+        else { const e = await res.json(); document.getElementById('editLocMsg').innerHTML = `<div class="msg err">✗ ${esc(e.error)}</div>`; }
+      } catch (e) { document.getElementById('editLocMsg').innerHTML = `<div class="msg err">✗ ${esc(e.message)}</div>`; }
+    }
+
+    // ═══ NPCs CRUD ═══════════════════════════════════════════════════════
+    async function addNpcs() {
+      const raw = (document.getElementById('npcNames').value || '').trim(); if (!raw) return;
+      try {
+        const res = await fetch(`/api/campaigns/${currentCampaign.id}/npcs`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ names: raw }) });
+        if (res.ok) { document.getElementById('npcNames').value = ''; await renderCampaignDetails(); }
+        else { const e = await res.json(); showMsg('npcMsg', '✗ ' + e.error, 'err'); }
+      } catch (e) { showMsg('npcMsg', '✗ ' + e.message, 'err'); }
+    }
+    async function deleteNpc(npcId) {
+      const res = await fetch(`/api/campaigns/${currentCampaign.id}/npcs/${npcId}`, { method: 'DELETE' });
+      if (res.ok) await renderCampaignDetails();
+      else { const e = await res.json(); showMsg('npcMsg', '✗ ' + e.error, 'err'); }
+    }
+
+    // ═══ CHAR TREE CROSS-CONNECTIONS ═════════════════════════════════════
+    let _editConnId = null; // null = add mode, number = edit mode
+
+    function _openConnModal(isEdit) {
+      const opts = window._connAllOpts || '<option value="" disabled>No entities found</option>';
+      const fromSel = document.getElementById('connFrom');
+      const toSel = document.getElementById('connTo');
+      // In edit mode hide From/To selectors (they're fixed); show them in add mode
+      document.getElementById('connFromRow').style.display = isEdit ? 'none' : '';
+      document.getElementById('connToRow').style.display = isEdit ? 'none' : '';
+      document.getElementById('connModalTitle').textContent = isEdit ? '✏️ Edit Connection' : '🔗 DM Cross-Connection';
+      document.getElementById('connModalDesc').textContent = isEdit
+        ? 'Update the label or notes for this DM connection.'
+        : 'Link two relationship entries across any players. Only the DM can see these connections.';
+      document.getElementById('connSubmitBtn').textContent = isEdit ? 'Save Changes' : 'Add Connection';
+      document.getElementById('connMsg').innerHTML = '';
+      fromSel.innerHTML = opts;
+      toSel.innerHTML = opts;
+
+      if (!isEdit) {
+        // When "From" changes, remove that option from "To" to prevent same-entity connections
+        fromSel.onchange = () => {
+          const selected = fromSel.value;
+          toSel.innerHTML = opts;
+          const toOpt = toSel.querySelector(`option[value="${CSS.escape(selected)}"]`);
+          if (toOpt) toOpt.remove();
+          if (toSel.value === selected) toSel.selectedIndex = 0;
+        };
+        fromSel.dispatchEvent(new Event('change'));
+      }
+      document.getElementById('addConnOverlay').classList.add('open');
+      setTimeout(() => document.getElementById('connLabel').focus(), 60);
+    }
+
+    function openAddConn() {
+      _editConnId = null;
+      document.getElementById('connLabel').value = '';
+      document.getElementById('connNotes').value = '';
+      _openConnModal(false);
+    }
+
+    function openEditConn(id, label, notes, fromKey, toKey) {
+      _editConnId = id;
+      document.getElementById('connLabel').value = label;
+      document.getElementById('connNotes').value = notes;
+      _openConnModal(true);
+    }
+
+    function closeAddConn() {
+      document.getElementById('addConnOverlay').classList.remove('open');
+      _editConnId = null;
+    }
+
+    async function saveConn() {
+      const label = document.getElementById('connLabel').value.trim();
+      const notes = document.getElementById('connNotes').value.trim();
+      if (!label) { document.getElementById('connMsg').innerHTML = '<div class="msg err">✗ Label required</div>'; return; }
+
+      try {
+        if (_editConnId) {
+          // Edit mode — PATCH label and notes only
+          const res = await fetch(`/api/campaigns/${currentCampaign.id}/char-tree/connections/${_editConnId}`, {
+            method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ label, notes: notes || null })
+          });
+          if (res.ok) { closeAddConn(); await loadCharTree(); }
+          else { const e = await res.json(); document.getElementById('connMsg').innerHTML = `<div class="msg err">✗ ${esc(e.error)}</div>`; }
+        } else {
+          // Add mode — POST new connection
+          const from_rel_id = document.getElementById('connFrom').value;
+          const to_rel_id = document.getElementById('connTo').value;
+          if (from_rel_id === to_rel_id) { document.getElementById('connMsg').innerHTML = '<div class="msg err">✗ From and To must differ</div>'; return; }
+          const res = await fetch(`/api/campaigns/${currentCampaign.id}/char-tree/connections`, {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ from_rel_id, to_rel_id, label, notes: notes || null })
+          });
+          if (res.ok) { closeAddConn(); await loadCharTree(); }
+          else { const e = await res.json(); document.getElementById('connMsg').innerHTML = `<div class="msg err">✗ ${esc(e.error)}</div>`; }
+        }
+      } catch (e) { document.getElementById('connMsg').innerHTML = `<div class="msg err">✗ ${esc(e.message)}</div>`; }
+    }
+
+    async function deleteConn(id) {
+      if (!confirm('Delete this DM connection?')) return;
+      const res = await fetch(`/api/campaigns/${currentCampaign.id}/char-tree/connections/${id}`, { method: 'DELETE' });
+      if (res.ok) await loadCharTree();
+    }
+
+    // ═══ CAMPAIGN ACTIONS ════════════════════════════════════════════════
+    async function deleteCampaign() {
+      if (!confirm(`Delete "${currentCampaign.name}" and ALL its data? This cannot be undone.`)) return;
+      await fetch(`/api/campaigns/${currentCampaign.id}`, { method: 'DELETE' });
+      currentCampaign = null; document.getElementById('exportCampBtn').style.display = 'none';
+      document.getElementById('detailHead').textContent = 'Select a Campaign';
+      document.getElementById('detailBody').innerHTML = '<div class="empty" style="padding:40px">Campaign deleted.</div>';
+      await loadCampaigns();
+    }
+    async function exportCampaign() {
+      if (!currentCampaign) return;
+      try {
+        const res = await fetch(`/api/campaigns/${currentCampaign.id}/export`);
+        if (!res.ok) { const e = await res.json(); showMsg('createMsg', '✗ ' + e.error, 'err'); return; }
+        const data = await res.json();
+        const slug = (currentCampaign.name || 'campaign').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' }));
+        a.download = `campaign-${slug}.json`; a.click(); URL.revokeObjectURL(a.href);
+      } catch (e) { showMsg('createMsg', '✗ ' + e.message, 'err'); }
+    }
+    async function importCampaign(input) {
+      const file = input.files[0]; if (!file) return; input.value = '';
+      let bundle; try { bundle = JSON.parse(await file.text()); } catch { showMsg('createMsg', '✗ Invalid JSON', 'err'); return; }
+      if (bundle.type !== 'campaign') { showMsg('createMsg', '✗ Not a campaign export', 'err'); return; }
+      try {
+        const res = await fetch('/api/campaigns/import', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(bundle) });
+        const data = await res.json();
+        if (res.ok) { showMsg('createMsg', '✓ Imported', 'ok'); await loadCampaigns(); selectCampaign(data.campaign_id); }
+        else showMsg('createMsg', '✗ ' + data.error, 'err');
+      } catch (e) { showMsg('createMsg', '✗ ' + e.message, 'err'); }
+    }
+
+    // ═══ UTIL ════════════════════════════════════════════════════════════
+    function esc(s) { return (s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
+    function showMsg(id, text, type) {
+      const el = document.getElementById(id); if (!el) return;
+      el.innerHTML = `<div class="msg ${type}">${text}</div>`;
+      setTimeout(() => { if (el) el.innerHTML = ''; }, 3000);
+    }
+    document.addEventListener('keydown', e => {
+      if (e.key === 'Escape') { closeCalPicker(); closeNewTlModal(); closeEditLoc(); closeAddConn(); }
+      if (e.key !== 'Enter') return;
+      const t = e.target.id;
+      if (t === 'campaignName' || t === 'campaignDesc') handleCreateCampaign();
+      if (t === 'playerName') addPlayer();
+      if (t === 'locName' || t === 'locDesc') addLocation();
+      if (t === 'npcNames') addNpcs();
+      if (t === 'newTlName') confirmNewTl();
+      if (t === 'connLabel') saveConn();
+      if (t === 'editLocName') saveEditLoc();
+    });
+
+    init();
+  </script>
 </body>
 
 </html>

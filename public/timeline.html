@@ -1317,6 +1317,9 @@
       <button id="privNewTlBtn" onclick="openNewTimelineModal()"
         style="display:none;white-space:nowrap;padding:4px 10px;font-size:.62rem;margin:0;width:auto;background:var(--gold-dim)">+
         New Timeline</button>
+      <button id="privDelTlBtn" onclick="deletePrivTimeline()"
+        style="display:none;white-space:nowrap;padding:4px 8px;font-size:.62rem;margin:0;width:auto;background:#4a1a1a;color:#e06c75;border:1px solid #6b2c2c"
+        title="Delete this timeline and all its entries">🗑</button>
       <span class="priv-status" id="privStatus"></span>
     </div>
 
@@ -3475,7 +3478,7 @@
         }
         _privTimelines = allTls.filter(t => t.name === '🌍 World Timeline');
         renderPrivStatus('');
-        showTimelineSelector(false);
+        showTimelineSelector(false, true); // hideNew: World Timeline can't be duplicated
         if (worldTl) {
           document.getElementById('privTimelineSel').value = worldTl.id;
           await onPrivTimelineChange();
@@ -3515,13 +3518,15 @@
       await onPrivTimelineChange();
     }
 
-    function showTimelineSelector(onlyNew) {
+    function showTimelineSelector(onlyNew, hideNew = false) {
       const lbl = document.getElementById('privTimelineLabel');
       const sel = document.getElementById('privTimelineSel');
       const btn = document.getElementById('privNewTlBtn');
+      const delBtn = document.getElementById('privDelTlBtn');
       lbl.style.display = onlyNew ? 'none' : '';
       sel.style.display = onlyNew ? 'none' : '';
-      btn.style.display = '';
+      btn.style.display = hideNew ? 'none' : '';
+      delBtn.style.display = (onlyNew || hideNew) ? 'none' : '';
 
       if (!onlyNew) {
         sel.innerHTML = _privTimelines.map(t =>
@@ -3534,6 +3539,7 @@
       document.getElementById('privTimelineLabel').style.display = 'none';
       document.getElementById('privTimelineSel').style.display = 'none';
       document.getElementById('privNewTlBtn').style.display = 'none';
+      document.getElementById('privDelTlBtn').style.display = 'none';
     }
 
     async function onPrivTimelineChange() {
@@ -3582,6 +3588,34 @@
       renderPrivStatus('');
     }
 
+    /* ── Delete current private timeline ── */
+    async function deletePrivTimeline() {
+      if (!_privTimelineId) return;
+      const tl = _privTimelines.find(t => t.id === _privTimelineId);
+      const tlName = tl ? tl.name : 'this timeline';
+      const entryCount = tl ? tl.entry_count : 0;
+      const warning = entryCount > 0 ? ` It contains ${entryCount} entr${entryCount === 1 ? 'y' : 'ies'} which will be permanently lost.` : '';
+      if (!confirm(`Delete "${tlName}"?${warning}\n\nThis cannot be undone.`)) return;
+
+      const ok = await apiDel(`/api/player-timelines/${_privTimelineId}`);
+      if (!ok) { alert('Error deleting timeline.'); return; }
+
+      _privTimelines = _privTimelines.filter(t => t.id !== _privTimelineId);
+      _privTimelineId = null;
+      _privEntries = [];
+
+      if (_privTimelines.length === 0) {
+        renderPrivStatus('No timelines yet. Create one to begin.');
+        showTimelineSelector(true);
+      } else {
+        showTimelineSelector(false);
+        _privTimelineId = _privTimelines[0].id;
+        document.getElementById('privTimelineSel').value = _privTimelineId;
+        await loadPrivEntries(_privTimelineId);
+      }
+      showPrivCanvas();
+    }
+
     /* ── Load player list ── */
     async function loadPrivPlayers(playerId) {
       const allCampPlayers = await apiGet(`/api/campaigns/${_privCampaignId}/players`) || [];
@@ -3615,11 +3649,33 @@
           color: PLAYER_PALETTE[(rels.length + i + 1) % PLAYER_PALETTE.length],
           isSelf: false, isCampaignPlayer: true
         }));
+
+        // Add each campaign player's relationships as actors (deduplicated by rel id)
+        const seenRelIds = new Set(rels.map(r => r.id)); // skip DM's own rels already added above
+        const allPlayerRels = await Promise.all(
+          regularPlayers.map(p => apiGet(`/api/pc/${p.id}/relationships`).then(r => r || []))
+        );
+        let relOffset = rels.length + regularPlayers.length + 1;
+        allPlayerRels.forEach((playerRels, pi) => {
+          const ownerName = regularPlayers[pi].player_name;
+          playerRels.forEach(r => {
+            if (seenRelIds.has(r.id)) return;
+            seenRelIds.add(r.id);
+            _privPlayers.push({
+              id: 'rel_' + r.id,
+              name: `🤝 ${r.name} (${ownerName})`,
+              color: PLAYER_PALETTE[relOffset % PLAYER_PALETTE.length],
+              isSelf: false, isRelationship: true, relOwner: ownerName
+            });
+            relOffset++;
+          });
+        });
+
         // Add campaign NPCs as actors
         const npcs = await apiGet(`/api/campaigns/${_privCampaignId}/npcs`) || [];
         npcs.forEach((n, i) => _privPlayers.push({
           id: 'npc_' + n.id, name: '🎭 ' + n.name,
-          color: PLAYER_PALETTE[(rels.length + regularPlayers.length + i + 1) % PLAYER_PALETTE.length],
+          color: PLAYER_PALETTE[(relOffset + i) % PLAYER_PALETTE.length],
           isSelf: false, isNpc: true
         }));
       }
