@@ -194,6 +194,54 @@
       r: 11;
     }
 
+    /* Hover tooltip */
+    .map-tooltip {
+      position: fixed;
+      z-index: 999;
+      pointer-events: none;
+      background: #1a130a;
+      border: 1px solid #7a6030;
+      border-radius: 4px;
+      padding: 8px 11px;
+      max-width: 240px;
+      box-shadow: 0 4px 18px rgba(0, 0, 0, .7);
+      font-family: 'Cinzel', Georgia, serif;
+      display: none;
+    }
+
+    .map-tooltip .tt-name {
+      font-size: 13px;
+      color: #c9a84c;
+      font-weight: bold;
+      margin-bottom: 4px;
+    }
+
+    .map-tooltip .tt-type {
+      font-size: 10px;
+      color: #7a6a40;
+      text-transform: capitalize;
+      margin-bottom: 4px;
+    }
+
+    .map-tooltip .tt-desc {
+      font-size: 11px;
+      color: #a09070;
+      line-height: 1.45;
+      margin-bottom: 4px;
+    }
+
+    .map-tooltip .tt-events {
+      margin-top: 5px;
+      border-top: 1px solid #3a2e18;
+      padding-top: 5px;
+    }
+
+    .map-tooltip .tt-event {
+      font-size: 10px;
+      color: #80a858;
+      line-height: 1.4;
+    }
+
     .pin-label {
       font-family: Cinzel, Georgia, serif;
       font-size: 11px;
@@ -393,6 +441,7 @@
 
   <div class="layout">
     <!-- MAP -->
+    <div class="map-tooltip" id="mapTooltip"></div>
     <div class="map-area" id="mapArea" onmousedown="panStart(event)" onmousemove="panMove(event)"
       onmouseup="panEnd(event)" onwheel="doWheel(event)" oncontextmenu="return false">
       <div id="mapVp">
@@ -431,7 +480,7 @@
     let sc = 1, ox = 0, oy = 0, iw = 800, ih = 600;
     let isPan = false, px0 = 0, py0 = 0, ox0 = 0, oy0 = 0;
     let data = null;
-    let selPath = null;
+    let selPath = null, selLoc = null;
     const SPEEDS = { walk: 3, horse: 8, fly: 25 };
 
     async function init() {
@@ -501,11 +550,63 @@
       const g = document.getElementById('pinsG');
       g.innerHTML = (data.locations || []).map(loc => {
         const { x, y } = pctToSvg(loc.x, loc.y);
-        return `<g class="pin-g" data-id="${loc.id}" onclick="selectLoc(${loc.id})">
-      <circle class="pin-circle" cx="${x}" cy="${y}" r="9" fill="#1e1810" stroke="#7a6030" stroke-width="1.5" opacity=".92"/>
-      <text class="pin-label" x="${x}" y="${y + 20}">${esc(loc.name)}</text>
-    </g>`;
+        const isSel = loc.id == selLoc;
+        return `<g class="pin-g${isSel ? ' sel' : ''}" data-id="${loc.id}"
+            onclick="selectLoc(${loc.id})"
+            onmouseenter="showPinTooltip(event,${loc.id})"
+            onmouseleave="hidePinTooltip()">
+          <circle class="pin-circle" cx="${x}" cy="${y}" r="9" fill="#1e1810" stroke="${isSel ? '#c9a84c' : '#7a6030'}" stroke-width="${isSel ? 2.2 : 1.5}" opacity=".92"/>
+          <text class="pin-label" x="${x}" y="${y + 20}">${esc(loc.name)}</text>
+        </g>`;
       }).join('');
+    }
+
+    function showPinTooltip(event, locId) {
+      const loc = (data.locations || []).find(l => l.id == locId);
+      if (!loc) return;
+
+      // Collect all waypoints across paths that reference this location, with their event info
+      const linkedEvents = [];
+      (data.paths || []).forEach(p => {
+        const wpts = Array.isArray(p.waypoints) ? p.waypoints : JSON.parse(p.waypoints || '[]');
+        wpts.forEach(w => {
+          if (w.locId == locId) {
+            const ids = w.eventIds || (w.eventId ? [w.eventId] : []);
+            const titles = w.eventTitles || (w.eventTitle ? [w.eventTitle] : []);
+            ids.forEach((evId, i) => {
+              const title = titles[i] || 'Event';
+              if (!linkedEvents.find(e => e.id == evId)) linkedEvents.push({ id: evId, title });
+            });
+          }
+        });
+      });
+
+      const tt = document.getElementById('mapTooltip');
+      tt.innerHTML =
+        `<div class="tt-name">📍 ${esc(loc.name)}</div>` +
+        (loc.size_type ? `<div class="tt-type">${esc(loc.size_type)}</div>` : '') +
+        (loc.location_description ? `<div class="tt-desc">${esc(loc.location_description)}</div>` : '') +
+        (linkedEvents.length ? `<div class="tt-events">${linkedEvents.map(e =>
+          `<div class="tt-event">🗓 ${esc(e.title)}</div>`).join('')}</div>` : '');
+
+      tt.style.display = 'block';
+      positionTooltip(event);
+    }
+
+    function hidePinTooltip() {
+      document.getElementById('mapTooltip').style.display = 'none';
+    }
+
+    function positionTooltip(event) {
+      const tt = document.getElementById('mapTooltip');
+      const pad = 12;
+      let lft = event.clientX + pad;
+      let top = event.clientY + pad;
+      const { innerWidth: vw, innerHeight: vh } = window;
+      if (lft + 260 > vw) lft = event.clientX - 260 - pad;
+      if (top + tt.offsetHeight + 20 > vh) top = event.clientY - tt.offsetHeight - pad;
+      tt.style.left = lft + 'px';
+      tt.style.top = top + 'px';
     }
 
     function renderPaths() {
@@ -528,29 +629,55 @@
     }
 
     function selectLoc(id) {
-      selPath = null;
+      selPath = null; selLoc = id;
+      hidePinTooltip();
       const loc = (data.locations || []).find(l => l.id == id);
       if (!loc) return;
       const head = document.getElementById('rpHead');
       const body = document.getElementById('rpBody');
       head.textContent = '📍 ' + loc.name;
-      const myDists = (data.distances || []).filter(d => d.from_loc_id == id);
-      const rows = myDists.map(d => {
-        const toLoc = (data.locations || []).find(l => l.id == d.to_loc_id); if (!toLoc) return '';
+
+      // Distances (bidirectional)
+      const myDists = (data.distances || []).filter(d => d.from_loc_id == id || d.to_loc_id == id);
+      const distRows = myDists.map(d => {
+        const otherId = d.from_loc_id == id ? d.to_loc_id : d.from_loc_id;
+        const toLoc = (data.locations || []).find(l => l.id == otherId); if (!toLoc) return '';
         const mi = parseFloat(d.distance_miles);
         return `<div class="info-row">
-      <span class="info-lbl">📍 ${esc(toLoc.name)}</span>
-      <span class="info-val">${mi} mi</span>
-    </div>
-    <div class="info-row">
-      <span class="info-lbl">🚶 / 🐎 / 🦅</span>
-      <span class="info-val" style="font-size:11px">${fmtTime(mi / SPEEDS.walk)} / ${fmtTime(mi / SPEEDS.horse)} / ${fmtTime(mi / SPEEDS.fly)}</span>
-    </div>`;
+          <span class="info-lbl">📍 ${esc(toLoc.name)}</span>
+          <span class="info-val">${mi} mi <span style="color:var(--text-dim);font-size:10px">(🚶${fmtTime(mi / SPEEDS.walk)} 🐎${fmtTime(mi / SPEEDS.horse)} 🦅${fmtTime(mi / SPEEDS.fly)})</span></span>
+        </div>`;
       }).join('');
-      body.innerHTML = `
-    <div class="info-card"><h3>📏 Distances</h3>
-      ${rows || '<div class="rp-empty" style="font-size:11px">No distances set.</div>'}
-    </div>`;
+
+      // Linked timeline events from waypoints across all paths
+      const linkedEvents = [];
+      (data.paths || []).forEach(p => {
+        const wpts = Array.isArray(p.waypoints) ? p.waypoints : JSON.parse(p.waypoints || '[]');
+        wpts.forEach(w => {
+          if (w.locId == id) {
+            const ids = w.eventIds || (w.eventId ? [w.eventId] : []);
+            const titles = w.eventTitles || (w.eventTitle ? [w.eventTitle] : []);
+            ids.forEach((evId, i) => {
+              const title = titles[i] || 'Event';
+              if (!linkedEvents.find(e => e.id == evId))
+                linkedEvents.push({ id: evId, title, pathName: p.name || 'Path' });
+            });
+          }
+        });
+      });
+
+      const eventRows = linkedEvents.map(e =>
+        `<div class="info-row"><span class="info-lbl">🗓 ${esc(e.title)}</span><span class="info-val" style="font-size:10px;color:var(--text-dim)">${esc(e.pathName)}</span></div>`
+      ).join('');
+
+      body.innerHTML =
+        (loc.size_type ? `<div class="info-card"><div class="info-row"><span class="info-lbl">Type</span><span class="info-val" style="text-transform:capitalize">${esc(loc.size_type)}</span></div></div>` : '') +
+        (loc.location_description ? `<div class="info-card"><h3>📖 Description</h3><p style="font-size:12px;color:var(--text-dim);line-height:1.5;margin:0">${esc(loc.location_description)}</p></div>` : '') +
+        (linkedEvents.length ? `<div class="info-card"><h3>🗓 Linked Events</h3>${eventRows}</div>` : '') +
+        `<div class="info-card"><h3>📏 Distances</h3>
+          ${distRows || '<div class="rp-empty" style="font-size:11px">No distances set.</div>'}
+        </div>`;
+
       renderPins(); renderPaths();
     }
 
@@ -564,7 +691,12 @@
       head.textContent = '🛤️ ' + (p.name || 'Path');
       const wptRows = wpts.map((w, i) => {
         const loc = w.locId ? (data.locations || []).find(l => l.id == w.locId) : null;
-        return `<div class="wpt-row">${i === 0 ? '⊙' : '→'} ${loc ? '📍 ' + esc(loc.name) : 'Point ' + (i + 1)}</div>`;
+        const ids = w.eventIds || (w.eventId ? [w.eventId] : []);
+        const titles = w.eventTitles || (w.eventTitle ? [w.eventTitle] : []);
+        const evChips = ids.map((evId, ei) =>
+          `<span style="display:inline-block;font-size:10px;color:#80a858;margin-left:6px">🗓 ${esc(titles[ei] || 'Event')}</span>`
+        ).join('');
+        return `<div class="wpt-row">${i === 0 ? '⊙' : '→'} ${loc ? '📍 ' + esc(loc.name) : 'Point ' + (i + 1)}${evChips}</div>`;
       }).join('');
       body.innerHTML = `
     <div class="info-card"><h3>Tracker</h3>

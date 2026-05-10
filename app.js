@@ -1894,7 +1894,10 @@ app.get('/api/journey-map-public/:token', async (req, res) => {
 
     const [mapR, locsR, distsR, trkR, pathsR] = await Promise.all([
       pool.query('SELECT id, name, description, map_image FROM journey_maps WHERE id=$1', [mapId]),
-      pool.query('SELECT id, name, x, y FROM journey_map_locations WHERE map_id=$1 ORDER BY created_at ASC', [mapId]),
+      pool.query(`SELECT jml.id, jml.name, jml.x, jml.y, cl.description AS location_description, cl.size_type
+                  FROM journey_map_locations jml
+                  LEFT JOIN campaign_locations cl ON cl.id = jml.campaign_location_id
+                  WHERE jml.map_id=$1 ORDER BY jml.created_at ASC`, [mapId]),
       pool.query('SELECT from_loc_id, to_loc_id, distance_miles FROM journey_distances WHERE map_id=$1', [mapId]),
       pool.query('SELECT id, name, type, color FROM journey_trackers WHERE map_id=$1', [mapId]),
       pool.query(

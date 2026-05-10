@@ -3626,7 +3626,7 @@
       // to prevent DM entries appearing in regular player dropdowns.
       const isDmTimeline = _dmPlayerId && (parseInt(playerId) === parseInt(_dmPlayerId));
 
-      const rels = await apiGet(`/api/pc/${playerId}/relationships`) || [];
+      const { relationships: rels = [] } = await apiGet(`/api/pc/${playerId}/relationships`) || {};
       // When isDmTimeline the DM player row is not in allCampPlayers (filtered out),
       // so fetch the name from the dm-player provision response we already have.
       const selfName = self
@@ -3653,7 +3653,7 @@
         // Add each campaign player's relationships as actors (deduplicated by rel id)
         const seenRelIds = new Set(rels.map(r => r.id)); // skip DM's own rels already added above
         const allPlayerRels = await Promise.all(
-          regularPlayers.map(p => apiGet(`/api/pc/${p.id}/relationships`).then(r => r || []))
+          regularPlayers.map(p => apiGet(`/api/pc/${p.id}/relationships`).then(r => (r && r.relationships) || []))
         );
         let relOffset = rels.length + regularPlayers.length + 1;
         allPlayerRels.forEach((playerRels, pi) => {
@@ -3765,7 +3765,7 @@
       _dmRelNames = {};
       const uniquePlayerIds = [...new Set(_dmAllData.map(r => r.player_id).filter(Boolean))];
       await Promise.all(uniquePlayerIds.map(async pid => {
-        const rels = await apiGet(`/api/pc/${pid}/relationships`) || [];
+        const { relationships: rels = [] } = await apiGet(`/api/pc/${pid}/relationships`) || {};
         rels.forEach(r => { _dmRelNames['rel_' + r.id] = r.name; });
       }));
 
