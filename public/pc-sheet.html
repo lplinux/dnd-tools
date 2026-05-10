@@ -1129,6 +1129,7 @@
     let currentCampaignId = null;
     let charData = null;
     let relationships = [];
+    let crossConnections = [];
     let dmNotes = [];
 
     const isDMorAdmin = () => currentUser && (currentUser.role === 'admin' || currentUser.role === 'dm');
@@ -1208,8 +1209,15 @@
         fetch(`/api/pc/${currentPlayerId}/relationships`)
       ]);
       charData = cR.ok ? await cR.json() : null;
-      relationships = rR.ok ? await rR.json() : [];
-      if (!Array.isArray(relationships)) relationships = [];
+      const relData = rR.ok ? await rR.json() : {};
+      if (Array.isArray(relData)) {
+        // legacy fallback
+        relationships = relData;
+        crossConnections = [];
+      } else {
+        relationships = Array.isArray(relData.relationships) ? relData.relationships : [];
+        crossConnections = Array.isArray(relData.cross_connections) ? relData.cross_connections : [];
+      }
 
       // Also load DM notes immediately to know if tab should be shown for players
       const nR = await fetch(`/api/pc/${currentPlayerId}/dm-notes`);
@@ -1547,6 +1555,41 @@
       ).join('')}
           </div>
         </div>`).join('');
+
+      // ── Public cross-connections ──────────────────────────────────────
+      if (crossConnections.length) {
+        const myRelIds = new Set(relationships.map(r => r.id));
+
+        function resolveEntityLabel(c, side) {
+          const type = c[`${side}_entity_type`];
+          const id = c[`${side}_entity_id`];
+          if (type === 'relationship') {
+            const name = c[`${side}_rel_name`];
+            const player = c[`${side}_player_name`];
+            if (!name) return `Rel #${id}`;
+            return myRelIds.has(id) ? name : `[${player || '?'}] ${name}`;
+          }
+          if (type === 'player') return c[`${side}_entity_player_name`] || `Player #${id}`;
+          if (type === 'npc') return `🎭 ${c[`${side}_npc_name`] || `NPC #${id}`}`;
+          return `#${id}`;
+        }
+
+        const crossHtml = crossConnections.map(c => {
+          const fromLabel = resolveEntityLabel(c, 'from');
+          const toLabel = resolveEntityLabel(c, 'to');
+          return `<div class="rel-chip" style="border-style:dashed;opacity:0.9">
+            <span style="font-size:10px;color:var(--text-dim);margin-right:4px">🔗</span>
+            <strong>${escHtml(fromLabel)}</strong>
+            <span style="font-size:11px;color:var(--text-dim);margin:0 6px">⟶ ${escHtml(c.label)} ⟶</span>
+            <strong>${escHtml(toLabel)}</strong>
+            ${c.notes ? `<span style="font-size:10px;color:var(--text-muted);font-style:italic;margin-left:6px">${escHtml(c.notes)}</span>` : ''}
+          </div>`;
+        }).join('');
+        list.innerHTML += `<div class="rel-type-group">
+          <div class="rel-type-label" style="color:var(--text-dim)">🔗 Cross-connections</div>
+          <div class="rel-list" style="margin-bottom:0">${crossHtml}</div>
+        </div>`;
+      }
     }
 
     function renderRelGraph() {
@@ -1825,19 +1868,159 @@
           fill="#c9a84c" font-family="Cinzel,Georgia,serif" font-size="10" font-weight="bold"
           paint-order="stroke" stroke="#4a3010" stroke-width="2.5">${escHtml(selfName)}</text>`;
 
+      // ── Cross-connection nodes (public DM links) ──────────────────────
+      const myRelIds = new Set(relationships.map(r => r.id));
+
+      function resolveEntityLabelGraph(c, side) {
+        const type = c[`${side}_entity_type`];
+        const id = c[`${side}_entity_id`];
+        if (type === 'relationship') {
+          const name = c[`${side}_rel_name`];
+          const player = c[`${side}_player_name`];
+          if (!name) return `Rel #${id}`;
+          return myRelIds.has(id) ? name : (player ? `${player.split(' ')[0]}:${name.split(' ')[0]}` : name);
+        }
+        if (type === 'player') return c[`${side}_entity_player_name`] || `Player #${id}`;
+        if (type === 'npc') return c[`${side}_npc_name`] || `NPC #${id}`;
+        return `#${id}`;
+      }
+
+      // Build cross nodes: one node per connection representing the *other* entity
+      // Place each node close to its linked local relationship node, offset outward from the graph centre,
+      // then run a repulsion pass to eliminate overlaps with all other nodes.
+      const crossNodeRadius = NR - 2;
+      const CROSS_DIST = NR * 3.6; // initial distance from the local rel node
+      const MIN_GAP = NR * 2.6; // minimum centre-to-centre distance before repulsion
+      let crossNodes = [];
+      let crossEdges = '';
+
+      if (crossConnections && crossConnections.length > 0) {
+        // Group cross-connections by local relationship node to fan siblings
+        const byLocalRel = {};
+        crossConnections.forEach(c => {
+          const fromIsMine = c.from_entity_type === 'relationship' && myRelIds.has(c.from_entity_id);
+          const localRelId = fromIsMine ? c.from_entity_id : c.to_entity_id;
+          const extSide = fromIsMine ? 'to' : 'from';
+          const extLabel = resolveEntityLabelGraph(c, extSide);
+          const isNpc = c[`${extSide}_entity_type`] === 'npc';
+          const isPlayer = c[`${extSide}_entity_type`] === 'player';
+          if (!byLocalRel[localRelId]) byLocalRel[localRelId] = [];
+          byLocalRel[localRelId].push({ c, localRelId, extLabel, isNpc, isPlayer });
+        });
+
+        // First pass: place cross nodes at their initial positions
+        Object.entries(byLocalRel).forEach(([relIdStr, items]) => {
+          const localRelId = parseInt(relIdStr);
+          const localPos = posById[localRelId];
+          if (!localPos) return;
+
+          const baseAngle = Math.atan2(localPos.y || 0, localPos.x || 1);
+          const spread = Math.PI / 6;
+          const step = items.length === 1 ? 0 : spread / (items.length - 1);
+
+          items.forEach((item, i) => {
+            const angle = items.length === 1 ? baseAngle : baseAngle - spread / 2 + i * step;
+            crossNodes.push({ ...item, x: localPos.x + CROSS_DIST * Math.cos(angle), y: localPos.y + CROSS_DIST * Math.sin(angle) });
+          });
+        });
+
+        // Second pass: iterative repulsion — push cross nodes away from ALL other nodes
+        // (family, social, children, self, and other cross nodes)
+        const fixedPositions = [
+          { x: 0, y: 0, r: SR },   // self node
+          ...famNodes.map(n => ({ x: n.x, y: n.y, r: NR })),
+          ...socNodes.map(n => ({ x: n.x, y: n.y, r: NR })),
+          ...childNodes.map(n => ({ x: n.x, y: n.y, r: NR })),
+        ];
+
+        for (let iter = 0; iter < 60; iter++) {
+          let moved = false;
+          crossNodes.forEach((cn, ci) => {
+            // Repel from fixed nodes
+            [...fixedPositions, ...crossNodes.filter((_, j) => j !== ci).map(o => ({ x: o.x, y: o.y, r: crossNodeRadius }))].forEach(other => {
+              const minDist = (other.r || NR) + crossNodeRadius + 6;
+              const dx = cn.x - other.x;
+              const dy = cn.y - other.y;
+              const dist = Math.sqrt(dx * dx + dy * dy) || 0.01;
+              if (dist < minDist) {
+                const push = (minDist - dist) / 2;
+                const nx = dx / dist * push;
+                const ny = dy / dist * push;
+                cn.x += nx; cn.y += ny;
+                moved = true;
+              }
+            });
+          });
+          if (!moved) break;
+        }
+
+        // Third pass: build edges after final positions are known
+        crossNodes.forEach(item => {
+          const localPos = posById[item.localRelId];
+          if (!localPos) return;
+          const dx = item.x - localPos.x;
+          const dy = item.y - localPos.y;
+          const len = Math.sqrt(dx * dx + dy * dy) || 1;
+          const sx = localPos.x + (dx / len) * NR;
+          const sy = localPos.y + (dy / len) * NR;
+          const ex = item.x - (dx / len) * crossNodeRadius;
+          const ey = item.y - (dy / len) * crossNodeRadius;
+          const mx = (sx + ex) / 2;
+          const my = (sy + ey) / 2;
+          crossEdges += `<line x1="${sx}" y1="${sy}" x2="${ex}" y2="${ey}"
+            stroke="#2a7a7a" stroke-width="1.2" stroke-dasharray="4 3" opacity="0.75"/>
+          <text x="${mx}" y="${my - 5}" text-anchor="middle" dominant-baseline="middle"
+            fill="#2a9a9a" font-family="Cinzel,Georgia,serif" font-size="7.5" opacity="0.9"
+            paint-order="stroke" stroke="#0a1a1a" stroke-width="2">${escHtml(item.c.label)}</text>`;
+        });
+      }
+
+      const crossNodeEls = crossNodes.map(({ extLabel, isNpc, isPlayer, x, y, c }) => {
+        const fill = isNpc ? '#0a2010' : isPlayer ? '#0a1828' : '#0e1c24';
+        const stroke = isNpc ? '#4a9a50' : '#2a8888';
+        const tc = isNpc ? '#80d888' : '#60caca';
+        const words = extLabel.split(/[\s:]+/);
+        const w1 = (words[0] || '').substring(0, 10);
+        const w2 = (words.slice(1).join(' ') || '').substring(0, 10);
+        const ty = w2 ? y - 5 : y + 4;
+        const tipText = escAttr(`🔗 ${c.label}${c.notes ? '\n' + c.notes : ''}`);
+        return `<g class="graph-node" data-tip="${tipText}">
+          <circle cx="${x}" cy="${y}" r="${crossNodeRadius}" fill="${fill}" stroke="${stroke}" stroke-width="1.5" stroke-dasharray="4 2"/>
+          <text x="${x}" y="${ty}" text-anchor="middle" dominant-baseline="middle"
+            fill="${tc}" font-family="Cinzel,Georgia,serif" font-size="8"
+            paint-order="stroke" stroke="${fill}" stroke-width="2.5">${escHtml(w1)}</text>
+          ${w2 ? `<text x="${x}" y="${y + 9}" text-anchor="middle" dominant-baseline="middle"
+            fill="${tc}" font-family="Cinzel,Georgia,serif" font-size="8"
+            paint-order="stroke" stroke="${fill}" stroke-width="2.5">${escHtml(w2)}</text>` : ''}
+        </g>`;
+      }).join('');
+
+      // Recalculate viewBox to include cross nodes
+      const allNodesForVB = [...famNodes, ...socNodes, ...childNodes, ...crossNodes];
+      const xs2 = allNodesForVB.map(n => n.x);
+      const ys2 = allNodesForVB.map(n => n.y);
+      const minX2 = (xs2.length ? Math.min(...xs2) : -SR) - NR - PAD;
+      const maxX2 = (xs2.length ? Math.max(...xs2) : SR) + NR + PAD;
+      const minY2 = (ys2.length ? Math.min(...ys2) : -SR) - NR - PAD;
+      const maxY2 = (ys2.length ? Math.max(...ys2) : SR) + NR + PAD;
+      const VW2 = maxX2 - minX2;
+      const VH2 = maxY2 - minY2;
+
       // ── Assemble SVG with pan/zoom ──
       // Store the "fit" viewBox so we can reset to it
-      const fitVB = { x: minX, y: minY, w: VW, h: VH };
+      const fitVB = { x: minX2, y: minY2, w: VW2, h: VH2 };
 
       wrap.innerHTML = `
         <svg id="relSvg" xmlns="http://www.w3.org/2000/svg"
-          viewBox="${minX} ${minY} ${VW} ${VH}">
+          viewBox="${minX2} ${minY2} ${VW2} ${VH2}">
           ${bands}
           ${divider}
           ${famEdges}
           ${socEdges}
           ${childEdges}
+          ${crossEdges}
           ${[...famNodes, ...socNodes, ...childNodes].map(nodeEl).join('')}
+          ${crossNodeEls}
           ${selfEl}
           ${sectionLabels}
         </svg>
@@ -1918,7 +2101,12 @@
             <div class="legend-row">
               <span class="legend-dot" style="background:${RING[t] || '#605840'};border:1px solid ${TCOL[t] || '#c0b888'}40"></span>
               <span class="legend-label">${escHtml(t)}</span>
-            </div>`).join('')}`;
+            </div>`).join('')}
+          ${crossConnections.length ? `
+            <div class="legend-row" style="margin-top:6px">
+              <span class="legend-dot" style="background:#2a7a7a;border:1px dashed #2a8888"></span>
+              <span class="legend-label" style="color:var(--text-dim)">Cross-link</span>
+            </div>` : ''}`;
       }
     }
 
@@ -1955,7 +2143,11 @@
         document.getElementById('relStatus').value = r.status_label || '';
         document.getElementById('relLink').value = r.link || '';
         document.getElementById('relParent').value = r.parent_id || '';
-        if (isDMorAdmin()) document.getElementById('relDmOnly').checked = !!r.is_dm_only;
+        if (isDMorAdmin()) {
+          document.getElementById('relDmOnly').checked = !!r.is_dm_only;
+          // Only show the DM-only row if the relationship is already DM-only
+          document.getElementById('relDmOnlyRow').style.display = r.is_dm_only ? '' : 'none';
+        }
       } else {
         document.getElementById('relModalTitle').textContent = 'Add Relation';
         document.getElementById('relSubmitBtn').textContent = 'Add';

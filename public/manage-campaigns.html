@@ -868,16 +868,25 @@
           onkeydown="if(event.key==='Enter')saveEditLoc();if(event.key==='Escape')closeEditLoc()">
       </div>
       <div class="form-group">
+        <label>Parent Location</label>
+        <select id="editLocParent">
+          <option value="">— Top-level —</option>
+        </select>
+      </div>
+      <div class="form-group">
         <label>Size / Type</label>
         <select id="editLocSizeType">
           <option value="">— none —</option>
-          <option value="huge">Huge</option>
           <option value="big">Big</option>
+          <option value="huge">Huge</option>
+          <option value="inn">Inn</option>
+          <option value="landmark">Landmark</option>
           <option value="medium">Medium</option>
+          <option value="neighborhood">Neighborhood</option>
+          <option value="post">Post</option>
           <option value="small">Small</option>
           <option value="village">Village</option>
-          <option value="inn">Inn</option>
-          <option value="post">Post</option>
+          <option value="other">Other</option>
         </select>
       </div>
       <div class="form-group">
@@ -1126,11 +1135,29 @@
 
     // ═══ TAB: LOCATIONS ══════════════════════════════════════════════════
     function buildLocationsTab(locs) {
-      const sorted = [...locs].sort((a, b) => a.name.localeCompare(b.name));
-      const rows = sorted.map(l => {
+      // Build lookup and top-level list
+      const byId = {};
+      locs.forEach(l => { byId[l.id] = l; });
+      const roots = locs.filter(l => !l.parent_id).sort((a, b) => a.name.localeCompare(b.name));
+      const childrenOf = {};
+      locs.forEach(l => {
+        if (l.parent_id) {
+          if (!childrenOf[l.parent_id]) childrenOf[l.parent_id] = [];
+          childrenOf[l.parent_id].push(l);
+        }
+      });
+      Object.values(childrenOf).forEach(arr => arr.sort((a, b) => a.name.localeCompare(b.name)));
+
+      function locRow(l, depth) {
         const sl = l.size_type ? l.size_type.charAt(0).toUpperCase() + l.size_type.slice(1) : '—';
-        return `<tr class="loc-row" data-name="${(l.name || '').toLowerCase()}" style="${l.is_public ? '' : 'opacity:0.5'}">
-      <td><strong>${esc(l.name)}</strong></td>
+        const indent = depth * 20;
+        const childCount = (childrenOf[l.id] || []).length;
+        const rows = [`<tr class="loc-row" data-id="${l.id}" data-name="${(l.name || '').toLowerCase()}" style="${l.is_public ? '' : 'opacity:0.5'}">
+      <td style="padding-left:${8 + indent}px">
+        ${depth > 0 ? `<span style="color:var(--text-muted);margin-right:4px;font-size:11px">${'└'.padStart(1)}</span>` : ''}
+        <strong>${esc(l.name)}</strong>
+        ${childCount ? `<span style="font-size:10px;color:var(--text-muted);margin-left:4px">(${childCount})</span>` : ''}
+      </td>
       <td><span style="font-size:11px;color:var(--text-dim)">${sl}</span></td>
       <td style="font-size:11px;color:var(--text-dim);max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(l.description || '')}</td>
       <td style="text-align:center">
@@ -1143,31 +1170,64 @@
         <button class="sm" onclick="editLoc(${l.id})" style="margin:0 3px 0 0">Edit</button>
         <button class="sm danger" onclick="deleteLoc(${l.id})" style="margin:0">Del</button>
       </td>
-    </tr>`;
-      }).join('');
+    </tr>`];
+        (childrenOf[l.id] || []).forEach(child => rows.push(...locRow(child, depth + 1)));
+        return rows;
+      }
+
+      const allRows = [];
+      roots.forEach(l => allRows.push(...locRow(l, 0)));
+
+      // Build parent options for the Add form (flat indented list)
+      const parentOpts = buildLocParentOptions(locs, null);
+
       return `<div class="tab-pane" data-tab="locations">
     <div id="locMsg"></div>
-    <div class="irow">
-      <input type="text" id="locName" placeholder="Location name" style="flex:2">
-      <select id="locSizeType" class="compact-type">
-        <option value="">— type —</option>
-        <option value="huge">Huge</option><option value="big">Big</option>
-        <option value="medium">Medium</option><option value="small">Small</option>
-        <option value="village">Village</option><option value="inn">Inn</option>
-        <option value="post">Post</option>
+    <div class="irow" style="flex-wrap:wrap;gap:4px">
+      <input type="text" id="locName" placeholder="Location name" style="flex:2;min-width:120px">
+      <select id="locParent" class="compact-type" style="flex:2;min-width:140px">
+        <option value="">— Top-level —</option>
+        ${parentOpts}
       </select>
-      <input type="text" id="locDesc" placeholder="Description" style="flex:3">
+      <select id="locSizeType" class="compact-type">
+          <option value="">— type —</option>
+          <option value="big">Big</option>
+          <option value="huge">Huge</option>
+          <option value="inn">Inn</option>
+          <option value="landmark">Landmark</option>
+          <option value="medium">Medium</option>
+          <option value="neighborhood">Neighborhood</option>
+          <option value="post">Post</option>
+          <option value="small">Small</option>
+          <option value="village">Village</option>
+          <option value="other">Other</option>
+      </select>
+      <input type="text" id="locDesc" placeholder="Description" style="flex:3;min-width:120px">
       <button class="sm" onclick="addLocation()">Add</button>
     </div>
     <div class="loc-search">
       <span class="search-icon">🔍</span>
       <input type="text" id="locSearch" placeholder="Search locations…" oninput="filterLocs(this.value)">
     </div>
-    ${!sorted.length ? '<div class="empty">No locations yet</div>' : `
+    ${!allRows.length ? '<div class="empty">No locations yet</div>' : `
     <table><thead><tr><th>Name</th><th>Type</th><th>Description</th><th>Visible</th><th></th></tr></thead>
-    <tbody id="locTbody">${rows}</tbody></table>`}
+    <tbody id="locTbody">${allRows.join('')}</tbody></table>`}
   </div>`;
     }
+
+    function buildLocParentOptions(locs, excludeId, depth, parentId) {
+      depth = depth || 0;
+      parentId = parentId || null;
+      const children = locs
+        .filter(l => (l.parent_id || null) === parentId && l.id !== excludeId)
+        .sort((a, b) => a.name.localeCompare(b.name));
+      return children.map(l => {
+        const prefix = depth > 0 ? '&nbsp;'.repeat(depth * 4) + '└ ' : '';
+        return `<option value="${l.id}">${prefix}${esc(l.name)}</option>` +
+          buildLocParentOptions(locs, excludeId, depth + 1, l.id);
+      }).join('');
+    }
+
     function filterLocs(q) {
       const lq = q.toLowerCase();
       document.querySelectorAll('.loc-row').forEach(r => r.style.display = r.dataset.name.includes(lq) ? '' : 'none');
@@ -1283,11 +1343,19 @@
         const toKey = c.to_entity_type === 'player' ? `p_${c.to_entity_id}`
           : c.to_entity_type === 'npc' ? `n_${c.to_entity_id}`
             : `r_${c.to_entity_id}`;
+        const isPublic = !!c.is_public;
         return `<div class="conn-row">
       <div class="conn-from-to">${fLbl}</div>
       <span class="conn-lbl-badge">⟶ ${esc(c.label)}</span>
       <div class="conn-from-to">${tLbl}</div>
       ${c.notes ? `<div style="font-size:10px;color:var(--text-muted);flex:1;min-width:80px;font-style:italic">${esc(c.notes)}</div>` : ''}
+      ${!isPublic ? `<span style="font-size:10px;color:var(--text-dim);background:var(--surface2);border:1px solid var(--border);border-radius:2px;padding:1px 6px;flex-shrink:0" title="Hidden from player (DM only — won't appear on the player's sheet or timelines)">🔒 DM only</span>` : ''}
+      <button class="sm" style="flex-shrink:0;margin:0;margin-right:4px" title="${isPublic ? 'Make DM-only' : 'Make public to player'}"
+        onclick="toggleConnVisibility(${c.id}, this)"
+        data-is-public="${isPublic}"
+        style="font-size:12px;padding:2px 7px;margin:0;background:${isPublic ? 'var(--gold-dim)' : 'var(--surface2)'};border:1px solid ${isPublic ? 'var(--border2)' : 'var(--border)'}">
+        ${isPublic ? '🌐' : '🔒'}
+      </button>
       <button class="sm" style="flex-shrink:0;margin:0;margin-right:4px" title="Edit connection"
         onclick="openEditConn(${c.id}, '${esc(c.label)}', '${esc(c.notes || '')}', '${fromKey}', '${toKey}')">✏️</button>
       <button class="sm danger" style="flex-shrink:0;margin:0" onclick="deleteConn(${c.id})">✕</button>
@@ -1830,10 +1898,11 @@
       const name = (document.getElementById('locName').value || '').trim();
       const desc = (document.getElementById('locDesc').value || '').trim();
       const sizeType = (document.getElementById('locSizeType').value || '').trim();
+      const parentId = document.getElementById('locParent')?.value || null;
       if (!name) return;
       try {
-        const res = await fetch(`/api/campaigns/${currentCampaign.id}/locations`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, description: desc, size_type: sizeType || null }) });
-        if (res.ok) { document.getElementById('locName').value = ''; document.getElementById('locDesc').value = ''; document.getElementById('locSizeType').value = ''; await renderCampaignDetails(); }
+        const res = await fetch(`/api/campaigns/${currentCampaign.id}/locations`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, description: desc, size_type: sizeType || null, parent_id: parentId ? parseInt(parentId) : null }) });
+        if (res.ok) { document.getElementById('locName').value = ''; document.getElementById('locDesc').value = ''; document.getElementById('locSizeType').value = ''; document.getElementById('locParent').value = ''; await renderCampaignDetails(); }
         else { const e = await res.json(); showMsg('locMsg', '✗ ' + e.error, 'err'); }
       } catch (e) { showMsg('locMsg', '✗ ' + e.message, 'err'); }
     }
@@ -1860,6 +1929,14 @@
       document.getElementById('editLocName').value = loc.name;
       document.getElementById('editLocDesc').value = loc.description || '';
       document.getElementById('editLocSizeType').value = loc.size_type || '';
+      // Populate parent dropdown — exclude self and its descendants to prevent cycles
+      const allLocs = Object.values(window._locsById || {});
+      const descendants = new Set();
+      function collectDesc(id) { allLocs.filter(l => l.parent_id === id).forEach(l => { descendants.add(l.id); collectDesc(l.id); }); }
+      collectDesc(locId);
+      const parentSel = document.getElementById('editLocParent');
+      parentSel.innerHTML = '<option value="">— Top-level —</option>' + buildLocParentOptions(allLocs, locId);
+      parentSel.value = loc.parent_id || '';
       document.getElementById('editLocMsg').innerHTML = '';
       document.getElementById('editLocOverlay').classList.add('open');
       setTimeout(() => document.getElementById('editLocName').focus(), 60);
@@ -1869,9 +1946,10 @@
       const name = document.getElementById('editLocName').value.trim();
       const desc = document.getElementById('editLocDesc').value.trim();
       const sizeType = document.getElementById('editLocSizeType').value.trim();
+      const parentId = document.getElementById('editLocParent').value || null;
       if (!name) { document.getElementById('editLocMsg').innerHTML = '<div class="msg err">✗ Name required</div>'; return; }
       try {
-        const res = await fetch(`/api/campaigns/${currentCampaign.id}/locations/${_editLocId}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, description: desc, size_type: sizeType || null }) });
+        const res = await fetch(`/api/campaigns/${currentCampaign.id}/locations/${_editLocId}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, description: desc, size_type: sizeType || null, parent_id: parentId ? parseInt(parentId) : null }) });
         if (res.ok) { closeEditLoc(); await renderCampaignDetails(); }
         else { const e = await res.json(); document.getElementById('editLocMsg').innerHTML = `<div class="msg err">✗ ${esc(e.error)}</div>`; }
       } catch (e) { document.getElementById('editLocMsg').innerHTML = `<div class="msg err">✗ ${esc(e.message)}</div>`; }
@@ -1978,6 +2056,14 @@
       if (!confirm('Delete this DM connection?')) return;
       const res = await fetch(`/api/campaigns/${currentCampaign.id}/char-tree/connections/${id}`, { method: 'DELETE' });
       if (res.ok) await loadCharTree();
+    }
+
+    async function toggleConnVisibility(id, btn) {
+      const res = await fetch(`/api/campaigns/${currentCampaign.id}/char-tree/connections/${id}/visibility`, { method: 'PATCH' });
+      if (!res.ok) return;
+      const { is_public } = await res.json();
+      // Re-render the whole list so the DM-only label also updates
+      await loadCharTree();
     }
 
     // ═══ CAMPAIGN ACTIONS ════════════════════════════════════════════════
