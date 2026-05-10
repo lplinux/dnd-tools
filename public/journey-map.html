@@ -399,6 +399,10 @@
       cursor: not-allowed;
     }
 
+    .map-area.tool-measure {
+      cursor: crosshair;
+    }
+
     .map-viewport {
       position: absolute;
       transform-origin: 0 0;
@@ -679,22 +683,71 @@
     /* Distance matrix */
     .dist-matrix {
       width: 100%;
-      border-collapse: collapse;
+      /* border-separate is required: border-collapse causes sticky cells
+         to bleed through adjacent cells when scrolling */
+      border-collapse: separate;
+      border-spacing: 0;
       font-size: 11px;
       margin-top: 6px;
     }
 
+    /* One-sided borders so the grid never double-draws */
     .dist-matrix th,
     .dist-matrix td {
       padding: 4px 5px;
-      border: 1px solid var(--border);
+      border-right: 1px solid var(--border);
+      border-bottom: 1px solid var(--border);
       text-align: center;
+    }
+
+    /* Close the outer left/top edges */
+    .dist-matrix thead tr th:first-child {
+      border-left: 1px solid var(--border);
+    }
+
+    .dist-matrix thead tr th {
+      border-top: 1px solid var(--border);
+    }
+
+    .dist-matrix tbody tr th {
+      border-left: 1px solid var(--border);
     }
 
     .dist-matrix th {
       background: var(--surface3);
       color: var(--text-dim);
       font-weight: 600;
+    }
+
+    /* Sticky column headers (top row) */
+    .dist-matrix thead th {
+      position: sticky;
+      top: 0;
+      z-index: 2;
+      background: var(--surface3);
+    }
+
+    /* Sticky row headers (first column) */
+    .dist-matrix tbody th {
+      position: sticky;
+      left: 0;
+      z-index: 1;
+      background: var(--surface3);
+      text-align: right;
+      padding-right: 8px;
+      white-space: nowrap;
+      /* Solid separator – no clip-path needed with border-separate */
+      border-right: 2px solid var(--border2);
+    }
+
+    /* Top-left corner cell: sticky on both axes */
+    .dist-matrix thead th:first-child {
+      position: sticky;
+      top: 0;
+      left: 0;
+      z-index: 3;
+      background: var(--surface3);
+      border-right: 2px solid var(--border2);
     }
 
     .dist-matrix td {
@@ -874,7 +927,63 @@
       border-color: var(--gold-dim);
     }
 
-    /* ─── MODALS ─────────────────────────────── */
+    /* ─── MEASURE TOOL ───────────────────────── */
+    .measure-panel {
+      position: absolute;
+      bottom: 56px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: var(--surface);
+      border: 1px solid var(--gold-dim);
+      border-radius: 3px;
+      padding: 8px 14px;
+      font-size: 12px;
+      color: var(--text);
+      z-index: 20;
+      display: none;
+      min-width: 260px;
+      box-shadow: 0 4px 16px rgba(0, 0, 0, .5);
+      text-align: center;
+    }
+
+    .measure-panel.visible {
+      display: block;
+    }
+
+    .measure-panel .m-title {
+      font-family: var(--fd);
+      font-size: .65rem;
+      color: var(--gold);
+      letter-spacing: .06em;
+      text-transform: uppercase;
+      margin-bottom: 5px;
+    }
+
+    .measure-panel .m-stop {
+      margin-top: 6px;
+      background: none;
+      border: 1px solid var(--border2);
+      color: var(--text-dim);
+      border-radius: 2px;
+      font-size: 10px;
+      padding: 2px 8px;
+      cursor: pointer;
+    }
+
+    .measure-panel .m-stop:hover {
+      color: var(--text);
+      border-color: var(--gold-dim);
+    }
+
+    #measurePreviewLine {
+      fill: none;
+      stroke: #70e0a0;
+      stroke-width: 2;
+      stroke-dasharray: 8 4;
+      opacity: .85;
+      pointer-events: none;
+    }
+
     .modal-bg {
       position: fixed;
       inset: 0;
@@ -1070,6 +1179,9 @@
             <button class="tool-btn" id="tool-draw" onclick="setTool('draw')" title="Draw or Extend Path [D]"> <span
                 class="tool-icon">✏️</span> Draw/Extend
               Path <kbd>D</kbd></button>
+            <button class="tool-btn" id="tool-measure" onclick="setTool('measure')"
+              title="Measure distance between pinned locations [M]"><span class="tool-icon">📐</span> Measure
+              <kbd>M</kbd></button>
             <button class="tool-btn" id="tool-delete" onclick="setTool('delete')" title="Delete [X]"><span
                 class="tool-icon">✂️</span> Delete <kbd>X</kbd>
               Delete</button>
@@ -1172,6 +1284,7 @@
           <g id="pathsG"></g>
           <g id="pinsG"></g>
           <polyline id="drawPreview" points="" />
+          <g id="measureG"></g>
         </svg>
       </div>
 
@@ -1187,6 +1300,13 @@
         <button class="zoom-btn" onclick="zoomStep(1.2)" title="Zoom in">+</button>
         <button class="zoom-btn" onclick="zoomStep(0.8)" title="Zoom out">−</button>
         <button class="zoom-btn" onclick="zoomFit()" title="Fit to screen" style="font-size:11px">⊡</button>
+      </div>
+
+      <!-- Measure tool floating panel -->
+      <div class="measure-panel" id="measurePanel">
+        <div class="m-title">📐 Measure Path</div>
+        <div id="measureResult">Click pinned locations to add waypoints</div>
+        <button class="m-stop" onclick="clearMeasure()">✕ Clear</button>
       </div>
     </div>
 
@@ -1272,6 +1392,9 @@
 
     // Pending "place from list" selection
     let pendingPlaceLocId = null;
+
+    // Measure tool state (in-memory, never saved)
+    let measurePts = []; // array of placed loc ids in order
 
     const SPEEDS = { walk: 3, horse: 8, fly: 25 }; // mph
     const HOURS_PER_DAY = 8; // 8 active travel hours per day
@@ -1393,7 +1516,10 @@
       sel.innerHTML = '<option value="">— Pick location —</option>';
       // Only show locations not yet pinned on this map
       const pinnedCampIds = new Set(
-        placedLocs.map(l => l.campaign_location_id).filter(Boolean)
+        placedLocs
+          .slice()
+          .sort((a, b) => a.name.localeCompare(b.name))
+          .map(l => l.campaign_location_id).filter(Boolean)
       );
       campaignLocs
         .filter(l => !pinnedCampIds.has(l.id))
@@ -1564,6 +1690,7 @@
       pan: 'Click and drag to pan. Scroll to zoom.',
       place: 'Click map to place the selected location at that position.',
       draw: 'Select a tracker, then click to add waypoints. Double-click or Enter to finish. With a path selected, activates Extend mode.',
+      measure: 'Click pinned locations to build a measurement path. Distance is calculated from stored location distances.',
       delete: 'Click any pin or path to delete it.'
     };
     function expandSection(hd) {
@@ -1583,6 +1710,12 @@
       if (t !== 'draw') {
         isDrawing = false; drawPts = []; extendingPathId = null;
         document.getElementById('drawPreview').setAttribute('points', '');
+      }
+      if (t !== 'measure') {
+        clearMeasure();
+      } else {
+        document.getElementById('measurePanel').classList.add('visible');
+        updateMeasurePanel();
       }
       if (t === 'draw') {
         // Always expand the Trackers sidebar section
@@ -1688,6 +1821,28 @@
         const snap = snapToPinPct(x, y);
         const pt = snap || { x, y };
         isDrawing = true; drawPts.push(pt);
+        return;
+      }
+
+      if (activeTool === 'measure') {
+        // Only allow clicking on pinned locations
+        const pin = e.target.closest('.pin-g');
+        if (pin) {
+          const id = parseInt(pin.dataset.id);
+          const loc = placedLocs.find(l => l.id == id);
+          if (loc) {
+            // Clicking the last point removes it (undo)
+            if (measurePts.length && measurePts[measurePts.length - 1] === id) {
+              measurePts.pop();
+            } else {
+              measurePts.push(id);
+            }
+            updateMeasurePanel();
+            renderMeasure();
+          }
+        } else {
+          toast('Click a pinned location to measure');
+        }
         return;
       }
     }
@@ -1809,6 +1964,7 @@
       if (e.key === 'h' || e.key === 'H') setTool('pan');
       if (e.key === 'p' || e.key === 'P') setTool('place');
       if (e.key === 'd' || e.key === 'D') setTool('draw');
+      if (e.key === 'm' || e.key === 'M') setTool('measure');
       if (e.key === 'x' || e.key === 'X') setTool('delete');
     });
     document.addEventListener('keyup', e => {
@@ -1866,7 +2022,8 @@
     function renderLocList() {
       const el = document.getElementById('locList');
       if (!placedLocs.length) { el.innerHTML = '<div class="hint">No locations placed yet.</div>'; return; }
-      el.innerHTML = placedLocs.map(l => `
+      const sorted = [...placedLocs].sort((a, b) => a.name.localeCompare(b.name));
+      el.innerHTML = sorted.map(l => `
     <div class="list-item ${l.id == selectedLoc ? 'active' : ''}" onclick="selectLocation(${l.id})">
       <span class="tool-icon">📍</span>
       <span class="lbl">${esc(l.name)}</span>
@@ -2280,6 +2437,79 @@
       return { miles: +total.toFixed(2), complete: true };
     }
 
+    // ═══════════════════════════════════════════════════════
+    // MEASURE TOOL
+    // ═══════════════════════════════════════════════════════
+    function clearMeasure() {
+      measurePts = [];
+      document.getElementById('measurePanel').classList.remove('visible');
+      document.getElementById('measureG').innerHTML = '';
+    }
+
+    function updateMeasurePanel() {
+      const el = document.getElementById('measureResult');
+      if (!measurePts.length) {
+        el.textContent = 'Click pinned locations to add waypoints';
+        return;
+      }
+      const names = measurePts.map(id => placedLocs.find(l => l.id == id)?.name || '?');
+      let html = `<div style="color:var(--text-dim);font-size:11px;margin-bottom:4px">${names.map(n => `<span style="color:var(--text)">${esc(n)}</span>`).join(' → ')}</div>`;
+      if (measurePts.length < 2) {
+        html += `<div style="color:var(--text-muted);font-size:11px">Add another location to measure distance</div>`;
+        el.innerHTML = html;
+        return;
+      }
+      // Compute total and segment distances
+      let total = 0, complete = true;
+      const segs = [];
+      for (let i = 0; i < measurePts.length - 1; i++) {
+        const a = measurePts[i], b = measurePts[i + 1];
+        const d = distances.find(d =>
+          (d.from_loc_id == a && d.to_loc_id == b) ||
+          (d.from_loc_id == b && d.to_loc_id == a));
+        if (d) {
+          const mi = parseFloat(d.distance_miles);
+          total += mi;
+          segs.push(mi);
+        } else {
+          complete = false;
+          segs.push(null);
+        }
+      }
+      if (complete) {
+        html += `<div style="font-size:16px;font-weight:600;color:var(--gold);margin:2px 0">${total.toFixed(1)} mi</div>`;
+        html += `<div style="color:var(--text-muted);font-size:10px">🚶 ${fmtTime(total / SPEEDS.walk)} &nbsp; 🐎 ${fmtTime(total / SPEEDS.horse)} &nbsp; 🦅 ${fmtTime(total / SPEEDS.fly)}</div>`;
+        if (measurePts.length > 2) {
+          html += `<div style="font-size:10px;color:var(--text-muted);margin-top:4px">${segs.map((s, i) => `${names[i]}→${names[i + 1]}: ${s}mi`).join(' · ')}</div>`;
+        }
+      } else {
+        const partial = segs.filter(s => s !== null);
+        html += `<div style="color:var(--text-muted);font-size:11px">⚠ Some distances not set`;
+        if (partial.length) html += ` (known: ${partial.reduce((a, b) => a + b, 0).toFixed(1)} mi)`;
+        html += `</div>`;
+      }
+      el.innerHTML = html;
+    }
+
+    function renderMeasure() {
+      const g = document.getElementById('measureG');
+      if (measurePts.length < 1) { g.innerHTML = ''; return; }
+      const locs = measurePts.map(id => placedLocs.find(l => l.id == id)).filter(Boolean);
+      let svg = '';
+      // Draw lines between consecutive points
+      if (locs.length >= 2) {
+        const pts = locs.map(l => { const s = pctToSvg(l.x, l.y); return `${s.x},${s.y}`; }).join(' ');
+        svg += `<polyline points="${pts}" fill="none" stroke="#70e0a0" stroke-width="2.5" stroke-dasharray="8 4" opacity=".9" pointer-events="none"/>`;
+      }
+      // Draw circles on each point
+      locs.forEach((l, i) => {
+        const s = pctToSvg(l.x, l.y);
+        svg += `<circle cx="${s.x}" cy="${s.y}" r="7" fill="${i === 0 ? '#70e0a0' : '#a0f0c0'}" stroke="#fff" stroke-width="1.5" opacity=".85" pointer-events="none"/>`;
+        svg += `<text x="${s.x}" y="${s.y - 12}" text-anchor="middle" font-family="Cinzel,serif" font-size="9" fill="#70e0a0" paint-order="stroke" stroke="#13100b" stroke-width="2.5" pointer-events="none">${i + 1}</text>`;
+      });
+      g.innerHTML = svg;
+    }
+
     function selectPath(id) {
       selectedPath = id; selectedLoc = null;
       renderPaths(); renderPathList(); renderPins();
@@ -2381,32 +2611,102 @@
       if (type === 'loc') {
         const loc = data;
         head.textContent = '📍 ' + loc.name;
-        const myDists = distances.filter(d => d.from_loc_id == loc.id);
-        const distRows = myDists.map(d => {
-          const toLoc = placedLocs.find(l => l.id == d.to_loc_id);
-          if (!toLoc) return '';
-          const mi = parseFloat(d.distance_miles);
-          return `<div class="info-row" onclick="openDistEdit(${loc.id},${toLoc.id})" style="cursor:pointer">
-        <span class="info-lbl">📍 ${esc(toLoc.name)}</span>
-        <span class="info-val">${mi} mi ${travelBadges(mi, true)}</span>
-      </div>`;
+
+        // ── Smart distance filtering ──────────────────────────
+        // Classify size_type into tier
+        const BIG_TYPES = new Set(['huge', 'big']);
+        const MED_TYPES = new Set(['medium', 'small']);
+        // anything else (village, inn, post, null) = 'small_other'
+        function tier(st) {
+          const s = (st || '').toLowerCase();
+          if (BIG_TYPES.has(s)) return 'big';
+          if (MED_TYPES.has(s)) return 'med';
+          return 'other';
+        }
+
+        // Get distance between two placed locs (or null if not set)
+        function distBetween(aId, bId) {
+          const d = distances.find(d =>
+            (d.from_loc_id == aId && d.to_loc_id == bId) ||
+            (d.from_loc_id == bId && d.to_loc_id == aId));
+          return d ? parseFloat(d.distance_miles) : null;
+        }
+
+        const srcTier = tier(loc.size_type);
+
+        // Determine which other placed locations to show based on rules
+        function shouldShow(other) {
+          const dstTier = tier(other.size_type);
+          const mi = distBetween(loc.id, other.id);
+          if (srcTier === 'big') {
+            if (dstTier === 'big') return true;                      // all big cities
+            if (dstTier === 'med') return mi === null || mi <= 150;  // med within 150mi
+            return mi === null || mi <= 50;                           // others within 50mi
+          }
+          if (srcTier === 'med') {
+            if (dstTier === 'big') return mi === null || mi <= 150;  // big within 150mi
+            if (dstTier === 'med') return mi === null || mi <= 100;  // med within 100mi
+            return mi === null || mi <= 50;                           // others within 50mi
+          }
+          // srcTier === 'other'
+          if (dstTier === 'big') {
+            // Show only the closest big/huge city
+            const closestBig = placedLocs
+              .filter(l => l.id !== loc.id && tier(l.size_type) === 'big')
+              .map(l => ({ l, mi: distBetween(loc.id, l.id) }))
+              .filter(x => x.mi !== null)
+              .sort((a, b) => a.mi - b.mi)[0];
+            return closestBig ? other.id === closestBig.l.id : mi === null;
+          }
+          if (dstTier === 'med') return mi === null || mi <= 80;     // med within 80mi
+          return mi === null || mi <= 50;                             // others within 50mi
+        }
+
+        const visibleLocs = placedLocs
+          .filter(l => l.id !== loc.id && shouldShow(l))
+          .sort((a, b) => {
+            const da = distBetween(loc.id, a.id) ?? Infinity;
+            const db = distBetween(loc.id, b.id) ?? Infinity;
+            return da - db;
+          });
+
+        const hiddenCount = placedLocs.filter(l => l.id !== loc.id).length - visibleLocs.length;
+
+        const distRows = visibleLocs.map(other => {
+          const mi = distBetween(loc.id, other.id);
+          const sizeTag = other.size_type
+            ? `<span style="font-size:9px;color:var(--text-muted);margin-left:4px">(${other.size_type})</span>`
+            : '';
+          if (mi !== null) {
+            return `<div class="info-row" onclick="openDistEdit(${loc.id},${other.id})" style="cursor:pointer">
+              <span class="info-lbl">📍 ${esc(other.name)}${sizeTag}</span>
+              <span class="info-val">${mi} mi ${travelBadges(mi, true)}</span>
+            </div>`;
+          } else {
+            return `<div class="info-row" onclick="openDistEdit(${loc.id},${other.id})" style="cursor:pointer;opacity:.55">
+              <span class="info-lbl">📍 ${esc(other.name)}${sizeTag}</span>
+              <span class="info-val" style="color:var(--text-muted)">set distance →</span>
+            </div>`;
+          }
         }).join('');
-        const unset = placedLocs.filter(l => l.id != loc.id && !distances.some(d =>
-          (d.from_loc_id == loc.id && d.to_loc_id == l.id) || (d.from_loc_id == l.id && d.to_loc_id == loc.id)
-        )).map(l => `<div class="info-row" onclick="openDistEdit(${loc.id},${l.id})" style="cursor:pointer;opacity:.55">
-        <span class="info-lbl">📍 ${esc(l.name)}</span>
-        <span class="info-val" style="color:var(--text-muted)">set distance →</span>
-      </div>`).join('');
+
+        const sizeLabel = loc.size_type
+          ? `<div class="info-row"><span class="info-lbl">Size/Type</span><span class="info-val" style="text-transform:capitalize">${esc(loc.size_type)}</span></div>`
+          : '';
+        const hiddenNote = hiddenCount > 0
+          ? `<div style="font-size:10px;color:var(--text-muted);padding:4px 2px;text-align:center">${hiddenCount} location${hiddenCount > 1 ? 's' : ''} hidden by proximity filter · <span style="cursor:pointer;color:var(--gold-dim)" onclick="openDistMatrixModal()">see full matrix</span></div>`
+          : '';
 
         body.innerHTML = `
       <div class="info-card">
         <h3>📍 Location</h3>
         <div class="info-row"><span class="info-lbl">Position</span><span class="info-val">${loc.x.toFixed(1)}%, ${loc.y.toFixed(1)}%</span></div>
+        ${sizeLabel}
       </div>
       <div class="info-card">
         <h3>📏 Distances (click to edit)</h3>
-        ${distRows}${unset}
-        ${!distRows && !unset ? '<div class="rp-empty" style="font-size:11px">Add more locations to define distances.</div>' : ''}
+        ${distRows || '<div class="rp-empty" style="font-size:11px">No nearby locations match proximity rules.</div>'}
+        ${hiddenNote}
       </div>`;
         return;
       }
@@ -2583,7 +2883,6 @@
 
         // Reload and switch to new map
         maps = await apiFetch(`/api/campaigns/${campaignId}/journey-maps`);
-        renderMapList();
         const sel = document.getElementById('mapSel');
         sel.value = newMap.id;
         await onMapChange();
@@ -2605,14 +2904,16 @@
         el.innerHTML = '<div class="hint">Place at least 2 locations to define distances.</div>';
         return;
       }
-      let html = '<table class="dist-matrix" style="width:100%"><thead><tr><th></th>';
-      placedLocs.forEach(l => {
+      // Sort alphabetically
+      const sorted = [...placedLocs].sort((a, b) => a.name.localeCompare(b.name));
+      let html = '<table class="dist-matrix"><thead><tr><th></th>';
+      sorted.forEach(l => {
         html += `<th title="${esc(l.name)}">${esc(l.name)}</th>`;
       });
       html += '</tr></thead><tbody>';
-      placedLocs.forEach(from => {
-        html += `<tr><th style="text-align:right;padding-right:8px">${esc(from.name)}</th>`;
-        placedLocs.forEach(to => {
+      sorted.forEach(from => {
+        html += `<tr><th>${esc(from.name)}</th>`;
+        sorted.forEach(to => {
           if (from.id === to.id) { html += '<td class="self">—</td>'; return; }
           const d = distances.find(d =>
             (d.from_loc_id == from.id && d.to_loc_id == to.id) ||
@@ -2801,12 +3102,19 @@
 
   <!-- Distance Matrix Modal -->
   <div class="modal-bg" id="distMatrixModal" style="z-index:90">
-    <div class="modal" style="min-width:520px;max-width:90vw;max-height:80vh;overflow:auto">
-      <h2>📏 Distance Matrix</h2>
-      <div class="hint" style="margin-bottom:10px">Click any cell to set the distance between two locations.</div>
-      <div id="distMatrixFull"></div>
-      <div class="modal-foot" style="margin-top:14px">
-        <button class="modal-cancel" onclick="closeModal('distMatrixModal')">Close</button>
+    <div class="modal"
+      style="min-width:520px;max-width:90vw;max-height:85vh;display:flex;flex-direction:column;padding:0;position:relative">
+      <div
+        style="padding:16px 22px 10px;display:flex;align-items:center;justify-content:space-between;flex-shrink:0;border-bottom:1px solid var(--border)">
+        <h2 style="margin:0">📏 Distance Matrix</h2>
+        <button onclick="closeModal('distMatrixModal')"
+          style="background:none;border:none;color:var(--text-dim);font-size:20px;cursor:pointer;line-height:1;padding:0 2px"
+          title="Close">✕</button>
+      </div>
+      <div class="hint" style="padding:6px 22px;flex-shrink:0">Click any cell to set the distance between two locations.
+      </div>
+      <div id="distMatrixScroll" style="overflow:auto;flex:1;padding:0 22px 16px">
+        <div id="distMatrixFull"></div>
       </div>
     </div>
   </div>

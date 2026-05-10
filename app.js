@@ -1041,10 +1041,11 @@ app.get('/api/pc/:playerId/relationships', requireAuth, async (req, res) => {
     }
     const charResult = await pool.query('SELECT id FROM pc_characters WHERE player_id = $1', [playerId]);
     if (charResult.rows.length === 0) return res.json([]);
-    const result = await pool.query(
-      'SELECT * FROM pc_relationships WHERE character_id = $1 ORDER BY created_at ASC',
-      [charResult.rows[0].id]
-    );
+    const isDM = req.session.role === 'dm' || req.session.role === 'admin';
+    const query = isDM
+      ? 'SELECT * FROM pc_relationships WHERE character_id = $1 ORDER BY created_at ASC'
+      : 'SELECT * FROM pc_relationships WHERE character_id = $1 AND is_dm_only = false ORDER BY created_at ASC';
+    const result = await pool.query(query, [charResult.rows[0].id]);
     res.json(result.rows);
   } catch (error) { res.status(500).json({ error: error.message }); }
 });
@@ -1052,7 +1053,7 @@ app.get('/api/pc/:playerId/relationships', requireAuth, async (req, res) => {
 // Add relationship
 app.post('/api/pc/:playerId/relationships', requireAuth, async (req, res) => {
   const { playerId } = req.params;
-  const { name, relation_type, link, is_family } = req.body;
+  const { name, relation_type, link, is_family, is_dm_only, parent_id, status_label } = req.body;
   try {
     if (!await canAccessPC(req.session.userId, req.session.role, playerId)) {
       return res.status(403).json({ error: 'Access denied' });
@@ -1067,9 +1068,10 @@ app.post('/api/pc/:playerId/relationships', requireAuth, async (req, res) => {
     } else {
       charId = charResult.rows[0].id;
     }
+    const created_by_role = req.session.role === 'dm' || req.session.role === 'admin' ? 'dm' : 'player';
     const result = await pool.query(
-      'INSERT INTO pc_relationships (character_id, name, relation_type, link, is_family) VALUES ($1,$2,$3,$4,$5) RETURNING *',
-      [charId, name, relation_type, link, is_family || false]
+      'INSERT INTO pc_relationships (character_id, name, relation_type, link, is_family, is_dm_only, created_by_role, parent_id, status_label) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *',
+      [charId, name, relation_type, link, is_family || false, is_dm_only || false, created_by_role, parent_id || null, status_label || null]
     );
     res.json(result.rows[0]);
   } catch (error) { res.status(500).json({ error: error.message }); }
@@ -1082,8 +1084,70 @@ app.delete('/api/pc/:playerId/relationships/:relId', requireAuth, async (req, re
     if (!await canAccessPC(req.session.userId, req.session.role, playerId)) {
       return res.status(403).json({ error: 'Access denied' });
     }
+    const isDM = req.session.role === 'dm' || req.session.role === 'admin';
+    if (!isDM) {
+      const rel = await pool.query('SELECT created_by_role FROM pc_relationships WHERE id = $1', [relId]);
+      if (rel.rows.length && rel.rows[0].created_by_role === 'dm') {
+        return res.status(403).json({ error: 'This relationship was created by the DM and cannot be deleted.' });
+      }
+    }
     await pool.query('DELETE FROM pc_relationships WHERE id = $1', [relId]);
     res.json({ success: true });
+  } catch (error) { res.status(500).json({ error: error.message }); }
+});
+
+// Toggle DM-only visibility on a relationship (DM only, only for DM-created rels)
+app.patch('/api/pc/:playerId/relationships/:relId/visibility', requireRole(['dm', 'admin']), async (req, res) => {
+  const { playerId, relId } = req.params;
+  try {
+    if (!await canAccessPC(req.session.userId, req.session.role, playerId)) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+    const check = await pool.query('SELECT created_by_role FROM pc_relationships WHERE id = $1', [relId]);
+    if (!check.rows.length) return res.status(404).json({ error: 'Relationship not found' });
+    if (check.rows[0].created_by_role !== 'dm') {
+      return res.status(403).json({ error: 'Visibility can only be toggled on DM-created relationships.' });
+    }
+    const result = await pool.query(
+      'UPDATE pc_relationships SET is_dm_only = NOT is_dm_only WHERE id = $1 RETURNING id, is_dm_only',
+      [relId]
+    );
+    res.json(result.rows[0]);
+  } catch (error) { res.status(500).json({ error: error.message }); }
+});
+
+// Edit relationship — update relation_type and/or status_label
+app.patch('/api/pc/:playerId/relationships/:relId', requireAuth, async (req, res) => {
+  const { playerId, relId } = req.params;
+  // Only update fields explicitly included in the request body
+  const updates = {};
+  if ('name' in req.body) updates.name = req.body.name || null;
+  if ('relation_type' in req.body) updates.relation_type = req.body.relation_type || null;
+  if ('status_label' in req.body) updates.status_label = req.body.status_label || null;
+  if ('link' in req.body) updates.link = req.body.link || null;
+  if ('parent_id' in req.body) updates.parent_id = parseInt(req.body.parent_id) || null;
+  if (!Object.keys(updates).length) return res.status(400).json({ error: 'Nothing to update' });
+  try {
+    if (!await canAccessPC(req.session.userId, req.session.role, playerId)) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+    const isDM = req.session.role === 'dm' || req.session.role === 'admin';
+    if (!isDM) {
+      // Players cannot edit DM-created relationships
+      const rel = await pool.query('SELECT created_by_role FROM pc_relationships WHERE id = $1', [relId]);
+      if (rel.rows.length && rel.rows[0].created_by_role === 'dm') {
+        return res.status(403).json({ error: 'This relationship was created by the DM and cannot be edited.' });
+      }
+    }
+    const keys = Object.keys(updates);
+    const setClauses = keys.map((k, i) => `${k} = $${i + 1}`).join(', ');
+    const values = [...Object.values(updates), relId];
+    const result = await pool.query(
+      `UPDATE pc_relationships SET ${setClauses} WHERE id = $${values.length} RETURNING *`,
+      values
+    );
+    if (!result.rows.length) return res.status(404).json({ error: 'Relationship not found' });
+    res.json(result.rows[0]);
   } catch (error) { res.status(500).json({ error: error.message }); }
 });
 
@@ -1222,24 +1286,24 @@ app.get('/api/campaigns/:campaignId/locations', requireRole(['dm', 'player']), a
 });
 
 app.post('/api/campaigns/:campaignId/locations', requireRole(['dm']), async (req, res) => {
-  const { name, description } = req.body;
+  const { name, description, size_type } = req.body;
   if (!name) return res.status(400).json({ error: 'Name required' });
   try {
     const result = await pool.query(
-      'INSERT INTO campaign_locations (campaign_id, name, description) VALUES ($1,$2,$3) RETURNING *',
-      [req.params.campaignId, name, description || null]
+      'INSERT INTO campaign_locations (campaign_id, name, description, size_type) VALUES ($1,$2,$3,$4) RETURNING *',
+      [req.params.campaignId, name, description || null, size_type || null]
     );
     res.json(result.rows[0]);
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 app.put('/api/campaigns/:campaignId/locations/:locationId', requireRole(['dm']), async (req, res) => {
-  const { name, description } = req.body;
+  const { name, description, size_type } = req.body;
   if (!name) return res.status(400).json({ error: 'Name required' });
   try {
     const result = await pool.query(
-      'UPDATE campaign_locations SET name=$1, description=$2 WHERE id=$3 AND campaign_id=$4 RETURNING *',
-      [name, description || null, req.params.locationId, req.params.campaignId]
+      'UPDATE campaign_locations SET name=$1, description=$2, size_type=$3 WHERE id=$4 AND campaign_id=$5 RETURNING *',
+      [name, description || null, size_type || null, req.params.locationId, req.params.campaignId]
     );
     if (!result.rows.length) return res.status(404).json({ error: 'Location not found' });
     // Also sync the name on any journey_map_locations that reference this campaign location
@@ -1340,6 +1404,97 @@ app.delete('/api/campaigns/:campaignId/npcs/:npcId', requireRole(['dm', 'admin']
     }
     await pool.query('DELETE FROM campaign_npcs WHERE id=$1 AND campaign_id=$2',
       [npcId, campaignId]);
+    res.json({ success: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ─── Character Relationship Tree (DM cross-player connections) ────────────────
+// GET all pc_relationships for every player in a campaign + DM cross-connections
+app.get('/api/campaigns/:campaignId/char-tree', requireRole(['dm', 'admin']), async (req, res) => {
+  const { campaignId } = req.params;
+  try {
+    // All players with their character name
+    const players = await pool.query(
+      `SELECT cp.id as player_id, cp.player_name, pcc.id as char_id, pcc.name as char_name
+       FROM campaign_players cp
+       LEFT JOIN pc_characters pcc ON pcc.player_id = cp.id
+       WHERE cp.campaign_id = $1 AND cp.is_dm_player = false
+       ORDER BY cp.player_name ASC`,
+      [campaignId]
+    );
+    // All pc_relationships for all players in this campaign
+    const rels = await pool.query(
+      `SELECT pr.*, cp.id as player_id, cp.player_name
+       FROM pc_relationships pr
+       JOIN pc_characters pcc ON pcc.id = pr.character_id
+       JOIN campaign_players cp ON cp.id = pcc.player_id
+       WHERE cp.campaign_id = $1
+       ORDER BY cp.player_name ASC, pr.name ASC`,
+      [campaignId]
+    );
+    const npcs = await pool.query(
+      `SELECT * FROM campaign_npcs WHERE campaign_id = $1 ORDER BY name ASC`,
+      [campaignId]
+    );
+    // DM cross-connections
+    const cross = await pool.query(
+      `SELECT * FROM character_relationships WHERE campaign_id = $1 ORDER BY created_at ASC`,
+      [campaignId]
+    );
+    res.json({ players: players.rows, relationships: rels.rows, npcs: npcs.rows, cross_connections: cross.rows });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// POST a DM cross-connection — from_rel_id and to_rel_id accept "p_N" (player), "r_N" (pc_relationship), "n_N" (npc)
+app.post('/api/campaigns/:campaignId/char-tree/connections', requireRole(['dm', 'admin']), async (req, res) => {
+  const { campaignId } = req.params;
+  const { from_rel_id, to_rel_id, label, notes } = req.body;
+  if (!from_rel_id || !to_rel_id || !label) return res.status(400).json({ error: 'from_rel_id, to_rel_id and label required' });
+  if (from_rel_id === to_rel_id) return res.status(400).json({ error: 'From and To must differ' });
+  function parseEntity(raw) {
+    if (typeof raw === 'string' && raw.startsWith('p_')) return { type: 'player', id: parseInt(raw.slice(2)) };
+    if (typeof raw === 'string' && raw.startsWith('r_')) return { type: 'relationship', id: parseInt(raw.slice(2)) };
+    if (typeof raw === 'string' && raw.startsWith('n_')) return { type: 'npc', id: parseInt(raw.slice(2)) };
+    return { type: 'player', id: parseInt(raw) };
+  }
+  const from = parseEntity(from_rel_id);
+  const to = parseEntity(to_rel_id);
+  if (isNaN(from.id) || isNaN(to.id)) return res.status(400).json({ error: 'Invalid entity IDs' });
+  try {
+    const r = await pool.query(
+      `INSERT INTO character_relationships (campaign_id, from_entity_type, from_entity_id, to_entity_type, to_entity_id, label, notes)
+       VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *`,
+      [campaignId, from.type, from.id, to.type, to.id, label, notes || null]
+    );
+    res.json(r.rows[0]);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// PATCH a DM cross-connection (update label and/or notes)
+app.patch('/api/campaigns/:campaignId/char-tree/connections/:connId', requireRole(['dm', 'admin']), async (req, res) => {
+  const { campaignId, connId } = req.params;
+  const updates = {};
+  if ('label' in req.body) updates.label = req.body.label || null;
+  if ('notes' in req.body) updates.notes = req.body.notes || null;
+  if (!Object.keys(updates).length) return res.status(400).json({ error: 'Nothing to update' });
+  if (updates.label !== undefined && !updates.label) return res.status(400).json({ error: 'Label cannot be empty' });
+  try {
+    const keys = Object.keys(updates);
+    const setClauses = keys.map((k, i) => `${k} = $${i + 1}`).join(', ');
+    const values = [...Object.values(updates), connId, campaignId];
+    const result = await pool.query(
+      `UPDATE character_relationships SET ${setClauses} WHERE id = $${values.length - 1} AND campaign_id = $${values.length} RETURNING *`,
+      values
+    );
+    if (!result.rows.length) return res.status(404).json({ error: 'Connection not found' });
+    res.json(result.rows[0]);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// DELETE a DM cross-connection
+app.delete('/api/campaigns/:campaignId/char-tree/connections/:connId', requireRole(['dm', 'admin']), async (req, res) => {
+  try {
+    await pool.query('DELETE FROM character_relationships WHERE id=$1 AND campaign_id=$2', [req.params.connId, req.params.campaignId]);
     res.json({ success: true });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -1502,7 +1657,10 @@ app.put('/api/journey-maps/:id/image', requireRole(['dm']), async (req, res) => 
 app.get('/api/journey-maps/:id/locations', requireRole(['dm']), async (req, res) => {
   try {
     const r = await pool.query(
-      'SELECT * FROM journey_map_locations WHERE map_id=$1 ORDER BY created_at ASC',
+      `SELECT jml.*, cl.size_type
+       FROM journey_map_locations jml
+       LEFT JOIN campaign_locations cl ON cl.id = jml.campaign_location_id
+       WHERE jml.map_id=$1 ORDER BY jml.created_at ASC`,
       [req.params.id]
     );
     res.json(r.rows);
@@ -2225,6 +2383,56 @@ async function initializeDatabase() {
     // Migrate: location visibility (is_public)
     await pool.query(`
       ALTER TABLE campaign_locations ADD COLUMN IF NOT EXISTS is_public BOOLEAN NOT NULL DEFAULT true;
+    `);
+
+    // Migrate: location size/type
+    await pool.query(`
+      ALTER TABLE campaign_locations ADD COLUMN IF NOT EXISTS size_type VARCHAR(50);
+    `);
+
+    // Character relationship trees (DM-only cross-player connections)
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS character_relationships (
+        id SERIAL PRIMARY KEY,
+        campaign_id INTEGER NOT NULL REFERENCES campaigns(id) ON DELETE CASCADE,
+        from_entity_type VARCHAR(20) NOT NULL CHECK (from_entity_type IN ('player','npc','relationship')),
+        from_entity_id INTEGER NOT NULL,
+        to_entity_type VARCHAR(20) NOT NULL CHECK (to_entity_type IN ('player','npc','relationship')),
+        to_entity_id INTEGER NOT NULL,
+        label VARCHAR(255) NOT NULL DEFAULT '',
+        notes TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
+
+    // Migrate: DM-only relationships (hidden from player)
+    await pool.query(`
+      ALTER TABLE pc_relationships ADD COLUMN IF NOT EXISTS is_dm_only BOOLEAN NOT NULL DEFAULT false;
+    `);
+
+    // Migrate: track who created the relationship (role) + nested relationships
+    await pool.query(`
+      ALTER TABLE pc_relationships ADD COLUMN IF NOT EXISTS created_by_role VARCHAR(20) NOT NULL DEFAULT 'player';
+    `);
+    await pool.query(`
+      ALTER TABLE pc_relationships ADD COLUMN IF NOT EXISTS parent_id INTEGER REFERENCES pc_relationships(id) ON DELETE CASCADE;
+    `);
+    // Migrate: relationship status label (Alive, Dead, or any free-form text)
+    await pool.query(`
+      ALTER TABLE pc_relationships ADD COLUMN IF NOT EXISTS status_label VARCHAR(100);
+    `);
+    // Migrate: fix character_relationships CHECK constraints to include 'relationship' type
+    await pool.query(`
+      ALTER TABLE character_relationships
+        DROP CONSTRAINT IF EXISTS character_relationships_from_entity_type_check,
+        DROP CONSTRAINT IF EXISTS character_relationships_to_entity_type_check;
+    `);
+    await pool.query(`
+      ALTER TABLE character_relationships
+        ADD CONSTRAINT character_relationships_from_entity_type_check
+          CHECK (from_entity_type IN ('player','npc','relationship')),
+        ADD CONSTRAINT character_relationships_to_entity_type_check
+          CHECK (to_entity_type IN ('player','npc','relationship'));
     `);
 
     console.log('✓ Database initialized');
