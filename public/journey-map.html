@@ -2950,7 +2950,7 @@
         // 1 – Create map
         const newMap = await apiFetch(`/api/campaigns/${campaignId}/journey-maps`, {
           method: 'POST',
-          body: JSON.stringify({ name: (mapMeta.name || 'Map') + ' (Imported)', description: mapMeta.description || '' })
+          body: JSON.stringify({ name: (mapMeta.name || 'Map'), description: mapMeta.description || '' })
         });
 
         // 2 – Locations: old id → new id map

@@ -1997,7 +1997,7 @@ app.post('/api/campaigns/import', requireRole(['dm']), async (req, res) => {
 
     const campRes = await client.query(
       'INSERT INTO campaigns (name, description, dm_user_id) VALUES ($1, $2, $3) RETURNING id',
-      [campaign.name + ' (Imported)', campaign.description || '', req.session.userId]
+      [campaign.name, campaign.description || '', req.session.userId]
     );
     const newId = campRes.rows[0].id;
 
