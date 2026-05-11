@@ -1209,8 +1209,8 @@
         <div class="sb-sec">
           <div class="sb-hd collapsed" onclick="toggleSection(this)">Locations <span class="arr">▾</span></div>
           <div class="sb-body-sec collapsed">
-            <div class="hint">Campaign locations appear below. Select a location then click the map (Place tool) to pin
-              it.</div>
+            <div class="hint" id="locScopeHint" style="margin-bottom:6px">Campaign locations appear below. Select a
+              location then click the map (Place tool) to pin it.</div>
             <div id="locList"></div>
             <div class="mini-row" style="margin-top:6px">
               <select id="placeSel" class="mini-in" style="flex:2"></select>
@@ -1324,10 +1324,24 @@
   <div class="modal-bg" id="newMapModal">
     <div class="modal">
       <h2>New Journey Map</h2>
-      <div class="modal-group"><label>Name</label><input id="newMapName" placeholder="e.g., Road to Baldur's Gate">
+      <div class="modal-group"><label>Name</label><input id="newMapName" placeholder="e.g., Road to Baldur's Gate"
+          onkeydown="if(event.key==='Enter')createMap()">
       </div>
       <div class="modal-group"><label>Description (optional)</label><textarea id="newMapDesc" rows="2"
           placeholder="Notes about this journey…"></textarea></div>
+      <div class="modal-group">
+        <label>Map Scope</label>
+        <select id="newMapScope" onchange="onNewMapScopeChange()" style="width:100%">
+          <option value="continent">🌍 Continent — all locations</option>
+          <option value="city">🏙️ City / Area — locations inside a place</option>
+        </select>
+      </div>
+      <div class="modal-group" id="newMapCityRow" style="display:none">
+        <label>Parent Location</label>
+        <select id="newMapCityLoc" style="width:100%">
+          <option value="">— Pick a location —</option>
+        </select>
+      </div>
       <div class="modal-foot">
         <button class="modal-cancel" onclick="closeModal('newMapModal')">Cancel</button>
         <button class="modal-save" onclick="createMap()">Create</button>
@@ -1368,8 +1382,10 @@
     let user = null;
     let campaigns = [], campaignId = null;
     let maps = [], mapId = null;
-    let campaignLocs = [];    // campaign_locations from DB
+    let campaignLocs = [];    // campaign_locations from DB (all, flat)
     let placedLocs = [];     // journey_map_locations (with x,y)
+    let mapScopeType = 'continent';         // 'continent' | 'city'
+    let mapScopeLocationId = null;          // parent location id when scope=city
     let distances = [];     // journey_distances
     let trackers = [];     // journey_trackers
     let paths = [];     // journey_paths
@@ -1444,6 +1460,7 @@
           apiFetch(`/api/campaigns/${campaignId}/players`).catch(() => [])
         ]);
         campaignLocs = locsData; maps = mapsData; campaignPlayers = playersData || [];
+        mapScopeType = 'continent'; mapScopeLocationId = null;
         buildLocationSelectors();
         const sel = document.getElementById('mapSel');
         maps.forEach(m => sel.appendChild(new Option(m.name, m.id)));
@@ -1468,6 +1485,13 @@
         ]);
         placedLocs = locs; distances = dist; trackers = trk; paths = pth;
         trackers = await mergeCampaignPlayerTrackers(trk);
+
+        // Load scope from map metadata
+        const mapMeta = maps.find(m => String(m.id) === String(mapId));
+        mapScopeType = mapMeta?.scope_type || 'continent';
+        mapScopeLocationId = mapMeta?.scope_location_id ? parseInt(mapMeta.scope_location_id) : null;
+        updateScopeHint();
+
         buildLocationSelectors(); // re-filter: remove already-pinned from dropdown
         renderAll();
         if (imgData.image) loadImageFromData(imgData.image);
@@ -1512,27 +1536,87 @@
     }
 
     function buildLocationSelectors() {
+      const scopedLocs = getScopedLocations();
       const sel = document.getElementById('placeSel');
-      sel.innerHTML = '<option value="">— Pick location —</option>';
-      // Only show locations not yet pinned on this map
-      const pinnedCampIds = new Set(
-        placedLocs
-          .slice()
+      sel.innerHTML = '<option value="">\u2014 Pick location \u2014</option>';
+      const pinnedCampIds = new Set(placedLocs.map(l => l.campaign_location_id).filter(Boolean));
+      const available = scopedLocs.filter(l => !pinnedCampIds.has(l.id));
+
+      // Seed the walk from the scope boundary:
+      // - continent: walk from null (true top-level locations)
+      // - city: walk from mapScopeLocationId so its children appear at depth 0
+      const treeRoot = (mapScopeType === 'city' && mapScopeLocationId) ? mapScopeLocationId : null;
+
+      function appendTree(parentId, depth) {
+        available
+          .filter(l => l.parent_id === parentId)
           .sort((a, b) => a.name.localeCompare(b.name))
-          .map(l => l.campaign_location_id).filter(Boolean)
-      );
-      campaignLocs
-        .filter(l => !pinnedCampIds.has(l.id))
-        .forEach(l => sel.appendChild(new Option(l.name, l.id)));
+          .forEach(l => {
+            const prefix = depth > 0 ? '\u00a0'.repeat(depth * 4) + '\u2514 ' : '';
+            sel.appendChild(new Option(prefix + l.name, l.id));
+            appendTree(l.id, depth + 1);
+          });
+      }
+      appendTree(treeRoot, 0);
     }
+
+    function getScopedLocations() {
+      // City scope: the selected location + all descendants (recursive)
+      if (mapScopeType === 'city' && mapScopeLocationId) {
+        const result = [];
+        const queue = [mapScopeLocationId];
+        while (queue.length) {
+          const pid = queue.shift();
+          campaignLocs.filter(l => l.parent_id === pid).forEach(l => {
+            result.push(l);
+            queue.push(l.id);
+          });
+        }
+        return result;
+      }
+      // Continent: everything
+      return campaignLocs;
+    }
+
+    function updateScopeHint() {
+      const hint = document.getElementById('locScopeHint');
+      if (!hint) return;
+      if (mapScopeType === 'city' && mapScopeLocationId) {
+        const loc = campaignLocs.find(l => l.id === mapScopeLocationId);
+        hint.textContent = 'Showing locations inside "' + (loc?.name || '?') + '". Select one and click the map to pin it.';
+      } else {
+        hint.textContent = 'All campaign locations are available to pin on this continent map.';
+      }
+    }
+
 
     // ═══════════════════════════════════════════════════════
     // MAP CREATION / DELETION
     // ═══════════════════════════════════════════════════════
+    function onNewMapScopeChange() {
+      const scope = document.getElementById('newMapScope').value;
+      document.getElementById('newMapCityRow').style.display = scope === 'city' ? '' : 'none';
+    }
+
     function openNewMap() {
       if (!campaignId) { toast('Select a campaign first'); return; }
       document.getElementById('newMapName').value = '';
       document.getElementById('newMapDesc').value = '';
+      document.getElementById('newMapScope').value = 'continent';
+      document.getElementById('newMapCityRow').style.display = 'none';
+      // Populate city location dropdown — all locations that have children, sorted
+      const cityLoc = document.getElementById('newMapCityLoc');
+      const childParentIds = new Set(campaignLocs.filter(l => l.parent_id).map(l => l.parent_id));
+      cityLoc.innerHTML = '<option value="">— Pick a location —</option>';
+      campaignLocs
+        .filter(l => childParentIds.has(l.id))
+        .sort((a, b) => a.name.localeCompare(b.name))
+        .forEach(l => cityLoc.appendChild(new Option(l.name, l.id)));
+      // Also add top-level locations that have no children but can still scope a map
+      campaignLocs
+        .filter(l => !l.parent_id && !childParentIds.has(l.id))
+        .sort((a, b) => a.name.localeCompare(b.name))
+        .forEach(l => cityLoc.appendChild(new Option(l.name, l.id)));
       openModal('newMapModal');
       setTimeout(() => document.getElementById('newMapName').focus(), 50);
     }
@@ -1540,10 +1624,18 @@
     async function createMap() {
       const name = document.getElementById('newMapName').value.trim();
       if (!name) return;
+      const scopeType = document.getElementById('newMapScope').value;
+      const scopeLocId = scopeType === 'city' ? (document.getElementById('newMapCityLoc').value || null) : null;
+      if (scopeType === 'city' && !scopeLocId) { toast('Please pick a location for the City scope'); return; }
       try {
         const m = await apiFetch(`/api/campaigns/${campaignId}/journey-maps`, {
           method: 'POST',
-          body: JSON.stringify({ name, description: document.getElementById('newMapDesc').value })
+          body: JSON.stringify({
+            name,
+            description: document.getElementById('newMapDesc').value,
+            scope_type: scopeType,
+            scope_location_id: scopeLocId ? parseInt(scopeLocId) : null
+          })
         });
         maps.push(m); mapId = m.id;
         const sel = document.getElementById('mapSel');
@@ -2022,13 +2114,43 @@
     function renderLocList() {
       const el = document.getElementById('locList');
       if (!placedLocs.length) { el.innerHTML = '<div class="hint">No locations placed yet.</div>'; return; }
-      const sorted = [...placedLocs].sort((a, b) => a.name.localeCompare(b.name));
-      el.innerHTML = sorted.map(l => `
-    <div class="list-item ${l.id == selectedLoc ? 'active' : ''}" onclick="selectLocation(${l.id})">
-      <span class="tool-icon">📍</span>
-      <span class="lbl">${esc(l.name)}</span>
-      <span class="del" onclick="event.stopPropagation();deletePlacedLoc(${l.id})">✕</span>
-    </div>`).join('');
+
+      const placedByCampId = {};
+      placedLocs.forEach(l => { if (l.campaign_location_id) placedByCampId[l.campaign_location_id] = l; });
+      const placedCampIds = new Set(Object.keys(placedByCampId).map(Number));
+
+      // Seed from scope root (city) or null (continent) — mirrors buildLocationSelectors logic
+      const treeRoot = (mapScopeType === 'city' && mapScopeLocationId) ? mapScopeLocationId : null;
+
+      function renderTree(parentCampId, depth) {
+        return campaignLocs
+          .filter(cl => cl.parent_id === parentCampId && placedCampIds.has(cl.id))
+          .sort((a, b) => a.name.localeCompare(b.name))
+          .map(cl => {
+            const placed = placedByCampId[cl.id];
+            if (!placed) return '';
+            const indent = depth * 14;
+            return `<div class="list-item ${placed.id == selectedLoc ? 'active' : ''}"
+                onclick="selectLocation(${placed.id})"
+                style="padding-left:${8 + indent}px">
+              ${depth > 0 ? '<span style="color:var(--text-muted);font-size:10px;margin-right:3px">\u2514</span>' : ''}
+              <span class="tool-icon">\uD83D\uDCCD</span>
+              <span class="lbl">${esc(placed.name)}</span>
+              <span class="del" onclick="event.stopPropagation();deletePlacedLoc(${placed.id})">\u2715</span>
+            </div>${renderTree(cl.id, depth + 1)}`;
+          }).join('');
+      }
+
+      // Unlinked: placed pins with no campaign_location_id
+      const unlinked = placedLocs.filter(l => !l.campaign_location_id)
+        .sort((a, b) => a.name.localeCompare(b.name))
+        .map(l => `<div class="list-item ${l.id == selectedLoc ? 'active' : ''}" onclick="selectLocation(${l.id})">
+          <span class="tool-icon">\uD83D\uDCCD</span>
+          <span class="lbl">${esc(l.name)}</span>
+          <span class="del" onclick="event.stopPropagation();deletePlacedLoc(${l.id})">\u2715</span>
+        </div>`).join('');
+
+      el.innerHTML = renderTree(treeRoot, 0) + unlinked;
     }
 
     // ═══════════════════════════════════════════════════════
@@ -2828,7 +2950,7 @@
         // 1 – Create map
         const newMap = await apiFetch(`/api/campaigns/${campaignId}/journey-maps`, {
           method: 'POST',
-          body: JSON.stringify({ name: (mapMeta.name || 'Map') + ' (Imported)', description: mapMeta.description || '' })
+          body: JSON.stringify({ name: (mapMeta.name || 'Map'), description: mapMeta.description || '' })
         });
 
         // 2 – Locations: old id → new id map

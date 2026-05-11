@@ -1040,13 +1040,54 @@ app.get('/api/pc/:playerId/relationships', requireAuth, async (req, res) => {
       return res.status(403).json({ error: 'Access denied' });
     }
     const charResult = await pool.query('SELECT id FROM pc_characters WHERE player_id = $1', [playerId]);
-    if (charResult.rows.length === 0) return res.json([]);
+    if (charResult.rows.length === 0) return res.json({ relationships: [], cross_connections: [] });
+    const charId = charResult.rows[0].id;
     const isDM = req.session.role === 'dm' || req.session.role === 'admin';
     const query = isDM
       ? 'SELECT * FROM pc_relationships WHERE character_id = $1 ORDER BY created_at ASC'
       : 'SELECT * FROM pc_relationships WHERE character_id = $1 AND is_dm_only = false ORDER BY created_at ASC';
-    const result = await pool.query(query, [charResult.rows[0].id]);
-    res.json(result.rows);
+    const result = await pool.query(query, [charId]);
+
+    // Fetch public cross-connections involving any of this player's relationship entries
+    const relIds = result.rows.map(r => r.id);
+    let publicCross = [];
+    if (relIds.length > 0) {
+      const campaignRes = await pool.query(
+        'SELECT cp.campaign_id FROM campaign_players cp WHERE cp.id = $1', [playerId]
+      );
+      if (campaignRes.rows.length > 0) {
+        const campaignId = campaignRes.rows[0].campaign_id;
+        const crossRes = await pool.query(
+          `SELECT cr.*,
+             pr_from.name AS from_rel_name, cp_from.player_name AS from_player_name,
+             pr_to.name AS to_rel_name, cp_to.player_name AS to_player_name,
+             cp_pl_from.player_name AS from_entity_player_name,
+             cp_pl_to.player_name AS to_entity_player_name,
+             npc_from.name AS from_npc_name,
+             npc_to.name AS to_npc_name
+           FROM character_relationships cr
+           LEFT JOIN pc_relationships pr_from ON cr.from_entity_type = 'relationship' AND cr.from_entity_id = pr_from.id
+           LEFT JOIN pc_characters pcc_from ON pr_from.character_id = pcc_from.id
+           LEFT JOIN campaign_players cp_from ON pcc_from.player_id = cp_from.id
+           LEFT JOIN pc_relationships pr_to ON cr.to_entity_type = 'relationship' AND cr.to_entity_id = pr_to.id
+           LEFT JOIN pc_characters pcc_to ON pr_to.character_id = pcc_to.id
+           LEFT JOIN campaign_players cp_to ON pcc_to.player_id = cp_to.id
+           LEFT JOIN campaign_players cp_pl_from ON cr.from_entity_type = 'player' AND cr.from_entity_id = cp_pl_from.id
+           LEFT JOIN campaign_players cp_pl_to ON cr.to_entity_type = 'player' AND cr.to_entity_id = cp_pl_to.id
+           LEFT JOIN campaign_npcs npc_from ON cr.from_entity_type = 'npc' AND cr.from_entity_id = npc_from.id
+           LEFT JOIN campaign_npcs npc_to ON cr.to_entity_type = 'npc' AND cr.to_entity_id = npc_to.id
+           WHERE cr.campaign_id = $1 AND cr.is_public = true
+             AND (
+               (cr.from_entity_type = 'relationship' AND cr.from_entity_id = ANY($2::int[]))
+               OR (cr.to_entity_type = 'relationship' AND cr.to_entity_id = ANY($2::int[]))
+             )`,
+          [campaignId, relIds]
+        );
+        publicCross = crossRes.rows;
+      }
+    }
+
+    res.json({ relationships: result.rows, cross_connections: publicCross });
   } catch (error) { res.status(500).json({ error: error.message }); }
 });
 
@@ -1286,24 +1327,27 @@ app.get('/api/campaigns/:campaignId/locations', requireRole(['dm', 'player']), a
 });
 
 app.post('/api/campaigns/:campaignId/locations', requireRole(['dm']), async (req, res) => {
-  const { name, description, size_type } = req.body;
+  const { name, description, size_type, parent_id } = req.body;
   if (!name) return res.status(400).json({ error: 'Name required' });
   try {
     const result = await pool.query(
-      'INSERT INTO campaign_locations (campaign_id, name, description, size_type) VALUES ($1,$2,$3,$4) RETURNING *',
-      [req.params.campaignId, name, description || null, size_type || null]
+      'INSERT INTO campaign_locations (campaign_id, name, description, size_type, parent_id) VALUES ($1,$2,$3,$4,$5) RETURNING *',
+      [req.params.campaignId, name, description || null, size_type || null, parent_id || null]
     );
     res.json(result.rows[0]);
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 app.put('/api/campaigns/:campaignId/locations/:locationId', requireRole(['dm']), async (req, res) => {
-  const { name, description, size_type } = req.body;
+  const { name, description, size_type, parent_id } = req.body;
   if (!name) return res.status(400).json({ error: 'Name required' });
+  // Prevent self-reference or obvious cycles (a full cycle check would need a recursive query)
+  const selfId = parseInt(req.params.locationId);
+  if (parent_id && parseInt(parent_id) === selfId) return res.status(400).json({ error: 'A location cannot be its own parent' });
   try {
     const result = await pool.query(
-      'UPDATE campaign_locations SET name=$1, description=$2, size_type=$3 WHERE id=$4 AND campaign_id=$5 RETURNING *',
-      [name, description || null, size_type || null, req.params.locationId, req.params.campaignId]
+      'UPDATE campaign_locations SET name=$1, description=$2, size_type=$3, parent_id=$4 WHERE id=$5 AND campaign_id=$6 RETURNING *',
+      [name, description || null, size_type || null, parent_id || null, req.params.locationId, req.params.campaignId]
     );
     if (!result.rows.length) return res.status(404).json({ error: 'Location not found' });
     // Also sync the name on any journey_map_locations that reference this campaign location
@@ -1499,6 +1543,18 @@ app.delete('/api/campaigns/:campaignId/char-tree/connections/:connId', requireRo
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// PATCH toggle is_public on a DM cross-connection
+app.patch('/api/campaigns/:campaignId/char-tree/connections/:connId/visibility', requireRole(['dm', 'admin']), async (req, res) => {
+  try {
+    const result = await pool.query(
+      'UPDATE character_relationships SET is_public = NOT is_public WHERE id=$1 AND campaign_id=$2 RETURNING id, is_public',
+      [req.params.connId, req.params.campaignId]
+    );
+    if (!result.rows.length) return res.status(404).json({ error: 'Connection not found' });
+    res.json(result.rows[0]);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 // ─── DM Player entry — auto-provision a campaign_players row for the DM ──────
 // Returns the DM's own player_id (creates one if missing)
 app.post('/api/campaigns/:campaignId/dm-player', requireRole(['dm', 'admin']), async (req, res) => {
@@ -1606,7 +1662,7 @@ async function dmOwnsMap(mapId, userId) {
 app.get('/api/campaigns/:campaignId/journey-maps', requireRole(['dm']), async (req, res) => {
   try {
     const r = await pool.query(
-      'SELECT id, name, description, created_at FROM journey_maps WHERE campaign_id=$1 ORDER BY created_at DESC',
+      'SELECT id, name, description, scope_type, scope_location_id, created_at FROM journey_maps WHERE campaign_id=$1 ORDER BY created_at DESC',
       [req.params.campaignId]
     );
     res.json(r.rows);
@@ -1619,8 +1675,8 @@ app.post('/api/campaigns/:campaignId/journey-maps', requireRole(['dm']), async (
   if (!name) return res.status(400).json({ error: 'Name required' });
   try {
     const r = await pool.query(
-      'INSERT INTO journey_maps (campaign_id, name, description, created_by) VALUES ($1,$2,$3,$4) RETURNING id, name, description, created_at',
-      [req.params.campaignId, name, description || null, req.session.userId]
+      'INSERT INTO journey_maps (campaign_id, name, description, scope_type, scope_location_id, created_by) VALUES ($1,$2,$3,$4,$5,$6) RETURNING id, name, description, scope_type, scope_location_id, created_at',
+      [req.params.campaignId, name, description || null, req.body.scope_type || 'continent', req.body.scope_location_id || null, req.session.userId]
     );
     res.json(r.rows[0]);
   } catch (e) { res.status(500).json({ error: e.message }); }
@@ -1633,6 +1689,20 @@ app.delete('/api/journey-maps/:id', requireRole(['dm']), async (req, res) => {
       return res.status(403).json({ error: 'Access denied' });
     await pool.query('DELETE FROM journey_maps WHERE id=$1', [req.params.id]);
     res.json({ success: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// Update map scope (continent vs city)
+app.patch('/api/journey-maps/:id/scope', requireRole(['dm']), async (req, res) => {
+  try {
+    if (!await dmOwnsMap(req.params.id, req.session.userId))
+      return res.status(403).json({ error: 'Access denied' });
+    const { scope_type, scope_location_id } = req.body;
+    const result = await pool.query(
+      'UPDATE journey_maps SET scope_type=$1, scope_location_id=$2 WHERE id=$3 RETURNING id, scope_type, scope_location_id',
+      [scope_type || 'continent', scope_location_id || null, req.params.id]
+    );
+    res.json(result.rows[0]);
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -1824,7 +1894,10 @@ app.get('/api/journey-map-public/:token', async (req, res) => {
 
     const [mapR, locsR, distsR, trkR, pathsR] = await Promise.all([
       pool.query('SELECT id, name, description, map_image FROM journey_maps WHERE id=$1', [mapId]),
-      pool.query('SELECT id, name, x, y FROM journey_map_locations WHERE map_id=$1 ORDER BY created_at ASC', [mapId]),
+      pool.query(`SELECT jml.id, jml.name, jml.x, jml.y, cl.description AS location_description, cl.size_type
+                  FROM journey_map_locations jml
+                  LEFT JOIN campaign_locations cl ON cl.id = jml.campaign_location_id
+                  WHERE jml.map_id=$1 ORDER BY jml.created_at ASC`, [mapId]),
       pool.query('SELECT from_loc_id, to_loc_id, distance_miles FROM journey_distances WHERE map_id=$1', [mapId]),
       pool.query('SELECT id, name, type, color FROM journey_trackers WHERE map_id=$1', [mapId]),
       pool.query(
@@ -1835,12 +1908,37 @@ app.get('/api/journey-map-public/:token', async (req, res) => {
     ]);
     if (!mapR.rows.length) return res.status(404).json({ error: 'Map not found' });
 
+    // Collect all unique event IDs referenced in waypoints across all paths
+    const allEventIds = new Set();
+    pathsR.rows.forEach(p => {
+      const wpts = Array.isArray(p.waypoints) ? p.waypoints : JSON.parse(p.waypoints || '[]');
+      wpts.forEach(w => {
+        (w.eventIds || (w.eventId ? [w.eventId] : [])).forEach(id => allEventIds.add(id));
+      });
+    });
+
+    // Fetch full event details for those IDs (with player names via campaign_players)
+    let eventsById = {};
+    if (allEventIds.size > 0) {
+      const evR = await pool.query(
+        `SELECT pte.id, pte.title, pte.description, pte.location, pte.year, pte.day_of_year,
+                pte.player_ids,
+                cp.player_name
+         FROM player_timeline_entries pte
+         LEFT JOIN campaign_players cp ON cp.id = pte.player_id
+         WHERE pte.id = ANY($1::int[])`,
+        [Array.from(allEventIds)]
+      );
+      evR.rows.forEach(e => { eventsById[e.id] = e; });
+    }
+
     res.json({
       map: mapR.rows[0],
       locations: locsR.rows,
       distances: distsR.rows,
       trackers: trkR.rows,
-      paths: pathsR.rows
+      paths: pathsR.rows,
+      events: eventsById
     });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -1927,7 +2025,7 @@ app.post('/api/campaigns/import', requireRole(['dm']), async (req, res) => {
 
     const campRes = await client.query(
       'INSERT INTO campaigns (name, description, dm_user_id) VALUES ($1, $2, $3) RETURNING id',
-      [campaign.name + ' (Imported)', campaign.description || '', req.session.userId]
+      [campaign.name, campaign.description || '', req.session.userId]
     );
     const newId = campRes.rows[0].id;
 
@@ -2390,6 +2488,19 @@ async function initializeDatabase() {
       ALTER TABLE campaign_locations ADD COLUMN IF NOT EXISTS size_type VARCHAR(50);
     `);
 
+    // Migrate: nested locations (unlimited depth)
+    await pool.query(`
+      ALTER TABLE campaign_locations ADD COLUMN IF NOT EXISTS parent_id INTEGER REFERENCES campaign_locations(id) ON DELETE SET NULL;
+    `);
+
+    // Migrate: journey map scope
+    await pool.query(`
+      ALTER TABLE journey_maps ADD COLUMN IF NOT EXISTS scope_type VARCHAR(20) NOT NULL DEFAULT 'continent';
+    `);
+    await pool.query(`
+      ALTER TABLE journey_maps ADD COLUMN IF NOT EXISTS scope_location_id INTEGER REFERENCES campaign_locations(id) ON DELETE SET NULL;
+    `);
+
     // Character relationship trees (DM-only cross-player connections)
     await pool.query(`
       CREATE TABLE IF NOT EXISTS character_relationships (
@@ -2433,6 +2544,11 @@ async function initializeDatabase() {
           CHECK (from_entity_type IN ('player','npc','relationship')),
         ADD CONSTRAINT character_relationships_to_entity_type_check
           CHECK (to_entity_type IN ('player','npc','relationship'));
+    `);
+
+    // Migrate: public cross-connections (visible to players on their PC sheet)
+    await pool.query(`
+      ALTER TABLE character_relationships ADD COLUMN IF NOT EXISTS is_public BOOLEAN NOT NULL DEFAULT false;
     `);
 
     console.log('✓ Database initialized');

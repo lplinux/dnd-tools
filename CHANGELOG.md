@@ -6,6 +6,46 @@ the actual diffs between tags.
 
 ---
 
+## [0.0.6] – 2026-05-10
+
+### Manage Campaign — Cross-connection visibility
+
+- **Public toggle**: each DM cross-connection row now has a 🌐 / 🔒 button. Toggling it marks the connection `is_public` so it appears on the relevant player's PC Sheet relationship panel and graph.
+- **`🔒 DM only` badge**: shown inline on the connection row only when `is_public = false`; disappears when made public.
+- **New endpoint** `PATCH /api/campaigns/:id/char-tree/connections/:connId/visibility` — flips `is_public` and returns the updated record.
+- **Migration**: `is_public BOOLEAN NOT NULL DEFAULT false` added to `character_relationships`.
+
+### PC Sheet — Public cross-connections
+
+- **Relationship API shape change**: `GET /api/pc/:playerId/relationships` now returns `{ relationships, cross_connections }` instead of a plain array. Legacy plain-array responses are handled gracefully client-side.
+- **List view**: public cross-connections appear in the Relationships tab under a `🔗 Cross-connections` group, showing `from → label → to` with optional notes.
+- **Graph view**: public cross-connections render as teal dashed-ring nodes on the SVG relationship graph, positioned near their linked local relationship node. Dashed teal edges connect them with the connection label mid-edge.
+- **Overlap prevention**: a 60-iteration repulsion pass pushes cross-nodes away from all family, social, child, and self nodes until no overlaps remain. Edges are redrawn after final positions are settled.
+- **Label resolution**: NPC and Player entity types now resolve to their real names server-side (was falling back to `#ID`). Backend query extended with additional JOINs on `campaign_npcs` and `campaign_players`.
+- **ViewBox**: recalculated after cross-node placement to keep all nodes in frame on initial render.
+- **Legend**: a `🔗 Cross-link` swatch is appended to the legend when cross-connections are present.
+- **"Hidden from player" form row**: the `🔒 Hidden from player` checkbox in the relationship edit modal is now hidden when editing a relationship that is not already `is_dm_only` (was always shown for all DM users).
+
+### Manage Campaign — Nested locations
+
+- **Unlimited depth**: locations can now have a parent location (Continent → City → District → Inn → Room, etc.).
+- **Migration**: `parent_id INTEGER REFERENCES campaign_locations(id) ON DELETE SET NULL` added to `campaign_locations`.
+- **Tree rendering**: the location table now renders as an indented tree with `└` depth markers and a child-count badge per node.
+- **Add form**: includes a **Parent Location** dropdown (indented flat list of all existing locations).
+- **Edit modal**: includes a **Parent Location** dropdown that excludes the location itself and all its descendants to prevent circular references.
+- **API**: `POST` and `PUT /api/campaigns/:id/locations` now accept and persist `parent_id`; `PUT` rejects self-referencing updates.
+
+### Journey Map — Map scope
+
+- **Scope at creation**: the "New Journey Map" modal now includes a **Map Scope** selector (`🌍 Continent` / `🏙️ City · Area`). When City is selected a **Parent Location** dropdown appears in the same form; the Create button is blocked until a location is chosen.
+- **Migrations**: `scope_type VARCHAR(20) NOT NULL DEFAULT 'continent'` and `scope_location_id INTEGER REFERENCES campaign_locations(id) ON DELETE SET NULL` added to `journey_maps`.
+- **New endpoint** `PATCH /api/journey-maps/:id/scope` for updating scope post-creation.
+- **Scoped pin picker**: the "Pick location" dropdown filters by scope — continent maps show all campaign locations, city maps show all descendants of the selected parent (recursive, all depths). Both render as an indented tree matching the Manage Campaign style, seeded from the scope root.
+- **Pinned locations list**: the sidebar pinned-locations list also renders as an indented tree seeded from the scope root, so city maps display correct parent-child ordering.
+- **Scope hint**: a line below the section header describes the active scope (e.g. *"Showing locations inside 'Neverwinter'. Select one and click the map to pin it."*).
+
+---
+
 ## [0.0.5] – 2026-05-07
 
 ### PC Sheet & Manage Campaign — Relationship labels, type editing, and connection editing

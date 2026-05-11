@@ -10,11 +10,6 @@
 - [ ] Export files should have by default the date of the export
 - [ ] Locations with the same Name should not be created
 
-### Manage Campaign
-
-- [ ] Allow to add locations/places inside locations (this would be useful to define inns, places of interest inside cities, and later on draw Maps of each city) - No limit on depth
-    - [ ] Journey Maps should have an option to select if the map is of the continent or of a particular city and list locations based on that (any depth)
-
 ### Journey Path Map
 
 - [ ] Refactor Distance Matrix:
@@ -27,7 +22,6 @@
 
 ### Journey Path Map
 
-- [ ] Public view (`journey-map-public.html`): display waypoint location names and linked event info on the read-only map as hover
 - [ ] Distance Matrix Modal: locations row/column should stay while scrolling
     - [ ] The row looks weird when scrolling horizontally as it shows some text on the left side
 
@@ -39,8 +33,6 @@
 ### Manage Campaign
 
 - [ ] Reorganize the Graph with every new connection so lines doesn't cross too much
-- [ ] DM should be able to make cross connections public to Players. Once a connection is public, it should appear also on the pc-sheet Relationship for that specific player
-- [ ] `Hidden from player (DM only — won't appear on the player's sheet or timelines)` should not appear if the relationship it is not `is_dm_only`
 
 ### Timeline
 
