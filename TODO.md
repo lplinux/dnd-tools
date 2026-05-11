@@ -22,7 +22,6 @@
 
 ### Journey Path Map
 
-- [ ] Public view (`journey-map-public.html`): display waypoint location names, notes and linked event info on the read-only map as hover
 - [ ] Distance Matrix Modal: locations row/column should stay while scrolling
     - [ ] The row looks weird when scrolling horizontally as it shows some text on the left side
 

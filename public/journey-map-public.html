@@ -242,6 +242,75 @@
       line-height: 1.4;
     }
 
+    /* Event chip hover tooltip (reuses .map-tooltip styles) */
+    .ev-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 3px;
+      font-size: 10px;
+      color: #80a858;
+      background: rgba(80, 120, 50, .12);
+      border: 1px solid rgba(80, 120, 50, .3);
+      border-radius: 3px;
+      padding: 1px 6px;
+      margin: 1px 2px;
+      cursor: default;
+      position: relative;
+    }
+
+    .ev-chip:hover {
+      background: rgba(80, 120, 50, .22);
+    }
+
+    .ev-tooltip {
+      position: fixed;
+      z-index: 1000;
+      pointer-events: none;
+      background: #141008;
+      border: 1px solid #4a6a30;
+      border-radius: 4px;
+      padding: 9px 12px;
+      max-width: 260px;
+      box-shadow: 0 4px 20px rgba(0, 0, 0, .8);
+      font-family: 'Cinzel', Georgia, serif;
+      display: none;
+    }
+
+    .ev-tooltip .evt-title {
+      font-size: 12px;
+      color: #c9a84c;
+      font-weight: bold;
+      margin-bottom: 5px;
+      line-height: 1.3;
+    }
+
+    .ev-tooltip .evt-row {
+      display: flex;
+      gap: 6px;
+      font-size: 10px;
+      color: #808060;
+      line-height: 1.5;
+      margin-bottom: 2px;
+    }
+
+    .ev-tooltip .evt-row .evt-lbl {
+      color: #5a5a40;
+      flex-shrink: 0;
+    }
+
+    .ev-tooltip .evt-row .evt-val {
+      color: #a09878;
+    }
+
+    .ev-tooltip .evt-desc {
+      font-size: 10px;
+      color: #786858;
+      line-height: 1.45;
+      margin-top: 5px;
+      border-top: 1px solid #2a2418;
+      padding-top: 5px;
+    }
+
     .pin-label {
       font-family: Cinzel, Georgia, serif;
       font-size: 11px;
@@ -442,6 +511,7 @@
   <div class="layout">
     <!-- MAP -->
     <div class="map-tooltip" id="mapTooltip"></div>
+    <div class="ev-tooltip" id="evTooltip"></div>
     <div class="map-area" id="mapArea" onmousedown="panStart(event)" onmousemove="panMove(event)"
       onmouseup="panEnd(event)" onwheel="doWheel(event)" oncontextmenu="return false">
       <div id="mapVp">
@@ -586,8 +656,11 @@
         `<div class="tt-name">📍 ${esc(loc.name)}</div>` +
         (loc.size_type ? `<div class="tt-type">${esc(loc.size_type)}</div>` : '') +
         (loc.location_description ? `<div class="tt-desc">${esc(loc.location_description)}</div>` : '') +
-        (linkedEvents.length ? `<div class="tt-events">${linkedEvents.map(e =>
-          `<div class="tt-event">🗓 ${esc(e.title)}</div>`).join('')}</div>` : '');
+        (linkedEvents.length ? `<div class="tt-events">${linkedEvents.map(e => {
+          const ev = (data.events || {})[e.id];
+          const dateStr = ev?.year && ev?.day_of_year ? ` · Yr ${ev.year} D${ev.day_of_year}` : '';
+          return `<div class="tt-event">🗓 ${esc(e.title)}${esc(dateStr)}</div>`;
+        }).join('')}</div>` : '');
 
       tt.style.display = 'block';
       positionTooltip(event);
@@ -595,6 +668,51 @@
 
     function hidePinTooltip() {
       document.getElementById('mapTooltip').style.display = 'none';
+    }
+
+    function showEvTooltip(mouseEvent, evId) {
+      const ev = (data.events || {})[evId];
+      if (!ev) return;
+
+      // Format date using campaign calendar helpers if available, else plain
+      const dateStr = ev.year && ev.day_of_year
+        ? `Year ${ev.year}, Day ${ev.day_of_year}`
+        : null;
+
+      const tt = document.getElementById('evTooltip');
+      tt.innerHTML =
+        `<div class="evt-title">🗓 ${esc(ev.title)}</div>` +
+        (dateStr ? `<div class="evt-row"><span class="evt-lbl">📅</span><span class="evt-val">${esc(dateStr)}</span></div>` : '') +
+        (ev.location ? `<div class="evt-row"><span class="evt-lbl">📍</span><span class="evt-val">${esc(ev.location)}</span></div>` : '') +
+        (ev.player_name ? `<div class="evt-row"><span class="evt-lbl">⚔️</span><span class="evt-val">${esc(ev.player_name)}</span></div>` : '') +
+        (ev.description ? `<div class="evt-desc">${esc(ev.description)}</div>` : '');
+
+      tt.style.display = 'block';
+      positionEvTooltip(mouseEvent);
+    }
+
+    function hideEvTooltip() {
+      document.getElementById('evTooltip').style.display = 'none';
+    }
+
+    function positionEvTooltip(event) {
+      const tt = document.getElementById('evTooltip');
+      const pad = 12;
+      let lft = event.clientX + pad;
+      let top = event.clientY + pad;
+      const { innerWidth: vw, innerHeight: vh } = window;
+      if (lft + 280 > vw) lft = event.clientX - 280 - pad;
+      if (top + tt.offsetHeight + 20 > vh) top = event.clientY - tt.offsetHeight - pad;
+      tt.style.left = lft + 'px';
+      tt.style.top = top + 'px';
+    }
+
+    // Helper: build a hoverable event chip
+    function evChip(evId, title) {
+      return `<span class="ev-chip"
+          onmouseenter="showEvTooltip(event,${evId})"
+          onmousemove="positionEvTooltip(event)"
+          onmouseleave="hideEvTooltip()">🗓 ${esc(title)}</span>`;
     }
 
     function positionTooltip(event) {
@@ -667,7 +785,10 @@
       });
 
       const eventRows = linkedEvents.map(e =>
-        `<div class="info-row"><span class="info-lbl">🗓 ${esc(e.title)}</span><span class="info-val" style="font-size:10px;color:var(--text-dim)">${esc(e.pathName)}</span></div>`
+        `<div class="info-row" style="align-items:flex-start;gap:6px">
+          ${evChip(e.id, e.title)}
+          <span class="info-val" style="font-size:10px;color:var(--text-dim)">${esc(e.pathName)}</span>
+        </div>`
       ).join('');
 
       body.innerHTML =
@@ -693,10 +814,11 @@
         const loc = w.locId ? (data.locations || []).find(l => l.id == w.locId) : null;
         const ids = w.eventIds || (w.eventId ? [w.eventId] : []);
         const titles = w.eventTitles || (w.eventTitle ? [w.eventTitle] : []);
-        const evChips = ids.map((evId, ei) =>
-          `<span style="display:inline-block;font-size:10px;color:#80a858;margin-left:6px">🗓 ${esc(titles[ei] || 'Event')}</span>`
-        ).join('');
-        return `<div class="wpt-row">${i === 0 ? '⊙' : '→'} ${loc ? '📍 ' + esc(loc.name) : 'Point ' + (i + 1)}${evChips}</div>`;
+        const evChips = ids.map((evId, ei) => evChip(evId, titles[ei] || 'Event')).join('');
+        return `<div class="wpt-row" style="flex-wrap:wrap;gap:3px">
+          <span>${i === 0 ? '⊙' : '→'} ${loc ? '📍 ' + esc(loc.name) : 'Point ' + (i + 1)}</span>
+          ${evChips ? `<div style="display:flex;flex-wrap:wrap;gap:2px;padding-left:4px">${evChips}</div>` : ''}
+        </div>`;
       }).join('');
       body.innerHTML = `
     <div class="info-card"><h3>Tracker</h3>

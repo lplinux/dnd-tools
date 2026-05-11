@@ -1908,12 +1908,37 @@ app.get('/api/journey-map-public/:token', async (req, res) => {
     ]);
     if (!mapR.rows.length) return res.status(404).json({ error: 'Map not found' });
 
+    // Collect all unique event IDs referenced in waypoints across all paths
+    const allEventIds = new Set();
+    pathsR.rows.forEach(p => {
+      const wpts = Array.isArray(p.waypoints) ? p.waypoints : JSON.parse(p.waypoints || '[]');
+      wpts.forEach(w => {
+        (w.eventIds || (w.eventId ? [w.eventId] : [])).forEach(id => allEventIds.add(id));
+      });
+    });
+
+    // Fetch full event details for those IDs (with player names via campaign_players)
+    let eventsById = {};
+    if (allEventIds.size > 0) {
+      const evR = await pool.query(
+        `SELECT pte.id, pte.title, pte.description, pte.location, pte.year, pte.day_of_year,
+                pte.player_ids,
+                cp.player_name
+         FROM player_timeline_entries pte
+         LEFT JOIN campaign_players cp ON cp.id = pte.player_id
+         WHERE pte.id = ANY($1::int[])`,
+        [Array.from(allEventIds)]
+      );
+      evR.rows.forEach(e => { eventsById[e.id] = e; });
+    }
+
     res.json({
       map: mapR.rows[0],
       locations: locsR.rows,
       distances: distsR.rows,
       trackers: trkR.rows,
-      paths: pathsR.rows
+      paths: pathsR.rows,
+      events: eventsById
     });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
