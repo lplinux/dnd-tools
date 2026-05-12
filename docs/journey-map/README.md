@@ -1,15 +1,16 @@
 # 🗺️ Journey Path Map
 
-An interactive map tool for plotting character and group movement across a campaign. Upload any map image as a background, pin campaign locations, and draw colour-coded movement paths for individual trackers (players, NPCs, or groups).
+An interactive map tool for plotting character and group movement across a campaign. Upload any map image as a background, pin campaign locations, draw colour-coded movement paths for individual trackers (players, NPCs, or groups), and **draw polygon boundaries for region-type locations**.
 
 ## Features
 
 - **Upload any map image** — PNG, JPG, or WebP; stored in the database alongside map data
 - **Campaign locations** — pin any location from the campaign's location list onto the map; positions are saved per map
+- **Region polygons** — locations of type `region` can be drawn as freeform polygons rather than single points; polygons are filled, labelled at their centroid, and fully reshapeable
 - **Auto-create locations** — drawing a path through empty space automatically creates and pins new campaign locations at each waypoint; a naming modal appears after saving to let you give them proper names
 - **Trackers** — colour-coded entities (group, player, NPC) each drawn as a separate path
 - **Draw paths** — click to place waypoints, double-click or press Enter to finish; waypoints snap to nearby pins automatically
-- **Draggable pins and waypoints** — reposition any pin or waypoint handle by dragging
+- **Draggable pins, region vertices, and waypoints** — reposition any pin, reshape a region polygon by dragging its vertices, or move a region body wholesale by dragging its interior
 - **Distance matrix** — set real-world distances between any pair of locations; travel time estimates (walking 🚶, horse 🐎, flying 🦅) are calculated automatically
 - **Path distance** — manually set or auto-calculate path distance from the location distance matrix
 - **Shareable read-only link** — generate a public token to share a view-only version of the map
@@ -28,8 +29,24 @@ Open `/journey-map` in your browser after starting the server.
 
 Existing campaign locations appear in the **Locations** section of the sidebar.
 
-- Select a location from the dropdown and click **📍** to activate the Place tool, then click the map to pin it
-- Alternatively, activate the **Place Location** tool (`P`) and click the map after selecting a location
+- Select a location from the dropdown and click **📍** to activate the appropriate tool, then click the map to pin it
+- For **region-type locations**, clicking 📍 (or pressing `R`) activates the **Draw Region** tool automatically
+- Alternatively, activate the **Place Location** tool (`P`) manually for non-region locations, or **Draw Region** (`R`) for regions
+
+### Drawing region polygons
+
+1. Select a `region`-type campaign location from the Locations dropdown
+2. Click **📍 Place on Map** — the **Draw Region** tool (`R`) activates automatically
+3. Click on the map to place each vertex of the polygon boundary (minimum 3 vertices)
+4. **Double-click** or press **Enter** to close and save the polygon
+5. The region renders as a semi-transparent filled shape with its name at the centroid
+
+### Reshaping regions
+
+- Select the **Select / Move** tool (`V`) and click a region polygon to select it
+- **Vertex handles** (small gold circles) appear at each corner — drag them to reshape
+- Drag the **interior** of the region to move the entire polygon
+- Changes are auto-saved on mouse-up
 
 ### Drawing paths
 
@@ -51,7 +68,7 @@ Open **📏 Distance Matrix** in the sidebar to set distances between any pair o
 
 ### Sharing
 
-Click **🔗 Share** in the header to generate a public read-only link. The public view shows the map, all pins, and all paths with their labels.
+Click **🔗 Share** in the header to generate a public read-only link. The public view shows the map, all pins, region polygons, and all paths with their labels.
 
 ### Keyboard shortcuts
 
@@ -60,17 +77,22 @@ Click **🔗 Share** in the header to generate a public read-only link. The publ
 | `V` | Select / Move tool |
 | `H` | Pan tool |
 | `P` | Place Location tool |
+| `R` | Draw Region tool |
 | `D` | Draw Path tool |
 | `X` | Delete tool |
-| `Enter` | Finish drawing current path |
+| `Enter` | Finish drawing current path or region |
 | `Escape` | Cancel / return to Select |
 | `Alt` / `⌘` (hold) | Temporarily switch to Pan |
-| `Delete` | Delete selected pin or path |
+| `Delete` | Delete selected pin, region or path |
 | Scroll wheel | Zoom in / out |
 
 ## Data storage
 
-All map data (locations, paths, waypoints, distances, trackers, and the background image) is stored in PostgreSQL. Images are stored as base64 data URIs in the `journey_maps.map_image` column — keep map images reasonably sized (under ~2 MB) to avoid slow load times.
+All map data (locations, paths, waypoints, distances, trackers, and the background image) is stored in PostgreSQL. Images are stored as base64 data URLs in the `journey_maps.map_image` column.
+
+**Image size limit**: uploaded images are automatically resized to a maximum of 4096 px on the longest edge and JPEG-compressed until the stored data URL is under 2 MB. Raw uploads over 20 MB are rejected before processing. This keeps the database lean and export files portable.
+
+Region polygons are stored as a `JSONB` array of `{x, y}` percentage-coordinate objects in `journey_map_locations.polygon`. A `NULL` polygon means the location is a regular pin.
 
 ---
 
@@ -79,25 +101,25 @@ All map data (locations, paths, waypoints, distances, trackers, and the backgrou
 Click **⬇ Export** when a map is loaded. Downloads a JSON file containing:
 
 - Map name and description
-- All pinned locations (x/y coordinates)
+- **Map background image** (base64 data URL — already compressed to ≤ 2 MB at upload time)
+- All pinned locations (x/y coordinates, and polygon vertices for regions)
 - The distance matrix between locations
 - All trackers (name, type, colour)
 - All paths (waypoints with location links, tracker assignment, notes, event links)
-
-The **background image is not exported** — it is stored as a base64 blob in the database and would make the file very large. Re-upload it after importing.
 
 ## Import
 
 Click **⬆ Import Map** and select a `.json` file. A campaign must be selected first. Import creates:
 
-1. A new journey map in the current campaign (`(Imported)` appended to the name)
-2. Fresh `campaign_locations` for each location in the file
-3. New `journey_map_locations` pinned at the same x/y positions
-4. Trackers with the same names/colours
-5. Distances remapped to the new location IDs
-6. Paths with waypoints remapped to the new location IDs
+1. A new journey map in the current campaign
+2. **Restores the background image** if `map_image` is present in the file
+3. Fresh `campaign_locations` for each location in the file
+4. New `journey_map_locations` pinned at the same x/y positions (polygon preserved for regions)
+5. Trackers with the same names/colours
+6. Distances remapped to the new location IDs
+7. Paths with waypoints remapped to the new location IDs
 
-After import, re-upload the background image using **Map Background → Upload Image**.
+If the export file pre-dates image export support (no `map_image` key), the success toast will prompt you to re-upload the background image manually.
 
 ---
 
@@ -126,6 +148,20 @@ After import, re-upload the background image using **Map Background → Upload I
       "description": "City-state on the Chionthar",
       "x": 38.2,
       "y": 68.4
+    },
+    {
+      "id": 3,
+      "name": "The High Forest",
+      "description": "Ancient woodland region",
+      "x": 55.0,
+      "y": 28.0,
+      "polygon": [
+        { "x": 50.0, "y": 22.0 },
+        { "x": 62.0, "y": 23.5 },
+        { "x": 64.0, "y": 34.0 },
+        { "x": 55.0, "y": 37.0 },
+        { "x": 48.0, "y": 33.0 }
+      ]
     }
   ],
   "distances": [
@@ -141,12 +177,6 @@ After import, re-upload the background image using **Map Background → Upload I
       "name": "The Party",
       "type": "group",
       "color": "#c9a84c"
-    },
-    {
-      "id": 2,
-      "name": "Aelthas",
-      "type": "player",
-      "color": "#6ba3d6"
     }
   ],
   "paths": [
@@ -174,7 +204,8 @@ After import, re-upload the background image using **Map Background → Upload I
 | `map.description` | string | No | Short description |
 | `locations[].id` | integer | Yes | Used to cross-reference distances and waypoints within this file — replaced with new DB ids on import |
 | `locations[].name` | string | Yes | Location name |
-| `locations[].x` / `.y` | float | Yes | Position as percentage of image width/height (0–100) |
+| `locations[].x` / `.y` | float | Yes | Position as percentage of image width/height (0–100). For regions, this is the centroid |
+| `locations[].polygon` | array | No | Array of `{x, y}` objects (percentages). Present for region-type locations. Minimum 3 points |
 | `distances[].from_loc_id` | integer | Yes | References `locations[].id` in this file |
 | `distances[].to_loc_id` | integer | Yes | References `locations[].id` in this file |
 | `distances[].distance_miles` | float | Yes | Distance in miles |

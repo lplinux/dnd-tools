@@ -1738,23 +1738,23 @@ app.get('/api/journey-maps/:id/locations', requireRole(['dm']), async (req, res)
 });
 
 app.post('/api/journey-maps/:id/locations', requireRole(['dm']), async (req, res) => {
-  const { campaign_location_id, name, x, y } = req.body;
+  const { campaign_location_id, name, x, y, polygon } = req.body;
   if (!name) return res.status(400).json({ error: 'Name required' });
   try {
     const r = await pool.query(
-      'INSERT INTO journey_map_locations (map_id, campaign_location_id, name, x, y) VALUES ($1,$2,$3,$4,$5) RETURNING *',
-      [req.params.id, campaign_location_id || null, name, x ?? 50, y ?? 50]
+      'INSERT INTO journey_map_locations (map_id, campaign_location_id, name, x, y, polygon) VALUES ($1,$2,$3,$4,$5,$6) RETURNING *',
+      [req.params.id, campaign_location_id || null, name, x ?? 50, y ?? 50, polygon ? JSON.stringify(polygon) : null]
     );
     res.json(r.rows[0]);
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 app.put('/api/journey-maps/:id/locations/:locId', requireRole(['dm']), async (req, res) => {
-  const { x, y } = req.body;
+  const { x, y, polygon } = req.body;
   try {
     const r = await pool.query(
-      'UPDATE journey_map_locations SET x=$1, y=$2 WHERE id=$3 AND map_id=$4 RETURNING *',
-      [x, y, req.params.locId, req.params.id]
+      'UPDATE journey_map_locations SET x=$1, y=$2, polygon=$3 WHERE id=$4 AND map_id=$5 RETURNING *',
+      [x, y, polygon !== undefined ? JSON.stringify(polygon) : null, req.params.locId, req.params.id]
     );
     res.json(r.rows[0]);
   } catch (e) { res.status(500).json({ error: e.message }); }
@@ -1894,7 +1894,7 @@ app.get('/api/journey-map-public/:token', async (req, res) => {
 
     const [mapR, locsR, distsR, trkR, pathsR] = await Promise.all([
       pool.query('SELECT id, name, description, map_image FROM journey_maps WHERE id=$1', [mapId]),
-      pool.query(`SELECT jml.id, jml.name, jml.x, jml.y, cl.description AS location_description, cl.size_type
+      pool.query(`SELECT jml.id, jml.name, jml.x, jml.y, jml.polygon, cl.description AS location_description, cl.size_type
                   FROM journey_map_locations jml
                   LEFT JOIN campaign_locations cl ON cl.id = jml.campaign_location_id
                   WHERE jml.map_id=$1 ORDER BY jml.created_at ASC`, [mapId]),
@@ -2389,6 +2389,7 @@ async function initializeDatabase() {
         name                 VARCHAR(255) NOT NULL,
         x                    FLOAT NOT NULL DEFAULT 50,
         y                    FLOAT NOT NULL DEFAULT 50,
+        polygon              JSONB,
         created_at           TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       );
     `);
@@ -2499,6 +2500,11 @@ async function initializeDatabase() {
     `);
     await pool.query(`
       ALTER TABLE journey_maps ADD COLUMN IF NOT EXISTS scope_location_id INTEGER REFERENCES campaign_locations(id) ON DELETE SET NULL;
+    `);
+
+    // Migrate: region polygon support
+    await pool.query(`
+      ALTER TABLE journey_map_locations ADD COLUMN IF NOT EXISTS polygon JSONB;
     `);
 
     // Character relationship trees (DM-only cross-player connections)

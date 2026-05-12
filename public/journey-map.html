@@ -558,6 +558,62 @@
       pointer-events: none;
     }
 
+    #regionPreview {
+      fill: rgba(201, 168, 76, 0.12);
+      stroke: var(--gold);
+      stroke-width: 1.5;
+      stroke-dasharray: 6 3;
+      opacity: .8;
+      pointer-events: none;
+    }
+
+    .region-g {
+      cursor: pointer;
+    }
+
+    .region-poly {
+      fill: rgba(80, 120, 60, 0.18);
+      stroke: rgba(180, 200, 120, 0.7);
+      stroke-width: 1.8;
+      stroke-linejoin: round;
+      transition: fill 0.15s;
+    }
+
+    .region-g:hover .region-poly {
+      fill: rgba(80, 120, 60, 0.30);
+      stroke: rgba(201, 168, 76, 0.9);
+    }
+
+    .region-g.sel .region-poly {
+      fill: rgba(201, 168, 76, 0.22);
+      stroke: #e8c96a;
+      stroke-width: 2.5;
+    }
+
+    .region-label {
+      font-family: Cinzel, Georgia, serif;
+      font-size: 11px;
+      fill: #e8dcc0;
+      text-anchor: middle;
+      pointer-events: none;
+      paint-order: stroke;
+      stroke: #13100b;
+      stroke-width: 3px;
+    }
+
+    .region-vertex {
+      fill: #c9a84c;
+      stroke: #fff;
+      stroke-width: 1.5;
+      cursor: move;
+      opacity: 0.85;
+    }
+
+    .region-vertex:hover {
+      r: 7;
+      opacity: 1;
+    }
+
     /* ─── RIGHT PANEL ────────────────────────── */
     .right-panel {
       background: var(--surface);
@@ -1176,6 +1232,8 @@
               Pan <kbd>H</kbd></button>
             <button class="tool-btn" id="tool-place" onclick="setTool('place')" title="Place Location [P]"><span
                 class="tool-icon">📍</span> Place Location <kbd>P</kbd></button>
+            <button class="tool-btn" id="tool-region" onclick="setTool('region')" title="Draw Region [R]"><span
+                class="tool-icon">🗾</span> Draw Region <kbd>R</kbd></button>
             <button class="tool-btn" id="tool-draw" onclick="setTool('draw')" title="Draw or Extend Path [D]"> <span
                 class="tool-icon">✏️</span> Draw/Extend
               Path <kbd>D</kbd></button>
@@ -1282,8 +1340,10 @@
             </marker>
           </defs>
           <g id="pathsG"></g>
+          <g id="regionsG"></g>
           <g id="pinsG"></g>
           <polyline id="drawPreview" points="" />
+          <polygon id="regionPreview" points="" />
           <g id="measureG"></g>
         </svg>
       </div>
@@ -1405,6 +1465,11 @@
     let isDrawing = false, drawPts = []; // {x%, y%}
     let extendingPathId = null; // when set, finishPath() will PUT to this path instead of POST
     let distEdit = null; // { fromId, toId }
+
+    // Region drawing state
+    let isDrawingRegion = false, regionDrawPts = []; // {x%, y%}
+    let isDraggingRegionVertex = null; // { locId, vtxIdx, origX, origY, startSX, startSY }
+    let isDraggingRegion = null; // { locId, origPts, startSX, startSY }
 
     // Pending "place from list" selection
     let pendingPlaceLocId = null;
@@ -1665,18 +1730,78 @@
     // ═══════════════════════════════════════════════════════
     // MAP IMAGE
     // ═══════════════════════════════════════════════════════
-    function loadMapFile() {
+    const IMG_MAX_PX = 4096;   // longest edge
+    const IMG_MAX_BYTES = 2 * 1024 * 1024; // 2 MB
+
+    /**
+     * Compress/resize a data-URL to fit within IMG_MAX_PX and IMG_MAX_BYTES.
+     * Returns a Promise<string> (data URL, always JPEG for photos, PNG kept if already small enough).
+     */
+    function compressImage(dataUrl) {
+      return new Promise((resolve, reject) => {
+        const img = new Image();
+        img.onerror = () => reject(new Error('Could not decode image'));
+        img.onload = () => {
+          let { naturalWidth: w, naturalHeight: h } = img;
+          // Scale down if needed
+          if (w > IMG_MAX_PX || h > IMG_MAX_PX) {
+            const ratio = IMG_MAX_PX / Math.max(w, h);
+            w = Math.round(w * ratio);
+            h = Math.round(h * ratio);
+          }
+          const canvas = document.createElement('canvas');
+          canvas.width = w;
+          canvas.height = h;
+          const ctx = canvas.getContext('2d');
+          ctx.drawImage(img, 0, 0, w, h);
+
+          // Try JPEG at decreasing quality until under size limit
+          let quality = 0.92;
+          let result;
+          do {
+            result = canvas.toDataURL('image/jpeg', quality);
+            quality -= 0.08;
+          } while (result.length > IMG_MAX_BYTES * 1.37 && quality > 0.2);
+          // 1.37 ≈ base64 overhead factor
+
+          if (result.length > IMG_MAX_BYTES * 1.37) {
+            reject(new Error('Image is too large to compress under 2 MB — try a smaller file'));
+          } else {
+            resolve(result);
+          }
+        };
+        img.src = dataUrl;
+      });
+    }
+
+    async function loadMapFile() {
       const file = document.getElementById('mapFileInput').files[0];
       if (!file) return;
+      document.getElementById('mapFileInput').value = '';
+
+      // Quick pre-check: raw file > 20 MB → almost certainly won't compress down, warn early
+      if (file.size > 20 * 1024 * 1024) {
+        toast('File exceeds 20 MB — please use a smaller image'); return;
+      }
+
+      toast('Processing image…');
       const reader = new FileReader();
+      reader.onerror = () => toast('Could not read file');
       reader.onload = async e => {
-        loadImageFromData(e.target.result);
-        // Save to DB
+        let dataUrl;
+        try {
+          dataUrl = await compressImage(e.target.result);
+        } catch (err) {
+          toast(err.message); return;
+        }
+        const kb = Math.round((dataUrl.length * 3 / 4) / 1024);
+        loadImageFromData(dataUrl);
         try {
           await apiFetch(`/api/journey-maps/${mapId}/image`, {
-            method: 'PUT', body: JSON.stringify({ image: e.target.result })
+            method: 'PUT', body: JSON.stringify({ image: dataUrl })
           });
-        } catch (err) { toast('Image saved locally but DB save failed: ' + err.message); }
+          toast(`Map image saved (${kb} KB)`);
+        } catch (err) { toast('Image shown but DB save failed: ' + err.message); }
       };
       reader.readAsDataURL(file);
     }
@@ -1778,12 +1903,13 @@
     // TOOLS
     // ═══════════════════════════════════════════════════════
     const TOOL_HINTS = {
-      select: 'Click to select. Drag location pins to reposition.',
+      select: 'Click to select. Drag location pins or region vertices to reposition.',
       pan: 'Click and drag to pan. Scroll to zoom.',
       place: 'Click map to place the selected location at that position.',
+      region: 'Select a region location, then click to draw its boundary polygon. Double-click or Enter to finish.',
       draw: 'Select a tracker, then click to add waypoints. Double-click or Enter to finish. With a path selected, activates Extend mode.',
       measure: 'Click pinned locations to build a measurement path. Distance is calculated from stored location distances.',
-      delete: 'Click any pin or path to delete it.'
+      delete: 'Click any pin, region or path to delete it.'
     };
     function expandSection(hd) {
       if (hd && hd.classList.contains('collapsed')) {
@@ -1802,6 +1928,10 @@
       if (t !== 'draw') {
         isDrawing = false; drawPts = []; extendingPathId = null;
         document.getElementById('drawPreview').setAttribute('points', '');
+      }
+      if (t !== 'region') {
+        isDrawingRegion = false; regionDrawPts = [];
+        document.getElementById('regionPreview').setAttribute('points', '');
       }
       if (t !== 'measure') {
         clearMeasure();
@@ -1849,6 +1979,34 @@
       }
 
       if (activeTool === 'select') {
+        // Check for region vertex drag
+        const vtxEl = e.target.classList.contains('region-vertex') ? e.target : e.target.closest('.region-vertex');
+        if (vtxEl && vtxEl.dataset.locId) {
+          const locId = parseInt(vtxEl.dataset.locId);
+          const vtxIdx = parseInt(vtxEl.dataset.vtxIdx);
+          const loc = placedLocs.find(l => l.id == locId);
+          if (loc && loc.polygon) {
+            isDraggingRegionVertex = { locId, vtxIdx, origPts: loc.polygon.map(p => ({ ...p })), startSX: e.clientX, startSY: e.clientY };
+            e.preventDefault();
+            document.addEventListener('mousemove', _docMouseMove);
+            document.addEventListener('mouseup', _docMouseUp);
+            return;
+          }
+        }
+        // Check for region body drag
+        const regionEl = e.target.closest('.region-g');
+        if (regionEl && !e.target.classList.contains('region-vertex')) {
+          const id = parseInt(regionEl.dataset.id);
+          const loc = placedLocs.find(l => l.id == id);
+          if (loc && loc.polygon) {
+            selectLocation(id);
+            isDraggingRegion = { locId: id, origPts: loc.polygon.map(p => ({ ...p })), startSX: e.clientX, startSY: e.clientY };
+            e.preventDefault();
+            document.addEventListener('mousemove', _docMouseMove);
+            document.addEventListener('mouseup', _docMouseUp);
+            return;
+          }
+        }
         // Check for waypoint handle drag (check target directly for SVG circles)
         const wpH = e.target.classList.contains('wp-handle') ? e.target : e.target.closest('.wp-handle');
         if (wpH && wpH.dataset.pathId) {
@@ -1888,6 +2046,8 @@
       if (activeTool === 'delete') {
         const pin = e.target.closest('.pin-g');
         if (pin) { deletePlacedLoc(parseInt(pin.dataset.id)); return; }
+        const regionEl = e.target.closest('.region-g');
+        if (regionEl) { deletePlacedLoc(parseInt(regionEl.dataset.id)); return; }
         const pathEl = e.target.closest('[data-path-id]');
         if (pathEl) { deletePath(parseInt(pathEl.dataset.pathId)); return; }
         return;
@@ -1903,6 +2063,22 @@
         const campLoc = campaignLocs.find(l => l.id == locId);
         if (!campLoc) return;
         placeLocation(locId, campLoc.name, x, y);
+        return;
+      }
+
+      if (activeTool === 'region') {
+        if (!mapId) return;
+        const locId = parseInt(document.getElementById('placeSel').value);
+        if (!locId) { toast('Select a region location from the dropdown first'); return; }
+        const campLoc = campaignLocs.find(l => l.id == locId);
+        if (!campLoc) { return; }
+        if (campLoc.size_type !== 'region') {
+          toast('Switch to Place tool for non-region locations, or select a region type location');
+          return;
+        }
+        isDrawingRegion = true;
+        regionDrawPts.push({ x, y });
+        updateRegionPreview();
         return;
       }
 
@@ -1963,6 +2139,10 @@
         const pts = [...drawPts, { x, y }].map(p => { const s = pctToSvg(p.x, p.y); return `${s.x},${s.y}`; }).join(' ');
         document.getElementById('drawPreview').setAttribute('points', pts);
       }
+      if (activeTool === 'region' && isDrawingRegion && regionDrawPts.length > 0) {
+        const { x, y } = screenToMapPct(e.clientX, e.clientY);
+        updateRegionPreview([...regionDrawPts, { x, y }]);
+      }
     }
 
     function mapUp(e) {
@@ -1972,7 +2152,7 @@
         const loc = placedLocs.find(l => l.id == isDraggingPin.locId);
         if (loc) {
           apiFetch(`/api/journey-maps/${mapId}/locations/${loc.id}`, {
-            method: 'PUT', body: JSON.stringify({ x: loc.x, y: loc.y })
+            method: 'PUT', body: JSON.stringify({ x: loc.x, y: loc.y, polygon: loc.polygon || null })
           }).catch(err => toast(err.message));
           if (selectedLoc == loc.id) setRightPanel('loc', loc);
         }
@@ -1983,6 +2163,7 @@
 
     function mapDblClick(e) {
       if (activeTool === 'draw' && isDrawing) finishPath();
+      if (activeTool === 'region' && isDrawingRegion) finishRegion();
     }
 
     function mapWheel(e) {
@@ -2006,6 +2187,41 @@
 
     // Document-level drag handlers (for waypoint drag outside mapArea)
     function _docMouseMove(e) {
+      // Region vertex drag
+      if (isDraggingRegionVertex) {
+        const { locId, vtxIdx, origPts, startSX, startSY } = isDraggingRegionVertex;
+        const dx = (e.clientX - startSX) / vpScale;
+        const dy = (e.clientY - startSY) / vpScale;
+        const loc = placedLocs.find(l => l.id == locId);
+        if (loc && loc.polygon) {
+          loc.polygon = origPts.map((p, i) => i === vtxIdx
+            ? { x: Math.max(0, Math.min(100, p.x + (dx / imgW) * 100)), y: Math.max(0, Math.min(100, p.y + (dy / imgH) * 100)) }
+            : { ...p });
+          renderRegions();
+        }
+        return;
+      }
+      // Region body drag
+      if (isDraggingRegion) {
+        const { locId, origPts, startSX, startSY } = isDraggingRegion;
+        const dx = (e.clientX - startSX) / vpScale;
+        const dy = (e.clientY - startSY) / vpScale;
+        const loc = placedLocs.find(l => l.id == locId);
+        if (loc && loc.polygon) {
+          const dxPct = (dx / imgW) * 100;
+          const dyPct = (dy / imgH) * 100;
+          loc.polygon = origPts.map(p => ({
+            x: Math.max(0, Math.min(100, p.x + dxPct)),
+            y: Math.max(0, Math.min(100, p.y + dyPct))
+          }));
+          // Keep centroid x,y in sync
+          const cx = loc.polygon.reduce((s, p) => s + p.x, 0) / loc.polygon.length;
+          const cy = loc.polygon.reduce((s, p) => s + p.y, 0) / loc.polygon.length;
+          loc.x = cx; loc.y = cy;
+          renderRegions();
+        }
+        return;
+      }
       if (!isDraggingWP) { document.removeEventListener('mousemove', _docMouseMove); return; }
       const { pathId, wpIdx, origX, origY, startSX, startSY } = isDraggingWP;
       const dx = (e.clientX - startSX) / vpScale;
@@ -2021,6 +2237,34 @@
     function _docMouseUp(e) {
       document.removeEventListener('mousemove', _docMouseMove);
       document.removeEventListener('mouseup', _docMouseUp);
+
+      // Region vertex drag save
+      if (isDraggingRegionVertex) {
+        const loc = placedLocs.find(l => l.id == isDraggingRegionVertex.locId);
+        if (loc && loc.polygon) {
+          const cx = loc.polygon.reduce((s, p) => s + p.x, 0) / loc.polygon.length;
+          const cy = loc.polygon.reduce((s, p) => s + p.y, 0) / loc.polygon.length;
+          loc.x = cx; loc.y = cy;
+          apiFetch(`/api/journey-maps/${mapId}/locations/${loc.id}`, {
+            method: 'PUT', body: JSON.stringify({ x: loc.x, y: loc.y, polygon: loc.polygon })
+          }).then(() => renderRegions()).catch(err => toast(err.message));
+        }
+        isDraggingRegionVertex = null;
+        return;
+      }
+
+      // Region body drag save
+      if (isDraggingRegion) {
+        const loc = placedLocs.find(l => l.id == isDraggingRegion.locId);
+        if (loc && loc.polygon) {
+          apiFetch(`/api/journey-maps/${mapId}/locations/${loc.id}`, {
+            method: 'PUT', body: JSON.stringify({ x: loc.x, y: loc.y, polygon: loc.polygon })
+          }).then(() => renderRegions()).catch(err => toast(err.message));
+        }
+        isDraggingRegion = null;
+        return;
+      }
+
       if (!isDraggingWP) return;
       const p = paths.find(p => p.id == isDraggingWP.pathId);
       if (p) {
@@ -2050,11 +2294,13 @@
       }
       if (e.key === 'Escape') { setTool('select'); }
       if (e.key === 'Enter' && activeTool === 'draw' && isDrawing) finishPath();
+      if (e.key === 'Enter' && activeTool === 'region' && isDrawingRegion) finishRegion();
       if (e.key === 'Delete' && selectedLoc) deletePlacedLoc(selectedLoc);
       if (e.key === 'Delete' && selectedPath) deletePath(selectedPath);
       if (e.key === 'v' || e.key === 'V') setTool('select');
       if (e.key === 'h' || e.key === 'H') setTool('pan');
       if (e.key === 'p' || e.key === 'P') setTool('place');
+      if (e.key === 'r' || e.key === 'R') setTool('region');
       if (e.key === 'd' || e.key === 'D') setTool('draw');
       if (e.key === 'm' || e.key === 'M') setTool('measure');
       if (e.key === 'x' || e.key === 'X') setTool('delete');
@@ -2071,6 +2317,39 @@
     // ═══════════════════════════════════════════════════════
     // LOCATIONS
     // ═══════════════════════════════════════════════════════
+
+    // ── Region drawing helpers ─────────────────────────────
+    function updateRegionPreview(pts) {
+      const points = (pts || regionDrawPts);
+      const svgPts = points.map(p => { const s = pctToSvg(p.x, p.y); return `${s.x},${s.y}`; }).join(' ');
+      document.getElementById('regionPreview').setAttribute('points', svgPts);
+    }
+
+    async function finishRegion() {
+      if (regionDrawPts.length < 3) { toast('Draw at least 3 points to define a region'); return; }
+      const locId = parseInt(document.getElementById('placeSel').value);
+      if (!locId) { toast('Select a region location first'); return; }
+      const campLoc = campaignLocs.find(l => l.id == locId);
+      if (!campLoc) return;
+      if (placedLocs.some(l => l.campaign_location_id == locId)) {
+        toast('This location is already on the map'); return;
+      }
+      const cx = regionDrawPts.reduce((s, p) => s + p.x, 0) / regionDrawPts.length;
+      const cy = regionDrawPts.reduce((s, p) => s + p.y, 0) / regionDrawPts.length;
+      try {
+        const loc = await apiFetch(`/api/journey-maps/${mapId}/locations`, {
+          method: 'POST',
+          body: JSON.stringify({ campaign_location_id: locId, name: campLoc.name, x: cx, y: cy, polygon: regionDrawPts })
+        });
+        placedLocs.push(loc);
+        buildLocationSelectors();
+        renderAll();
+        toast(`Region "${campLoc.name}" drawn`);
+      } catch (e) { toast(e.message); }
+      isDrawingRegion = false; regionDrawPts = [];
+      document.getElementById('regionPreview').setAttribute('points', '');
+    }
+
     async function placeLocation(campLocId, name, x, y) {
       try {
         const loc = await apiFetch(`/api/journey-maps/${mapId}/locations`, {
@@ -2088,8 +2367,14 @@
       const locId = parseInt(document.getElementById('placeSel').value);
       if (!locId) { toast('Select a location'); return; }
       if (!mapId) { toast('Select a map first'); return; }
-      setTool('place');
-      toast('Click on the map to place this location (Place tool active)');
+      const campLoc = campaignLocs.find(l => l.id == locId);
+      if (campLoc && campLoc.size_type === 'region') {
+        setTool('region');
+        toast('Click on the map to draw the region boundary. Double-click or Enter to finish.');
+      } else {
+        setTool('place');
+        toast('Click on the map to place this location (Place tool active)');
+      }
     }
 
     async function deletePlacedLoc(id) {
@@ -2106,7 +2391,7 @@
 
     function selectLocation(id) {
       selectedLoc = id; selectedPath = null;
-      renderPins(); renderPathList();
+      renderPins(); renderRegions(); renderPathList();
       const loc = placedLocs.find(l => l.id == id);
       if (loc) setRightPanel('loc', loc);
     }
@@ -2134,7 +2419,7 @@
                 onclick="selectLocation(${placed.id})"
                 style="padding-left:${8 + indent}px">
               ${depth > 0 ? '<span style="color:var(--text-muted);font-size:10px;margin-right:3px">\u2514</span>' : ''}
-              <span class="tool-icon">\uD83D\uDCCD</span>
+              <span class="tool-icon">${placed.polygon && placed.polygon.length >= 3 ? '🗾' : '📍'}</span>
               <span class="lbl">${esc(placed.name)}</span>
               <span class="del" onclick="event.stopPropagation();deletePlacedLoc(${placed.id})">\u2715</span>
             </div>${renderTree(cl.id, depth + 1)}`;
@@ -2821,9 +3106,11 @@
 
         body.innerHTML = `
       <div class="info-card">
-        <h3>📍 Location</h3>
-        <div class="info-row"><span class="info-lbl">Position</span><span class="info-val">${loc.x.toFixed(1)}%, ${loc.y.toFixed(1)}%</span></div>
+        <h3>${loc.polygon && loc.polygon.length >= 3 ? '🗾 Region' : '📍 Location'}</h3>
+        <div class="info-row"><span class="info-lbl">Centroid</span><span class="info-val">${loc.x.toFixed(1)}%, ${loc.y.toFixed(1)}%</span></div>
         ${sizeLabel}
+        ${loc.polygon && loc.polygon.length >= 3 ? `<div class="info-row"><span class="info-lbl">Vertices</span><span class="info-val">${loc.polygon.length} points</span></div>
+        <div style="font-size:10px;color:var(--text-muted);padding:2px 0 4px">Drag vertices to reshape · Drag interior to move</div>` : ''}
       </div>
       <div class="info-card">
         <h3>📏 Distances (click to edit)</h3>
@@ -2908,11 +3195,12 @@
     // ── Export / Import ──────────────────────────────────────
     async function exportMap() {
       if (!mapId) return;
-      const [locsRes, distsRes, trackRes, pathsRes] = await Promise.all([
+      const [locsRes, distsRes, trackRes, pathsRes, imgRes] = await Promise.all([
         apiFetch(`/api/journey-maps/${mapId}/locations`),
         apiFetch(`/api/journey-maps/${mapId}/distances`),
         apiFetch(`/api/journey-maps/${mapId}/trackers`),
         apiFetch(`/api/journey-maps/${mapId}/paths`),
+        apiFetch(`/api/journey-maps/${mapId}/image`),
       ]);
       const mapMeta = maps.find(m => m.id == mapId) || {};
       const bundle = {
@@ -2920,11 +3208,11 @@
         exported_at: new Date().toISOString(),
         type: 'journey-map',
         map: { name: mapMeta.name || 'Map', description: mapMeta.description || '' },
+        map_image: imgRes.image || null,   // base64 data URL (≤ 2 MB, already compressed)
         locations: locsRes,
         distances: distsRes,
         trackers: trackRes,
         paths: pathsRes,
-        // Note: map background image is not included — re-upload after import
       };
       const slug = (mapMeta.name || 'map').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
       const a = document.createElement('a');
@@ -2942,7 +3230,7 @@
       try { bundle = JSON.parse(await file.text()); } catch { toast('Invalid JSON file'); return; }
       if (bundle.type !== 'journey-map') { toast('Not a journey map export file'); return; }
 
-      const { map: mapMeta, locations = [], distances = [], trackers = [], paths = [] } = bundle;
+      const { map: mapMeta, locations = [], distances = [], trackers = [], paths = [], map_image } = bundle;
 
       try {
         toast('Importing…');
@@ -2953,22 +3241,36 @@
           body: JSON.stringify({ name: (mapMeta.name || 'Map'), description: mapMeta.description || '' })
         });
 
-        // 2 – Locations: old id → new id map
+        // 2 – Restore background image if present
+        if (map_image) {
+          try {
+            await apiFetch(`/api/journey-maps/${newMap.id}/image`, {
+              method: 'PUT', body: JSON.stringify({ image: map_image })
+            });
+          } catch (e) { toast('Warning: could not restore map image — ' + e.message); }
+        }
+
+        // 3 – Locations: old id → new id map (preserve polygon for regions)
         const locIdMap = {};
         for (const l of locations) {
-          // Each journey_map_location may have a campaign_location_id — create a fresh campaign location too
           const campLoc = await apiFetch(`/api/campaigns/${campaignId}/locations`, {
             method: 'POST',
             body: JSON.stringify({ name: l.name, description: l.description || '' })
           });
           const mapLoc = await apiFetch(`/api/journey-maps/${newMap.id}/locations`, {
             method: 'POST',
-            body: JSON.stringify({ campaign_location_id: campLoc.id, name: l.name, x: l.x, y: l.y })
+            body: JSON.stringify({
+              campaign_location_id: campLoc.id,
+              name: l.name,
+              x: l.x,
+              y: l.y,
+              polygon: l.polygon || null,
+            })
           });
           locIdMap[l.id] = mapLoc.id;
         }
 
-        // 3 – Trackers: old id → new id map
+        // 4 – Trackers: old id → new id map
         const trackerIdMap = {};
         for (const t of trackers) {
           const nt = await apiFetch(`/api/journey-maps/${newMap.id}/trackers`, {
@@ -2978,7 +3280,7 @@
           trackerIdMap[t.id] = nt.id;
         }
 
-        // 4 – Distances (remap location IDs)
+        // 5 – Distances (remap location IDs)
         for (const d of distances) {
           const fl = locIdMap[d.from_loc_id], tl = locIdMap[d.to_loc_id];
           if (!fl || !tl) continue;
@@ -2988,7 +3290,7 @@
           });
         }
 
-        // 5 – Paths (remap waypoint locIds and tracker_id)
+        // 6 – Paths (remap waypoint locIds and tracker_id)
         for (const p of paths) {
           const wpts = (Array.isArray(p.waypoints) ? p.waypoints : JSON.parse(p.waypoints || '[]'))
             .map(w => ({ ...w, locId: w.locId ? (locIdMap[w.locId] || null) : null }));
@@ -3008,11 +3310,11 @@
         const sel = document.getElementById('mapSel');
         sel.value = newMap.id;
         await onMapChange();
-        toast(`Map "${newMap.name}" imported — re-upload the background image if needed`);
+        toast(`Map "${newMap.name}" imported${map_image ? '' : ' — re-upload the background image if needed'}`);
       } catch (e) { toast('Import failed: ' + e.message); }
     }
 
-    function renderAll() { renderPaths(); renderPins(); renderLocList(); renderTrackerList(); renderPathList(); }
+    function renderAll() { renderPaths(); renderRegions(); renderPins(); renderLocList(); renderTrackerList(); renderPathList(); }
 
     function openDistMatrixModal() {
       renderDistMatrixModal();
@@ -3060,12 +3362,38 @@
       el.innerHTML = html + '</tbody></table>';
     }
 
+    function renderRegions() {
+      const g = document.getElementById('regionsG');
+      g.innerHTML = placedLocs
+        .filter(loc => loc.polygon && Array.isArray(loc.polygon) && loc.polygon.length >= 3)
+        .map(loc => {
+          const sel = loc.id == selectedLoc;
+          const svgPts = loc.polygon.map(p => { const s = pctToSvg(p.x, p.y); return `${s.x},${s.y}`; }).join(' ');
+          const { x: cx, y: cy } = pctToSvg(loc.x, loc.y);
+          // Vertex handles shown only when selected (for reshape)
+          const handles = sel ? loc.polygon.map((p, i) => {
+            const s = pctToSvg(p.x, p.y);
+            return `<circle class="region-vertex" cx="${s.x}" cy="${s.y}" r="5"
+              data-loc-id="${loc.id}" data-vtx-idx="${i}"/>`;
+          }).join('') : '';
+          return `
+      <g class="region-g ${sel ? 'sel' : ''}" data-id="${loc.id}">
+        <polygon class="region-poly" points="${svgPts}"/>
+        <text class="region-label" x="${cx}" y="${cy}">${esc(loc.name)}</text>
+        ${handles}
+      </g>`;
+        }).join('');
+    }
+
     function renderPins() {
       const g = document.getElementById('pinsG');
-      g.innerHTML = placedLocs.map(loc => {
-        const { x, y } = pctToSvg(loc.x, loc.y);
-        const sel = loc.id == selectedLoc;
-        return `
+      // Only render non-region locations (regions are drawn as polygons)
+      g.innerHTML = placedLocs
+        .filter(loc => !(loc.polygon && Array.isArray(loc.polygon) && loc.polygon.length >= 3))
+        .map(loc => {
+          const { x, y } = pctToSvg(loc.x, loc.y);
+          const sel = loc.id == selectedLoc;
+          return `
       <g class="pin-g ${sel ? 'sel' : ''}" data-id="${loc.id}">
         <circle class="pin-circle" cx="${x}" cy="${y}" r="${sel ? 11 : 9}"
           fill="${sel ? '#c9a84c' : '#1e1810'}"
@@ -3073,7 +3401,7 @@
           stroke-width="${sel ? 2.5 : 1.5}" opacity=".92"/>
         <text class="pin-label" x="${x}" y="${y + 20}">${esc(loc.name)}</text>
       </g>`;
-      }).join('');
+        }).join('');
     }
 
     function renderPaths() {

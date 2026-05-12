@@ -194,6 +194,27 @@
       r: 11;
     }
 
+    .region-g { cursor: pointer; }
+    .region-poly {
+      fill: rgba(80, 120, 60, 0.18);
+      stroke: rgba(180, 200, 120, 0.7);
+      stroke-width: 1.8;
+      stroke-linejoin: round;
+      transition: fill 0.15s;
+    }
+    .region-g:hover .region-poly { fill: rgba(80, 120, 60, 0.30); stroke: rgba(201, 168, 76, 0.9); }
+    .region-g.sel .region-poly { fill: rgba(201, 168, 76, 0.22); stroke: #e8c96a; stroke-width: 2.5; }
+    .region-label {
+      font-family: Cinzel, Georgia, serif;
+      font-size: 11px;
+      fill: #e8dcc0;
+      text-anchor: middle;
+      pointer-events: none;
+      paint-order: stroke;
+      stroke: #13100b;
+      stroke-width: 3px;
+    }
+
     /* Hover tooltip */
     .map-tooltip {
       position: fixed;
@@ -523,6 +544,7 @@
             </marker>
           </defs>
           <g id="pathsG"></g>
+          <g id="regionsG"></g>
           <g id="pinsG"></g>
         </svg>
       </div>
@@ -613,22 +635,43 @@
 
     function renderAll() {
       if (!data) return;
-      renderPins(); renderPaths();
+      renderRegions(); renderPins(); renderPaths();
+    }
+
+    function renderRegions() {
+      const g = document.getElementById('regionsG');
+      if (!g) return;
+      g.innerHTML = (data.locations || [])
+        .filter(loc => loc.polygon && Array.isArray(loc.polygon) && loc.polygon.length >= 3)
+        .map(loc => {
+          const isSel = loc.id == selLoc;
+          const svgPts = loc.polygon.map(p => { const s = pctToSvg(p.x, p.y); return `${s.x},${s.y}`; }).join(' ');
+          const { x: cx, y: cy } = pctToSvg(loc.x, loc.y);
+          return `<g class="region-g${isSel ? ' sel' : ''}" data-id="${loc.id}"
+              onclick="selectLoc(${loc.id})"
+              onmouseenter="showPinTooltip(event,${loc.id})"
+              onmouseleave="hidePinTooltip()">
+            <polygon class="region-poly" points="${svgPts}"/>
+            <text class="region-label" x="${cx}" y="${cy}">${esc(loc.name)}</text>
+          </g>`;
+        }).join('');
     }
 
     function renderPins() {
       const g = document.getElementById('pinsG');
-      g.innerHTML = (data.locations || []).map(loc => {
-        const { x, y } = pctToSvg(loc.x, loc.y);
-        const isSel = loc.id == selLoc;
-        return `<g class="pin-g${isSel ? ' sel' : ''}" data-id="${loc.id}"
-            onclick="selectLoc(${loc.id})"
-            onmouseenter="showPinTooltip(event,${loc.id})"
-            onmouseleave="hidePinTooltip()">
-          <circle class="pin-circle" cx="${x}" cy="${y}" r="9" fill="#1e1810" stroke="${isSel ? '#c9a84c' : '#7a6030'}" stroke-width="${isSel ? 2.2 : 1.5}" opacity=".92"/>
-          <text class="pin-label" x="${x}" y="${y + 20}">${esc(loc.name)}</text>
-        </g>`;
-      }).join('');
+      g.innerHTML = (data.locations || [])
+        .filter(loc => !(loc.polygon && Array.isArray(loc.polygon) && loc.polygon.length >= 3))
+        .map(loc => {
+          const { x, y } = pctToSvg(loc.x, loc.y);
+          const isSel = loc.id == selLoc;
+          return `<g class="pin-g${isSel ? ' sel' : ''}" data-id="${loc.id}"
+              onclick="selectLoc(${loc.id})"
+              onmouseenter="showPinTooltip(event,${loc.id})"
+              onmouseleave="hidePinTooltip()">
+            <circle class="pin-circle" cx="${x}" cy="${y}" r="9" fill="#1e1810" stroke="${isSel ? '#c9a84c' : '#7a6030'}" stroke-width="${isSel ? 2.2 : 1.5}" opacity=".92"/>
+            <text class="pin-label" x="${x}" y="${y + 20}">${esc(loc.name)}</text>
+          </g>`;
+        }).join('');
     }
 
     function showPinTooltip(event, locId) {
@@ -751,9 +794,10 @@
       hidePinTooltip();
       const loc = (data.locations || []).find(l => l.id == id);
       if (!loc) return;
+      const isRegion = loc.polygon && Array.isArray(loc.polygon) && loc.polygon.length >= 3;
       const head = document.getElementById('rpHead');
       const body = document.getElementById('rpBody');
-      head.textContent = '📍 ' + loc.name;
+      head.textContent = (isRegion ? '🗾 ' : '📍 ') + loc.name;
 
       // Distances (bidirectional)
       const myDists = (data.distances || []).filter(d => d.from_loc_id == id || d.to_loc_id == id);
@@ -799,7 +843,7 @@
           ${distRows || '<div class="rp-empty" style="font-size:11px">No distances set.</div>'}
         </div>`;
 
-      renderPins(); renderPaths();
+      renderRegions(); renderPins(); renderPaths();
     }
 
     function selectPath(id) {
