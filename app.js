@@ -1727,9 +1727,10 @@ app.put('/api/journey-maps/:id/image', requireRole(['dm']), async (req, res) => 
 app.get('/api/journey-maps/:id/locations', requireRole(['dm']), async (req, res) => {
   try {
     const r = await pool.query(
-      `SELECT jml.*, cl.size_type
+      `SELECT jml.*, cl.size_type, lm.name AS linked_map_name
        FROM journey_map_locations jml
        LEFT JOIN campaign_locations cl ON cl.id = jml.campaign_location_id
+       LEFT JOIN journey_maps lm ON lm.id = jml.linked_map_id
        WHERE jml.map_id=$1 ORDER BY jml.created_at ASC`,
       [req.params.id]
     );
@@ -1738,23 +1739,23 @@ app.get('/api/journey-maps/:id/locations', requireRole(['dm']), async (req, res)
 });
 
 app.post('/api/journey-maps/:id/locations', requireRole(['dm']), async (req, res) => {
-  const { campaign_location_id, name, x, y, polygon } = req.body;
+  const { campaign_location_id, name, x, y, polygon, linked_map_id } = req.body;
   if (!name) return res.status(400).json({ error: 'Name required' });
   try {
     const r = await pool.query(
-      'INSERT INTO journey_map_locations (map_id, campaign_location_id, name, x, y, polygon) VALUES ($1,$2,$3,$4,$5,$6) RETURNING *',
-      [req.params.id, campaign_location_id || null, name, x ?? 50, y ?? 50, polygon ? JSON.stringify(polygon) : null]
+      'INSERT INTO journey_map_locations (map_id, campaign_location_id, name, x, y, polygon, linked_map_id) VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *',
+      [req.params.id, campaign_location_id || null, name, x ?? 50, y ?? 50, polygon ? JSON.stringify(polygon) : null, linked_map_id || null]
     );
     res.json(r.rows[0]);
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 app.put('/api/journey-maps/:id/locations/:locId', requireRole(['dm']), async (req, res) => {
-  const { x, y, polygon } = req.body;
+  const { x, y, polygon, linked_map_id } = req.body;
   try {
     const r = await pool.query(
-      'UPDATE journey_map_locations SET x=$1, y=$2, polygon=$3 WHERE id=$4 AND map_id=$5 RETURNING *',
-      [x, y, polygon !== undefined ? JSON.stringify(polygon) : null, req.params.locId, req.params.id]
+      'UPDATE journey_map_locations SET x=$1, y=$2, polygon=$3, linked_map_id=$4 WHERE id=$5 AND map_id=$6 RETURNING *',
+      [x, y, polygon !== undefined ? JSON.stringify(polygon) : null, linked_map_id !== undefined ? (linked_map_id || null) : null, req.params.locId, req.params.id]
     );
     res.json(r.rows[0]);
   } catch (e) { res.status(500).json({ error: e.message }); }
@@ -2390,6 +2391,7 @@ async function initializeDatabase() {
         x                    FLOAT NOT NULL DEFAULT 50,
         y                    FLOAT NOT NULL DEFAULT 50,
         polygon              JSONB,
+        linked_map_id        INTEGER REFERENCES journey_maps(id) ON DELETE SET NULL,
         created_at           TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       );
     `);
@@ -2505,6 +2507,11 @@ async function initializeDatabase() {
     // Migrate: region polygon support
     await pool.query(`
       ALTER TABLE journey_map_locations ADD COLUMN IF NOT EXISTS polygon JSONB;
+    `);
+
+    // Migrate: linked map for regions
+    await pool.query(`
+      ALTER TABLE journey_map_locations ADD COLUMN IF NOT EXISTS linked_map_id INTEGER REFERENCES journey_maps(id) ON DELETE SET NULL;
     `);
 
     // Character relationship trees (DM-only cross-player connections)

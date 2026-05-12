@@ -614,6 +614,38 @@
       opacity: 1;
     }
 
+    .linked-map-btn {
+      display: block;
+      width: 100%;
+      margin-top: 6px;
+      padding: 7px 10px;
+      background: var(--surface3);
+      border: 1px solid var(--gold-dim);
+      color: var(--gold);
+      font-family: Cinzel, Georgia, serif;
+      font-size: 12px;
+      border-radius: 3px;
+      cursor: pointer;
+      text-align: center;
+      letter-spacing: 0.03em;
+      transition: background 0.15s, border-color 0.15s;
+    }
+
+    .linked-map-btn:hover {
+      background: var(--surface4, #2a2318);
+      border-color: var(--gold);
+    }
+
+    .region-link-indicator {
+      font-size: 10px;
+      fill: #e8c96a;
+      text-anchor: middle;
+      pointer-events: none;
+      paint-order: stroke;
+      stroke: #13100b;
+      stroke-width: 2.5px;
+    }
+
     /* ─── RIGHT PANEL ────────────────────────── */
     .right-panel {
       background: var(--surface);
@@ -2152,7 +2184,7 @@
         const loc = placedLocs.find(l => l.id == isDraggingPin.locId);
         if (loc) {
           apiFetch(`/api/journey-maps/${mapId}/locations/${loc.id}`, {
-            method: 'PUT', body: JSON.stringify({ x: loc.x, y: loc.y, polygon: loc.polygon || null })
+            method: 'PUT', body: JSON.stringify({ x: loc.x, y: loc.y, polygon: loc.polygon || null, linked_map_id: loc.linked_map_id || null })
           }).catch(err => toast(err.message));
           if (selectedLoc == loc.id) setRightPanel('loc', loc);
         }
@@ -2246,7 +2278,7 @@
           const cy = loc.polygon.reduce((s, p) => s + p.y, 0) / loc.polygon.length;
           loc.x = cx; loc.y = cy;
           apiFetch(`/api/journey-maps/${mapId}/locations/${loc.id}`, {
-            method: 'PUT', body: JSON.stringify({ x: loc.x, y: loc.y, polygon: loc.polygon })
+            method: 'PUT', body: JSON.stringify({ x: loc.x, y: loc.y, polygon: loc.polygon, linked_map_id: loc.linked_map_id || null })
           }).then(() => renderRegions()).catch(err => toast(err.message));
         }
         isDraggingRegionVertex = null;
@@ -2258,7 +2290,7 @@
         const loc = placedLocs.find(l => l.id == isDraggingRegion.locId);
         if (loc && loc.polygon) {
           apiFetch(`/api/journey-maps/${mapId}/locations/${loc.id}`, {
-            method: 'PUT', body: JSON.stringify({ x: loc.x, y: loc.y, polygon: loc.polygon })
+            method: 'PUT', body: JSON.stringify({ x: loc.x, y: loc.y, polygon: loc.polygon, linked_map_id: loc.linked_map_id || null })
           }).then(() => renderRegions()).catch(err => toast(err.message));
         }
         isDraggingRegion = null;
@@ -2348,6 +2380,30 @@
       } catch (e) { toast(e.message); }
       isDrawingRegion = false; regionDrawPts = [];
       document.getElementById('regionPreview').setAttribute('points', '');
+    }
+
+    async function saveLocLinkedMap(locId, linkedMapId) {
+      const loc = placedLocs.find(l => l.id == locId);
+      if (!loc) return;
+      const newLinkedId = linkedMapId ? parseInt(linkedMapId) : null;
+      loc.linked_map_id = newLinkedId;
+      // Resolve the name from the maps array for immediate display
+      const linkedMap = maps.find(m => m.id == newLinkedId);
+      loc.linked_map_name = linkedMap ? linkedMap.name : null;
+      try {
+        await apiFetch(`/api/journey-maps/${mapId}/locations/${locId}`, {
+          method: 'PUT',
+          body: JSON.stringify({ x: loc.x, y: loc.y, polygon: loc.polygon, linked_map_id: newLinkedId })
+        });
+        renderRegions();
+        setRightPanel('loc', loc); // refresh to show/hide Open button
+      } catch (e) { toast(e.message); }
+    }
+
+    function openLinkedMap(targetMapId) {
+      const sel = document.getElementById('mapSel');
+      sel.value = targetMapId;
+      onMapChange();
     }
 
     async function placeLocation(campLocId, name, x, y) {
@@ -3112,6 +3168,19 @@
         ${loc.polygon && loc.polygon.length >= 3 ? `<div class="info-row"><span class="info-lbl">Vertices</span><span class="info-val">${loc.polygon.length} points</span></div>
         <div style="font-size:10px;color:var(--text-muted);padding:2px 0 4px">Drag vertices to reshape · Drag interior to move</div>` : ''}
       </div>
+      ${loc.polygon && loc.polygon.length >= 3 ? `
+      <div class="info-card">
+        <h3>🗺 Linked Map</h3>
+        <div style="font-size:11px;color:var(--text-muted);margin-bottom:6px">Open a detail map when this region is selected.</div>
+        <select id="linkedMapSel" onchange="saveLocLinkedMap(${loc.id}, this.value)"
+          style="width:100%;background:var(--surface3);border:1px solid var(--border2);color:var(--text);padding:5px 6px;border-radius:3px;font-size:12px">
+          <option value="">— no linked map —</option>
+          ${maps.filter(m => String(m.id) !== String(mapId)).map(m =>
+          `<option value="${m.id}" ${loc.linked_map_id == m.id ? 'selected' : ''}>${esc(m.name)}</option>`
+        ).join('')}
+        </select>
+        ${loc.linked_map_id ? `<button class="linked-map-btn" onclick="openLinkedMap(${loc.linked_map_id})">🗺 Open "${esc(loc.linked_map_name || 'Map')}"</button>` : ''}
+      </div>` : ''}
       <div class="info-card">
         <h3>📏 Distances (click to edit)</h3>
         ${distRows || '<div class="rp-empty" style="font-size:11px">No nearby locations match proximity rules.</div>'}
@@ -3376,10 +3445,15 @@
             return `<circle class="region-vertex" cx="${s.x}" cy="${s.y}" r="5"
               data-loc-id="${loc.id}" data-vtx-idx="${i}"/>`;
           }).join('') : '';
+          // Linked map indicator: small 🗺 badge offset slightly above centroid
+          const linkBadge = loc.linked_map_id
+            ? `<text class="region-link-indicator" x="${cx}" y="${cy - 14}">🗺</text>`
+            : '';
           return `
       <g class="region-g ${sel ? 'sel' : ''}" data-id="${loc.id}">
         <polygon class="region-poly" points="${svgPts}"/>
         <text class="region-label" x="${cx}" y="${cy}">${esc(loc.name)}</text>
+        ${linkBadge}
         ${handles}
       </g>`;
         }).join('');
