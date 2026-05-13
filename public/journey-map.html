@@ -1637,20 +1637,20 @@
       const sel = document.getElementById('placeSel');
       sel.innerHTML = '<option value="">\u2014 Pick location \u2014</option>';
       const pinnedCampIds = new Set(placedLocs.map(l => l.campaign_location_id).filter(Boolean));
-      const available = scopedLocs.filter(l => !pinnedCampIds.has(l.id));
 
-      // Seed the walk from the scope boundary:
-      // - continent: walk from null (true top-level locations)
-      // - city: walk from mapScopeLocationId so its children appear at depth 0
+      // All scoped locations remain in the tree; pinned ones are shown grayed + disabled
       const treeRoot = (mapScopeType === 'city' && mapScopeLocationId) ? mapScopeLocationId : null;
 
       function appendTree(parentId, depth) {
-        available
+        scopedLocs
           .filter(l => l.parent_id === parentId)
           .sort((a, b) => a.name.localeCompare(b.name))
           .forEach(l => {
             const prefix = depth > 0 ? '\u00a0'.repeat(depth * 4) + '\u2514 ' : '';
-            sel.appendChild(new Option(prefix + l.name, l.id));
+            const pinned = pinnedCampIds.has(l.id);
+            const opt = new Option(prefix + l.name + (pinned ? ' ✓' : ''), l.id);
+            if (pinned) { opt.disabled = true; opt.style.color = 'var(--text-muted, #888)'; }
+            sel.appendChild(opt);
             appendTree(l.id, depth + 1);
           });
       }
@@ -2104,7 +2104,7 @@
         if (!locId) { toast('Select a region location from the dropdown first'); return; }
         const campLoc = campaignLocs.find(l => l.id == locId);
         if (!campLoc) { return; }
-        if (campLoc.size_type !== 'region') {
+        if (campLoc.size_type !== 'region' && campLoc.size_type !== 'neighborhood') {
           toast('Switch to Place tool for non-region locations, or select a region type location');
           return;
         }
@@ -2424,7 +2424,7 @@
       if (!locId) { toast('Select a location'); return; }
       if (!mapId) { toast('Select a map first'); return; }
       const campLoc = campaignLocs.find(l => l.id == locId);
-      if (campLoc && campLoc.size_type === 'region') {
+      if (campLoc && campLoc.size_type === 'region' || campLoc.size_type === 'neighborhood') {
         setTool('region');
         toast('Click on the map to draw the region boundary. Double-click or Enter to finish.');
       } else {

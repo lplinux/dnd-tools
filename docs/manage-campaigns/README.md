@@ -146,8 +146,8 @@ All endpoints require the `dm` or `admin` role unless noted.
 | `PUT` | `/api/campaigns/:id/meta` | Update campaign metadata |
 | `GET` | `/api/campaigns/:id/timelines` | Get player timeline summary |
 | `POST` | `/api/player-timelines/:campaignId/:playerId` | Create a new timeline for a player |
-| `GET` | `/api/campaigns/:id/export` | Export campaign as JSON (v2) |
-| `POST` | `/api/campaigns/import` | Import a campaign from a v2 JSON file |
+| `GET` | `/api/campaigns/:id/export` | Export full campaign snapshot as JSON (v3) |
+| `POST` | `/api/campaigns/import` | Import a campaign from a v3 (or v2) JSON bundle |
 
 ---
 
@@ -155,86 +155,164 @@ All endpoints require the `dm` or `admin` role unless noted.
 
 ### Export
 
-Click **⬇ Export** in the page header (visible once a campaign is selected). Downloads a `.json` file containing:
+Click **⬇ Export** in the page header (visible once a campaign is selected). Downloads a `.json` file (v3) containing the complete campaign state:
 
-- Campaign name, description, and calendar type
-- The Today Marker (if set)
-- All player names with their linked usernames (if assigned)
-- All locations with descriptions
-- All NPC names
+- Campaign name, description, calendar type, today marker
+- All NPCs (names)
+- All locations — including hidden ones (`is_public: false`), `size_type`, and the full parent/child hierarchy
+- All players with:
+  - PC sheet (name, story, traits, flaws, goals, public/private info, portrait image as base64)
+  - Full stats JSON block
+  - DM notes (content + visibility flag)
+  - PC relationships (including DM-only ones, with nested parent relationships)
+  - All named timelines and every entry within them
+- DM cross-connections from the character tree
+- All Journey Maps — including background image, all pins and region polygons, distances, trackers, and paths with waypoints
+
+**No database IDs appear in the file.** Every cross-reference uses a symbolic `_ref` derived from the entity's name, making the bundle human-readable and portable across instances.
 
 ### Import
 
-Click **⬆ Import** in the page header and select a previously exported `.json` file. A new campaign is created with `(Imported)` appended to the name.
+Click **⬆ Import** in the page header and select a previously exported `.json` file. A new campaign is created; existing data is never modified.
 
-**Username linking during import:** If a player's `username` field matches an existing user account (case-insensitive), the player is automatically linked to that account — no manual re-linking needed. If the username doesn't match any account in the system, the player is created unlinked and can be assigned later using the Reassign dropdown.
+- All entities are created inside a single database transaction — any error rolls the entire import back cleanly
+- Parent/child hierarchies (locations, relationships) are restored with a two-pass insert
+- Journey map `linked_map_ref` links between maps are resolved after all maps are created
+- Timeline `player_id_refs` are remapped to the new player and relationship IDs
+- Cross-connections are silently skipped if either end ref cannot be resolved (e.g. a player was removed before export)
+- Username → user account links are resolved against the live users table; unmatched usernames are skipped without error (player is created unlinked)
+- **v2 bundles** (previous format, no `_ref` fields, no character/timeline/map data) are still accepted — the importer falls back to using `name` as the lookup key
 
 ---
 
-### JSON schema (v2)
+## Bundle format (v3)
 
 ```json
 {
-  "$schema": "object",
-  "version": 2,
-  "exported_at": "ISO 8601 datetime string",
-  "type": "campaign",
-
-  "campaign": {
-    "name": "string — required",
-    "description": "string — optional",
-    "calendar_type": "\"harptos\" | \"gregorian\" — optional, defaults to harptos",
-    "today_marker": "string or integer (absolute day number) — optional, null to leave unset"
-  },
-
-  "players": [
-    {
-      "player_name": "string — required",
-      "username": "string — optional; matched to existing users on import to auto-link accounts"
-    }
-  ],
-
-  "locations": [
-    {
-      "name": "string — required",
-      "description": "string — optional"
-    }
-  ],
-
-  "npcs": [
-    "string (NPC name)"
-  ]
-}
-```
-
-### Full example with all fields
-
-```json
-{
-  "version": 2,
-  "exported_at": "2025-04-01T14:30:00.000Z",
+  "version": 3,
+  "exported_at": "2026-05-12T10:00:00.000Z",
   "type": "campaign",
   "campaign": {
-    "name": "Lost Mines of Phandelver",
-    "description": "Starter adventure set in the Sword Coast wilderness.",
+    "name": "Lost Mine of Phandelver",
+    "description": "Starter adventure",
     "calendar_type": "harptos",
-    "today_marker": "544965"
+    "today_marker": 548
   },
-  "players": [
-    { "player_name": "Thorn Ashwick", "username": "alice" },
-    { "player_name": "Lirien Dawnwhisper", "username": "bob" },
-    { "player_name": "Grumm Stonefist", "username": null }
-  ],
+  "npcs": ["Gundren Rockseeker", "Sildar Hallwinter", "The Black Spider"],
   "locations": [
-    { "name": "Phandalin", "description": "Small frontier town on the Triboar Trail." },
-    { "name": "Tresendar Manor", "description": "Ruined manor on the eastern edge of town." },
-    { "name": "Wave Echo Cave", "description": "Ancient dwarven mine — location of the Forge of Spells." }
+    {
+      "_ref": "Phandalin",
+      "name": "Phandalin",
+      "description": "A small frontier town.",
+      "is_public": true,
+      "size_type": "city",
+      "parent_ref": null
+    },
+    {
+      "_ref": "Tresendar Manor",
+      "name": "Tresendar Manor",
+      "description": "Redbrand hideout.",
+      "is_public": false,
+      "size_type": "dungeon",
+      "parent_ref": "Phandalin"
+    }
   ],
-  "npcs": [
-    "Gundren Rockseeker",
-    "Sildar Hallwinter",
-    "Glasstaff",
-    "The Black Spider"
+  "players": [
+    {
+      "player_name": "Aragorn",
+      "username": "alice",
+      "character": {
+        "name": "Aragorn",
+        "picture_url": null,
+        "picture_data": null,
+        "story": "A ranger from the north.",
+        "traits": "Brave, loyal",
+        "flaws": "Distrustful of magic",
+        "goals": "Reclaim Erebor",
+        "public_info": "Known ranger.",
+        "private_info": "Secret heir."
+      },
+      "stats_json": { "str": 16, "dex": 14 },
+      "dm_notes": [
+        { "content": "Will betray the party if Gandalf is threatened.", "dm_visible": true }
+      ],
+      "relationships": [
+        {
+          "_ref": "Gandalf",
+          "name": "Gandalf",
+          "relation_type": "mentor",
+          "link": null,
+          "is_family": false,
+          "is_dm_only": false,
+          "parent_ref": null
+        }
+      ],
+      "timelines": [
+        {
+          "name": "Main Quest",
+          "entries": [
+            {
+              "title": "Arrived in Phandalin",
+              "description": "The party rode into town.",
+              "location": "Phandalin",
+              "year": 1492,
+              "day_of_year": 42,
+              "duration_days": 1,
+              "player_id_refs": ["self_Aragorn"]
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "cross_connections": [
+    {
+      "from_type": "player",
+      "from_ref": "Aragorn",
+      "to_type": "npc",
+      "to_ref": "Gundren Rockseeker",
+      "label": "hired by",
+      "notes": null,
+      "is_public": true
+    }
+  ],
+  "journey_maps": [
+    {
+      "name": "The Sword Coast",
+      "description": "Regional overview",
+      "map_image": "data:image/jpeg;base64,...",
+      "scope_type": "continent",
+      "scope_location_ref": null,
+      "locations": [
+        {
+          "_ref": "Phandalin",
+          "name": "Phandalin",
+          "x": 42.5,
+          "y": 31.0,
+          "polygon": null,
+          "campaign_location_ref": "Phandalin",
+          "linked_map_ref": null
+        }
+      ],
+      "distances": [
+        { "from_ref": "Phandalin", "to_ref": "Neverwinter", "distance_miles": 50 }
+      ],
+      "trackers": [
+        { "name": "The Party", "type": "group", "color": "#c9a84c" }
+      ],
+      "paths": [
+        {
+          "name": "Journey to Phandalin",
+          "notes": "Ambushed by goblins on the Triboar Trail.",
+          "distance_miles": 50,
+          "tracker_ref": "The Party",
+          "waypoints": [
+            { "x": 38.0, "y": 22.0, "loc_ref": null },
+            { "x": 42.5, "y": 31.0, "loc_ref": "Phandalin" }
+          ]
+        }
+      ]
+    }
   ]
 }
 ```
@@ -243,14 +321,32 @@ Click **⬆ Import** in the page header and select a previously exported `.json`
 
 | Field | Type | Required | Notes |
 |---|---|---|---|
-| `version` | number | No | Must be `2` if present; older v1 files (without NPCs) are still accepted |
+| `version` | number | No | `3` for this format; `2` and `1` still accepted |
 | `type` | string | Yes | Must be `"campaign"` |
-| `campaign.name` | string | Yes | `" (Imported)"` is appended automatically |
-| `campaign.description` | string | No | Description text for the campaign |
-| `campaign.calendar_type` | string | No | `"harptos"` (default) or `"gregorian"` — **cannot be changed after import** |
-| `campaign.today_marker` | string \| number | No | Absolute day integer; omit or `null` to leave unset |
-| `players[].player_name` | string | Yes | Character name |
-| `players[].username` | string | No | Matched case-insensitively to existing user accounts; auto-links on import |
-| `locations[].name` | string | Yes | Location name |
-| `locations[].description` | string | No | Short description |
-| `npcs[]` | string[] | No | Array of NPC name strings |
+| `campaign.name` | string | Yes | Used as-is (no suffix appended) |
+| `campaign.description` | string | No | |
+| `campaign.calendar_type` | string | No | `"harptos"` (default) or `"gregorian"` |
+| `campaign.today_marker` | string/number | No | Absolute day integer; omit to leave unset |
+| `npcs[]` | string[] | No | NPC name strings |
+| `locations[]._ref` | string | Yes | Symbolic key for cross-references; defaults to `name` if absent |
+| `locations[].name` | string | Yes | |
+| `locations[].description` | string | No | |
+| `locations[].is_public` | boolean | No | Default `true` |
+| `locations[].size_type` | string | No | `"city"`, `"town"`, `"village"`, `"dungeon"`, `"region"`, etc. |
+| `locations[].parent_ref` | string | No | `_ref` of the parent location |
+| `players[].player_name` | string | Yes | |
+| `players[].username` | string | No | Matched case-insensitively to existing accounts |
+| `players[].character` | object | No | Full PC sheet fields |
+| `players[].character.picture_data` | string | No | Base64 portrait image |
+| `players[].stats_json` | object | No | Arbitrary stat block JSON |
+| `players[].dm_notes[]` | object[] | No | `{ content, dm_visible }` |
+| `players[].relationships[]._ref` | string | Yes | Symbolic key scoped to this player |
+| `players[].relationships[].parent_ref` | string | No | `_ref` of parent relationship |
+| `players[].timelines[].entries[].player_id_refs[]` | string[] | No | Tokens like `"self_PlayerName"`, `"rel_PlayerName:RelRef"` |
+| `cross_connections[].from_type` | string | Yes | `"player"`, `"relationship"`, or `"npc"` |
+| `cross_connections[].from_ref` | string | Yes | Player name / `"PlayerName:RelRef"` / NPC name |
+| `journey_maps[].locations[]._ref` | string | Yes | Symbolic key for waypoint references |
+| `journey_maps[].locations[].campaign_location_ref` | string | No | `_ref` of the matching campaign location |
+| `journey_maps[].locations[].linked_map_ref` | string | No | `name` of a journey map in this bundle |
+| `journey_maps[].locations[].polygon` | array | No | `[{x,y}]` percentage coords for region shapes |
+| `journey_maps[].paths[].waypoints[].loc_ref` | string | No | `_ref` of pinned map location |

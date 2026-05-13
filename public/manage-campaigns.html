@@ -1912,11 +1912,27 @@
       try {
         const res = await fetch(`/api/campaigns/${currentCampaign.id}/locations/${locId}/visibility`, { method: 'PATCH' });
         if (!res.ok) { const e = await res.json(); showMsg('locMsg', '✗ ' + e.error, 'err'); return; }
-        const { is_public } = await res.json();
-        btn.textContent = is_public ? '🌐' : '🔒'; btn.title = is_public ? 'Public' : 'Hidden';
-        btn.style.background = is_public ? 'var(--gold-dim)' : 'var(--surface2)';
-        btn.style.border = `1px solid ${is_public ? 'var(--border2)' : 'var(--border)'}`;
-        btn.closest('tr').style.opacity = is_public ? '' : '0.5';
+        const { is_public, affected } = await res.json();
+
+        // Update the clicked row
+        function applyToRow(id, pub) {
+          const row = document.querySelector(`tr.loc-row[data-id="${id}"]`);
+          if (!row) return;
+          const b = row.querySelector('button[onclick^="toggleLocVisibility"]');
+          if (b) {
+            b.textContent = pub ? '🌐' : '🔒';
+            b.title = pub ? 'Public' : 'Hidden';
+            b.style.background = pub ? 'var(--gold-dim)' : 'var(--surface2)';
+            b.style.border = `1px solid ${pub ? 'var(--border2)' : 'var(--border)'}`;
+          }
+          row.style.opacity = pub ? '' : '0.5';
+        }
+
+        applyToRow(locId, is_public);
+        // Apply cascade to all descendants that were also hidden
+        for (const a of (affected || [])) {
+          if (a.id !== locId) applyToRow(a.id, a.is_public);
+        }
       } catch (e) { showMsg('locMsg', '✗ ' + e.message, 'err'); }
     }
     async function deleteLoc(locId) {
