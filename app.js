@@ -1361,12 +1361,32 @@ app.put('/api/campaigns/:campaignId/locations/:locationId', requireRole(['dm']),
 
 app.patch('/api/campaigns/:campaignId/locations/:locationId/visibility', requireRole(['dm']), async (req, res) => {
   try {
+    // Toggle the target location first to learn the new state
     const result = await pool.query(
       'UPDATE campaign_locations SET is_public = NOT is_public WHERE id=$1 AND campaign_id=$2 RETURNING id, is_public',
       [req.params.locationId, req.params.campaignId]
     );
     if (!result.rows.length) return res.status(404).json({ error: 'Location not found' });
-    res.json(result.rows[0]);
+    const { is_public } = result.rows[0];
+
+    // When hiding (is_public → false), cascade to all descendants recursively
+    let affected = [result.rows[0]];
+    if (!is_public) {
+      const desc = await pool.query(
+        `WITH RECURSIVE descendants AS (
+           SELECT id FROM campaign_locations WHERE parent_id=$1 AND campaign_id=$2
+           UNION ALL
+           SELECT cl.id FROM campaign_locations cl JOIN descendants d ON cl.parent_id=d.id
+         )
+         UPDATE campaign_locations SET is_public=false
+         WHERE id IN (SELECT id FROM descendants) AND campaign_id=$2
+         RETURNING id, is_public`,
+        [req.params.locationId, req.params.campaignId]
+      );
+      affected = affected.concat(desc.rows);
+    }
+
+    res.json({ is_public, affected });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -1982,96 +2002,459 @@ app.get('/api/campaigns/:id/export', requireRole(['dm']), async (req, res) => {
     if (!check.rows.length) return res.status(403).json({ error: 'Access denied' });
     const campaign = check.rows[0];
 
-    const [playersRes, locsRes, metaRes, npcsRes] = await Promise.all([
+    const [metaRes, playersRes, locsRes, npcsRes, timelineEntriesRes, journeyMapsRes] = await Promise.all([
+      pool.query('SELECT today_marker, calendar_type FROM campaign_meta WHERE campaign_id=$1', [id]),
       pool.query(
-        `SELECT cp.player_name, u.username
+        `SELECT cp.id, cp.player_name, u.username
          FROM campaign_players cp
          LEFT JOIN campaign_user_assignments cua ON cp.id = cua.player_id
          LEFT JOIN users u ON cua.user_id = u.id
-         WHERE cp.campaign_id = $1 AND (cp.is_dm_player IS NULL OR cp.is_dm_player = false)
-         ORDER BY cp.created_at ASC`, [id]
-      ),
-      pool.query('SELECT name, description FROM campaign_locations WHERE campaign_id=$1 ORDER BY created_at ASC', [id]),
-      pool.query('SELECT today_marker, calendar_type FROM campaign_meta WHERE campaign_id=$1', [id]),
-      pool.query('SELECT name FROM campaign_npcs WHERE campaign_id=$1 ORDER BY name ASC', [id]),
+         WHERE cp.campaign_id=$1 AND (cp.is_dm_player IS NULL OR cp.is_dm_player = false)
+         ORDER BY cp.created_at ASC`, [id]),
+      pool.query('SELECT id, name, description, is_public, size_type, parent_id FROM campaign_locations WHERE campaign_id=$1 ORDER BY created_at ASC', [id]),
+      pool.query('SELECT id, name FROM campaign_npcs WHERE campaign_id=$1 ORDER BY name ASC', [id]),
+      pool.query(
+        `SELECT pte.*, pt.name as timeline_name, cp.player_name
+         FROM player_timeline_entries pte
+         JOIN player_timelines pt ON pt.id = pte.timeline_id
+         JOIN campaign_players cp ON cp.id = pte.player_id
+         WHERE pte.campaign_id=$1
+         ORDER BY cp.player_name ASC, pt.name ASC, pte.year ASC, pte.day_of_year ASC`, [id]),
+      pool.query('SELECT id, name, description, map_image, scope_type, scope_location_id FROM journey_maps WHERE campaign_id=$1 ORDER BY created_at ASC', [id]),
     ]);
 
+    // location ref: id → symbolic name (deduplicated)
+    const locRefById = {};
+    const locNameCount = {};
+    for (const l of locsRes.rows) locNameCount[l.name] = (locNameCount[l.name] || 0) + 1;
+    const locNameSeen = {};
+    for (const l of locsRes.rows) {
+      locNameSeen[l.name] = (locNameSeen[l.name] || 0) + 1;
+      locRefById[l.id] = locNameCount[l.name] > 1 ? `${l.name}__${locNameSeen[l.name]}` : l.name;
+    }
+    // player ref: id → player_name
+    const playerRefById = {};
+    for (const p of playersRes.rows) playerRefById[p.id] = p.player_name;
+
+    // per-player data
+    const playersOut = [];
+    for (const p of playersRes.rows) {
+      const [charRes, statsRes, notesRes, relsRes] = await Promise.all([
+        pool.query('SELECT name, picture_url, picture_data, story, traits, flaws, goals, public_info, private_info FROM pc_characters WHERE player_id=$1', [p.id]),
+        pool.query('SELECT stats_json FROM pc_char_stats WHERE player_id=$1', [p.id]),
+        pool.query('SELECT content, dm_visible FROM pc_dm_notes WHERE character_id=(SELECT id FROM pc_characters WHERE player_id=$1) ORDER BY created_at ASC', [p.id]),
+        pool.query('SELECT id, name, relation_type, link, is_family, is_dm_only, parent_id FROM pc_relationships WHERE character_id=(SELECT id FROM pc_characters WHERE player_id=$1) ORDER BY created_at ASC', [p.id]),
+      ]);
+
+      const relRefById = {};
+      const relNameCount = {};
+      for (const r of relsRes.rows) relNameCount[r.name] = (relNameCount[r.name] || 0) + 1;
+      const relNameSeen = {};
+      for (const r of relsRes.rows) {
+        relNameSeen[r.name] = (relNameSeen[r.name] || 0) + 1;
+        relRefById[r.id] = relNameCount[r.name] > 1 ? `${r.name}__${relNameSeen[r.name]}` : r.name;
+      }
+
+      const tlRes = await pool.query(
+        `SELECT pt.id, pt.name FROM player_timelines pt WHERE pt.campaign_id=$1 AND pt.player_id=$2 ORDER BY pt.created_at ASC`,
+        [id, p.id]
+      );
+      const timelinesOut = [];
+      for (const tl of tlRes.rows) {
+        const entries = timelineEntriesRes.rows.filter(e => e.timeline_id == tl.id);
+        timelinesOut.push({
+          name: tl.name,
+          entries: entries.map(e => {
+            const rawPlayerIds = Array.isArray(e.player_ids) ? e.player_ids : [];
+            const playerIdRefs = rawPlayerIds.map(tok => {
+              const parts = tok.split('_');
+              const prefix = parts[0];
+              const val = parts.slice(1).join('_');
+              if (prefix === 'self' || prefix === 'p') return `${prefix}_${playerRefById[val] || val}`;
+              if (prefix === 'rel') return `rel_${p.player_name}:${relRefById[val] || val}`;
+              return tok;
+            });
+            return {
+              title: e.title,
+              description: e.description || null,
+              location: e.location || null,
+              year: e.year,
+              day_of_year: e.day_of_year,
+              duration_days: e.duration_days,
+              player_id_refs: playerIdRefs,
+            };
+          }),
+        });
+      }
+
+      playersOut.push({
+        player_name: p.player_name,
+        username: p.username || null,
+        character: charRes.rows[0] ? {
+          name: charRes.rows[0].name,
+          picture_url: charRes.rows[0].picture_url || null,
+          picture_data: charRes.rows[0].picture_data || null,
+          story: charRes.rows[0].story || null,
+          traits: charRes.rows[0].traits || null,
+          flaws: charRes.rows[0].flaws || null,
+          goals: charRes.rows[0].goals || null,
+          public_info: charRes.rows[0].public_info || null,
+          private_info: charRes.rows[0].private_info || null,
+        } : null,
+        stats_json: statsRes.rows[0]?.stats_json || null,
+        dm_notes: notesRes.rows.map(n => ({ content: n.content, dm_visible: n.dm_visible })),
+        relationships: relsRes.rows.map(r => ({
+          _ref: relRefById[r.id],
+          name: r.name,
+          relation_type: r.relation_type || null,
+          link: r.link || null,
+          is_family: r.is_family,
+          is_dm_only: r.is_dm_only,
+          parent_ref: r.parent_id ? (relRefById[r.parent_id] || null) : null,
+        })),
+        timelines: timelinesOut,
+      });
+      p._relRefById = relRefById;
+    }
+
+    // cross-connections
+    const crossRes = await pool.query('SELECT * FROM character_relationships WHERE campaign_id=$1 ORDER BY created_at ASC', [id]);
+    const globalRelRef = {};
+    for (const p of playersRes.rows) {
+      for (const [rid, ref] of Object.entries(p._relRefById || {})) {
+        globalRelRef[rid] = `${p.player_name}:${ref}`;
+      }
+    }
+    const crossOut = crossRes.rows.map(cr => {
+      function encodeRef(type, entId) {
+        if (type === 'player') return { type, ref: playerRefById[entId] || String(entId) };
+        if (type === 'relationship') return { type, ref: globalRelRef[entId] || String(entId) };
+        if (type === 'npc') return { type, ref: npcsRes.rows.find(n => n.id == entId)?.name || String(entId) };
+        return { type, ref: String(entId) };
+      }
+      const from = encodeRef(cr.from_entity_type, cr.from_entity_id);
+      const to = encodeRef(cr.to_entity_type, cr.to_entity_id);
+      return {
+        from_type: from.type, from_ref: from.ref, to_type: to.type, to_ref: to.ref,
+        label: cr.label, notes: cr.notes || null, is_public: cr.is_public
+      };
+    });
+
+    // journey maps
+    const mapsOut = [];
+    for (const m of journeyMapsRes.rows) {
+      const [jLocsRes, jDistRes, jTrkRes, jPathsRes] = await Promise.all([
+        pool.query(
+          `SELECT jml.id, jml.name, jml.x, jml.y, jml.polygon, jml.campaign_location_id, jml.linked_map_id,
+                  lm.name as linked_map_name
+           FROM journey_map_locations jml
+           LEFT JOIN journey_maps lm ON lm.id = jml.linked_map_id
+           WHERE jml.map_id=$1 ORDER BY jml.created_at ASC`, [m.id]),
+        pool.query(
+          `SELECT jd.distance_miles, fl.name as from_loc_name, tl.name as to_loc_name
+           FROM journey_distances jd
+           JOIN journey_map_locations fl ON fl.id = jd.from_loc_id
+           JOIN journey_map_locations tl ON tl.id = jd.to_loc_id
+           WHERE jd.map_id=$1`, [m.id]),
+        pool.query('SELECT name, type, color FROM journey_trackers WHERE map_id=$1 ORDER BY created_at ASC', [m.id]),
+        pool.query(
+          `SELECT jp.name, jp.notes, jp.distance_miles, jp.waypoints, jt.name as tracker_name
+           FROM journey_paths jp
+           LEFT JOIN journey_trackers jt ON jt.id = jp.tracker_id
+           WHERE jp.map_id=$1 ORDER BY jp.created_at ASC`, [m.id]),
+      ]);
+
+      const jLocRefById = {};
+      const jLocNameCount = {};
+      for (const l of jLocsRes.rows) jLocNameCount[l.name] = (jLocNameCount[l.name] || 0) + 1;
+      const jLocNameSeen = {};
+      for (const l of jLocsRes.rows) {
+        jLocNameSeen[l.name] = (jLocNameSeen[l.name] || 0) + 1;
+        jLocRefById[l.id] = jLocNameCount[l.name] > 1 ? `${l.name}__${jLocNameSeen[l.name]}` : l.name;
+      }
+
+      mapsOut.push({
+        name: m.name,
+        description: m.description || null,
+        map_image: m.map_image || null,
+        scope_type: m.scope_type || 'continent',
+        scope_location_ref: m.scope_location_id ? (locRefById[m.scope_location_id] || null) : null,
+        locations: jLocsRes.rows.map(l => ({
+          _ref: jLocRefById[l.id],
+          name: l.name, x: l.x, y: l.y,
+          polygon: l.polygon || null,
+          campaign_location_ref: l.campaign_location_id ? (locRefById[l.campaign_location_id] || null) : null,
+          linked_map_ref: l.linked_map_name || null,
+        })),
+        distances: jDistRes.rows.map(d => ({ from_ref: d.from_loc_name, to_ref: d.to_loc_name, distance_miles: d.distance_miles })),
+        trackers: jTrkRes.rows.map(t => ({ name: t.name, type: t.type, color: t.color })),
+        paths: jPathsRes.rows.map(p => {
+          const waypoints = Array.isArray(p.waypoints) ? p.waypoints : JSON.parse(p.waypoints || '[]');
+          return {
+            name: p.name || null, notes: p.notes || null, distance_miles: p.distance_miles || null,
+            tracker_ref: p.tracker_name || null,
+            waypoints: waypoints.map(w => ({
+              x: w.x, y: w.y,
+              loc_ref: w.locId ? (jLocRefById[w.locId] || null) : null,
+              ...(w.eventIds ? { eventIds: w.eventIds } : {}),
+              ...(w.eventTitles ? { eventTitles: w.eventTitles } : {}),
+            })),
+          };
+        }),
+      });
+    }
+
+    const locsOut = locsRes.rows.map(l => ({
+      _ref: locRefById[l.id],
+      name: l.name, description: l.description || null,
+      is_public: l.is_public, size_type: l.size_type || null,
+      parent_ref: l.parent_id ? (locRefById[l.parent_id] || null) : null,
+    }));
+
     res.json({
-      version: 2,
+      version: 3,
       exported_at: new Date().toISOString(),
       type: 'campaign',
       campaign: {
-        name: campaign.name,
-        description: campaign.description || '',
+        name: campaign.name, description: campaign.description || '',
         calendar_type: metaRes.rows[0]?.calendar_type || 'harptos',
         today_marker: metaRes.rows[0]?.today_marker || null,
       },
-      players: playersRes.rows.map(p => ({ player_name: p.player_name, username: p.username || null })),
-      locations: locsRes.rows.map(l => ({ name: l.name, description: l.description || '' })),
       npcs: npcsRes.rows.map(n => n.name),
+      locations: locsOut,
+      players: playersOut,
+      cross_connections: crossOut,
+      journey_maps: mapsOut,
     });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// Import a campaign snapshot — creates a new campaign, restores players (with user links), locations, and npcs
+// Import a full campaign snapshot — creates everything fresh, resolves all refs to new DB IDs
 app.post('/api/campaigns/import', requireRole(['dm']), async (req, res) => {
   const bundle = req.body;
   if (bundle.type !== 'campaign') return res.status(400).json({ error: 'Not a campaign export file' });
-  const { campaign, players = [], locations = [], npcs = [] } = bundle;
+  const { campaign, players = [], locations = [], npcs = [], cross_connections = [], journey_maps = [] } = bundle;
   if (!campaign?.name) return res.status(400).json({ error: 'Missing campaign name' });
 
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
 
+    // 1. Campaign + meta
     const campRes = await client.query(
-      'INSERT INTO campaigns (name, description, dm_user_id) VALUES ($1, $2, $3) RETURNING id',
+      'INSERT INTO campaigns (name, description, dm_user_id) VALUES ($1,$2,$3) RETURNING id',
       [campaign.name, campaign.description || '', req.session.userId]
     );
     const newId = campRes.rows[0].id;
-
     await client.query(
-      'INSERT INTO campaign_meta (campaign_id, calendar_type, today_marker) VALUES ($1, $2, $3)',
+      'INSERT INTO campaign_meta (campaign_id, calendar_type, today_marker) VALUES ($1,$2,$3)',
       [newId, campaign.calendar_type || 'harptos', campaign.today_marker || null]
     );
 
-    // Pre-fetch all users once so we can resolve usernames to IDs
+    // 2. NPCs
+    const npcIdByName = {};
+    for (const n of npcs) {
+      const name = typeof n === 'string' ? n : n?.name;
+      if (!name) continue;
+      const r = await client.query(
+        'INSERT INTO campaign_npcs (campaign_id, name) VALUES ($1,$2) ON CONFLICT (campaign_id,name) DO UPDATE SET name=EXCLUDED.name RETURNING id',
+        [newId, name]
+      );
+      npcIdByName[name] = r.rows[0].id;
+    }
+
+    // 3. Locations — two passes to handle parent_ref
+    const locIdByRef = {};
+    for (const l of locations) {
+      const r = await client.query(
+        'INSERT INTO campaign_locations (campaign_id, name, description, is_public, size_type) VALUES ($1,$2,$3,$4,$5) RETURNING id',
+        [newId, l.name, l.description || null, l.is_public !== false, l.size_type || null]
+      );
+      locIdByRef[l._ref || l.name] = r.rows[0].id;
+    }
+    for (const l of locations) {
+      if (l.parent_ref && locIdByRef[l.parent_ref] && locIdByRef[l._ref || l.name]) {
+        await client.query('UPDATE campaign_locations SET parent_id=$1 WHERE id=$2',
+          [locIdByRef[l.parent_ref], locIdByRef[l._ref || l.name]]);
+      }
+    }
+
+    // 4. Users lookup
     const allUsersRes = await client.query('SELECT id, username FROM users');
     const userByName = {};
     for (const u of allUsersRes.rows) userByName[u.username.toLowerCase()] = u.id;
 
+    // 5. Players
+    const playerIdByRef = {};
+    const relIdByRef = {};   // "playerName:relRef" → new rel_id
+
     for (const p of players) {
       const playerRes = await client.query(
-        'INSERT INTO campaign_players (campaign_id, player_name) VALUES ($1, $2) RETURNING id',
+        'INSERT INTO campaign_players (campaign_id, player_name) VALUES ($1,$2) RETURNING id',
         [newId, p.player_name]
       );
       const playerId = playerRes.rows[0].id;
-      // Resolve username → user_id and create the assignment
+      playerIdByRef[p.player_name] = playerId;
+
       if (p.username) {
-        const resolvedUserId = userByName[p.username.toLowerCase()];
-        if (resolvedUserId) {
+        const uid = userByName[p.username.toLowerCase()];
+        if (uid) await client.query('INSERT INTO campaign_user_assignments (player_id, user_id) VALUES ($1,$2)', [playerId, uid]);
+      }
+
+      let charId = null;
+      if (p.character) {
+        const c = p.character;
+        const cRes = await client.query(
+          `INSERT INTO pc_characters (player_id, name, picture_url, picture_data, story, traits, flaws, goals, public_info, private_info)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING id`,
+          [playerId, c.name || null, c.picture_url || null, c.picture_data || null,
+            c.story || null, c.traits || null, c.flaws || null, c.goals || null,
+            c.public_info || null, c.private_info || null]
+        );
+        charId = cRes.rows[0].id;
+      }
+
+      if (p.stats_json) {
+        await client.query(
+          'INSERT INTO pc_char_stats (player_id, stats_json) VALUES ($1,$2) ON CONFLICT (player_id) DO UPDATE SET stats_json=$2',
+          [playerId, JSON.stringify(p.stats_json)]
+        );
+      }
+
+      if (charId) {
+        for (const n of (p.dm_notes || [])) {
+          await client.query('INSERT INTO pc_dm_notes (character_id, content, dm_visible) VALUES ($1,$2,$3)',
+            [charId, n.content, n.dm_visible || false]);
+        }
+      }
+
+      // Relationships — two passes for parent_ref
+      const localRelIdByRef = {};
+      if (charId) {
+        for (const r of (p.relationships || [])) {
+          const rRes = await client.query(
+            'INSERT INTO pc_relationships (character_id, name, relation_type, link, is_family, is_dm_only) VALUES ($1,$2,$3,$4,$5,$6) RETURNING id',
+            [charId, r.name, r.relation_type || null, r.link || null, r.is_family || false, r.is_dm_only || false]
+          );
+          localRelIdByRef[r._ref || r.name] = rRes.rows[0].id;
+          relIdByRef[`${p.player_name}:${r._ref || r.name}`] = rRes.rows[0].id;
+        }
+        for (const r of (p.relationships || [])) {
+          if (r.parent_ref && localRelIdByRef[r.parent_ref] && localRelIdByRef[r._ref || r.name]) {
+            await client.query('UPDATE pc_relationships SET parent_id=$1 WHERE id=$2',
+              [localRelIdByRef[r.parent_ref], localRelIdByRef[r._ref || r.name]]);
+          }
+        }
+      }
+
+      // Timelines
+      for (const tl of (p.timelines || [])) {
+        const tlRes = await client.query(
+          'INSERT INTO player_timelines (campaign_id, player_id, created_by, name) VALUES ($1,$2,$3,$4) RETURNING id',
+          [newId, playerId, req.session.userId, tl.name || 'Timeline']
+        );
+        const tlId = tlRes.rows[0].id;
+        for (const e of (tl.entries || [])) {
+          const playerIds = (e.player_id_refs || []).map(tok => {
+            const parts = tok.split('_');
+            const prefix = parts[0];
+            const val = parts.slice(1).join('_');
+            if (prefix === 'self' || prefix === 'p') {
+              const pid = playerIdByRef[val];
+              return pid ? `${prefix}_${pid}` : tok;
+            }
+            if (prefix === 'rel') {
+              const rid = relIdByRef[val];
+              return rid ? `rel_${rid}` : tok;
+            }
+            return tok;
+          });
           await client.query(
-            'INSERT INTO campaign_user_assignments (player_id, user_id) VALUES ($1, $2)',
-            [playerId, resolvedUserId]
+            `INSERT INTO player_timeline_entries
+               (campaign_id, player_id, timeline_id, created_by, title, description, location, year, day_of_year, duration_days, player_ids)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
+            [newId, playerId, tlId, req.session.userId,
+              e.title, e.description || null, e.location || null,
+              e.year || 1492, e.day_of_year || 1, e.duration_days || 1, playerIds]
           );
         }
       }
     }
 
-    for (const l of locations) {
+    // 6. Cross-connections
+    for (const cc of cross_connections) {
+      function resolveRef(type, ref) {
+        if (type === 'player') return playerIdByRef[ref] || null;
+        if (type === 'relationship') return relIdByRef[ref] || null;
+        if (type === 'npc') return npcIdByName[ref] || null;
+        return null;
+      }
+      const fromId = resolveRef(cc.from_type, cc.from_ref);
+      const toId = resolveRef(cc.to_type, cc.to_ref);
+      if (!fromId || !toId) continue;
       await client.query(
-        'INSERT INTO campaign_locations (campaign_id, name, description) VALUES ($1, $2, $3)',
-        [newId, l.name, l.description || '']
+        `INSERT INTO character_relationships
+           (campaign_id, from_entity_type, from_entity_id, to_entity_type, to_entity_id, label, notes, is_public)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
+        [newId, cc.from_type, fromId, cc.to_type, toId, cc.label || '', cc.notes || null, cc.is_public || false]
       );
     }
 
-    // Import NPCs (v2 format: array of name strings; tolerate objects with .name for forward compat)
-    for (const n of npcs) {
-      const name = typeof n === 'string' ? n : n?.name;
-      if (name) {
+    // 7. Journey maps — two passes (create all first so linked_map_ref resolves)
+    const mapIdByName = {};
+    for (const m of journey_maps) {
+      const mRes = await client.query(
+        'INSERT INTO journey_maps (campaign_id, name, description, map_image, scope_type, scope_location_id, created_by) VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id',
+        [newId, m.name, m.description || null, m.map_image || null,
+          m.scope_type || 'continent',
+          m.scope_location_ref ? (locIdByRef[m.scope_location_ref] || null) : null,
+          req.session.userId]
+      );
+      mapIdByName[m.name] = mRes.rows[0].id;
+    }
+    for (const m of journey_maps) {
+      const mapId = mapIdByName[m.name];
+      const jLocIdByRef = {};
+      for (const l of (m.locations || [])) {
+        const lRes = await client.query(
+          'INSERT INTO journey_map_locations (map_id, campaign_location_id, name, x, y, polygon) VALUES ($1,$2,$3,$4,$5,$6) RETURNING id',
+          [mapId, l.campaign_location_ref ? (locIdByRef[l.campaign_location_ref] || null) : null,
+            l.name, l.x ?? 50, l.y ?? 50, l.polygon ? JSON.stringify(l.polygon) : null]
+        );
+        jLocIdByRef[l._ref || l.name] = lRes.rows[0].id;
+      }
+      for (const l of (m.locations || [])) {
+        if (l.linked_map_ref && mapIdByName[l.linked_map_ref]) {
+          await client.query('UPDATE journey_map_locations SET linked_map_id=$1 WHERE id=$2',
+            [mapIdByName[l.linked_map_ref], jLocIdByRef[l._ref || l.name]]);
+        }
+      }
+      for (const d of (m.distances || [])) {
+        const fl = jLocIdByRef[d.from_ref], tl = jLocIdByRef[d.to_ref];
+        if (fl && tl) await client.query(
+          'INSERT INTO journey_distances (map_id, from_loc_id, to_loc_id, distance_miles) VALUES ($1,$2,$3,$4) ON CONFLICT DO NOTHING',
+          [mapId, fl, tl, d.distance_miles]
+        );
+      }
+      const trackerIdByRef = {};
+      for (const t of (m.trackers || [])) {
+        const tRes = await client.query(
+          'INSERT INTO journey_trackers (map_id, name, type, color) VALUES ($1,$2,$3,$4) RETURNING id',
+          [mapId, t.name, t.type || 'group', t.color || '#c9a84c']
+        );
+        trackerIdByRef[t.name] = tRes.rows[0].id;
+      }
+      for (const p of (m.paths || [])) {
+        const waypoints = (p.waypoints || []).map(w => ({
+          x: w.x, y: w.y,
+          locId: w.loc_ref ? (jLocIdByRef[w.loc_ref] || null) : null,
+          ...(w.eventIds ? { eventIds: w.eventIds } : {}),
+          ...(w.eventTitles ? { eventTitles: w.eventTitles } : {}),
+        }));
         await client.query(
-          'INSERT INTO campaign_npcs (campaign_id, name) VALUES ($1, $2) ON CONFLICT (campaign_id, name) DO NOTHING',
-          [newId, name]
+          'INSERT INTO journey_paths (map_id, tracker_id, name, notes, distance_miles, waypoints, created_by) VALUES ($1,$2,$3,$4,$5,$6,$7)',
+          [mapId, p.tracker_ref ? (trackerIdByRef[p.tracker_ref] || null) : null,
+            p.name || null, p.notes || null, p.distance_miles || null, JSON.stringify(waypoints), req.session.userId]
         );
       }
     }

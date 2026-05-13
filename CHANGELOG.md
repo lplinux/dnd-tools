@@ -6,6 +6,42 @@ the actual diffs between tags.
 
 ---
 
+## [0.1.1] – 2026-05-12
+
+### Campaign Export / Import — full snapshot (v3)
+
+Previous versions only exported the campaign skeleton (name, players, locations, NPCs). v3 exports and imports the complete campaign state.
+
+**What is now exported**
+
+| Section | Detail |
+|---|---|
+| Campaign meta | name, description, calendar type, today marker |
+| NPCs | name list |
+| Locations | name, description, `is_public`, `size_type`, parent hierarchy (via `parent_ref`) |
+| Players | player name, linked username |
+| → PC Sheet | name, story, traits, flaws, goals, public/private info, portrait (base64) |
+| → Stats JSON | full NPC-style stat block |
+| → DM Notes | content + `dm_visible` flag |
+| → Relationships | name, type, link, `is_family`, `is_dm_only`, nested parent (via `parent_ref`) |
+| → Timelines | all named timelines with every entry (title, description, location, date, duration, `player_id_refs`) |
+| Cross-connections | DM character-tree connections, fully ref-encoded |
+| Journey maps | name, description, background image, scope; locations (with polygon, `campaign_location_ref`, `linked_map_ref`); distances; trackers; paths with waypoints |
+
+**No DB IDs in the bundle** — every cross-reference uses a symbolic `_ref` derived from the entity's name (e.g. `"Waterdeep"`, `"Aragorn:Gandalf"`). Duplicates are disambiguated with a `__N` suffix. This makes bundles human-readable and instance-independent.
+
+**Import behaviour**
+- Creates a brand-new campaign; never overwrites existing data
+- All entities created inside a single DB transaction — any failure rolls back completely
+- Two-pass inserts for locations and relationships to correctly restore parent/child hierarchies
+- Two-pass insert for journey maps so `linked_map_ref` between maps resolves correctly
+- `player_id_refs` in timeline entries are remapped to the new player/relationship DB IDs
+- Cross-connections are silently skipped if either end ref cannot be resolved
+- Username → user_id links are resolved against the live users table; unmatched usernames are skipped without error
+- v2 bundles (previous format, no `_ref` fields) remain importable — the import falls back to using `name` as the ref key
+
+---
+
 ## [0.1.0] – 2026-05-12
 
 ### Journey Map — Region polygon drawing
