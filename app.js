@@ -2002,7 +2002,7 @@ app.get('/api/campaigns/:id/export', requireRole(['dm']), async (req, res) => {
     if (!check.rows.length) return res.status(403).json({ error: 'Access denied' });
     const campaign = check.rows[0];
 
-    const [metaRes, playersRes, locsRes, npcsRes, timelineEntriesRes, journeyMapsRes] = await Promise.all([
+    const [metaRes, playersRes, locsRes, npcsRes, timelineEntriesRes, journeyMapsRes, dmPlayerRes] = await Promise.all([
       pool.query('SELECT today_marker, calendar_type FROM campaign_meta WHERE campaign_id=$1', [id]),
       pool.query(
         `SELECT cp.id, cp.player_name, u.username
@@ -2021,6 +2021,7 @@ app.get('/api/campaigns/:id/export', requireRole(['dm']), async (req, res) => {
          WHERE pte.campaign_id=$1
          ORDER BY cp.player_name ASC, pt.name ASC, pte.year ASC, pte.day_of_year ASC`, [id]),
       pool.query('SELECT id, name, description, map_image, scope_type, scope_location_id FROM journey_maps WHERE campaign_id=$1 ORDER BY created_at ASC', [id]),
+      pool.query(`SELECT cp.id FROM campaign_players cp WHERE cp.campaign_id=$1 AND cp.is_dm_player=true LIMIT 1`, [id]),
     ]);
 
     // location ref: id → symbolic name (deduplicated)
@@ -2211,6 +2212,44 @@ app.get('/api/campaigns/:id/export', requireRole(['dm']), async (req, res) => {
       parent_ref: l.parent_id ? (locRefById[l.parent_id] || null) : null,
     }));
 
+    // DM timelines (world timeline + private DM timeline)
+    const dmTimelinesOut = [];
+    const dmPlayerId = dmPlayerRes.rows[0]?.id;
+    if (dmPlayerId) {
+      const dmTlRes = await pool.query(
+        `SELECT id, name FROM player_timelines WHERE campaign_id=$1 AND player_id=$2 ORDER BY created_at ASC`,
+        [id, dmPlayerId]
+      );
+      for (const tl of dmTlRes.rows) {
+        const entries = timelineEntriesRes.rows.filter(e => e.timeline_id == tl.id);
+        dmTimelinesOut.push({
+          name: tl.name,
+          entries: entries.map(e => ({
+            title: e.title,
+            description: e.description || null,
+            location: e.location || null,
+            year: e.year,
+            day_of_year: e.day_of_year,
+            duration_days: e.duration_days,
+            // Remap player_ids tokens to name-based refs for portability
+            player_id_refs: (Array.isArray(e.player_ids) ? e.player_ids : []).map(tok => {
+              const parts = tok.split('_');
+              const prefix = parts[0];
+              const val = parts.slice(1).join('_');
+              if (prefix === 'self' || prefix === 'p') return `${prefix}_${playerRefById[val] || val}`;
+              if (prefix === 'rel') {
+                // DM entries may reference any player's rel — find which player owns the rel id
+                for (const p of playersRes.rows) {
+                  if (p._relRefById && p._relRefById[val]) return `rel_${p.player_name}:${p._relRefById[val]}`;
+                }
+              }
+              return tok;
+            }),
+          })),
+        });
+      }
+    }
+
     res.json({
       version: 3,
       exported_at: new Date().toISOString(),
@@ -2225,6 +2264,7 @@ app.get('/api/campaigns/:id/export', requireRole(['dm']), async (req, res) => {
       players: playersOut,
       cross_connections: crossOut,
       journey_maps: mapsOut,
+      dm_timelines: dmTimelinesOut,
     });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -2233,7 +2273,7 @@ app.get('/api/campaigns/:id/export', requireRole(['dm']), async (req, res) => {
 app.post('/api/campaigns/import', requireRole(['dm']), async (req, res) => {
   const bundle = req.body;
   if (bundle.type !== 'campaign') return res.status(400).json({ error: 'Not a campaign export file' });
-  const { campaign, players = [], locations = [], npcs = [], cross_connections = [], journey_maps = [] } = bundle;
+  const { campaign, players = [], locations = [], npcs = [], cross_connections = [], journey_maps = [], dm_timelines = [] } = bundle;
   if (!campaign?.name) return res.status(400).json({ error: 'Missing campaign name' });
 
   const client = await pool.connect();
@@ -2381,7 +2421,52 @@ app.post('/api/campaigns/import', requireRole(['dm']), async (req, res) => {
       }
     }
 
-    // 6. Cross-connections
+    // 6. DM timelines (world timeline + private DM timeline)
+    if (dm_timelines.length) {
+      // Find or create the DM player row for the importing user
+      const dmUser = await client.query('SELECT username FROM users WHERE id=$1', [req.session.userId]);
+      const dmName = `DM (${dmUser.rows[0]?.username || 'DM'})`;
+      const dmPlayerRes = await client.query(
+        'INSERT INTO campaign_players (campaign_id, player_name, is_dm_player) VALUES ($1,$2,true) RETURNING id',
+        [newId, dmName]
+      );
+      const dmPlayerId = dmPlayerRes.rows[0].id;
+      await client.query('INSERT INTO campaign_user_assignments (player_id, user_id) VALUES ($1,$2)', [dmPlayerId, req.session.userId]);
+
+      for (const tl of dm_timelines) {
+        const tlRes = await client.query(
+          'INSERT INTO player_timelines (campaign_id, player_id, created_by, name) VALUES ($1,$2,$3,$4) RETURNING id',
+          [newId, dmPlayerId, req.session.userId, tl.name || 'DM Timeline']
+        );
+        const tlId = tlRes.rows[0].id;
+        for (const e of (tl.entries || [])) {
+          const playerIds = (e.player_id_refs || []).map(tok => {
+            const parts = tok.split('_');
+            const prefix = parts[0];
+            const val = parts.slice(1).join('_');
+            if (prefix === 'self' || prefix === 'p') {
+              const pid = playerIdByRef[val];
+              return pid ? `${prefix}_${pid}` : tok;
+            }
+            if (prefix === 'rel') {
+              const rid = relIdByRef[val];
+              return rid ? `rel_${rid}` : tok;
+            }
+            return tok;
+          });
+          await client.query(
+            `INSERT INTO player_timeline_entries
+               (campaign_id, player_id, timeline_id, created_by, title, description, location, year, day_of_year, duration_days, player_ids)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
+            [newId, dmPlayerId, tlId, req.session.userId,
+              e.title, e.description || null, e.location || null,
+              e.year || 1492, e.day_of_year || 1, e.duration_days || 1, playerIds]
+          );
+        }
+      }
+    }
+
+    // 7. Cross-connections
     for (const cc of cross_connections) {
       function resolveRef(type, ref) {
         if (type === 'player') return playerIdByRef[ref] || null;
@@ -2400,7 +2485,7 @@ app.post('/api/campaigns/import', requireRole(['dm']), async (req, res) => {
       );
     }
 
-    // 7. Journey maps — two passes (create all first so linked_map_ref resolves)
+    // 8. Journey maps — two passes (create all first so linked_map_ref resolves)
     const mapIdByName = {};
     for (const m of journey_maps) {
       const mRes = await client.query(
