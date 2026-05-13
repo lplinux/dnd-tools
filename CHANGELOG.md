@@ -8,6 +8,25 @@ the actual diffs between tags.
 
 ## [0.1.1] – 2026-05-12
 
+### Campaign Export / Import — DM timelines + bug fixes
+
+- **World timeline & Private DM timeline exported**: the DM's special `is_dm_player` row and all its timelines (`player_timelines`) are now included in the bundle under `dm_timelines: [{ name, entries }]`. Entry `player_id_refs` are remapped to name-based refs exactly like player timeline entries. **The DM's identity (username, user assignment) is intentionally omitted** — it is irrelevant to portability.
+- **DM timelines restored on import**: if `dm_timelines` is present, a fresh DM player row is created and linked to the *importing* DM's user account. All timelines and entries are recreated under that row with `player_id_refs` remapped to the new DB IDs. Old bundles without `dm_timelines` import unchanged.
+- **Fix — `player_ids` array type**: the `player_timeline_entries.player_ids` column is `TEXT[]`; the import was incorrectly passing `JSON.stringify(array)` instead of the raw array, causing a Postgres `malformed array literal` error. Fixed by removing the `JSON.stringify` wrapper.
+- **Fix — body parser limit**: `express.json` limit raised from `5mb` to `50mb` to accommodate large campaign bundles containing base64 map images and PC portraits.
+
+### Campaign Export table (updated)
+
+| Section | Detail |
+|---|---|
+| Campaign meta | name, description, calendar type, today marker |
+| NPCs | name list |
+| Locations | name, description, `is_public`, `size_type`, parent hierarchy |
+| Players | player name, linked username, PC sheet, stats, DM notes, relationships, timelines |
+| **DM timelines** | **World timeline + Private DM timeline entries (no DM identity)** |
+| Cross-connections | DM character-tree connections, fully ref-encoded |
+| Journey maps | background image, pins, regions, distances, trackers, paths |
+
 ### Campaign Export / Import — full snapshot (v3)
 
 Previous versions only exported the campaign skeleton (name, players, locations, NPCs). v3 exports and imports the complete campaign state.
@@ -69,8 +88,6 @@ Previous versions only exported the campaign skeleton (name, players, locations,
 - **DB**: `journey_map_locations` gains `linked_map_id INTEGER REFERENCES journey_maps(id) ON DELETE SET NULL` (migration added). Deleting the target map automatically clears the link.
 - **API**: `GET /locations` now joins `journey_maps` to return `linked_map_name` alongside `linked_map_id`. `POST` and `PUT` both accept `linked_map_id`.
 - **Import note**: `linked_map_id` is intentionally not restored on import since target map IDs differ across instances; the link can be re-set manually after import.
-
-### Journey Map — Image size limit & export/import
 
 - **2 MB / 4096 px limit on upload**: `loadMapFile()` now runs the selected file through a canvas-based `compressImage()` helper before saving. Images are scaled down if their longest edge exceeds 4096 px, then JPEG-compressed at decreasing quality steps until the data URL fits within 2 MB. Files already under the limit pass through at high quality. Raw files over 20 MB are rejected immediately with a toast.
 - **Image included in export**: `exportMap()` now fetches the stored `map_image` via `GET /api/journey-maps/:id/image` and embeds it as `map_image` in the JSON bundle. Because images are already compressed to ≤ 2 MB at upload time, exported files remain manageable.

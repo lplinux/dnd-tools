@@ -166,6 +166,7 @@ Click **⬇ Export** in the page header (visible once a campaign is selected). D
   - DM notes (content + visibility flag)
   - PC relationships (including DM-only ones, with nested parent relationships)
   - All named timelines and every entry within them
+- **DM timelines** — the World timeline and Private DM timeline, with all entries and participant refs (DM identity is not written to the file)
 - DM cross-connections from the character tree
 - All Journey Maps — including background image, all pins and region polygons, distances, trackers, and paths with waypoints
 
@@ -179,6 +180,7 @@ Click **⬆ Import** in the page header and select a previously exported `.json`
 - Parent/child hierarchies (locations, relationships) are restored with a two-pass insert
 - Journey map `linked_map_ref` links between maps are resolved after all maps are created
 - Timeline `player_id_refs` are remapped to the new player and relationship IDs
+- **DM timelines** are restored under a fresh DM player row linked to the *importing* DM's account — no DM identity from the source instance is carried over
 - Cross-connections are silently skipped if either end ref cannot be resolved (e.g. a player was removed before export)
 - Username → user account links are resolved against the live users table; unmatched usernames are skipped without error (player is created unlinked)
 - **v2 bundles** (previous format, no `_ref` fields, no character/timeline/map data) are still accepted — the importer falls back to using `name` as the lookup key
@@ -265,6 +267,36 @@ Click **⬆ Import** in the page header and select a previously exported `.json`
       ]
     }
   ],
+  "dm_timelines": [
+    {
+      "name": "World Timeline",
+      "entries": [
+        {
+          "title": "The Cataclysm",
+          "description": "An ancient disaster that shaped the world.",
+          "location": "The Shattered Peaks",
+          "year": 1,
+          "day_of_year": 1,
+          "duration_days": 7,
+          "player_id_refs": []
+        }
+      ]
+    },
+    {
+      "name": "DM Private Notes",
+      "entries": [
+        {
+          "title": "BBEG reveals himself",
+          "description": "Planned for session 12.",
+          "location": null,
+          "year": 1492,
+          "day_of_year": 200,
+          "duration_days": 1,
+          "player_id_refs": ["p_Aragorn"]
+        }
+      ]
+    }
+  ],
   "cross_connections": [
     {
       "from_type": "player",
@@ -343,6 +375,9 @@ Click **⬆ Import** in the page header and select a previously exported `.json`
 | `players[].relationships[]._ref` | string | Yes | Symbolic key scoped to this player |
 | `players[].relationships[].parent_ref` | string | No | `_ref` of parent relationship |
 | `players[].timelines[].entries[].player_id_refs[]` | string[] | No | Tokens like `"self_PlayerName"`, `"rel_PlayerName:RelRef"` |
+| `dm_timelines[]` | object[] | No | DM-owned timelines (World timeline, Private DM timeline). Same structure as `players[].timelines[]`. Absent in v2 bundles. |
+| `dm_timelines[].name` | string | Yes | Timeline name, e.g. `"World Timeline"` or `"DM Private Notes"` |
+| `dm_timelines[].entries[].player_id_refs[]` | string[] | No | Same token format as player timeline entries; remapped to new IDs on import |
 | `cross_connections[].from_type` | string | Yes | `"player"`, `"relationship"`, or `"npc"` |
 | `cross_connections[].from_ref` | string | Yes | Player name / `"PlayerName:RelRef"` / NPC name |
 | `journey_maps[].locations[]._ref` | string | Yes | Symbolic key for waypoint references |
