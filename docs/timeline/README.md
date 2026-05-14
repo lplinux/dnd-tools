@@ -104,6 +104,16 @@ Theme preference is stored in the browser's `localStorage`.
 
 Click **Export** in the timeline toolbar. Downloads a `.json` file containing the full profile (calendar type, player list, location list) and all events.
 
+The filename reflects the active timeline name:
+
+| Mode | Filename |
+|---|---|
+| Public (demo) | `<profile-name>.json` (e.g. `Main-Campaign.json`) |
+| Private — player timeline | `<timeline-name>.json` (e.g. `Aldric-s-Journal.json`) |
+| Private — DM combined view | `<campaign-name>-DM-Combined.json` |
+
+**Private mode exports** store `playerIds` as player **names** rather than internal DB IDs. This makes the file portable: it can be re-imported into any campaign as long as players with those names exist, regardless of their database IDs.
+
 ### Import
 
 Click **Import** and select a previously exported `.json` file.
@@ -187,7 +197,7 @@ The importer accepts both the current nested format (`{ profile, db }`) and the 
 
 | Field | Type | Required | Notes |
 |---|---|---|---|
-| `id` | string | Yes | Unique within this file; used only for cross-referencing `events[].playerIds` — not stored in the database |
+| `id` | string | Yes | Unique within this file; used for cross-referencing `events[].playerIds` in public/legacy exports — not stored in the database. In private-mode exports, `events[].playerIds` contains player **names** instead and this field is not referenced |
 | `name` | string | Yes | Must match an existing player, NPC, or relationship name in the campaign (case-insensitive). For the **private timeline import**, valid names are: the character's own name, any relationship name, campaign player names (without the `👤` prefix), and NPC names (without the `🎭` prefix) |
 | `color` | string | No | Hex colour (e.g. `"#c0392b"`); used in the DM shared timeline; ignored by the private importer |
 
@@ -203,7 +213,7 @@ A flat array of location name strings. Each name must match a location that exis
 | `title` | string | Yes | Event title; defaults to `"(untitled)"` if blank |
 | `description` | string | No | Free-text body of the event |
 | `location` | string | No | Must match a value in `db.locations[]` (case-insensitive); `null` for locationless events |
-| `playerIds` | string[] | Yes | References one or more `db.players[].id` values |
+| `playerIds` | string[] | Yes | **Public/legacy exports:** references one or more `db.players[].id` values. **Private-mode exports:** contains player **names** directly (e.g. `["Aldric", "👤 Miriel"]`). The importer handles both formats — it tries name lookup first, then falls back to ID-based lookup for legacy files |
 | `year` | integer | Yes | In-game year (e.g. `1492`) |
 | `dayOfYear` | integer | Yes | Day within the year: 1–365 for Harptos, 1–366 for Gregorian. Also accepted as `day_of_year` |
 | `durationDays` | integer | No | Duration in days; minimum 1. Defaults to `1` if omitted or `< 1`. Also accepted as `duration_days` |

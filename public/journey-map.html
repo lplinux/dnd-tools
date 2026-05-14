@@ -3284,9 +3284,10 @@
         paths: pathsRes,
       };
       const slug = (mapMeta.name || 'map').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+      const date = new Date().toISOString().slice(0, 10);
       const a = document.createElement('a');
       a.href = URL.createObjectURL(new Blob([JSON.stringify(bundle, null, 2)], { type: 'application/json' }));
-      a.download = `journey-map-${slug}.json`;
+      a.download = `journey-map-${slug}-${date}.json`;
       a.click(); URL.revokeObjectURL(a.href);
     }
 

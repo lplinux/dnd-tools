@@ -54,6 +54,17 @@ app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 app.use(express.static(path.join(__dirname, 'public')));
 app.use('/pdfs', express.static(path.join(__dirname, 'pdfs')));
 
+// Serve module README docs — only whitelisted slugs, no path traversal
+const DOCS_MODULES = new Set(['npc-sheet', 'item-cards', 'split-view', 'timeline', 'pdf-viewer', 'pc-sheet', 'manage-campaigns', 'journey-map', 'user-panel']);
+app.get('/api/docs/:module', async (req, res) => {
+  const mod = req.params.module;
+  if (!DOCS_MODULES.has(mod)) return res.status(404).json({ error: 'Not found' });
+  try {
+    const md = await fs.readFile(path.join(__dirname, 'docs', mod, 'README.md'), 'utf8');
+    res.type('text/plain').send(md);
+  } catch { res.status(404).json({ error: 'No documentation found' }); }
+});
+
 // Session management
 app.use(session({
   secret: process.env.SESSION_SECRET || 'change-this-in-production',
@@ -1335,7 +1346,10 @@ app.post('/api/campaigns/:campaignId/locations', requireRole(['dm']), async (req
       [req.params.campaignId, name, description || null, size_type || null, parent_id || null]
     );
     res.json(result.rows[0]);
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) {
+    if (e.code === '23505') return res.status(409).json({ error: `A location named "${name}" already exists in this campaign` });
+    res.status(500).json({ error: e.message });
+  }
 });
 
 app.put('/api/campaigns/:campaignId/locations/:locationId', requireRole(['dm']), async (req, res) => {
@@ -1356,7 +1370,10 @@ app.put('/api/campaigns/:campaignId/locations/:locationId', requireRole(['dm']),
       [name, req.params.locationId]
     );
     res.json(result.rows[0]);
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) {
+    if (e.code === '23505') return res.status(409).json({ error: `A location named "${name}" already exists in this campaign` });
+    res.status(500).json({ error: e.message });
+  }
 });
 
 app.patch('/api/campaigns/:campaignId/locations/:locationId/visibility', requireRole(['dm']), async (req, res) => {
@@ -2216,6 +2233,17 @@ app.get('/api/campaigns/:id/export', requireRole(['dm']), async (req, res) => {
     const dmTimelinesOut = [];
     const dmPlayerId = dmPlayerRes.rows[0]?.id;
     if (dmPlayerId) {
+      // Build global rel ref map across all players (populated during the per-player loop above)
+      const globalRelRef = {};
+      for (const p of playersRes.rows) {
+        for (const [rid, ref] of Object.entries(p._relRefById || {})) {
+          globalRelRef[rid] = `${p.player_name}:${ref}`;
+        }
+      }
+      // Build npc id → name map
+      const npcNameById = {};
+      for (const n of npcsRes.rows) npcNameById[n.id] = n.name;
+
       const dmTlRes = await pool.query(
         `SELECT id, name FROM player_timelines WHERE campaign_id=$1 AND player_id=$2 ORDER BY created_at ASC`,
         [id, dmPlayerId]
@@ -2224,28 +2252,27 @@ app.get('/api/campaigns/:id/export', requireRole(['dm']), async (req, res) => {
         const entries = timelineEntriesRes.rows.filter(e => e.timeline_id == tl.id);
         dmTimelinesOut.push({
           name: tl.name,
-          entries: entries.map(e => ({
-            title: e.title,
-            description: e.description || null,
-            location: e.location || null,
-            year: e.year,
-            day_of_year: e.day_of_year,
-            duration_days: e.duration_days,
-            // Remap player_ids tokens to name-based refs for portability
-            player_id_refs: (Array.isArray(e.player_ids) ? e.player_ids : []).map(tok => {
+          entries: entries.map(e => {
+            const playerIdRefs = (Array.isArray(e.player_ids) ? e.player_ids : []).map(tok => {
               const parts = tok.split('_');
               const prefix = parts[0];
               const val = parts.slice(1).join('_');
-              if (prefix === 'self' || prefix === 'p') return `${prefix}_${playerRefById[val] || val}`;
-              if (prefix === 'rel') {
-                // DM entries may reference any player's rel — find which player owns the rel id
-                for (const p of playersRes.rows) {
-                  if (p._relRefById && p._relRefById[val]) return `rel_${p.player_name}:${p._relRefById[val]}`;
-                }
-              }
+              if (prefix === 'self') return 'dm_self'; // DM's own row — restored to dm player on import
+              if (prefix === 'p') return `p_${playerRefById[val] || val}`;
+              if (prefix === 'rel') return `rel_${globalRelRef[val] || val}`;
+              if (prefix === 'npc') return `npc_${npcNameById[val] || val}`;
               return tok;
-            }),
-          })),
+            });
+            return {
+              title: e.title,
+              description: e.description || null,
+              location: e.location || null,
+              year: e.year,
+              day_of_year: e.day_of_year,
+              duration_days: e.duration_days,
+              player_id_refs: playerIdRefs,
+            };
+          }),
         });
       }
     }
@@ -2307,7 +2334,10 @@ app.post('/api/campaigns/import', requireRole(['dm']), async (req, res) => {
     const locIdByRef = {};
     for (const l of locations) {
       const r = await client.query(
-        'INSERT INTO campaign_locations (campaign_id, name, description, is_public, size_type) VALUES ($1,$2,$3,$4,$5) RETURNING id',
+        `INSERT INTO campaign_locations (campaign_id, name, description, is_public, size_type)
+         VALUES ($1,$2,$3,$4,$5)
+         ON CONFLICT (campaign_id, LOWER(name)) DO UPDATE SET name=EXCLUDED.name
+         RETURNING id`,
         [newId, l.name, l.description || null, l.is_public !== false, l.size_type || null]
       );
       locIdByRef[l._ref || l.name] = r.rows[0].id;
@@ -2444,13 +2474,18 @@ app.post('/api/campaigns/import', requireRole(['dm']), async (req, res) => {
             const parts = tok.split('_');
             const prefix = parts[0];
             const val = parts.slice(1).join('_');
-            if (prefix === 'self' || prefix === 'p') {
+            if (prefix === 'dm' && val === 'self') return `self_${dmPlayerId}`;
+            if (prefix === 'p') {
               const pid = playerIdByRef[val];
-              return pid ? `${prefix}_${pid}` : tok;
+              return pid ? `p_${pid}` : tok;
             }
             if (prefix === 'rel') {
               const rid = relIdByRef[val];
               return rid ? `rel_${rid}` : tok;
+            }
+            if (prefix === 'npc') {
+              const nid = npcIdByName[val];
+              return nid ? `npc_${nid}` : tok;
             }
             return tok;
           });
@@ -2962,6 +2997,20 @@ async function initializeDatabase() {
     // Migrate: nested locations (unlimited depth)
     await pool.query(`
       ALTER TABLE campaign_locations ADD COLUMN IF NOT EXISTS parent_id INTEGER REFERENCES campaign_locations(id) ON DELETE SET NULL;
+    `);
+
+    // Migrate: unique location names per campaign (deduplicate first)
+    await pool.query(`
+      DELETE FROM campaign_locations
+      WHERE id NOT IN (
+        SELECT MIN(id)
+        FROM campaign_locations
+        GROUP BY campaign_id, LOWER(name)
+      );
+    `);
+    await pool.query(`
+      CREATE UNIQUE INDEX IF NOT EXISTS campaign_locations_campaign_name_unique
+      ON campaign_locations (campaign_id, LOWER(name));
     `);
 
     // Migrate: journey map scope

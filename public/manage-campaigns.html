@@ -2100,9 +2100,10 @@
         if (!res.ok) { const e = await res.json(); showMsg('createMsg', '✗ ' + e.error, 'err'); return; }
         const data = await res.json();
         const slug = (currentCampaign.name || 'campaign').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+        const date = new Date().toISOString().slice(0, 10);
         const a = document.createElement('a');
         a.href = URL.createObjectURL(new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' }));
-        a.download = `campaign-${slug}.json`; a.click(); URL.revokeObjectURL(a.href);
+        a.download = `campaign-${slug}-${date}.json`; a.click(); URL.revokeObjectURL(a.href);
       } catch (e) { showMsg('createMsg', '✗ ' + e.message, 'err'); }
     }
     async function importCampaign(input) {
