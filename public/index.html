@@ -222,6 +222,192 @@
             pointer-events: none;
         }
 
+        .info-btn {
+            margin-left: auto;
+            background: none;
+            border: 1px solid var(--border2);
+            color: var(--text-muted);
+            border-radius: 50%;
+            width: 22px;
+            height: 22px;
+            font-size: 13px;
+            line-height: 1;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+            transition: border-color .15s, color .15s;
+        }
+
+        .info-btn:hover {
+            border-color: var(--gold);
+            color: var(--gold);
+        }
+
+        /* DOCS MODAL */
+        .docs-modal-overlay {
+            display: none;
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, .7);
+            z-index: 1000;
+            align-items: flex-start;
+            justify-content: center;
+            padding: 40px 16px;
+            overflow-y: auto;
+        }
+
+        .docs-modal-overlay.open {
+            display: flex;
+        }
+
+        .docs-modal {
+            background: var(--surface2);
+            border: 1px solid var(--border2);
+            border-radius: 8px;
+            width: 100%;
+            max-width: 760px;
+            padding: 28px 32px;
+            position: relative;
+            box-shadow: 0 8px 40px rgba(0, 0, 0, .6);
+        }
+
+        .docs-modal-close {
+            position: absolute;
+            top: 12px;
+            right: 14px;
+            background: none;
+            border: none;
+            color: var(--text-muted);
+            font-size: 20px;
+            cursor: pointer;
+            line-height: 1;
+        }
+
+        .docs-modal-close:hover {
+            color: var(--text);
+        }
+
+        .docs-modal-title {
+            font-family: Cinzel, Georgia, serif;
+            font-size: 18px;
+            color: var(--gold);
+            margin: 0 0 18px;
+            padding-right: 24px;
+        }
+
+        .docs-body {
+            color: var(--text);
+            font-size: 14px;
+            line-height: 1.7;
+        }
+
+        .docs-body h1 {
+            font-family: Cinzel, Georgia, serif;
+            font-size: 18px;
+            color: var(--gold);
+            margin: 0 0 12px;
+        }
+
+        .docs-body h2 {
+            font-family: Cinzel, Georgia, serif;
+            font-size: 15px;
+            color: var(--gold-dim, #a07820);
+            margin: 22px 0 8px;
+            border-bottom: 1px solid var(--border2);
+            padding-bottom: 4px;
+        }
+
+        .docs-body h3 {
+            font-size: 13px;
+            font-weight: 600;
+            color: var(--text);
+            margin: 16px 0 6px;
+            text-transform: uppercase;
+            letter-spacing: .04em;
+        }
+
+        .docs-body p {
+            margin: 0 0 10px;
+        }
+
+        .docs-body ul,
+        .docs-body ol {
+            margin: 0 0 10px;
+            padding-left: 20px;
+        }
+
+        .docs-body li {
+            margin-bottom: 4px;
+        }
+
+        .docs-body code {
+            background: var(--surface3);
+            border: 1px solid var(--border);
+            border-radius: 3px;
+            padding: 1px 5px;
+            font-size: 12px;
+            font-family: monospace;
+        }
+
+        .docs-body pre {
+            background: var(--surface3);
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            padding: 12px;
+            overflow-x: auto;
+            margin: 0 0 12px;
+        }
+
+        .docs-body pre code {
+            background: none;
+            border: none;
+            padding: 0;
+        }
+
+        .docs-body table {
+            border-collapse: collapse;
+            width: 100%;
+            margin: 0 0 12px;
+            font-size: 13px;
+        }
+
+        .docs-body th {
+            background: var(--surface3);
+            color: var(--gold-dim, #a07820);
+            text-align: left;
+            padding: 6px 10px;
+            border: 1px solid var(--border2);
+        }
+
+        .docs-body td {
+            padding: 5px 10px;
+            border: 1px solid var(--border);
+            vertical-align: top;
+        }
+
+        .docs-body tr:nth-child(even) td {
+            background: rgba(255, 255, 255, .02);
+        }
+
+        .docs-body a {
+            color: var(--gold);
+        }
+
+        .docs-body blockquote {
+            border-left: 3px solid var(--border2);
+            margin: 0 0 10px;
+            padding: 4px 12px;
+            color: var(--text-muted);
+        }
+
+        .docs-body hr {
+            border: none;
+            border-top: 1px solid var(--border2);
+            margin: 18px 0;
+        }
+
         .hidden {
             display: none !important;
         }
@@ -414,63 +600,72 @@
                 title: 'NPC Sheet',
                 desc: 'Create D&D 5e NPC stat blocks with automatic ability modifiers.',
                 url: '/npc-sheet',
-                accessLevel: 'public'
+                accessLevel: 'public',
+                docs: 'npc-sheet'
             },
             items: {
                 icon: '🗡️',
                 title: 'Item Cards',
                 desc: 'Create magic item cards with rarities and special abilities.',
                 url: '/item-cards',
-                accessLevel: 'public'
+                accessLevel: 'public',
+                docs: 'item-cards'
             },
             split: {
                 icon: '🪟',
                 title: 'Split View',
                 desc: 'View multiple tools side-by-side with custom layouts.',
                 url: '/split-view',
-                accessLevel: 'public'
+                accessLevel: 'public',
+                docs: 'split-view'
             },
             timeline: {
                 icon: '📜',
                 title: 'Timeline',
                 desc: 'Track campaign events across multiple calendar systems.',
                 url: '/timeline',
-                accessLevel: 'dm,player'
+                accessLevel: 'dm,player',
+                docs: 'timeline'
             },
             pdf: {
                 icon: '📖',
                 title: 'PDF Viewer',
                 desc: 'Access rulebooks and references with fullscreen support.',
                 url: '/pdf-viewer',
-                accessLevel: 'dm'
+                accessLevel: 'dm',
+                docs: 'pdf-viewer'
             },
             pcsheet: {
                 icon: '🧝',
                 title: 'PC Character Sheet',
                 desc: 'Manage your player character — story, traits, relationships, and private notes.',
                 url: '/pc-sheet',
-                accessLevel: 'dm,player'
+                accessLevel: 'dm,player',
+                docs: 'pc-sheet'
             },
             campaigns: {
                 icon: '🏰',
                 title: 'Manage Campaigns',
                 desc: 'Create and manage campaigns, players, and assignments.',
                 url: '/manage-campaigns',
-                accessLevel: 'dm'
+                accessLevel: 'dm',
+                docs: 'manage-campaigns'
             },
             journeymap: {
                 icon: '🗺️',
                 title: 'Journey Path Map',
                 desc: 'Draw party routes on a map. Track groups, NPCs and players, set distances and see travel times.',
                 url: '/journey-map',
-                accessLevel: 'dm'
+                accessLevel: 'dm',
+                docs: 'journey-map'
             },
             userpanel: {
                 icon: '⚙️',
                 title: 'User Panel',
                 desc: 'Admin panel to manage users, roles, and permissions.',
                 url: '/user-panel',
-                accessLevel: 'admin'
+                accessLevel: 'admin',
+                docs: 'user-panel'
             }
         };
 
@@ -521,6 +716,7 @@
                         <div class="card-header">
                             <div class="card-icon">${module.icon}</div>
                             <div class="card-title">${module.title}</div>
+                            ${module.docs ? `<button class="info-btn" onclick="openDocs('${module.docs}','${module.title}')" title="About this module">ℹ</button>` : ''}
                         </div>
                         <div class="card-body">
                             <div class="card-desc">${module.desc}</div>
@@ -596,9 +792,92 @@
             if (e.target.id === 'loginModal') closeLogin();
         });
 
+        // ── Docs modal ──────────────────────────────────────────
+        function mdToHtml(md) {
+            // Minimal markdown → HTML (headings, bold, italic, code, tables, lists, hr, links)
+            let html = md
+                // Fenced code blocks
+                .replace(/```[\w]*\n([\s\S]*?)```/g, (_, c) => `<pre><code>${esc(c.trimEnd())}</code></pre>`)
+                // Headings
+                .replace(/^### (.+)$/gm, '<h3>$1</h3>')
+                .replace(/^## (.+)$/gm, '<h2>$1</h2>')
+                .replace(/^# (.+)$/gm, '<h1>$1</h1>')
+                // HR
+                .replace(/^---$/gm, '<hr>')
+                // Bold / italic
+                .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+                .replace(/\*(.+?)\*/g, '<em>$1</em>')
+                // Inline code
+                .replace(/`([^`]+)`/g, '<code>$1</code>')
+                // Links
+                .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank">$1</a>')
+                // Tables — multi-line; handle each table block
+                .replace(/((?:\|.+\|\n)+)/g, tbl => {
+                    const rows = tbl.trim().split('\n');
+                    let out = '<table>';
+                    rows.forEach((row, i) => {
+                        if (/^\|[-| :]+\|$/.test(row.trim())) return; // separator row
+                        const cells = row.split('|').filter((_, ci) => ci > 0 && ci < row.split('|').length - 1);
+                        const tag = i === 0 ? 'th' : 'td';
+                        out += '<tr>' + cells.map(c => `<${tag}>${c.trim()}</${tag}>`).join('') + '</tr>';
+                    });
+                    return out + '</table>';
+                })
+                // Unordered lists (group consecutive items)
+                .replace(/((?:^[ \t]*[-*] .+\n?)+)/gm, block => {
+                    const items = block.trim().split('\n').map(l => `<li>${l.replace(/^[ \t]*[-*] /, '')}</li>`).join('');
+                    return `<ul>${items}</ul>`;
+                })
+                // Ordered lists
+                .replace(/((?:^\d+\. .+\n?)+)/gm, block => {
+                    const items = block.trim().split('\n').map(l => `<li>${l.replace(/^\d+\. /, '')}</li>`).join('');
+                    return `<ol>${items}</ol>`;
+                })
+                // Blockquote
+                .replace(/^> (.+)$/gm, '<blockquote>$1</blockquote>')
+                // Paragraphs: wrap bare lines
+                .replace(/^(?!<[a-z]|\s*$)(.+)$/gm, '<p>$1</p>');
+            return html;
+        }
+        function esc(s) { return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
+
+        async function openDocs(slug, title) {
+            const overlay = document.getElementById('docsModalOverlay');
+            const titleEl = document.getElementById('docsModalTitle');
+            const bodyEl = document.getElementById('docsModalBody');
+            titleEl.textContent = title;
+            bodyEl.innerHTML = '<p style="color:var(--text-muted)">Loading…</p>';
+            overlay.classList.add('open');
+            try {
+                const res = await fetch(`/api/docs/${slug}`);
+                if (!res.ok) throw new Error('No documentation available');
+                const md = await res.text();
+                bodyEl.innerHTML = mdToHtml(md);
+            } catch (e) {
+                bodyEl.innerHTML = `<p style="color:var(--text-muted)">${e.message}</p>`;
+            }
+        }
+        function closeDocs() {
+            document.getElementById('docsModalOverlay').classList.remove('open');
+        }
+        document.addEventListener('DOMContentLoaded', () => {
+            document.getElementById('docsModalOverlay').addEventListener('click', e => {
+                if (e.target.id === 'docsModalOverlay') closeDocs();
+            });
+        });
+        document.addEventListener('keydown', e => { if (e.key === 'Escape') closeDocs(); });
+
         // Initialize
         checkAuth();
     </script>
+
+    <div class="docs-modal-overlay" id="docsModalOverlay">
+        <div class="docs-modal">
+            <button class="docs-modal-close" onclick="closeDocs()" title="Close">✕</button>
+            <div class="docs-modal-title" id="docsModalTitle"></div>
+            <div class="docs-body" id="docsModalBody"></div>
+        </div>
+    </div>
 </body>
 
 </html>

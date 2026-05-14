@@ -3128,10 +3128,40 @@
        IMPORT / EXPORT
     ════════════════════════════════════════ */
     function exportData() {
-      const p = currentProfile();
+      let exportName;
+      let exportDb = db;
+
+      if (_mode === 'private') {
+        // Use the actual private timeline name, not the public localStorage profile name
+        if (_dmActive) {
+          exportName = (_privCampaignMeta.campaign_name || 'Campaign') + ' DM Combined';
+        } else {
+          const tl = _privTimelines.find(t => t.id === _privTimelineId);
+          exportName = tl ? tl.name : (currentProfile()?.name || 'timeline');
+        }
+
+        // Convert playerIds in events from unstable DB IDs → stable player names.
+        // This ensures exported files remain valid across re-imports where IDs may differ.
+        const playerById = {};
+        db.players.forEach(pl => { playerById[pl.id] = pl; });
+        exportDb = {
+          ...db,
+          events: db.events.map(ev => ({
+            ...ev,
+            playerIds: (ev.playerIds || []).map(pid => {
+              const pl = playerById[pid];
+              return pl ? pl.name : pid; // fall back to raw ID if player not found
+            })
+          }))
+        };
+      } else {
+        const p = currentProfile();
+        exportName = p?.name || 'timeline';
+      }
+
       const a = document.createElement('a');
-      a.href = URL.createObjectURL(new Blob([JSON.stringify({ profile: p, db }, null, 2)], { type: 'application/json' }));
-      a.download = `${(p?.name || 'timeline').replace(/[^a-z0-9]/gi, '-')}.json`; a.click();
+      a.href = URL.createObjectURL(new Blob([JSON.stringify({ profile: { name: exportName }, db: exportDb }, null, 2)], { type: 'application/json' }));
+      a.download = `${exportName.replace(/[^a-z0-9]/gi, '-')}.json`; a.click();
     }
     function exportCSV() {
       const se = sortedEvents();
@@ -3151,10 +3181,20 @@
         ]);
       });
       const csv = rows.map(r => r.join(',')).join('\r\n');
-      const p = currentProfile();
+      let csvName;
+      if (_mode === 'private') {
+        if (_dmActive) {
+          csvName = (_privCampaignMeta.campaign_name || 'Campaign') + ' DM Combined';
+        } else {
+          const tl = _privTimelines.find(t => t.id === _privTimelineId);
+          csvName = tl ? tl.name : (currentProfile()?.name || 'timeline');
+        }
+      } else {
+        csvName = currentProfile()?.name || 'timeline';
+      }
       const a = document.createElement('a');
       a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
-      a.download = `${(p?.name || 'timeline').replace(/[^a-z0-9]/gi, '-')}-events.csv`; a.click();
+      a.download = `${csvName.replace(/[^a-z0-9]/gi, '-')}-events.csv`; a.click();
     }
     function importData() {
       const inp = document.createElement('input'); inp.type = 'file'; inp.accept = '.json';
@@ -3198,7 +3238,11 @@
       data.players.forEach(p => { filePlayerById[p.id] = p; });
 
       const unknownPlayers = data.players
-        .filter(p => !livePlayerByName[p.name.toLowerCase()])
+        .filter(p => {
+          const fullKey = p.name.toLowerCase();
+          const bareKey = p.name.replace(/^\S+\s+/, '').toLowerCase();
+          return !livePlayerByName[fullKey] && !livePlayerByName[bareKey];
+        })
         .map(p => p.name);
 
       if (unknownPlayers.length) {
@@ -3225,11 +3269,20 @@
       // ── 4. POST each event to the API ─────────────────────────────────────────
       let saved = 0, failed = 0;
       for (const ev of data.events) {
-        // Map file playerIds → live player IDs by name
+        // Map file playerIds → live player IDs.
+        // New export format stores names directly; old format stores DB IDs resolved via filePlayerById.
         const mappedPids = (ev.playerIds || []).map(fid => {
+          // New format: fid is a player name — try exact match then icon-stripped bare match
+          const byFull = livePlayerByName[fid.toLowerCase()];
+          if (byFull) return String(byFull.id);
+          const byBare = livePlayerByName[fid.replace(/^\S+\s+/, '').toLowerCase()];
+          if (byBare) return String(byBare.id);
+
+          // Old format: fid is a DB id like 'self_5', resolve via the players list in the file
           const fp = filePlayerById[fid];
           if (!fp) return null;
-          const live = livePlayerByName[fp.name.toLowerCase()];
+          const live = livePlayerByName[fp.name.toLowerCase()]
+            || livePlayerByName[fp.name.replace(/^\S+\s+/, '').toLowerCase()];
           return live ? String(live.id) : null;
         }).filter(Boolean);
 

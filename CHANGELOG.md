@@ -6,7 +6,26 @@ the actual diffs between tags.
 
 ---
 
-## [0.1.1] – 2026-05-12
+## [0.1.1] – 2026-05-14
+
+### Export filenames include date
+
+- Campaign exports now download as `campaign-<slug>-YYYY-MM-DD.json`
+- Journey Map exports now download as `journey-map-<slug>-YYYY-MM-DD.json`
+
+### Unique location names per campaign
+
+- **DB**: a case-insensitive unique index (`campaign_locations_campaign_name_unique`) on `(campaign_id, LOWER(name))` is created on startup via migration — prevents duplicates at the database level.
+- **API**: `POST` and `PUT` location endpoints now return HTTP 409 with a clear message (`A location named "X" already exists in this campaign`) on conflict rather than a raw DB error.
+- **Import**: campaign import uses `ON CONFLICT (campaign_id, LOWER(name)) DO UPDATE SET name=EXCLUDED.name` so re-importing a bundle never creates duplicate rows; the existing location is reused and its ID is mapped correctly.
+
+### Module info bubbles on the Index
+
+- Each module card on the index page now has an **ℹ** button in the header.
+- Clicking it opens a modal that fetches and renders the module's `docs/<module>/README.md` as formatted HTML (headings, tables, code blocks, lists, links).
+- New API endpoint: `GET /api/docs/:module` — serves the README as plain text. Only whitelisted slugs are accepted; no path traversal is possible.
+- The modal closes on backdrop click or `Escape`.
+
 
 ### Campaign Export / Import — DM timelines + bug fixes
 

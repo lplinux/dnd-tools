@@ -7,18 +7,20 @@ A self-hosted Node.js web application with a full suite of tools for tabletop RP
 | Route | Tool | Access |
 |---|---|---|
 | `/` | Index / landing page | Public |
-| `/timeline` | Campaign Timeline | DM, Player |
-| `/timeline-public/:token` | Shared read-only Timeline | Public (token) |
-| `/journey-map` | Journey Path Map | DM |
-| `/journey-map-public/:token` | Shared read-only Journey Map | Public (token) |
-| `/manage-campaigns` | Campaign Manager | DM |
-| `/pc-sheet` | Player Character Sheet | DM, Player |
-| `/pc-public/:token` | Shared read-only PC Sheet | Public (token) |
-| `/npc-sheet` | NPC Character Sheet | Public |
 | `/item-cards` | Magic Item Card Creator | Public |
+| `/journey-map-public/:token` | Shared read-only Journey Map | Public (token) |
+| `/journey-map` | Journey Path Map | DM |
+| `/manage-campaigns` | Campaign Manager | DM |
+| `/npc-sheet` | NPC Character Sheet | Public |
+| `/pc-public/:token` | Shared read-only PC Sheet | Public (token) |
+| `/pc-sheet` | Player Character Sheet | DM, Player |
 | `/pdf-viewer` | In-browser PDF Viewer | DM |
 | `/split-view` | Split-screen Reference View | Public |
+| `/timeline-public/:token` | Shared read-only Timeline | Public (token) |
+| `/timeline` | Campaign Timeline | DM, Player |
 | `/user-panel` | User & Role Management | Admin |
+
+Each module card on the index page has an **ℹ** button that opens a formatted in-page modal showing the module's `docs/<module>/README.md`. The markdown is fetched from `GET /api/docs/:module` (whitelisted slugs only; no path traversal).
 
 ---
 
@@ -163,32 +165,35 @@ PDF files are served as static files from the `pdfs/` folder and are **not** sto
 
 ```
 dnd-tools/
+├── .env                    # Local config (gitignored)
 ├── app.js                  # Express server, all API routes, DB schema
 ├── package.json
-├── Dockerfile
-├── docker-compose.yml
-├── .env                    # Local config (gitignored)
 ├── ARCH.md                 # Technical architecture
 ├── TODO.md                 # Known issues and planned work
+├── Dockerfile
+├── docker-compose.yml
 ├── docs/
-│   ├── timeline/README.md
-│   ├── journey-map/README.md
-│   ├── npc-sheet/README.md
 │   ├── item-cards/README.md
+│   ├── journey-map/README.md
+│   ├── manage-campaigns/README.md
+│   ├── npc-sheet/README.md
+│   ├── pc-sheet/README.md
 │   ├── pdf-viewer/README.md
-│   └── split-view/README.md
+│   ├── split-view/README.md
+│   ├── timeline/README.md
+│   └── user-panel/README.md
 ├── public/
 │   ├── index.html
-│   ├── timeline.html
-│   ├── journey-map.html
-│   ├── journey-map-public.html
-│   ├── manage-campaigns.html
-│   ├── pc-sheet.html
-│   ├── pc-public.html
-│   ├── npc-sheet.html
 │   ├── item-cards.html
+│   ├── journey-map-public.html
+│   ├── journey-map.html
+│   ├── manage-campaigns.html
+│   ├── npc-sheet.html
+│   ├── pc-public.html
+│   ├── pc-sheet.html
 │   ├── pdf-viewer.html
 │   ├── split-view.html
+│   ├── timeline.html
 │   ├── user-panel.html
 │   ├── header-component.js  # Shared auth/nav header
 │   └── styles.css
