@@ -860,8 +860,10 @@
         function closeDocs() {
             document.getElementById('docsModalOverlay').classList.remove('open');
         }
-        document.getElementById('docsModalOverlay').addEventListener('click', e => {
-            if (e.target.id === 'docsModalOverlay') closeDocs();
+        document.addEventListener('DOMContentLoaded', () => {
+            document.getElementById('docsModalOverlay').addEventListener('click', e => {
+                if (e.target.id === 'docsModalOverlay') closeDocs();
+            });
         });
         document.addEventListener('keydown', e => { if (e.key === 'Escape') closeDocs(); });
 
