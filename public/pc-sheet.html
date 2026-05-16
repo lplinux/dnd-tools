@@ -1469,9 +1469,12 @@
 
     function renderRelList() {
       const list = document.getElementById('relList');
-      if (!relationships.length) {
+      if (!relationships.length && !crossConnections.length) {
         list.innerHTML = '<div style="color:var(--text-dim);font-style:italic;font-size:13px;">No relations added yet.</div>';
         return;
+      }
+      if (!relationships.length) {
+        list.innerHTML = '';
       }
 
       const ORDER = ['Grandparent', 'Parent', 'Sibling', 'Child', 'Grandchild', 'Mentor', 'Ally', 'Friend', 'Other', 'Rival', 'Enemy'];
@@ -1556,9 +1559,16 @@
           </div>
         </div>`).join('');
 
-      // ── Public cross-connections ──────────────────────────────────────
+      // ── Cross-connections ─────────────────────────────────────────────
       if (crossConnections.length) {
         const myRelIds = new Set(relationships.map(r => r.id));
+        const myPlayerIds = new Set([parseInt(currentPlayerId)]);
+
+        function isMyEntity(type, id) {
+          if (type === 'relationship') return myRelIds.has(parseInt(id));
+          if (type === 'player') return myPlayerIds.has(parseInt(id));
+          return false;
+        }
 
         function resolveEntityLabel(c, side) {
           const type = c[`${side}_entity_type`];
@@ -1567,24 +1577,68 @@
             const name = c[`${side}_rel_name`];
             const player = c[`${side}_player_name`];
             if (!name) return `Rel #${id}`;
-            return myRelIds.has(id) ? name : `[${player || '?'}] ${name}`;
+            return myRelIds.has(parseInt(id)) ? name : `[${player || '?'}] ${name}`;
           }
           if (type === 'player') return c[`${side}_entity_player_name`] || `Player #${id}`;
           if (type === 'npc') return `🎭 ${c[`${side}_npc_name`] || `NPC #${id}`}`;
           return `#${id}`;
         }
 
-        const crossHtml = crossConnections.map(c => {
-          const fromLabel = resolveEntityLabel(c, 'from');
-          const toLabel = resolveEntityLabel(c, 'to');
-          return `<div class="rel-chip" style="border-style:dashed;opacity:0.9">
+        // Deduplicate by connection id
+        const seen = new Set();
+        const unique = crossConnections.filter(c => {
+          if (seen.has(c.id)) return false;
+          seen.add(c.id); return true;
+        });
+
+        // Group by the EXTERNAL entity (the side that is NOT this player's own entity).
+        // This ensures e.g. NPC Crowley connecting to two of my relationships
+        // collapses into one bubble regardless of DB storage direction.
+        const groups = new Map(); // extKey → { extLabel, items: [] }
+        for (const c of unique) {
+          const fromIsMine = isMyEntity(c.from_entity_type, c.from_entity_id);
+          const toIsMine = isMyEntity(c.to_entity_type, c.to_entity_id);
+
+          // Canonical: ext = side that is NOT mine.
+          // When both are mine (my rel → my player) use 'from' as the "external" label
+          // and 'to' as the target so we still render it once.
+          // When neither is mine (connection returned because it touches the campaign but
+          // not directly one of our entities — shouldn't happen with current query but guard anyway)
+          // use 'from' as external.
+          let extSide, mySide;
+          if (fromIsMine && !toIsMine) { extSide = 'to'; mySide = 'from'; }
+          else if (!fromIsMine && toIsMine) { extSide = 'from'; mySide = 'to'; }
+          else if (fromIsMine && toIsMine) { extSide = 'from'; mySide = 'to'; } // both mine
+          else { extSide = 'from'; mySide = 'to'; } // neither mine
+
+          const extKey = `${c[`${extSide}_entity_type`]}:${c[`${extSide}_entity_id`]}`;
+          const extLabel = resolveEntityLabel(c, extSide);
+          const myLabel = resolveEntityLabel(c, mySide);
+
+          if (!groups.has(extKey)) groups.set(extKey, { extLabel, items: [] });
+          groups.get(extKey).items.push({
+            label: c.label, myLabel, notes: c.notes || null, isDmOnly: !c.is_public,
+            extIsFrom: extSide === 'from',
+          });
+        }
+
+        const crossHtml = [...groups.values()].map(({ extLabel, items }) => {
+          const isDmOnly = items.some(i => i.isDmOnly);
+          const dmBadge = isDmOnly
+            ? `<span style="font-size:10px;color:var(--text-dim);background:var(--surface2);border:1px solid var(--border);border-radius:2px;padding:1px 5px;margin-left:6px" title="Hidden from player">🔒 DM only</span>`
+            : '';
+          const arrows = items.map(i => {
+            const arrow = `<span style="font-size:11px;color:var(--text-dim)">⟶ ${escHtml(i.label)} ⟶</span><strong>${escHtml(i.myLabel)}</strong> `;
+            return arrow + (i.notes ? ` <span style="font-size:10px;color:var(--text-muted);font-style:italic">(${escHtml(i.notes)})</span>` : '');
+          }).join('<span style="color:var(--border2);margin:0 6px">·</span>');
+          return `<div class="rel-chip" style="border-style:dashed;opacity:${isDmOnly ? '0.65' : '0.9'};flex-wrap:wrap;gap:4px">
             <span style="font-size:10px;color:var(--text-dim);margin-right:4px">🔗</span>
-            <strong>${escHtml(fromLabel)}</strong>
-            <span style="font-size:11px;color:var(--text-dim);margin:0 6px">⟶ ${escHtml(c.label)} ⟶</span>
-            <strong>${escHtml(toLabel)}</strong>
-            ${c.notes ? `<span style="font-size:10px;color:var(--text-muted);font-style:italic;margin-left:6px">${escHtml(c.notes)}</span>` : ''}
+            <strong>${escHtml(extLabel)}</strong>
+            <span style="margin-left:6px">${arrows}</span>
+            ${dmBadge}
           </div>`;
         }).join('');
+
         list.innerHTML += `<div class="rel-type-group">
           <div class="rel-type-label" style="color:var(--text-dim)">🔗 Cross-connections</div>
           <div class="rel-list" style="margin-bottom:0">${crossHtml}</div>
@@ -1895,58 +1949,84 @@
       let crossEdges = '';
 
       if (crossConnections && crossConnections.length > 0) {
-        // Group cross-connections by local relationship node to fan siblings
-        const byLocalRel = {};
+        // Determine whether an entity belongs to this player (rel or direct player node)
+        const isMyGraphEntity = (type, id) =>
+          (type === 'relationship' && myRelIds.has(parseInt(id))) ||
+          (type === 'player' && parseInt(id) === parseInt(currentPlayerId));
+
+        // Build one node per EXTERNAL entity (keyed by type:id) with all its edges.
+        // This prevents duplicate circles when the same NPC/rel connects to multiple of our rels.
+        const extNodeMap = new Map(); // extKey → { extLabel, isNpc, isPlayer, edges: [{anchorKey, label, notes}] }
+
         crossConnections.forEach(c => {
-          const fromIsMine = c.from_entity_type === 'relationship' && myRelIds.has(c.from_entity_id);
-          const localRelId = fromIsMine ? c.from_entity_id : c.to_entity_id;
-          const extSide = fromIsMine ? 'to' : 'from';
+          const fromIsMine = isMyGraphEntity(c.from_entity_type, c.from_entity_id);
+          const toIsMine = isMyGraphEntity(c.to_entity_type, c.to_entity_id);
+
+          let localSide, extSide;
+          if (fromIsMine && !toIsMine) { localSide = 'from'; extSide = 'to'; }
+          else if (!fromIsMine && toIsMine) { localSide = 'to'; extSide = 'from'; }
+          else if (fromIsMine && toIsMine) { localSide = 'from'; extSide = 'to'; }
+          else { localSide = 'from'; extSide = 'to'; }
+
+          const localType = c[`${localSide}_entity_type`];
+          const localId = c[`${localSide}_entity_id`];
+          const anchorKey = localType === 'relationship' ? parseInt(localId) : 'self';
+
+          const extType = c[`${extSide}_entity_type`];
+          const extId = c[`${extSide}_entity_id`];
+          const extKey = `${extType}:${extId}`;
           const extLabel = resolveEntityLabelGraph(c, extSide);
-          const isNpc = c[`${extSide}_entity_type`] === 'npc';
-          const isPlayer = c[`${extSide}_entity_type`] === 'player';
-          if (!byLocalRel[localRelId]) byLocalRel[localRelId] = [];
-          byLocalRel[localRelId].push({ c, localRelId, extLabel, isNpc, isPlayer });
+          const isNpc = extType === 'npc';
+          const isPlayer = extType === 'player';
+
+          if (!extNodeMap.has(extKey)) {
+            extNodeMap.set(extKey, { extLabel, isNpc, isPlayer, edges: [] });
+          }
+          extNodeMap.get(extKey).edges.push({ anchorKey, label: c.label, notes: c.notes || null });
         });
 
-        // First pass: place cross nodes at their initial positions
-        Object.entries(byLocalRel).forEach(([relIdStr, items]) => {
-          const localRelId = parseInt(relIdStr);
-          const localPos = posById[localRelId];
-          if (!localPos) return;
-
-          const baseAngle = Math.atan2(localPos.y || 0, localPos.x || 1);
-          const spread = Math.PI / 6;
-          const step = items.length === 1 ? 0 : spread / (items.length - 1);
-
-          items.forEach((item, i) => {
-            const angle = items.length === 1 ? baseAngle : baseAngle - spread / 2 + i * step;
-            crossNodes.push({ ...item, x: localPos.x + CROSS_DIST * Math.cos(angle), y: localPos.y + CROSS_DIST * Math.sin(angle) });
-          });
-        });
-
-        // Second pass: iterative repulsion — push cross nodes away from ALL other nodes
-        // (family, social, children, self, and other cross nodes)
+        // First pass: place one cross node per external entity.
+        // Initial position = centroid of all its anchor positions, pushed outward.
         const fixedPositions = [
-          { x: 0, y: 0, r: SR },   // self node
+          { x: 0, y: 0, r: SR },
           ...famNodes.map(n => ({ x: n.x, y: n.y, r: NR })),
           ...socNodes.map(n => ({ x: n.x, y: n.y, r: NR })),
           ...childNodes.map(n => ({ x: n.x, y: n.y, r: NR })),
         ];
 
-        for (let iter = 0; iter < 60; iter++) {
+        extNodeMap.forEach((node, extKey) => {
+          // Centroid of all anchor positions for this external entity
+          const anchors = node.edges.map(e => e.anchorKey === 'self' ? { x: 0, y: 0 } : posById[e.anchorKey]).filter(Boolean);
+          if (!anchors.length) return;
+          const cx = anchors.reduce((s, p) => s + p.x, 0) / anchors.length;
+          const cy = anchors.reduce((s, p) => s + p.y, 0) / anchors.length;
+          // Push outward from centroid
+          const angle = Math.atan2(cy || 0.01, cx || 0.01);
+          crossNodes.push({
+            extKey, extLabel: node.extLabel, isNpc: node.isNpc, isPlayer: node.isPlayer,
+            edges: node.edges,
+            x: cx + CROSS_DIST * Math.cos(angle),
+            y: cy + CROSS_DIST * Math.sin(angle),
+          });
+        });
+
+        // Second pass: iterative repulsion so nodes don't overlap
+        for (let iter = 0; iter < 120; iter++) {
           let moved = false;
           crossNodes.forEach((cn, ci) => {
-            // Repel from fixed nodes
-            [...fixedPositions, ...crossNodes.filter((_, j) => j !== ci).map(o => ({ x: o.x, y: o.y, r: crossNodeRadius }))].forEach(other => {
-              const minDist = (other.r || NR) + crossNodeRadius + 6;
+            const others = [
+              ...fixedPositions,
+              ...crossNodes.filter((_, j) => j !== ci).map(o => ({ x: o.x, y: o.y, r: crossNodeRadius })),
+            ];
+            others.forEach(other => {
+              const minDist = (other.r || NR) + crossNodeRadius + 10;
               const dx = cn.x - other.x;
               const dy = cn.y - other.y;
               const dist = Math.sqrt(dx * dx + dy * dy) || 0.01;
               if (dist < minDist) {
                 const push = (minDist - dist) / 2;
-                const nx = dx / dist * push;
-                const ny = dy / dist * push;
-                cn.x += nx; cn.y += ny;
+                cn.x += (dx / dist) * push;
+                cn.y += (dy / dist) * push;
                 moved = true;
               }
             });
@@ -1954,28 +2034,31 @@
           if (!moved) break;
         }
 
-        // Third pass: build edges after final positions are known
-        crossNodes.forEach(item => {
-          const localPos = posById[item.localRelId];
-          if (!localPos) return;
-          const dx = item.x - localPos.x;
-          const dy = item.y - localPos.y;
-          const len = Math.sqrt(dx * dx + dy * dy) || 1;
-          const sx = localPos.x + (dx / len) * NR;
-          const sy = localPos.y + (dy / len) * NR;
-          const ex = item.x - (dx / len) * crossNodeRadius;
-          const ey = item.y - (dy / len) * crossNodeRadius;
-          const mx = (sx + ex) / 2;
-          const my = (sy + ey) / 2;
-          crossEdges += `<line x1="${sx}" y1="${sy}" x2="${ex}" y2="${ey}"
-            stroke="#2a7a7a" stroke-width="1.2" stroke-dasharray="4 3" opacity="0.75"/>
-          <text x="${mx}" y="${my - 5}" text-anchor="middle" dominant-baseline="middle"
-            fill="#2a9a9a" font-family="Cinzel,Georgia,serif" font-size="7.5" opacity="0.9"
-            paint-order="stroke" stroke="#0a1a1a" stroke-width="2">${escHtml(item.c.label)}</text>`;
+        // Third pass: build one edge per connection (may be multiple per cross node)
+        crossNodes.forEach(cn => {
+          cn.edges.forEach(edge => {
+            const localPos = edge.anchorKey === 'self' ? { x: 0, y: 0 } : posById[edge.anchorKey];
+            if (!localPos) return;
+            const anchorR = edge.anchorKey === 'self' ? SR : NR;
+            const dx = cn.x - localPos.x;
+            const dy = cn.y - localPos.y;
+            const len = Math.sqrt(dx * dx + dy * dy) || 1;
+            const sx = localPos.x + (dx / len) * anchorR;
+            const sy = localPos.y + (dy / len) * anchorR;
+            const ex = cn.x - (dx / len) * crossNodeRadius;
+            const ey = cn.y - (dy / len) * crossNodeRadius;
+            const mx = (sx + ex) / 2;
+            const my = (sy + ey) / 2;
+            crossEdges += `<line x1="${sx}" y1="${sy}" x2="${ex}" y2="${ey}"
+              stroke="#2a7a7a" stroke-width="1.2" stroke-dasharray="4 3" opacity="0.75"/>
+            <text x="${mx}" y="${my - 5}" text-anchor="middle" dominant-baseline="middle"
+              fill="#2a9a9a" font-family="Cinzel,Georgia,serif" font-size="7.5" opacity="0.9"
+              paint-order="stroke" stroke="#0a1a1a" stroke-width="2">${escHtml(edge.label)}</text>`;
+          });
         });
       }
 
-      const crossNodeEls = crossNodes.map(({ extLabel, isNpc, isPlayer, x, y, c }) => {
+      const crossNodeEls = crossNodes.map(({ extLabel, isNpc, isPlayer, edges, x, y }) => {
         const fill = isNpc ? '#0a2010' : isPlayer ? '#0a1828' : '#0e1c24';
         const stroke = isNpc ? '#4a9a50' : '#2a8888';
         const tc = isNpc ? '#80d888' : '#60caca';
@@ -1983,7 +2066,8 @@
         const w1 = (words[0] || '').substring(0, 10);
         const w2 = (words.slice(1).join(' ') || '').substring(0, 10);
         const ty = w2 ? y - 5 : y + 4;
-        const tipText = escAttr(`🔗 ${c.label}${c.notes ? '\n' + c.notes : ''}`);
+        const tipLines = edges.map(e => `${e.label}${e.notes ? ': ' + e.notes : ''}`).join('\n');
+        const tipText = escAttr(`🔗 ${extLabel}\n${tipLines}`);
         return `<g class="graph-node" data-tip="${tipText}">
           <circle cx="${x}" cy="${y}" r="${crossNodeRadius}" fill="${fill}" stroke="${stroke}" stroke-width="1.5" stroke-dasharray="4 2"/>
           <text x="${x}" y="${ty}" text-anchor="middle" dominant-baseline="middle"
