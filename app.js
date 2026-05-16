@@ -1059,43 +1059,48 @@ app.get('/api/pc/:playerId/relationships', requireAuth, async (req, res) => {
       : 'SELECT * FROM pc_relationships WHERE character_id = $1 AND is_dm_only = false ORDER BY created_at ASC';
     const result = await pool.query(query, [charId]);
 
-    // Fetch public cross-connections involving any of this player's relationship entries
-    const relIds = result.rows.map(r => r.id);
+    // Fetch cross-connections involving this player — any combination of player/relationship/npc
     let publicCross = [];
-    if (relIds.length > 0) {
-      const campaignRes = await pool.query(
-        'SELECT cp.campaign_id FROM campaign_players cp WHERE cp.id = $1', [playerId]
+    const campaignRes = await pool.query(
+      'SELECT cp.campaign_id FROM campaign_players cp WHERE cp.id = $1', [playerId]
+    );
+    if (campaignRes.rows.length > 0) {
+      const campaignId = campaignRes.rows[0].campaign_id;
+      const relIds = result.rows.map(r => r.id);
+      const crossRes = await pool.query(
+        `SELECT DISTINCT ON (cr.id) cr.*,
+           pr_from.name AS from_rel_name, cp_from.player_name AS from_player_name,
+           pr_to.name AS to_rel_name, cp_to.player_name AS to_player_name,
+           cp_pl_from.player_name AS from_entity_player_name,
+           cp_pl_to.player_name AS to_entity_player_name,
+           npc_from.name AS from_npc_name,
+           npc_to.name AS to_npc_name
+         FROM character_relationships cr
+         LEFT JOIN pc_relationships pr_from ON cr.from_entity_type = 'relationship' AND cr.from_entity_id = pr_from.id
+         LEFT JOIN pc_characters pcc_from ON pr_from.character_id = pcc_from.id
+         LEFT JOIN campaign_players cp_from ON pcc_from.player_id = cp_from.id
+         LEFT JOIN pc_relationships pr_to ON cr.to_entity_type = 'relationship' AND cr.to_entity_id = pr_to.id
+         LEFT JOIN pc_characters pcc_to ON pr_to.character_id = pcc_to.id
+         LEFT JOIN campaign_players cp_to ON pcc_to.player_id = cp_to.id
+         LEFT JOIN campaign_players cp_pl_from ON cr.from_entity_type = 'player' AND cr.from_entity_id = cp_pl_from.id
+         LEFT JOIN campaign_players cp_pl_to ON cr.to_entity_type = 'player' AND cr.to_entity_id = cp_pl_to.id
+         LEFT JOIN campaign_npcs npc_from ON cr.from_entity_type = 'npc' AND cr.from_entity_id = npc_from.id
+         LEFT JOIN campaign_npcs npc_to ON cr.to_entity_type = 'npc' AND cr.to_entity_id = npc_to.id
+         WHERE cr.campaign_id = $1
+           ${isDM ? '' : 'AND cr.is_public = true'}
+           AND (
+             (cr.from_entity_type = 'relationship' AND cr.from_entity_id = ANY($2::int[]))
+             OR (cr.to_entity_type   = 'relationship' AND cr.to_entity_id   = ANY($2::int[]))
+             OR (cr.from_entity_type = 'player'       AND cr.from_entity_id = $3)
+             OR (cr.to_entity_type   = 'player'       AND cr.to_entity_id   = $3)
+           )
+         ORDER BY cr.id`,
+        [campaignId, relIds.length ? relIds : [0], parseInt(playerId)]
       );
-      if (campaignRes.rows.length > 0) {
-        const campaignId = campaignRes.rows[0].campaign_id;
-        const crossRes = await pool.query(
-          `SELECT cr.*,
-             pr_from.name AS from_rel_name, cp_from.player_name AS from_player_name,
-             pr_to.name AS to_rel_name, cp_to.player_name AS to_player_name,
-             cp_pl_from.player_name AS from_entity_player_name,
-             cp_pl_to.player_name AS to_entity_player_name,
-             npc_from.name AS from_npc_name,
-             npc_to.name AS to_npc_name
-           FROM character_relationships cr
-           LEFT JOIN pc_relationships pr_from ON cr.from_entity_type = 'relationship' AND cr.from_entity_id = pr_from.id
-           LEFT JOIN pc_characters pcc_from ON pr_from.character_id = pcc_from.id
-           LEFT JOIN campaign_players cp_from ON pcc_from.player_id = cp_from.id
-           LEFT JOIN pc_relationships pr_to ON cr.to_entity_type = 'relationship' AND cr.to_entity_id = pr_to.id
-           LEFT JOIN pc_characters pcc_to ON pr_to.character_id = pcc_to.id
-           LEFT JOIN campaign_players cp_to ON pcc_to.player_id = cp_to.id
-           LEFT JOIN campaign_players cp_pl_from ON cr.from_entity_type = 'player' AND cr.from_entity_id = cp_pl_from.id
-           LEFT JOIN campaign_players cp_pl_to ON cr.to_entity_type = 'player' AND cr.to_entity_id = cp_pl_to.id
-           LEFT JOIN campaign_npcs npc_from ON cr.from_entity_type = 'npc' AND cr.from_entity_id = npc_from.id
-           LEFT JOIN campaign_npcs npc_to ON cr.to_entity_type = 'npc' AND cr.to_entity_id = npc_to.id
-           WHERE cr.campaign_id = $1 AND cr.is_public = true
-             AND (
-               (cr.from_entity_type = 'relationship' AND cr.from_entity_id = ANY($2::int[]))
-               OR (cr.to_entity_type = 'relationship' AND cr.to_entity_id = ANY($2::int[]))
-             )`,
-          [campaignId, relIds]
-        );
-        publicCross = crossRes.rows;
-      }
+      publicCross = crossRes.rows.map(row => {
+        if (!isDM) { const r = { ...row }; delete r.notes; return r; }
+        return row;
+      });
     }
 
     res.json({ relationships: result.rows, cross_connections: publicCross });
