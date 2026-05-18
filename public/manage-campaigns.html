@@ -1281,6 +1281,34 @@
       } catch (e) { pane.innerHTML = `<div class="msg err">Error: ${esc(e.message)}</div>`; }
     }
 
+    // ── Player visibility state (persists across redraws within session) ──
+    const _hiddenPlayerIds = new Set();
+
+    // Helper: is this entity owned by a hidden player? (module-level so drawTree can use it)
+    function isEntityHidden(type, id) {
+      if (type === 'player') return _hiddenPlayerIds.has(parseInt(id));
+      if (type === 'relationship') {
+        const rel = (_treeRels || []).find(r => r.id == id);
+        return rel ? _hiddenPlayerIds.has(rel.player_id) : false;
+      }
+      return false; // NPCs are never hidden on their own
+    }
+
+    function togglePlayerTree(playerId, btn) {
+      if (_hiddenPlayerIds.has(playerId)) {
+        _hiddenPlayerIds.delete(playerId);
+        btn.textContent = '👁';
+        btn.title = 'Hide tree';
+      } else {
+        _hiddenPlayerIds.add(playerId);
+        btn.textContent = '🙈';
+        btn.title = 'Show tree';
+      }
+      // Reset viewport so the tree recentres around the remaining visible nodes
+      _treeVP = { scale: 1, ox: 0, oy: 0 };
+      if (_treePlayers) initTreeCanvas(_treePlayers, _treeRels, _treeNpcs, _treeCross);
+    }
+
     function renderCharTree() {
       const { players, relationships, npcs = [], cross_connections } = _treeData;
       const pane = document.getElementById('charTreePane');
@@ -1316,8 +1344,14 @@
           return ` <span style="font-size:9px;background:rgba(255,255,255,.07);border-radius:3px;padding:1px 4px;color:var(--text-muted)">${icon} ${esc(label)}</span>`;
         }
         const pills = rels.map(r => `<span class="rel-pill ${r.is_family ? 'family' : ''}">${r.is_family ? '👨‍👩‍👧' : '👤'} <strong>${esc(r.name)}</strong>${r.relation_type ? ` <span style="color:var(--text-muted);font-size:10px">· ${esc(r.relation_type)}</span>` : ''}${statusBadge(r.status_label)}</span>`).join('');
+        const isHidden = _hiddenPlayerIds.has(p.player_id);
         return `<div class="player-group">
-      <div class="player-group-head">⚔️ ${esc(p.player_name)}${charLabel}</div>
+      <div class="player-group-head" style="display:flex;align-items:center;gap:6px">
+        <span>⚔️ ${esc(p.player_name)}${charLabel}</span>
+        <button class="sm" style="margin:0;padding:2px 7px;font-size:11px;flex-shrink:0"
+          title="${isHidden ? 'Show tree' : 'Hide tree'}"
+          onclick="togglePlayerTree(${p.player_id}, this)">${isHidden ? '🙈' : '👁'}</button>
+      </div>
       ${rels.length ? `<div>${pills}</div>` : '<div style="font-size:11px;color:var(--text-muted);padding:4px 0">No relationships on PC sheet yet.</div>'}
     </div>`;
       }).join('') : '<div class="empty">No players in this campaign.</div>';
@@ -1433,15 +1467,20 @@
       // Which NPC IDs are actually referenced in any cross-connection?
       const connectedNpcIds = new Set();
       crossConns.forEach(c => {
-        if (c.from_entity_type === 'npc') connectedNpcIds.add(c.from_entity_id);
-        if (c.to_entity_type === 'npc') connectedNpcIds.add(c.to_entity_id);
+        // Only add NPC to canvas if at least one connected entity is visible
+        if (c.from_entity_type === 'npc' && !isEntityHidden(c.to_entity_type, c.to_entity_id))
+          connectedNpcIds.add(c.from_entity_id);
+        if (c.to_entity_type === 'npc' && !isEntityHidden(c.from_entity_type, c.from_entity_id))
+          connectedNpcIds.add(c.to_entity_id);
       });
 
       // ── Place nodes for each player (horizontal columns) ─────────────
-      const totalW = (players.length - 1) * PLAYER_SPACING_X;
+      // Only visible players contribute to the layout — no gaps for hidden ones
+      const visiblePlayers = players.filter(p => !_hiddenPlayerIds.has(p.player_id));
+      const totalW = (visiblePlayers.length - 1) * PLAYER_SPACING_X;
       const startX = -totalW / 2;
 
-      players.forEach((p, pi) => {
+      visiblePlayers.forEach((p, pi) => {
         const bandCX = startX + pi * PLAYER_SPACING_X; // world-X centre for this player column
 
         // Player character node at the vertical centre of its column
@@ -1453,8 +1492,10 @@
         };
 
         const pRels = relationships.filter(r => r.player_id === p.player_id);
-        const family = pRels.filter(r => FAMILY_TYPES.has(r.relation_type));
-        const social = pRels.filter(r => !FAMILY_TYPES.has(r.relation_type));
+        // Only top-level rels (no parent_id) go into family/social columns.
+        // Child-of-relationship rels are placed in a separate pass below.
+        const family = pRels.filter(r => FAMILY_TYPES.has(r.relation_type) && !r.parent_id);
+        const social = pRels.filter(r => !FAMILY_TYPES.has(r.relation_type) && !r.parent_id);
 
         // ── Family nodes by tier (vertical, centred on bandCX) ───────
         const byTier = {};
@@ -1522,16 +1563,68 @@
         }
       });
 
+      // ── Child-of-relationship nodes ────────────────────────────────────
+      // These are relationships with a parent_id pointing to another relationship node.
+      // Place them orbiting their parent node, fanning away from the player column centre.
+      const CHILD_ORBIT = NR * 3.2; // orbit radius around parent
+      const childRels = relationships.filter(r => r.parent_id != null);
+      // Group by parent_id so siblings fan evenly
+      const childrenByParent = {};
+      childRels.forEach(r => {
+        if (!childrenByParent[r.parent_id]) childrenByParent[r.parent_id] = [];
+        childrenByParent[r.parent_id].push(r);
+      });
+      Object.entries(childrenByParent).forEach(([parentIdStr, children]) => {
+        const parentNode = _treeNodes[`r_${parentIdStr}`];
+        if (!parentNode) return; // parent not placed yet (hidden player, etc.)
+        // Fan away from the player column: base angle = direction from player col to parent
+        const playerX = parentNode.bandCX ?? 0;
+        const baseAngle = Math.atan2(parentNode.y, parentNode.x - playerX);
+        const spread = Math.PI / 4;
+        const step = children.length === 1 ? 0 : spread / (children.length - 1);
+        children.forEach((r, i) => {
+          const angle = children.length === 1 ? baseAngle : baseAngle - spread / 2 + i * step;
+          _treeNodes[`r_${r.id}`] = {
+            x: parentNode.x + CHILD_ORBIT * Math.cos(angle),
+            y: parentNode.y + CHILD_ORBIT * Math.sin(angle),
+            label: r.name, type: 'rel',
+            relType: r.relation_type, isFamily: FAMILY_TYPES.has(r.relation_type),
+            r: NR, bandCX: parentNode.bandCX,
+            tooltip: `${r.name}\nType: ${r.relation_type || 'Other'}\nPlayer: ${r.player_name}\n(sub-relationship of ${parentNode.label})`
+          };
+        });
+      });
+
       // ── NPC nodes: only those referenced in cross-connections ─────────
       const connectedNpcs = npcs.filter(n => connectedNpcIds.has(n.id));
       if (connectedNpcs.length) {
-        // Find the lowest Y (most positive = lowest on screen) across all nodes
         const allYs = Object.values(_treeNodes).map(n => n.y);
         const bottomY = allYs.length ? Math.max(...allYs) : 0;
-        const npcY = bottomY + TH + 40;
-        const spacing = Math.min(100, 500 / Math.max(connectedNpcs.length, 1));
-        const totalNpcW = spacing * (connectedNpcs.length - 1);
-        connectedNpcs.forEach((n, ni) => {
+        const npcY = bottomY + TH + 60;
+
+        // Sort NPCs by weighted average X of their connected relationship/player nodes
+        // so that lines to nearby columns stay short and cross less
+        const npcWeightedX = (n) => {
+          const conns = (_treeCross || []).filter(c =>
+            (c.from_entity_type === 'npc' && c.from_entity_id == n.id) ||
+            (c.to_entity_type === 'npc' && c.to_entity_id == n.id)
+          );
+          if (!conns.length) return 0;
+          const xs = conns.map(c => {
+            const otherKey = c.from_entity_type === 'npc'
+              ? (c.to_entity_type === 'player' ? `p_${c.to_entity_id}` : `r_${c.to_entity_id}`)
+              : (c.from_entity_type === 'player' ? `p_${c.from_entity_id}` : `r_${c.from_entity_id}`);
+            return (_treeNodes[otherKey] || {}).x || 0;
+          });
+          return xs.reduce((a, b) => a + b, 0) / xs.length;
+        };
+        const sortedNpcs = [...connectedNpcs].sort((a, b) => npcWeightedX(a) - npcWeightedX(b));
+
+        // Spacing: at least 2*NR+12 between centres
+        const minSpacing = 2 * NR + 12;
+        const spacing = Math.max(minSpacing, Math.min(100, 600 / Math.max(sortedNpcs.length, 1)));
+        const totalNpcW = spacing * (sortedNpcs.length - 1);
+        sortedNpcs.forEach((n, ni) => {
           _treeNodes[`n_${n.id}`] = {
             x: -totalNpcW / 2 + ni * spacing,
             y: npcY,
@@ -1539,6 +1632,38 @@
             tooltip: `NPC: ${n.name}`
           };
         });
+      }
+
+      // ── Global repulsion: push ALL nodes apart so none overlap ────────
+      const _allNodeKeys = Object.keys(_treeNodes);
+      const MIN_GAP = 10; // extra clearance beyond sum of radii
+      for (let iter = 0; iter < 400; iter++) {
+        let moved = false;
+        for (let i = 0; i < _allNodeKeys.length; i++) {
+          const ni = _treeNodes[_allNodeKeys[i]];
+          if (!ni) continue;
+          const ri = ni.r || NR;
+          const iFixed = ni.type === 'player';
+          for (let j = i + 1; j < _allNodeKeys.length; j++) {
+            const nj = _treeNodes[_allNodeKeys[j]];
+            if (!nj) continue;
+            const rj = nj.r || NR;
+            const jFixed = nj.type === 'player';
+            const minDist = ri + rj + MIN_GAP;
+            const dx = (ni.x - nj.x) || 0.1;
+            const dy = (ni.y - nj.y) || 0.1;
+            const dist = Math.sqrt(dx * dx + dy * dy) || 0.01;
+            if (dist < minDist) {
+              const push = (minDist - dist) / 2;
+              const nx = (dx / dist) * push;
+              const ny = (dy / dist) * push;
+              if (!iFixed) { ni.x += nx; ni.y += ny; }
+              if (!jFixed) { nj.x -= nx; nj.y -= ny; }
+              moved = true;
+            }
+          }
+        }
+        if (!moved) break;
       }
 
       // ── Centre viewport on bounding box ──────────────────────────────
@@ -1669,7 +1794,7 @@
 
         // Group family nodes by tier
         const byTier = {};
-        pRels.filter(r => FAMILY_TYPES.has(r.relation_type)).forEach(r => {
+        pRels.filter(r => FAMILY_TYPES.has(r.relation_type) && !r.parent_id).forEach(r => {
           const t = TIER_MAP[r.relation_type];
           if (!byTier[t]) byTier[t] = [];
           const n = _treeNodes[`r_${r.id}`];
@@ -1706,17 +1831,45 @@
         });
         ctx.setLineDash([]);
 
-        // Social relation edges — plain line from player to node
-        pRels.filter(r => !FAMILY_TYPES.has(r.relation_type)).forEach(r => {
+        // Social relation edges — gentle curve from player to node
+        pRels.filter(r => !FAMILY_TYPES.has(r.relation_type) && !r.parent_id).forEach((r, si) => {
           const rn = _treeNodes[`r_${r.id}`];
           if (!rn) return;
+          const x1 = sx(pn.x), y1 = sy(pn.y), x2 = sx(rn.x), y2 = sy(rn.y);
+          const dx = x2 - x1, dy = y2 - y1;
+          const len = Math.sqrt(dx * dx + dy * dy) || 1;
+          const curvature = 22 * (si % 2 === 0 ? 1 : -1);
+          const cpx = (x1 + x2) / 2 + (-dy / len) * curvature;
+          const cpy = (y1 + y2) / 2 + (dx / len) * curvature;
           ctx.beginPath();
-          ctx.moveTo(sx(pn.x), sy(pn.y));
-          ctx.lineTo(sx(rn.x), sy(rn.y));
+          ctx.moveTo(x1, y1);
+          ctx.quadraticCurveTo(cpx, cpy, x2, y2);
           ctx.strokeStyle = 'rgba(60,100,120,.4)';
           ctx.lineWidth = 1;
           ctx.setLineDash([]);
           ctx.stroke();
+        });
+
+        // Child-of-relationship edges — dashed curve from parent rel node to child rel node
+        pRels.filter(r => r.parent_id != null).forEach((r, ci) => {
+          const rn = _treeNodes[`r_${r.id}`];
+          const parentN = _treeNodes[`r_${r.parent_id}`];
+          if (!rn || !parentN) return;
+          const x1 = sx(parentN.x), y1 = sy(parentN.y);
+          const x2 = sx(rn.x), y2 = sy(rn.y);
+          const dx = x2 - x1, dy = y2 - y1;
+          const len = Math.sqrt(dx * dx + dy * dy) || 1;
+          const curvature = 16 * (ci % 2 === 0 ? 1 : -1);
+          const cpx = (x1 + x2) / 2 + (-dy / len) * curvature;
+          const cpy = (y1 + y2) / 2 + (dx / len) * curvature;
+          ctx.beginPath();
+          ctx.moveTo(x1, y1);
+          ctx.quadraticCurveTo(cpx, cpy, x2, y2);
+          ctx.strokeStyle = 'rgba(60,100,120,.35)';
+          ctx.lineWidth = 1;
+          ctx.setLineDash([4, 3]);
+          ctx.stroke();
+          ctx.setLineDash([]);
         });
       });
 
@@ -1738,32 +1891,55 @@
         }
       }
 
-      // ── DM cross-connections (dashed red) ─────────────────────────────
+      // ── DM cross-connections (curved dashed lines) ───────────────────
       ctx.setLineDash([]);
+      // Group by (keyA,keyB) pair to fan parallel edges
+      const crossByPair = new Map();
       (_treeCross || []).forEach(c => {
+        if (isEntityHidden(c.from_entity_type, c.from_entity_id)) return;
+        if (isEntityHidden(c.to_entity_type, c.to_entity_id)) return;
         const keyA = c.from_entity_type === 'player' ? `p_${c.from_entity_id}` : c.from_entity_type === 'npc' ? `n_${c.from_entity_id}` : `r_${c.from_entity_id}`;
         const keyB = c.to_entity_type === 'player' ? `p_${c.to_entity_id}` : c.to_entity_type === 'npc' ? `n_${c.to_entity_id}` : `r_${c.to_entity_id}`;
-        const a = _treeNodes[keyA], b = _treeNodes[keyB];
-        if (!a || !b) return;
-        ctx.beginPath();
-        ctx.moveTo(sx(a.x), sy(a.y));
-        ctx.lineTo(sx(b.x), sy(b.y));
-        ctx.strokeStyle = 'rgba(176,80,80,.8)';
-        ctx.lineWidth = 1.5 * sc;
-        ctx.setLineDash([5, 3]);
-        ctx.stroke();
-        ctx.setLineDash([]);
-        const mx = (sx(a.x) + sx(b.x)) / 2, my = (sy(a.y) + sy(b.y)) / 2;
-        const fontSize = Math.max(7, Math.round(9 * sc));
-        ctx.font = `${fontSize}px Cinzel,serif`;
-        ctx.fillStyle = 'rgba(210,110,110,.95)';
-        ctx.textAlign = 'center';
-        const lbl = c.label.length > 16 ? c.label.slice(0, 14) + '…' : c.label;
-        // White halo for readability
-        ctx.strokeStyle = 'rgba(0,0,0,.5)';
-        ctx.lineWidth = 2.5;
-        ctx.strokeText(lbl, mx, my - 5 * sc);
-        ctx.fillText(lbl, mx, my - 5 * sc);
+        const pairKey = [keyA, keyB].sort().join('||');
+        if (!crossByPair.has(pairKey)) crossByPair.set(pairKey, []);
+        crossByPair.get(pairKey).push({ c, keyA, keyB });
+      });
+      crossByPair.forEach(items => {
+        const total = items.length;
+        items.forEach(({ c, keyA, keyB }, idx) => {
+          const a = _treeNodes[keyA], b = _treeNodes[keyB];
+          if (!a || !b) return;
+          const dx = b.x - a.x, dy = b.y - a.y;
+          const len = Math.sqrt(dx * dx + dy * dy) || 1;
+          const rA = a.r || NR, rB = b.r || NR;
+          const x1 = sx(a.x + (dx / len) * rA), y1 = sy(a.y + (dy / len) * rA);
+          const x2 = sx(b.x - (dx / len) * rB), y2 = sy(b.y - (dy / len) * rB);
+          // Perpendicular offset fans parallel edges
+          const offset = total === 1 ? 0 : (idx - (total - 1) / 2) * 28 * sc;
+          const perpX = -dy / len, perpY = dx / len;
+          const cpx = (x1 + x2) / 2 + perpX * offset;
+          const cpy = (y1 + y2) / 2 + perpY * offset;
+          // Label at bezier midpoint
+          const lx = 0.25 * x1 + 0.5 * cpx + 0.25 * x2;
+          const ly = 0.25 * y1 + 0.5 * cpy + 0.25 * y2;
+          ctx.beginPath();
+          ctx.moveTo(x1, y1);
+          ctx.quadraticCurveTo(cpx, cpy, x2, y2);
+          ctx.strokeStyle = 'rgba(176,80,80,.8)';
+          ctx.lineWidth = 1.5 * sc;
+          ctx.setLineDash([5, 3]);
+          ctx.stroke();
+          ctx.setLineDash([]);
+          const fontSize = Math.max(7, Math.round(9 * sc));
+          ctx.font = `${fontSize}px Cinzel,serif`;
+          ctx.fillStyle = 'rgba(210,110,110,.95)';
+          ctx.textAlign = 'center';
+          const lbl = c.label.length > 16 ? c.label.slice(0, 14) + '…' : c.label;
+          ctx.strokeStyle = 'rgba(0,0,0,.5)';
+          ctx.lineWidth = 2.5;
+          ctx.strokeText(lbl, lx, ly - 5 * sc);
+          ctx.fillText(lbl, lx, ly - 5 * sc);
+        });
       });
       ctx.setLineDash([]);
 

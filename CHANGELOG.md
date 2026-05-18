@@ -6,7 +6,24 @@ the actual diffs between tags.
 
 ---
 
-## [0.1.1] – 2026-05-14
+## [0.1.1] – 2026-05-18
+
+### PC Sheet — Cross-connections overhaul
+
+- **All connection types now shown**: the API query previously only returned connections where one side was a `relationship` in `relIds`. Added two additional OR clauses so `player↔player`, `player↔npc`, and `relationship→player` (on the player side) are all returned. The query uses `DISTINCT ON (cr.id)` to prevent duplicates when a connection matches multiple conditions.
+- **One bubble per external entity**: the chip list now groups by the *external* entity (the side not owned by the current player) rather than by the DB storage direction. Two connections from the same NPC to two different of the player's relationships now produce a single bubble with both arrows (`NPC ⟶ label ⟶ Rel A · ⟶ label ⟶ Rel B`).
+- **Graph also fixed**: the graph renderer had the same directional blind spots. Rewrote `byLocalRel` grouping to use `isMyGraphEntity()` matching both `relationship` and `player` types. Connections anchored to the player directly (no relationship node) use a `'self'` sentinel key resolving to `{x:0, y:0}` with `SR` radius for edge start.
+- **One graph node per external entity**: graph now builds `extNodeMap` keyed by external entity, with all edges accumulated per node. One circle is drawn per external entity; multiple dashed lines fan out to each local anchor. Repulsion iterations increased 60→120 and min gap 6→10 px to reduce overlap.
+- **Cross-connections not shown when `relationships` is empty**: `renderRelList` returned early before reaching the cross-connections section. Now returns early only when both `relationships` and `crossConnections` are empty.
+- **Notes hidden from players**: the API strips the `notes` field from cross-connection rows before returning them to non-DM viewers. DMs still see notes in both chips and graph tooltips.
+- **DM-only connections shown to DMs**: the `WHERE cr.is_public = true` filter is now conditional — omitted for DM/admin viewers so they see hidden connections with a `🔒 DM only` badge.
+
+### Manage Campaigns — Char-tree player show/hide
+
+- **👁 / 🙈 toggle per player**: each player group header now has a button that hides or shows that player's entire tree column. State is held in a module-level `_hiddenPlayerIds` Set and survives tab switches within the session.
+- **Canvas redraws on toggle**: `_treeVP` is reset to `{scale:1, ox:0, oy:0}` and `initTreeCanvas` is called immediately so the tree re-layouts around the remaining visible players.
+- **No gaps for hidden centre players**: layout now uses `visiblePlayers = players.filter(...)` for column count and index, so hiding a middle player closes the gap rather than leaving empty space.
+- **NPC nodes and cross-connection lines respect visibility**: NPC nodes are only added when at least one of their connections touches a visible player. Cross-connection lines are skipped if either endpoint belongs to a hidden player. `isEntityHidden()` moved to module scope so `drawTree` (a separate top-level function) can access it.
 
 ### Export filenames include date
 
@@ -25,7 +42,6 @@ the actual diffs between tags.
 - Clicking it opens a modal that fetches and renders the module's `docs/<module>/README.md` as formatted HTML (headings, tables, code blocks, lists, links).
 - New API endpoint: `GET /api/docs/:module` — serves the README as plain text. Only whitelisted slugs are accepted; no path traversal is possible.
 - The modal closes on backdrop click or `Escape`.
-
 
 ### Campaign Export / Import — DM timelines + bug fixes
 

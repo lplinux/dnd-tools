@@ -1628,7 +1628,9 @@
             ? `<span style="font-size:10px;color:var(--text-dim);background:var(--surface2);border:1px solid var(--border);border-radius:2px;padding:1px 5px;margin-left:6px" title="Hidden from player">🔒 DM only</span>`
             : '';
           const arrows = items.map(i => {
-            const arrow = `<span style="font-size:11px;color:var(--text-dim)">⟶ ${escHtml(i.label)} ⟶</span><strong>${escHtml(i.myLabel)}</strong> `;
+            const arrow = i.extIsFrom
+              ? `<span style="font-size:11px;color:var(--text-dim)">⟶ ${escHtml(i.label)} ⟶</span> <strong>${escHtml(i.myLabel)}</strong>`
+              : `<strong>${escHtml(i.myLabel)}</strong> <span style="font-size:11px;color:var(--text-dim)">⟶ ${escHtml(i.label)} ⟶</span>`;
             return arrow + (i.notes ? ` <span style="font-size:10px;color:var(--text-muted);font-style:italic">(${escHtml(i.notes)})</span>` : '');
           }).join('<span style="color:var(--border2);margin:0 6px">·</span>');
           return `<div class="rel-chip" style="border-style:dashed;opacity:${isDmOnly ? '0.65' : '0.9'};flex-wrap:wrap;gap:4px">
@@ -1775,16 +1777,17 @@
         });
       });
 
-      // ── Compute viewBox ──
-      const allNodes = [...famNodes, ...socNodes, ...childNodes];
-      const xs = allNodes.map(n => n.x);
-      const ys = allNodes.map(n => n.y);
-      const minX = (xs.length ? Math.min(...xs) : -SR) - NR - PAD;
-      const maxX = (xs.length ? Math.max(...xs) : SR) + NR + PAD;
-      const minY = (ys.length ? Math.min(...ys) : -SR) - NR - PAD;
-      const maxY = (ys.length ? Math.max(...ys) : SR) + NR + PAD;
-      const VW = maxX - minX;
-      const VH = maxY - minY;
+      // ── Compute viewBox (re-calculated after cross nodes are placed) ──
+      // Cross nodes are placed after viewBox is first computed, so we recompute below.
+      // Initial pass uses only family/social/child nodes.
+      const _allLayoutNodes = [...famNodes, ...socNodes, ...childNodes];
+      let minX = (_allLayoutNodes.length ? Math.min(..._allLayoutNodes.map(n => n.x)) : -SR) - NR - PAD;
+      let maxX = (_allLayoutNodes.length ? Math.max(..._allLayoutNodes.map(n => n.x)) : SR) + NR + PAD;
+      let minY = (_allLayoutNodes.length ? Math.min(..._allLayoutNodes.map(n => n.y)) : -SR) - NR - PAD;
+      let maxY = (_allLayoutNodes.length ? Math.max(..._allLayoutNodes.map(n => n.y)) : SR) + NR + PAD;
+      // Will be expanded to include cross nodes after they are placed.
+      let VW = maxX - minX;
+      let VH = maxY - minY;
 
       // ── Helper: build a node <g> element ──
       const nodeEl = ({ r, x, y }) => {
@@ -1846,17 +1849,23 @@
         }
       });
 
-      // ── Build social edges (straight lines from Self) ──
+      // ── Build social edges (gentle curves from Self) ──
       let socEdges = '';
-      socNodes.forEach(({ r, x, y }) => {
+      socNodes.forEach(({ r, x, y }, si) => {
         const ring = RING[r.relation_type] || '#605840';
-        const len = Math.sqrt(x * x + y * y);
+        const len = Math.sqrt(x * x + y * y) || 1;
         const ex = x - (x / len) * NR;
         const ey = y - (y / len) * NR;
         const sx = (x / len) * SR;
         const sy = (y / len) * SR;
-        socEdges += `<line x1="${sx}" y1="${sy}" x2="${ex}" y2="${ey}"
-          stroke="${ring}" stroke-width="1.1" opacity="0.45"/>`;
+        // Small perpendicular offset for a gentle arc (offset alternates side for adjacent nodes)
+        const curvature = 18 * (si % 2 === 0 ? 1 : -1);
+        const perpX = -y / len;
+        const perpY = x / len;
+        const cpx = (sx + ex) / 2 + perpX * curvature;
+        const cpy = (sy + ey) / 2 + perpY * curvature;
+        socEdges += `<path d="M ${sx} ${sy} Q ${cpx} ${cpy} ${ex} ${ey}"
+          fill="none" stroke="${ring}" stroke-width="1.1" opacity="0.45"/>`;
       });
 
       // ── Build child edges (from parent node edge → child node edge) ──
@@ -1876,8 +1885,13 @@
         const sy = parentPos.y + (dy / len) * NR;
         const ex = x - (dx / len) * NR;
         const ey = y - (dy / len) * NR;
-        childEdges += `<line x1="${sx}" y1="${sy}" x2="${ex}" y2="${ey}"
-          stroke="${ring}" stroke-width="1.1" stroke-dasharray="4 2" opacity="0.5"/>`;
+        const cdx = ex - sx, cdy = ey - sy;
+        const clen = Math.sqrt(cdx * cdx + cdy * cdy) || 1;
+        const cperpX = -cdy / clen, cperpY = cdx / clen;
+        const cpx = (sx + ex) / 2 + cperpX * 14;
+        const cpy = (sy + ey) / 2 + cperpY * 14;
+        childEdges += `<path d="M ${sx} ${sy} Q ${cpx} ${cpy} ${ex} ${ey}"
+          fill="none" stroke="${ring}" stroke-width="1.1" stroke-dasharray="4 2" opacity="0.5"/>`;
       });
 
       // ── Section separators (subtle background bands for family tiers) ──
@@ -1943,7 +1957,7 @@
       // Place each node close to its linked local relationship node, offset outward from the graph centre,
       // then run a repulsion pass to eliminate overlaps with all other nodes.
       const crossNodeRadius = NR - 2;
-      const CROSS_DIST = NR * 3.6; // initial distance from the local rel node
+      const CROSS_DIST = NR * 5.5; // initial distance from the local rel node
       const MIN_GAP = NR * 2.6; // minimum centre-to-centre distance before repulsion
       let crossNodes = [];
       let crossEdges = '';
@@ -1987,11 +2001,12 @@
 
         // First pass: place one cross node per external entity.
         // Initial position = centroid of all its anchor positions, pushed outward.
+        // All placed nodes are fixed — cross nodes must not overlap any of them
         const fixedPositions = [
-          { x: 0, y: 0, r: SR },
-          ...famNodes.map(n => ({ x: n.x, y: n.y, r: NR })),
-          ...socNodes.map(n => ({ x: n.x, y: n.y, r: NR })),
-          ...childNodes.map(n => ({ x: n.x, y: n.y, r: NR })),
+          { x: 0, y: 0, r: SR + 6 },
+          ...famNodes.map(n => ({ x: n.x, y: n.y, r: NR + 6 })),
+          ...socNodes.map(n => ({ x: n.x, y: n.y, r: NR + 6 })),
+          ...childNodes.map(n => ({ x: n.x, y: n.y, r: NR + 6 })),
         ];
 
         extNodeMap.forEach((node, extKey) => {
@@ -2010,18 +2025,18 @@
           });
         });
 
-        // Second pass: iterative repulsion so nodes don't overlap
-        for (let iter = 0; iter < 120; iter++) {
+        // Second pass: iterative repulsion — cross nodes vs ALL fixed nodes + each other
+        for (let iter = 0; iter < 400; iter++) {
           let moved = false;
           crossNodes.forEach((cn, ci) => {
             const others = [
               ...fixedPositions,
-              ...crossNodes.filter((_, j) => j !== ci).map(o => ({ x: o.x, y: o.y, r: crossNodeRadius })),
+              ...crossNodes.filter((_, j) => j !== ci).map(o => ({ x: o.x, y: o.y, r: crossNodeRadius + 8 })),
             ];
             others.forEach(other => {
-              const minDist = (other.r || NR) + crossNodeRadius + 10;
-              const dx = cn.x - other.x;
-              const dy = cn.y - other.y;
+              const minDist = (other.r || NR) + crossNodeRadius + 8;
+              const dx = cn.x - other.x || 0.1;
+              const dy = cn.y - other.y || 0.1;
               const dist = Math.sqrt(dx * dx + dy * dy) || 0.01;
               if (dist < minDist) {
                 const push = (minDist - dist) / 2;
@@ -2034,9 +2049,21 @@
           if (!moved) break;
         }
 
-        // Third pass: build one edge per connection (may be multiple per cross node)
+        // Expand viewBox to include cross nodes
         crossNodes.forEach(cn => {
-          cn.edges.forEach(edge => {
+          minX = Math.min(minX, cn.x - crossNodeRadius - PAD);
+          maxX = Math.max(maxX, cn.x + crossNodeRadius + PAD);
+          minY = Math.min(minY, cn.y - crossNodeRadius - PAD);
+          maxY = Math.max(maxY, cn.y + crossNodeRadius + PAD);
+        });
+        VW = maxX - minX;
+        VH = maxY - minY;
+
+        // Third pass: build one curved edge per connection (may be multiple per cross node)
+        // Edges sharing the same anchor get offset control points so they fan apart visually.
+        crossNodes.forEach(cn => {
+          const total = cn.edges.length;
+          cn.edges.forEach((edge, ei) => {
             const localPos = edge.anchorKey === 'self' ? { x: 0, y: 0 } : posById[edge.anchorKey];
             if (!localPos) return;
             const anchorR = edge.anchorKey === 'self' ? SR : NR;
@@ -2047,11 +2074,18 @@
             const sy = localPos.y + (dy / len) * anchorR;
             const ex = cn.x - (dx / len) * crossNodeRadius;
             const ey = cn.y - (dy / len) * crossNodeRadius;
-            const mx = (sx + ex) / 2;
-            const my = (sy + ey) / 2;
-            crossEdges += `<line x1="${sx}" y1="${sy}" x2="${ex}" y2="${ey}"
-              stroke="#2a7a7a" stroke-width="1.2" stroke-dasharray="4 3" opacity="0.75"/>
-            <text x="${mx}" y="${my - 5}" text-anchor="middle" dominant-baseline="middle"
+            // Perpendicular offset so parallel edges don't overlap
+            const offset = total === 1 ? 0 : (ei - (total - 1) / 2) * 22;
+            const perpX = -dy / len;
+            const perpY = dx / len;
+            const cpx = (sx + ex) / 2 + perpX * offset;
+            const cpy = (sy + ey) / 2 + perpY * offset;
+            // Label at the bezier midpoint (t=0.5)
+            const lx = 0.25 * sx + 0.5 * cpx + 0.25 * ex;
+            const ly = 0.25 * sy + 0.5 * cpy + 0.25 * ey;
+            crossEdges += `<path d="M ${sx} ${sy} Q ${cpx} ${cpy} ${ex} ${ey}"
+              fill="none" stroke="#2a7a7a" stroke-width="1.2" stroke-dasharray="4 3" opacity="0.75"/>
+            <text x="${lx}" y="${ly - 5}" text-anchor="middle" dominant-baseline="middle"
               fill="#2a9a9a" font-family="Cinzel,Georgia,serif" font-size="7.5" opacity="0.9"
               paint-order="stroke" stroke="#0a1a1a" stroke-width="2">${escHtml(edge.label)}</text>`;
           });
