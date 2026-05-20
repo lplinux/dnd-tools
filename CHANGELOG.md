@@ -6,7 +6,20 @@ the actual diffs between tags.
 
 ---
 
-## [0.1.1] – 2026-05-18
+## [0.1.1] – 2026-05-21
+
+### Timeline — DM Combined View fixes
+
+- **Event dot labels show real names**: in the DM combined view, every event circle now displays the name of the actual actor (character, NPC, or relationship) rather than always showing `"DM"`. A new `_dmNpcNames` map is loaded in parallel with relationships on `loadDMCombinedView` (`GET /api/campaigns/:cid/npcs`), and `cp_<id>` tokens are resolved via a new `_dmCampaignPlayers` list (see below). The dot abbreviation also strips leading emoji (`🎭 `, `👤 `) and trailing `(username)` parentheticals before slicing to two characters.
+- **All campaign players resolved, not just those with timelines**: `_dmCampaignPlayers` is fetched from `GET /api/campaigns/:cid/players` (all players in the campaign), replacing the previous approach of building `cpIdToName` only from `_dmAllData` rows. Players who have no timeline entries yet are now correctly identified when referenced by `cp_<id>` tokens in other players' events.
+- **`cp_` and `npc_` tokens fully handled in export and import** (`app.js`): previously only `self_`, `p_`, and `rel_` prefixes were remapped during campaign export/import; `cp_<db_id>` (campaign players referenced in DM events) and `npc_<db_id>` tokens fell through as raw IDs and broke after re-import. All four export paths (player timelines + DM timelines) and both import paths now map `cp_<id>` ↔ `player_name` and `npc_<id>` ↔ `npc_name`. A `npcNameById` lookup is built from the already-fetched `npcsRes` rows before the per-player loop — no extra query needed on export.
+
+### Timeline — Player search
+
+- **Search in "New Event" → Players** (sidebar): a live filter input above the player checkbox list narrows choices as you type. Clears automatically when `renderAll()` rebuilds the list.
+- **Search in Edit Event modal**: the same filter sits above the `.mpc` scrollable checkbox list in the event-edit modal.
+- **Search in Players sidebar section**: a live filter input above `#pl-list` hides player rows whose names don't match, useful when a campaign has many characters.
+- All three use the shared `.pl-search` style (dark surface, gold focus border, italic placeholder) and a `filterPcl()` / `filterPlayerList()` helper that operates without re-rendering.
 
 ### PC Sheet — Cross-connections overhaul
 

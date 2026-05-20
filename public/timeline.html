@@ -565,7 +565,7 @@
       background: var(--surface2);
       border: 1px solid var(--border);
       border-radius: 2px;
-      max-height: 100px;
+      max-height: 400px;
       overflow-y: auto;
       padding: 2px 0
     }
@@ -1043,10 +1043,55 @@
       background: var(--surface2);
       border: 1px solid var(--border);
       border-radius: 2px;
-      max-height: 120px;
+      max-height: 240px;
       overflow-y: auto;
       padding: 3px 0;
       margin-top: 3px
+    }
+
+    .mpc-wrap {
+      display: flex;
+      flex-direction: column;
+      gap: 3px
+    }
+
+    .pl-search {
+      width: 100%;
+      box-sizing: border-box;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 2px;
+      color: var(--text);
+      font-family: var(--fd);
+      font-size: .75rem;
+      padding: 4px 8px;
+      outline: none;
+    }
+
+    .pl-search::placeholder {
+      color: var(--text-muted);
+      font-style: italic
+    }
+
+    .pl-search:focus {
+      border-color: var(--gold);
+    }
+
+    /* sidebar new-event player search */
+    .pchks-wrap {
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+      margin-top: 2px
+    }
+
+    .pchks {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 2px;
+      max-height: 100px;
+      overflow-y: auto;
+      padding: 3px 0
     }
 
     .mpc::-webkit-scrollbar {
@@ -1367,9 +1412,12 @@
             <div class="s-inner">
               <div class="fr"><label>Title</label><input id="ev-title" type="text" placeholder="Event name…"></div>
               <div class="fr"><label>Players</label>
-                <div class="pchks" id="ev-pchks">
-                  <div style="padding:5px 8px;font-size:.8rem;color:var(--text-muted);font-style:italic">Add players
-                    first</div>
+                <div class="pchks-wrap">
+                  <input class="pl-search" id="ev-pl-search" placeholder="🔍 Search players…" oninput="filterPcl(this)">
+                  <div class="pchks" id="ev-pchks">
+                    <div style="padding:5px 8px;font-size:.8rem;color:var(--text-muted);font-style:italic">Add players
+                      first</div>
+                  </div>
                 </div>
               </div>
               <div class="fr"><label>Location</label><select id="ev-loc"></select></div>
@@ -1395,6 +1443,8 @@
           </div>
           <div class="s-body" id="sb-players">
             <div class="s-inner">
+              <input class="pl-search" id="pl-list-search" placeholder="🔍 Search players…"
+                oninput="filterPlayerList(this.value)" style="margin-bottom:4px">
               <div id="pl-list"></div>
               <button class="btn sm" onclick="openModal('add-player')">+ Add Player</button>
             </div>
@@ -1869,6 +1919,8 @@
         }).join('');
 
       // Players — with eye toggle + editable color dot
+      const plSearch = document.getElementById('pl-list-search');
+      if (plSearch) plSearch.value = '';
       document.getElementById('pl-list').innerHTML = sp.length === 0
         ? `<div class="empty-m">No players yet.</div>`
         : sp.map(p => {
@@ -1914,9 +1966,12 @@
 
       // Player checkboxes in form
       const chk = document.getElementById('ev-pchks');
-      chk.innerHTML = sp.length === 0
-        ? `<div style="padding:5px 8px;font-size:.8rem;color:var(--text-muted);font-style:italic">Add players first</div>`
-        : sp.map(p => `<label class="pcl"><input type="checkbox" value="${p.id}"><span style="width:9px;height:9px;border-radius:50%;background:${p.color};display:inline-block;flex-shrink:0"></span>${esc(p.name)}</label>`).join('');
+      if (sp.length === 0) {
+        chk.innerHTML = `<div style="padding:5px 8px;font-size:.8rem;color:var(--text-muted);font-style:italic">Add players first</div>`;
+      } else {
+        const items = sp.map(p => `<label class="pcl"><input type="checkbox" value="${p.id}"><span style="width:9px;height:9px;border-radius:50%;background:${p.color};display:inline-block;flex-shrink:0"></span>${esc(p.name)}</label>`).join('');
+        chk.innerHTML = items;
+      }
 
       // Location select — always alphabetical
       const lSel = document.getElementById('ev-loc');
@@ -2552,7 +2607,12 @@
         if (!drawnSlots.has(slotKey)) {
           drawnSlots.add(slotKey);
           const cy = evStartY(ev);
-          const label = pls.length === 1 ? pls[0].name.slice(0, 2).toUpperCase() : `${pls.length}`;
+          const label = pls.length === 1
+            ? pls[0].name
+              .replace(/^\p{Emoji}\s*/u, '')   // strip leading emoji (🎭, 👤, etc.)
+              .replace(/\s*\(.*\)$/, '')        // strip trailing (username) or (charName)
+              .trim().slice(0, 2).toUpperCase() || '?'
+            : `${pls.length}`;
           const durBadge = dur > 1 ? `<text x="${cx + R + 2}" y="${cy - R + 3}" font-family="Cinzel,serif" font-size="10" fill="${C.textDim}" opacity=".85" pointer-events="none">${formatDuration(dur)}</text>` : '';
           hStartCircles += `<g class="ev-g" data-eid="${ev.id}" data-pids="${esc(allPids)}"
         onmouseenter="onEvHover(event,'${ev.id}')" onmouseleave="onEvLeave()" onclick="onEvClick(event,'${ev.id}')">
@@ -2812,10 +2872,23 @@
         `<input type="color" id="cc" value="${cur}" style="width:23px;height:23px;padding:0;border:none;cursor:pointer;border-radius:50%;overflow:hidden;background:none" oninput="pickColor(this.value)">`;
     }
     function pickColor(hex) { _sc = hex; document.querySelectorAll('.sw').forEach(el => el.classList.toggle('act', el.style.background === hex)); const cc = document.getElementById('cc'); if (cc) cc.value = hex; }
+    function filterPcl(input) {
+      const q = input.value.toLowerCase();
+      input.closest('.mpc-wrap, .pchks-wrap').querySelectorAll('.pcl').forEach(el => {
+        el.style.display = el.textContent.toLowerCase().includes(q) ? '' : 'none';
+      });
+    }
+    function filterPlayerList(q) {
+      const lc = q.toLowerCase();
+      document.querySelectorAll('#pl-list .p-it').forEach(el => {
+        el.style.display = el.querySelector('.p-nm')?.textContent.toLowerCase().includes(lc) ? '' : 'none';
+      });
+    }
     function pchkHtml(selIds = []) {
       const sp = sortedPlayers();
       if (!sp.length) return `<div style="color:var(--text-muted);font-style:italic;font-size:.82rem;padding:6px">No players yet.</div>`;
-      return `<div class="mpc">` + sp.map(p => `<label class="pcl"><input type="checkbox" value="${p.id}" ${selIds.includes(p.id) ? 'checked' : ''}><span style="width:9px;height:9px;border-radius:50%;background:${p.color};display:inline-block;flex-shrink:0"></span>${esc(p.name)}</label>`).join('') + `</div>`;
+      const items = sp.map(p => `<label class="pcl"><input type="checkbox" value="${p.id}" ${selIds.includes(p.id) ? 'checked' : ''}><span style="width:9px;height:9px;border-radius:50%;background:${p.color};display:inline-block;flex-shrink:0"></span>${esc(p.name)}</label>`).join('');
+      return `<div class="mpc-wrap"><input class="pl-search" placeholder="🔍 Search players…" oninput="filterPcl(this)"><div class="mpc">${items}</div></div>`;
     }
 
     function openModal(type, data) {
@@ -3352,6 +3425,8 @@
     let _dmAllData = [];    // raw rows from /all endpoint
     let _dmHidden = new Set(); // hidden timeline IDs (DM combined view)
     let _dmRelNames = {};   // 'rel_X' -> relationship name (populated in loadDMCombinedView)
+    let _dmNpcNames = {};   // 'npc_X' -> NPC name (populated in loadDMCombinedView)
+    let _dmCampaignPlayers = []; // all campaign players, including those without timelines
     const PLAYER_PALETTE = ['#c0392b', '#2980b9', '#27ae60', '#8e44ad', '#e67e22', '#16a085', '#d35400', '#2c3e50', '#7f8c8d', '#f39c12', '#1abc9c', '#e74c3c'];
 
     /* ── API helpers ── */
@@ -3816,11 +3891,26 @@
       // Fetch relationship names for every distinct player so 'rel_X' actors
       // can be resolved to their real names in the combined view.
       _dmRelNames = {};
+      _dmNpcNames = {};
+      _dmCampaignPlayers = [];
       const uniquePlayerIds = [...new Set(_dmAllData.map(r => r.player_id).filter(Boolean))];
-      await Promise.all(uniquePlayerIds.map(async pid => {
-        const { relationships: rels = [] } = await apiGet(`/api/pc/${pid}/relationships`) || {};
-        rels.forEach(r => { _dmRelNames['rel_' + r.id] = r.name; });
-      }));
+      const firstRow = _dmAllData.find(r => r.campaign_id);
+      const cid = firstRow ? firstRow.campaign_id : campaignId;
+      await Promise.all([
+        ...uniquePlayerIds.map(async pid => {
+          const { relationships: rels = [] } = await apiGet(`/api/pc/${pid}/relationships`) || {};
+          rels.forEach(r => { _dmRelNames['rel_' + r.id] = r.name; });
+        }),
+        (async () => {
+          const npcs = await apiGet(`/api/campaigns/${cid}/npcs`) || [];
+          npcs.forEach(n => { _dmNpcNames['npc_' + n.id] = n.name; });
+        })(),
+        (async () => {
+          // Fetch ALL campaign players — including those without any timeline entries yet.
+          // This ensures cp_<id> tokens in events are resolvable even for players with no timelines.
+          _dmCampaignPlayers = await apiGet(`/api/campaigns/${cid}/players`) || [];
+        })()
+      ]);
 
       // Show normal sidebar with the DM section; hide Players/Locs/Today sections
       document.getElementById('sec-dm-combined').style.display = '';
@@ -3914,6 +4004,13 @@
         });
       });
 
+      // Build cp_<id> → player_name lookup from the full campaign players list
+      // (includes players who have no timeline entries yet)
+      const cpIdToName = {};
+      _dmCampaignPlayers.forEach(p => { cpIdToName['cp_' + p.id] = p.player_name; });
+      // Also cover entries from allData rows as a fallback
+      _dmAllData.forEach(r => { if (r.player_id && !cpIdToName['cp_' + r.player_id]) cpIdToName['cp_' + r.player_id] = r.player_name; });
+
       synthPlayers.forEach(sp => {
         const m = sp.id.match(/^tl_(\d+)_(.+)$/);
         if (!m) {
@@ -3927,11 +4024,15 @@
 
         if (rawPid.startsWith('rel_')) {
           const relName = _dmRelNames[rawPid];
-          sp.name = relName
-            ? `${relName} (${charName})`
-            : charName;
+          sp.name = relName ? `${relName} (${charName})` : charName;
+        } else if (rawPid.startsWith('npc_')) {
+          const npcName = _dmNpcNames[rawPid];
+          sp.name = npcName ? `🎭 ${npcName}` : charName;
+        } else if (rawPid.startsWith('cp_')) {
+          const cpName = cpIdToName[rawPid];
+          sp.name = cpName || charName;
         } else {
-          // self_ or fallback
+          // self_ or tl_ fallback → use the character's own name
           sp.name = charName;
         }
       });
@@ -4276,6 +4377,7 @@
         _dmAllData = data.rows;
         _dmHidden = new Set();
         _dmRelNames = {};
+        _dmNpcNames = {};
         _dmActive = true;
 
         // Show sidebar with the DM combined section — exactly what loadDMCombinedView does

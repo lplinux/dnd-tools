@@ -15,6 +15,7 @@ A server-backed timeline tool for D&D campaigns. Tracks events for multiple play
 - **Three themes** — Dark, Light, Slate (persisted in localStorage)
 - **Table view** — chronological table with CSV export
 - **Search** — instant search across titles, descriptions, locations, and player names
+- **Player filter** — live search box in the Players sidebar, New Event player picker, and Edit Event modal to quickly find actors in large campaigns
 - **Drag to move events** — drag any event circle to a new date or column
 - **Location column reorder** — drag location names in the sidebar to reorder columns
 - **Private player timelines** — each player has their own private journal, viewable by the DM in a combined view
@@ -50,6 +51,16 @@ A white/blue line will appear across the full timeline at that date.
 ### Adding Players and Locations
 
 Players and locations are managed in **Manage Campaigns** (`/manage-campaigns`). The timeline reflects the campaign's player list and uses campaign locations as column headers.
+
+### Filtering players
+
+When a campaign has many characters (players, NPCs, relationships) the player picker can become long. A **🔍 Search players…** input appears:
+
+- Above the **Players** list in the sidebar — filters which players are shown for hide/show and colour editing
+- Above the player checkboxes in the **New Event** form
+- Above the player checkboxes in the **Edit Event** modal
+
+Typing narrows the list live; clearing the input restores all entries.
 
 ### Adding an event
 

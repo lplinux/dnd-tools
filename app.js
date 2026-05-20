@@ -2055,9 +2055,12 @@ app.get('/api/campaigns/:id/export', requireRole(['dm']), async (req, res) => {
       locNameSeen[l.name] = (locNameSeen[l.name] || 0) + 1;
       locRefById[l.id] = locNameCount[l.name] > 1 ? `${l.name}__${locNameSeen[l.name]}` : l.name;
     }
-    // player ref: id → player_name
+    // Build lookup maps used across player loop and DM timelines
     const playerRefById = {};
     for (const p of playersRes.rows) playerRefById[p.id] = p.player_name;
+
+    const npcNameById = {};
+    for (const n of npcsRes.rows) npcNameById[n.id] = n.name;
 
     // per-player data
     const playersOut = [];
@@ -2093,8 +2096,10 @@ app.get('/api/campaigns/:id/export', requireRole(['dm']), async (req, res) => {
               const parts = tok.split('_');
               const prefix = parts[0];
               const val = parts.slice(1).join('_');
-              if (prefix === 'self' || prefix === 'p') return `${prefix}_${playerRefById[val] || val}`;
-              if (prefix === 'rel') return `rel_${p.player_name}:${relRefById[val] || val}`;
+              if (prefix === 'self') return `self_${playerRefById[parseInt(val)] || val}`;
+              if (prefix === 'cp') return `cp_${playerRefById[parseInt(val)] || val}`;
+              if (prefix === 'rel') return `rel_${p.player_name}:${relRefById[parseInt(val)] || val}`;
+              if (prefix === 'npc') return `npc_${npcNameById[parseInt(val)] || val}`;
               return tok;
             });
             return {
@@ -2245,9 +2250,6 @@ app.get('/api/campaigns/:id/export', requireRole(['dm']), async (req, res) => {
           globalRelRef[rid] = `${p.player_name}:${ref}`;
         }
       }
-      // Build npc id → name map
-      const npcNameById = {};
-      for (const n of npcsRes.rows) npcNameById[n.id] = n.name;
 
       const dmTlRes = await pool.query(
         `SELECT id, name FROM player_timelines WHERE campaign_id=$1 AND player_id=$2 ORDER BY created_at ASC`,
@@ -2263,7 +2265,7 @@ app.get('/api/campaigns/:id/export', requireRole(['dm']), async (req, res) => {
               const prefix = parts[0];
               const val = parts.slice(1).join('_');
               if (prefix === 'self') return 'dm_self'; // DM's own row — restored to dm player on import
-              if (prefix === 'p') return `p_${playerRefById[val] || val}`;
+              if (prefix === 'cp') return `cp_${playerRefById[val] || val}`;
               if (prefix === 'rel') return `rel_${globalRelRef[val] || val}`;
               if (prefix === 'npc') return `npc_${npcNameById[val] || val}`;
               return tok;
@@ -2434,13 +2436,21 @@ app.post('/api/campaigns/import', requireRole(['dm']), async (req, res) => {
             const parts = tok.split('_');
             const prefix = parts[0];
             const val = parts.slice(1).join('_');
-            if (prefix === 'self' || prefix === 'p') {
+            if (prefix === 'self') {
               const pid = playerIdByRef[val];
-              return pid ? `${prefix}_${pid}` : tok;
+              return pid ? `self_${pid}` : tok;
+            }
+            if (prefix === 'cp') {
+              const pid = playerIdByRef[val];
+              return pid ? `cp_${pid}` : tok;
             }
             if (prefix === 'rel') {
               const rid = relIdByRef[val];
               return rid ? `rel_${rid}` : tok;
+            }
+            if (prefix === 'npc') {
+              const nid = npcIdByName[val];
+              return nid ? `npc_${nid}` : tok;
             }
             return tok;
           });
@@ -2480,9 +2490,9 @@ app.post('/api/campaigns/import', requireRole(['dm']), async (req, res) => {
             const prefix = parts[0];
             const val = parts.slice(1).join('_');
             if (prefix === 'dm' && val === 'self') return `self_${dmPlayerId}`;
-            if (prefix === 'p') {
+            if (prefix === 'cp') {
               const pid = playerIdByRef[val];
-              return pid ? `p_${pid}` : tok;
+              return pid ? `cp_${pid}` : tok;
             }
             if (prefix === 'rel') {
               const rid = relIdByRef[val];
