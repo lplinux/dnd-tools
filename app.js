@@ -2361,9 +2361,19 @@ app.post('/api/campaigns/import', requireRole(['dm']), async (req, res) => {
     const userByName = {};
     for (const u of allUsersRes.rows) userByName[u.username.toLowerCase()] = u.id;
 
-    // 5. Players
+    // 5. Players — two passes so that timeline entries referencing OTHER players
+    //    via cp_<name> always resolve correctly regardless of player order.
+    //
+    //    Pass A: create all campaign_players rows, pc_characters, stats, dm_notes,
+    //            and relationships — building the full lookup maps.
+    //    Pass B: insert timeline entries using the now-complete maps.
+
     const playerIdByRef = {};
     const relIdByRef = {};   // "playerName:relRef" → new rel_id
+
+    // ── Pass A ──────────────────────────────────────────────────────────────
+    // Stash each player's new DB id and timelines so Pass B can iterate them.
+    const playerPassB = []; // [{ playerId, timelines }]
 
     for (const p of players) {
       const playerRes = await client.query(
@@ -2424,36 +2434,44 @@ app.post('/api/campaigns/import', requireRole(['dm']), async (req, res) => {
         }
       }
 
-      // Timelines
-      for (const tl of (p.timelines || [])) {
+      playerPassB.push({ playerId, timelines: p.timelines || [] });
+    }
+
+    // ── Pass B ──────────────────────────────────────────────────────────────
+    // Now playerIdByRef and relIdByRef contain ALL players and relationships,
+    // so cp_<name> and rel_<name> tokens resolve correctly for every entry.
+    const resolveToken = (tok) => {
+      const parts = tok.split('_');
+      const prefix = parts[0];
+      const val = parts.slice(1).join('_');
+      if (prefix === 'self') {
+        const pid = playerIdByRef[val];
+        return pid ? `self_${pid}` : tok;
+      }
+      if (prefix === 'cp') {
+        const pid = playerIdByRef[val];
+        return pid ? `cp_${pid}` : tok;
+      }
+      if (prefix === 'rel') {
+        const rid = relIdByRef[val];
+        return rid ? `rel_${rid}` : tok;
+      }
+      if (prefix === 'npc') {
+        const nid = npcIdByName[val];
+        return nid ? `npc_${nid}` : tok;
+      }
+      return tok;
+    };
+
+    for (const { playerId, timelines } of playerPassB) {
+      for (const tl of timelines) {
         const tlRes = await client.query(
           'INSERT INTO player_timelines (campaign_id, player_id, created_by, name) VALUES ($1,$2,$3,$4) RETURNING id',
           [newId, playerId, req.session.userId, tl.name || 'Timeline']
         );
         const tlId = tlRes.rows[0].id;
         for (const e of (tl.entries || [])) {
-          const playerIds = (e.player_id_refs || []).map(tok => {
-            const parts = tok.split('_');
-            const prefix = parts[0];
-            const val = parts.slice(1).join('_');
-            if (prefix === 'self') {
-              const pid = playerIdByRef[val];
-              return pid ? `self_${pid}` : tok;
-            }
-            if (prefix === 'cp') {
-              const pid = playerIdByRef[val];
-              return pid ? `cp_${pid}` : tok;
-            }
-            if (prefix === 'rel') {
-              const rid = relIdByRef[val];
-              return rid ? `rel_${rid}` : tok;
-            }
-            if (prefix === 'npc') {
-              const nid = npcIdByName[val];
-              return nid ? `npc_${nid}` : tok;
-            }
-            return tok;
-          });
+          const playerIds = (e.player_id_refs || []).map(resolveToken);
           await client.query(
             `INSERT INTO player_timeline_entries
                (campaign_id, player_id, timeline_id, created_by, title, description, location, year, day_of_year, duration_days, player_ids)
@@ -2485,24 +2503,11 @@ app.post('/api/campaigns/import', requireRole(['dm']), async (req, res) => {
         );
         const tlId = tlRes.rows[0].id;
         for (const e of (tl.entries || [])) {
+          // dm_self is a legacy token for the DM's own player row; all other tokens
+          // are resolved via the shared resolveToken helper (full maps now available).
           const playerIds = (e.player_id_refs || []).map(tok => {
-            const parts = tok.split('_');
-            const prefix = parts[0];
-            const val = parts.slice(1).join('_');
-            if (prefix === 'dm' && val === 'self') return `self_${dmPlayerId}`;
-            if (prefix === 'cp') {
-              const pid = playerIdByRef[val];
-              return pid ? `cp_${pid}` : tok;
-            }
-            if (prefix === 'rel') {
-              const rid = relIdByRef[val];
-              return rid ? `rel_${rid}` : tok;
-            }
-            if (prefix === 'npc') {
-              const nid = npcIdByName[val];
-              return nid ? `npc_${nid}` : tok;
-            }
-            return tok;
+            if (tok === 'dm_self') return `self_${dmPlayerId}`;
+            return resolveToken(tok);
           });
           await client.query(
             `INSERT INTO player_timeline_entries
