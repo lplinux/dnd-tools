@@ -8,30 +8,10 @@
     <link
         href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700&family=Crimson+Text:ital,wght@0,400;1,400&display=swap"
         rel="stylesheet">
+    <link rel="stylesheet" href="/theme.css">
+    <link rel="stylesheet" href="/app.css">
+    <script src="/header-component.js"></script>
     <style>
-        * {
-            box-sizing: border-box;
-            margin: 0;
-            padding: 0;
-        }
-
-        :root {
-            --bg: #13100b;
-            --surface: #1e1810;
-            --surface2: #272015;
-            --surface3: #302818;
-            --border: #3d3220;
-            --border2: #554428;
-            --gold: #c9a84c;
-            --gold-dim: #7a6030;
-            --gold-glow: #e8c96a;
-            --text: #e8dcc0;
-            --text-dim: #a09070;
-            --text-muted: #6a5a40;
-            --fd: 'Cinzel', 'Georgia', serif;
-            --fb: 'Crimson Text', 'Georgia', serif;
-        }
-
         html,
         body {
             height: 100%;
@@ -39,58 +19,8 @@
         }
 
         body {
-            font-family: var(--fb);
-            background: var(--bg);
-            color: var(--text);
-            font-size: 15px;
             display: flex;
             flex-direction: column;
-        }
-
-        .app-header {
-            background: var(--surface);
-            border-bottom: 2px solid var(--gold-dim);
-            padding: 7px 14px;
-            display: flex;
-            align-items: center;
-            gap: 10px;
-            flex-shrink: 0;
-            box-shadow: 0 2px 12px rgba(0, 0, 0, .5);
-        }
-
-        .app-title {
-            font-family: var(--fd);
-            font-size: .95rem;
-            color: var(--gold);
-            letter-spacing: .08em;
-            white-space: nowrap;
-            flex-shrink: 0;
-        }
-
-        .hdr-r {
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            margin-left: auto;
-        }
-
-        .back-btn {
-            background: var(--gold-dim);
-            color: var(--text);
-            border: none;
-            padding: 6px 12px;
-            border-radius: 2px;
-            font-family: var(--fd);
-            font-size: .7rem;
-            letter-spacing: .06em;
-            text-transform: uppercase;
-            cursor: pointer;
-            transition: background .15s;
-        }
-
-        .back-btn:hover {
-            background: var(--gold);
-            color: var(--bg);
         }
 
         .container {
@@ -266,12 +196,13 @@
 </head>
 
 <body>
-    <div class="app-header">
-        <div class="app-title">👥 User Management</div>
-        <div class="hdr-r">
-            <button class="back-btn" onclick="location.href='/'">← Back</button>
-        </div>
+    <div class="app-header" id="appHeader">
+      <!-- No module-specific controls -->
     </div>
+
+    <script>
+      initAppHeader({ icon: '👥', name: 'User Management' });
+    </script>
 
     <div class="container">
         <!-- Create User -->

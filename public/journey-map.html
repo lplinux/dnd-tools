@@ -8,35 +8,10 @@
   <link
     href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700&family=Crimson+Text:ital,wght@0,400;1,400&display=swap"
     rel="stylesheet">
+  <link rel="stylesheet" href="/theme.css">
+  <link rel="stylesheet" href="/app.css">
   <script src="/header-component.js"></script>
   <style>
-    *,
-    *::before,
-    *::after {
-      box-sizing: border-box;
-      margin: 0;
-      padding: 0;
-    }
-
-    :root {
-      --bg: #13100b;
-      --surface: #1e1810;
-      --surface2: #272015;
-      --surface3: #30281a;
-      --border: #3d3220;
-      --border2: #554428;
-      --gold: #c9a84c;
-      --gold-dim: #7a6030;
-      --gold-glow: rgba(201, 168, 76, .15);
-      --text: #e8dcc0;
-      --text-dim: #a09070;
-      --text-muted: #6a5a40;
-      --red: #8b3a3a;
-      --red-hover: #a83a3a;
-      --fd: 'Cinzel', 'Georgia', serif;
-      --fb: 'Crimson Text', 'Georgia', serif;
-    }
-
     html,
     body {
       height: 100%;
@@ -44,94 +19,8 @@
     }
 
     body {
-      font-family: var(--fb);
-      background: var(--bg);
-      color: var(--text);
-      font-size: 15px;
       display: flex;
       flex-direction: column;
-    }
-
-    /* ─── HEADER ─────────────────────────────── */
-    .app-header {
-      background: var(--surface);
-      border-bottom: 2px solid var(--gold-dim);
-      padding: 7px 14px;
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      flex-shrink: 0;
-      box-shadow: 0 2px 12px rgba(0, 0, 0, .5);
-      flex-wrap: wrap;
-    }
-
-    .app-title {
-      font-family: var(--fd);
-      font-size: .9rem;
-      color: var(--gold);
-      letter-spacing: .08em;
-      white-space: nowrap;
-    }
-
-    .hdr-sep {
-      width: 1px;
-      height: 20px;
-      background: var(--border2);
-      flex-shrink: 0;
-    }
-
-    .hdr-r {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      margin-left: auto;
-      flex-wrap: wrap;
-    }
-
-    .hdr-sel {
-      background: var(--surface2);
-      border: 1px solid var(--border2);
-      color: var(--text);
-      padding: 4px 8px;
-      border-radius: 2px;
-      font-family: var(--fb);
-      font-size: 13px;
-      max-width: 180px;
-    }
-
-    .hdr-sel:focus {
-      outline: none;
-      border-color: var(--gold-dim);
-    }
-
-    .back-btn,
-    .hdr-btn {
-      background: var(--gold-dim);
-      color: var(--text);
-      border: none;
-      padding: 5px 11px;
-      border-radius: 2px;
-      font-family: var(--fd);
-      font-size: .65rem;
-      letter-spacing: .06em;
-      text-transform: uppercase;
-      cursor: pointer;
-      transition: background .15s;
-      white-space: nowrap;
-    }
-
-    .back-btn:hover,
-    .hdr-btn:hover {
-      background: var(--gold);
-      color: var(--bg);
-    }
-
-    .hdr-btn.danger {
-      background: var(--red);
-    }
-
-    .hdr-btn.danger:hover {
-      background: var(--red-hover);
     }
 
     /* ─── MAIN LAYOUT ────────────────────────── */
@@ -1223,25 +1112,20 @@
 <body>
 
   <!-- HEADER -->
-  <div class="app-header">
-    <div class="app-title">🗺️ Journey Path Map</div>
-    <div class="hdr-sep"></div>
+  <div class="app-header" id="appHeader">
+    <!-- Module-specific controls — initAppHeader() wraps these in .app-header__module -->
     <select class="hdr-sel" id="campaignSel" onchange="onCampaignChange()">
       <option value="">— Campaign —</option>
     </select>
     <select class="hdr-sel" id="mapSel" onchange="onMapChange()">
       <option value="">— Select Map —</option>
     </select>
-    <button class="hdr-btn" onclick="openNewMap()">+ New Map</button>
-    <button class="hdr-btn" id="shareBtn" onclick="shareMap()" style="display:none">🔗 Share</button>
-    <button class="hdr-btn" id="exportMapBtn" onclick="exportMap()" style="display:none">⬇ Export</button>
+    <button class="hdr-btn accent" onclick="openNewMap()">+ New Map</button>
     <button class="hdr-btn" onclick="document.getElementById('importMapFile').click()">⬆ Import Map</button>
     <input type="file" id="importMapFile" accept=".json" style="display:none" onchange="importMap(this)">
+    <button class="hdr-btn" id="shareBtn" onclick="shareMap()" style="display:none">🔗 Share</button>
+    <button class="hdr-btn" id="exportMapBtn" onclick="exportMap()" style="display:none">⬇ Export</button>
     <button class="hdr-btn danger" id="delMapBtn" onclick="deleteMap()" style="display:none">🗑</button>
-    <div class="hdr-r">
-      <button class="back-btn" onclick="location.href='/'">← Back</button>
-      <div id="userMenuMount"></div>
-    </div>
   </div>
 
   <!-- LAYOUT -->
@@ -1516,7 +1400,7 @@
     // INIT
     // ═══════════════════════════════════════════════════════
     async function init() {
-      user = await initHeaderComponent('userMenuMount');
+      user = await initAppHeader({ icon: '🗺️', name: 'Journey Path Map' });
       if (!user) { location.href = '/'; return; }
 
       try {

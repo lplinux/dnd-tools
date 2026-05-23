@@ -8,66 +8,10 @@
   <link
     href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700&family=Crimson+Text:ital,wght@0,400;0,600;1,400&display=swap"
     rel="stylesheet">
+  <link rel="stylesheet" href="/theme.css">
+  <link rel="stylesheet" href="/app.css">
   <script src="/header-component.js"></script>
   <style>
-    *,
-    *::before,
-    *::after {
-      box-sizing: border-box;
-      margin: 0;
-      padding: 0
-    }
-
-    :root,
-    [data-theme="dark"] {
-      --bg: #13100b;
-      --surface: #1e1810;
-      --surface2: #272015;
-      --surface3: #302818;
-      --border: #3d3220;
-      --border2: #554428;
-      --gold: #c9a84c;
-      --gold-dim: #7a6030;
-      --gold-glow: #e8c96a;
-      --text: #e8dcc0;
-      --text-dim: #a09070;
-      --text-muted: #6a5a40;
-      --fd: 'Cinzel', 'Georgia', serif;
-      --fb: 'Crimson Text', 'Georgia', serif;
-    }
-
-    [data-theme="light"] {
-      --bg: #f5f0e8;
-      --surface: #fffdf7;
-      --surface2: #f0ece0;
-      --surface3: #e8e2d4;
-      --border: #d4c9b0;
-      --border2: #b8a888;
-      --gold: #8b6914;
-      --gold-dim: #a07820;
-      --text: #2a2218;
-      --text-dim: #5a4e38;
-      --text-muted: #8a7a60;
-      --fd: 'Cinzel', 'Georgia', serif;
-      --fb: 'Crimson Text', 'Georgia', serif;
-    }
-
-    [data-theme="slate"] {
-      --bg: #0d1117;
-      --surface: #161b22;
-      --surface2: #1c2128;
-      --surface3: #22272e;
-      --border: #30363d;
-      --border2: #444c56;
-      --gold: #58a6ff;
-      --gold-dim: #1f6feb;
-      --text: #c9d1d9;
-      --text-dim: #8b949e;
-      --text-muted: #484f58;
-      --fd: 'Cinzel', 'Georgia', serif;
-      --fb: 'Crimson Text', 'Georgia', serif;
-    }
-
     html,
     body {
       height: 100%;
@@ -75,107 +19,15 @@
     }
 
     body {
-      font-family: var(--fb);
-      background: var(--bg);
-      color: var(--text);
-      font-size: 15px;
+      display: flex;
+      flex-direction: column;
       transition: background .2s, color .2s
-    }
-
-    .back-btn {
-      background: var(--gold-dim);
-      color: var(--text);
-      border: none;
-      padding: 6px 12px;
-      border-radius: 2px;
-      font-family: var(--fd);
-      font-size: .7rem;
-      letter-spacing: .06em;
-      text-transform: uppercase;
-      cursor: pointer;
-      transition: background .15s;
-    }
-
-    .back-btn:hover {
-      background: var(--gold);
-      color: var(--bg);
     }
 
     .app {
       height: 100vh;
       display: flex;
       flex-direction: column
-    }
-
-    .app-header {
-      background: var(--surface);
-      border-bottom: 2px solid var(--gold-dim);
-      padding: 7px 14px;
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      flex-shrink: 0;
-      box-shadow: 0 2px 12px rgba(0, 0, 0, .5)
-    }
-
-    .app-title {
-      font-family: var(--fd);
-      font-size: .95rem;
-      color: var(--gold);
-      letter-spacing: .08em;
-      flex-shrink: 0
-    }
-
-    .app-title span {
-      color: var(--text-dim);
-      font-size: .7rem;
-      margin-left: 7px
-    }
-
-    .hdr-r {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      margin-left: auto
-    }
-
-    .theme-sw {
-      display: flex;
-      gap: 4px;
-      align-items: center
-    }
-
-    .theme-sw button {
-      width: 18px;
-      height: 18px;
-      border-radius: 50%;
-      border: 2px solid transparent;
-      cursor: pointer;
-      transition: border-color .15s, transform .1s;
-      flex-shrink: 0
-    }
-
-    .theme-sw button:hover {
-      transform: scale(1.2)
-    }
-
-    .theme-sw button.act {
-      border-color: var(--gold) !important
-    }
-
-    .theme-sw button[data-t="dark"] {
-      background: #272015;
-      border-color: #554428
-    }
-
-    .theme-sw button[data-t="light"] {
-      background: #f0ece0;
-      border-color: #b8a888
-    }
-
-    .theme-sw button[data-t="slate"] {
-      background: #1c2128;
-      border-color: #444c56
     }
 
     .app-body {
@@ -465,18 +317,8 @@
 
 <body>
   <div class="app">
-    <div class="app-header">
-      <div class="app-title">📖 PDF Viewer <span>Rulebooks & References</span></div>
-      <div class="hdr-r">
-        <div class="theme-sw" id="themeSw">
-          <button data-t="dark" title="Dark">◐</button>
-          <button data-t="light" title="Light">◯</button>
-          <button data-t="slate" title="Slate">◭</button>
-        </div>
-        <div class="hdr-r">
-          <div id="userMenuMount"></div>
-        </div>
-      </div>
+    <div class="app-header" id="appHeader">
+      <!-- Module slot: no module-specific controls for pdf-viewer, just the standard header -->
     </div>
 
     <div class="app-body">
@@ -530,20 +372,8 @@
   <script>
     pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
 
-    // ── Theme ──
-    const html = document.documentElement;
-    const themeSw = document.getElementById('themeSw');
-    const saved = localStorage.getItem('pdfViewer-theme') || 'dark';
-    html.setAttribute('data-theme', saved);
-    themeSw.querySelector(`[data-t="${saved}"]`).classList.add('act');
-    themeSw.addEventListener('click', e => {
-      if (e.target.tagName !== 'BUTTON') return;
-      const t = e.target.dataset.t;
-      html.setAttribute('data-theme', t);
-      localStorage.setItem('pdfViewer-theme', t);
-      themeSw.querySelectorAll('button').forEach(b => b.classList.remove('act'));
-      e.target.classList.add('act');
-    });
+    // ── Init Header ──
+    initAppHeader({ icon: '📖', name: 'PDF Viewer' });
 
     // ── Sidebar ──
     const sidebar = document.getElementById('sidebar');
@@ -552,8 +382,6 @@
       sidebar.classList.toggle('collapsed');
       sbToggle.textContent = sidebar.classList.contains('collapsed') ? '▶' : '◀';
     });
-
-    initHeaderComponent('userMenuMount');
 
     // ── State ──
     let currentPdf = null;

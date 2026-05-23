@@ -8,37 +8,10 @@
   <link
     href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700&family=Crimson+Text:ital,wght@0,400;1,400&display=swap"
     rel="stylesheet">
+  <link rel="stylesheet" href="/theme.css">
+  <link rel="stylesheet" href="/app.css">
   <script src="/header-component.js"></script>
   <style>
-    *,
-    *::before,
-    *::after {
-      box-sizing: border-box;
-      margin: 0;
-      padding: 0
-    }
-
-    :root {
-      --bg: #13100b;
-      --surface: #1e1810;
-      --surface2: #272015;
-      --surface3: #30281a;
-      --border: #3d3220;
-      --border2: #554428;
-      --gold: #c9a84c;
-      --gold-dim: #7a6030;
-      --gold-glow: rgba(201, 168, 76, .12);
-      --text: #e8dcc0;
-      --text-dim: #a09070;
-      --text-muted: #6a5a40;
-      --red: #8b3a3a;
-      --red-hover: #a83a3a;
-      --green: #1f3d1a;
-      --green-t: #9fd49f;
-      --fd: 'Cinzel', 'Georgia', serif;
-      --fb: 'Crimson Text', 'Georgia', serif;
-    }
-
     html,
     body {
       height: 100%;
@@ -46,56 +19,8 @@
     }
 
     body {
-      font-family: var(--fb);
-      background: var(--bg);
-      color: var(--text);
-      font-size: 15px;
       display: flex;
       flex-direction: column
-    }
-
-    .app-header {
-      background: var(--surface);
-      border-bottom: 2px solid var(--gold-dim);
-      padding: 7px 14px;
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      flex-shrink: 0;
-      box-shadow: 0 2px 12px rgba(0, 0, 0, .5)
-    }
-
-    .app-title {
-      font-family: var(--fd);
-      font-size: .95rem;
-      color: var(--gold);
-      letter-spacing: .08em
-    }
-
-    .hdr-r {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      margin-left: auto
-    }
-
-    .hdr-btn {
-      background: var(--gold-dim);
-      color: var(--text);
-      border: none;
-      padding: 6px 12px;
-      border-radius: 2px;
-      font-family: var(--fd);
-      font-size: .68rem;
-      letter-spacing: .06em;
-      text-transform: uppercase;
-      cursor: pointer;
-      transition: background .15s
-    }
-
-    .hdr-btn:hover {
-      background: var(--gold);
-      color: var(--bg)
     }
 
     .layout {
@@ -578,7 +503,7 @@
     .tree-canvas-wrap {
       border: 1px solid var(--border);
       border-radius: 2px;
-      background: #0e0c08;
+      background: var(--bg);
       overflow: hidden;
       position: relative;
       height: 600px;
@@ -767,14 +692,11 @@
 
 <body>
 
-  <div class="app-header">
-    <div class="app-title">🏰 Manage Campaigns</div>
-    <div class="hdr-r">
-      <button class="hdr-btn" id="exportCampBtn" onclick="exportCampaign()" style="display:none">⬇ Export</button>
-      <button class="hdr-btn" onclick="document.getElementById('importCampFile').click()">⬆ Import</button>
-      <input type="file" id="importCampFile" accept=".json" style="display:none" onchange="importCampaign(this)">
-      <div id="userMenuMount"></div>
-    </div>
+  <div class="app-header" id="appHeader">
+    <!-- Module slot: campaign-specific actions -->
+    <button class="hdr-btn" id="exportCampBtn" onclick="exportCampaign()" style="display:none">⬇ Export</button>
+    <button class="hdr-btn accent" onclick="document.getElementById('importCampFile').click()">⬆ Import</button>
+    <input type="file" id="importCampFile" accept=".json" style="display:none" onchange="importCampaign(this)">
   </div>
 
   <div class="layout">
@@ -1008,7 +930,7 @@
 
     // ═══ INIT ════════════════════════════════════════════════════════════
     async function init() {
-      await initHeaderComponent('userMenuMount');
+      await initAppHeader({ icon: '🏰', name: 'Manage Campaigns' });
       await loadUsers();
       await loadCampaigns();
     }
@@ -1771,9 +1693,35 @@
       function sy(y) { return y * _treeVP.scale + _treeVP.oy; }
       const sc = _treeVP.scale;
 
+      // ── Read theme CSS variables for adaptive colouring ──
+      const cs = getComputedStyle(document.documentElement);
+      const C = {
+        gold: cs.getPropertyValue('--gold').trim() || '#c9a84c',
+        goldDim: cs.getPropertyValue('--gold-dim').trim() || '#7a6030',
+        textDim: cs.getPropertyValue('--text-dim').trim() || '#a09070',
+        border: cs.getPropertyValue('--border').trim() || '#3d3220',
+        border2: cs.getPropertyValue('--border2').trim() || '#554428',
+        red: cs.getPropertyValue('--red').trim() || '#8b3a3a',
+        // Node fills
+        playerFill: cs.getPropertyValue('--gold-dim').trim() || '#7a6030',
+        npcFill: cs.getPropertyValue('--surface3').trim() || '#2d3a1a',
+        famFill: cs.getPropertyValue('--surface2').trim() || '#3a2e1a',
+        relFill: cs.getPropertyValue('--surface3').trim() || '#1e3040',
+        // Node strokes
+        playerRing: cs.getPropertyValue('--gold').trim() || '#c9a84c',
+        npcRing: '#7ab050',
+        famRing: cs.getPropertyValue('--gold-dim').trim() || '#a08040',
+        relRing: cs.getPropertyValue('--today').trim() || '#6ab5e0',
+        // Text
+        playerTxt: cs.getPropertyValue('--gold').trim() || '#c9a84c',
+        npcTxt: '#9aba70',
+        famTxt: cs.getPropertyValue('--text-dim').trim() || '#c0a870',
+        relTxt: cs.getPropertyValue('--today').trim() || '#8ab5c0',
+      };
+
       if (!_treePlayers?.length && !Object.keys(_treeNodes).length) {
         ctx.font = '13px Cinzel,serif';
-        ctx.fillStyle = 'rgba(160,144,112,.5)';
+        ctx.fillStyle = C.textDim;
         ctx.textAlign = 'center';
         ctx.fillText('No players found', W / 2, H / 2);
         return;
@@ -1811,7 +1759,7 @@
             ctx.beginPath();
             ctx.moveTo(sx(Math.min(...xs2)), sy(tierY));
             ctx.lineTo(sx(Math.max(...xs2)), sy(tierY));
-            ctx.strokeStyle = 'rgba(90,70,40,.3)';
+            ctx.strokeStyle = C.border2;
             ctx.lineWidth = 1;
             ctx.setLineDash([3, 3]);
             ctx.stroke();
@@ -1824,7 +1772,7 @@
           ctx.beginPath();
           ctx.moveTo(sx(midX), sy(fromY));
           ctx.lineTo(sx(midX), sy(toY));
-          ctx.strokeStyle = 'rgba(90,70,40,.35)';
+          ctx.strokeStyle = C.border2;
           ctx.lineWidth = 1;
           ctx.setLineDash([3, 3]);
           ctx.stroke();
@@ -1844,7 +1792,7 @@
           ctx.beginPath();
           ctx.moveTo(x1, y1);
           ctx.quadraticCurveTo(cpx, cpy, x2, y2);
-          ctx.strokeStyle = 'rgba(60,100,120,.4)';
+          ctx.strokeStyle = C.relRing;
           ctx.lineWidth = 1;
           ctx.setLineDash([]);
           ctx.stroke();
@@ -1865,7 +1813,7 @@
           ctx.beginPath();
           ctx.moveTo(x1, y1);
           ctx.quadraticCurveTo(cpx, cpy, x2, y2);
-          ctx.strokeStyle = 'rgba(60,100,120,.35)';
+          ctx.strokeStyle = C.relRing;
           ctx.lineWidth = 1;
           ctx.setLineDash([4, 3]);
           ctx.stroke();
@@ -1881,11 +1829,11 @@
         if (sepY > 0 && sepY < H) {
           ctx.beginPath();
           ctx.moveTo(20, sepY); ctx.lineTo(W - 20, sepY);
-          ctx.strokeStyle = 'rgba(90,70,40,.25)';
+          ctx.strokeStyle = C.border;
           ctx.lineWidth = 1; ctx.setLineDash([6, 4]); ctx.stroke();
           ctx.setLineDash([]);
           ctx.font = `${Math.max(8, Math.round(9 * sc))}px Cinzel,serif`;
-          ctx.fillStyle = 'rgba(122,96,48,.6)';
+          ctx.fillStyle = C.textDim;
           ctx.textAlign = 'center';
           ctx.fillText('NPCs', W / 2, sepY - 4);
         }
@@ -1925,14 +1873,14 @@
           ctx.beginPath();
           ctx.moveTo(x1, y1);
           ctx.quadraticCurveTo(cpx, cpy, x2, y2);
-          ctx.strokeStyle = 'rgba(176,80,80,.8)';
+          ctx.strokeStyle = C.red;
           ctx.lineWidth = 1.5 * sc;
           ctx.setLineDash([5, 3]);
           ctx.stroke();
           ctx.setLineDash([]);
           const fontSize = Math.max(7, Math.round(9 * sc));
           ctx.font = `${fontSize}px Cinzel,serif`;
-          ctx.fillStyle = 'rgba(210,110,110,.95)';
+          ctx.fillStyle = C.red;
           ctx.textAlign = 'center';
           const lbl = c.label.length > 16 ? c.label.slice(0, 14) + '…' : c.label;
           ctx.strokeStyle = 'rgba(0,0,0,.5)';
@@ -1956,7 +1904,7 @@
             const screenX = sx(pn.x);
             if (screenX < -10 || screenX > W + 10) return;
             ctx.font = `${Math.max(7, Math.round(8 * sc))}px Cinzel,serif`;
-            ctx.fillStyle = 'rgba(100,80,40,.35)';
+            ctx.fillStyle = C.textDim;
             ctx.textAlign = 'center';
             ctx.fillText(lbl, screenX, screenY - (t === '-2' ? 20 : t === '-1' ? 20 : 20) * sc);
           });
@@ -1968,22 +1916,25 @@
         const r = (n.r || 9) * sc;
         ctx.beginPath();
         ctx.arc(sx(n.x), sy(n.y), r, 0, Math.PI * 2);
-        if (n.type === 'player') ctx.fillStyle = '#7a6030';
-        else if (n.type === 'npc') ctx.fillStyle = '#2d3a1a';
-        else if (n.isFamily) ctx.fillStyle = '#3a2e1a';
-        else ctx.fillStyle = '#1e3040';
+        if (n.type === 'player') ctx.fillStyle = C.playerFill;
+        else if (n.type === 'npc') ctx.fillStyle = C.npcFill;
+        else if (n.isFamily) ctx.fillStyle = C.famFill;
+        else ctx.fillStyle = C.relFill;
         ctx.fill();
-        if (n.type === 'player') ctx.strokeStyle = '#c9a84c';
-        else if (n.type === 'npc') ctx.strokeStyle = '#7ab050';
-        else if (n.isFamily) ctx.strokeStyle = '#a08040';
-        else ctx.strokeStyle = '#6ab5e0';
+        if (n.type === 'player') ctx.strokeStyle = C.playerRing;
+        else if (n.type === 'npc') ctx.strokeStyle = C.npcRing;
+        else if (n.isFamily) ctx.strokeStyle = C.famRing;
+        else ctx.strokeStyle = C.relRing;
         ctx.lineWidth = (n.type === 'player' ? 2 : 1.5) * sc;
         ctx.stroke();
 
         // Label
         const fontSize = Math.max(7, Math.round((n.type === 'player' ? 9 : 8) * sc));
         ctx.font = n.type === 'player' ? `bold ${fontSize}px Cinzel,serif` : `${fontSize}px Cinzel,serif`;
-        ctx.fillStyle = n.type === 'player' ? '#c9a84c' : n.type === 'npc' ? '#9aba70' : n.isFamily ? '#c0a870' : '#8ab5c0';
+        if (n.type === 'player') ctx.fillStyle = C.playerTxt;
+        else if (n.type === 'npc') ctx.fillStyle = C.npcTxt;
+        else if (n.isFamily) ctx.fillStyle = C.famTxt;
+        else ctx.fillStyle = C.relTxt;
         ctx.textAlign = 'center';
         const lbl = (n.label || '?').length > 13 ? (n.label || '?').slice(0, 12) + '…' : (n.label || '?');
 
@@ -1991,12 +1942,15 @@
         if (n.type === 'rel' && n.isFamily && n.relType && sc >= 0.55) {
           const smallFont = Math.max(6, Math.round(7 * sc));
           ctx.font = `${smallFont}px Cinzel,serif`;
-          ctx.fillStyle = 'rgba(160,136,80,.7)';
+          ctx.fillStyle = C.famTxt;
           ctx.fillText(n.relType, sx(n.x), sy(n.y) - r - 3 * sc);
         }
 
         ctx.font = n.type === 'player' ? `bold ${fontSize}px Cinzel,serif` : `${fontSize}px Cinzel,serif`;
-        ctx.fillStyle = n.type === 'player' ? '#c9a84c' : n.type === 'npc' ? '#9aba70' : n.isFamily ? '#c0a870' : '#8ab5c0';
+        if (n.type === 'player') ctx.fillStyle = C.playerTxt;
+        else if (n.type === 'npc') ctx.fillStyle = C.npcTxt;
+        else if (n.isFamily) ctx.fillStyle = C.famTxt;
+        else ctx.fillStyle = C.relTxt;
         ctx.fillText(lbl, sx(n.x), sy(n.y) + r + 10 * sc);
       });
     }
