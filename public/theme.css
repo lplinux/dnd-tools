@@ -1,0 +1,112 @@
+/**
+ * theme.css — D&D Campaign Tools
+ * Single source of truth for all design tokens.
+ * Include BEFORE app.css and any module stylesheet.
+ *
+ * Three themes: dark (default) | light | slate
+ * Activated via:  document.documentElement.setAttribute('data-theme', 'light')
+ */
+
+/* ─────────────────────────────────────────────
+   DARK  (default / no attribute)
+───────────────────────────────────────────── */
+:root,
+[data-theme="dark"] {
+  /* Backgrounds */
+  --bg:          #13100b;
+  --surface:     #1e1810;
+  --surface2:    #272015;
+  --surface3:    #30281a;
+
+  /* Borders */
+  --border:      #3d3220;
+  --border2:     #554428;
+
+  /* Brand accent — "gold" */
+  --gold:        #c9a84c;
+  --gold-dim:    #7a6030;
+  --gold-glow:   rgba(201, 168, 76, .15);
+
+  /* Semantic */
+  --special-bg:  #1f1800;
+  --special-fg:  #f0d060;
+  --red:         #8b3a3a;
+  --red-hover:   #a83a3a;
+
+  /* Text */
+  --text:        #e8dcc0;
+  --text-dim:    #a09070;
+  --text-muted:  #6a5a40;
+
+  /* Calendar helpers */
+  --today:       #ffffff;
+  --today-bg:    rgba(255, 255, 255, 0.07);
+
+  /* Typography */
+  --fd:  'Cinzel', 'Georgia', serif;
+  --fb:  'Crimson Text', 'Georgia', serif;
+}
+
+/* ─────────────────────────────────────────────
+   LIGHT
+───────────────────────────────────────────── */
+[data-theme="light"] {
+  --bg:          #f5f0e8;
+  --surface:     #fffdf7;
+  --surface2:    #f0ece0;
+  --surface3:    #e8e2d4;
+
+  --border:      #d4c9b0;
+  --border2:     #b8a888;
+
+  --gold:        #8b6914;
+  --gold-dim:    #a07820;
+  --gold-glow:   rgba(139, 105, 20, .12);
+
+  --special-bg:  #fff8e0;
+  --special-fg:  #8b6914;
+  --red:         #c0392b;
+  --red-hover:   #a03020;
+
+  --text:        #2a2218;
+  --text-dim:    #5a4e38;
+  --text-muted:  #8a7a60;
+
+  --today:       #1a1a2e;
+  --today-bg:    rgba(0, 0, 0, 0.06);
+
+  --fd:  'Cinzel', 'Georgia', serif;
+  --fb:  'Crimson Text', 'Georgia', serif;
+}
+
+/* ─────────────────────────────────────────────
+   SLATE  (GitHub-dark inspired)
+───────────────────────────────────────────── */
+[data-theme="slate"] {
+  --bg:          #0d1117;
+  --surface:     #161b22;
+  --surface2:    #1c2128;
+  --surface3:    #22272e;
+
+  --border:      #30363d;
+  --border2:     #444c56;
+
+  --gold:        #58a6ff;
+  --gold-dim:    #1f6feb;
+  --gold-glow:   rgba(88, 166, 255, .12);
+
+  --special-bg:  #0d1117;
+  --special-fg:  #ffa657;
+  --red:         #f85149;
+  --red-hover:   #ff7b72;
+
+  --text:        #c9d1d9;
+  --text-dim:    #8b949e;
+  --text-muted:  #484f58;
+
+  --today:       #58a6ff;
+  --today-bg:    rgba(88, 166, 255, 0.07);
+
+  --fd:  'Cinzel', 'Georgia', serif;
+  --fb:  'Crimson Text', 'Georgia', serif;
+}

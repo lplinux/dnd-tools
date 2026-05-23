@@ -1,0 +1,234 @@
+/**
+ * app.css — D&D Campaign Tools
+ * Shared base styles & reusable component classes.
+ * Requires theme.css to be loaded first.
+ *
+ * Contents:
+ *   1. Reset & Base
+ *   2. App Header — layout shell
+ *   3. Header — Left section (icon + title)
+ *   4. Header — Separator
+ *   5. Header — Module slot (page-specific area)
+ *   6. Header — Right section (back + account)
+ *   7. Header — Buttons & Selects
+ *   8. Scrollbar
+ */
+
+/* ══════════════════════════════════════════════
+   1. RESET & BASE
+══════════════════════════════════════════════ */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html,
+body {
+  height: 100%;
+  font-family: var(--fb);
+  background: var(--bg);
+  color: var(--text);
+  font-size: 15px;
+}
+
+/* ══════════════════════════════════════════════
+   2. APP HEADER — layout shell
+   Structure:
+     [.app-header]
+       [.app-header__left]  icon + title
+       [.hdr-sep]           visual divider
+       [.app-header__module] page-specific content (injected by each module)
+       [.app-header__right] flex push → back + account
+══════════════════════════════════════════════ */
+.app-header {
+  background: var(--surface);
+  border-bottom: 2px solid var(--gold-dim);
+  padding: 7px 14px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, .5);
+  flex-wrap: wrap;
+  position: relative;
+  z-index: 100;
+}
+
+/* ══════════════════════════════════════════════
+   3. HEADER — Left section
+══════════════════════════════════════════════ */
+.app-header__left {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  flex-shrink: 0;
+}
+
+/** Icon: emoji or small image rendered at a fixed size */
+.app-header__icon {
+  font-size: 1.05rem;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+/** App / module name */
+.app-header__name {
+  font-family: var(--fd);
+  font-size: .9rem;
+  color: var(--gold);
+  letter-spacing: .08em;
+  white-space: nowrap;
+}
+
+/* Legacy alias — pages that already use .app-title will still work */
+.app-title {
+  font-family: var(--fd);
+  font-size: .9rem;
+  color: var(--gold);
+  letter-spacing: .08em;
+  white-space: nowrap;
+}
+
+.app-title span {
+  font-family: var(--fb);
+  font-size: .75rem;
+  color: var(--text-dim);
+  margin-left: 6px;
+  letter-spacing: .03em;
+  text-transform: none;
+}
+
+/* ══════════════════════════════════════════════
+   4. HEADER — Separator
+══════════════════════════════════════════════ */
+.hdr-sep {
+  width: 1px;
+  height: 20px;
+  background: var(--border2);
+  flex-shrink: 0;
+}
+
+/* ══════════════════════════════════════════════
+   5. HEADER — Module slot
+   Each page fills this with its own controls.
+   The header component appends this after the sep.
+══════════════════════════════════════════════ */
+.app-header__module {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  flex: 1;           /* stretches to push right section to the edge */
+}
+
+/* ══════════════════════════════════════════════
+   6. HEADER — Right section
+   Always last; pushed right by flex: 1 on .app-header__module
+══════════════════════════════════════════════ */
+.app-header__right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+  flex-shrink: 0;
+  flex-wrap: wrap;
+}
+
+/* Legacy alias for pages using .hdr-r directly */
+.hdr-r {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+  flex-wrap: wrap;
+}
+
+/* ══════════════════════════════════════════════
+   7. HEADER — Buttons & Selects
+══════════════════════════════════════════════ */
+
+/** Primary header button — used for actions (New, Import, Export…) */
+.hdr-btn,
+.back-btn {
+  background: var(--surface2);
+  border: 1px solid var(--border2);
+  color: var(--text);
+  padding: 5px 11px;
+  border-radius: 2px;
+  font-family: var(--fd);
+  font-size: .65rem;
+  letter-spacing: .05em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: background .15s, color .15s;
+  white-space: nowrap;
+}
+
+.hdr-btn:hover,
+.back-btn:hover {
+  background: var(--gold-dim);
+  color: var(--text);
+}
+
+/** Accent variant — positive / primary action */
+.hdr-btn.accent {
+  background: var(--gold-dim);
+  border-color: var(--gold-dim);
+}
+
+.hdr-btn.accent:hover {
+  background: var(--gold);
+  color: var(--bg);
+}
+
+/** Danger variant */
+.hdr-btn.danger {
+  border-color: var(--red);
+  color: var(--text);
+}
+
+.hdr-btn.danger:hover {
+  background: var(--red);
+  color: var(--text);
+}
+
+/** Back button: slightly more prominent by default */
+.back-btn {
+  background: var(--gold-dim);
+  border-color: transparent;
+}
+
+.back-btn:hover {
+  background: var(--gold);
+  color: var(--bg);
+}
+
+/** Select dropdowns */
+.hdr-sel,
+.hdr-select {
+  background: var(--surface2);
+  border: 1px solid var(--border2);
+  color: var(--text);
+  padding: 4px 8px;
+  border-radius: 2px;
+  font-family: var(--fb);
+  font-size: 13px;
+  max-width: 180px;
+}
+
+.hdr-sel:focus,
+.hdr-select:focus {
+  outline: none;
+  border-color: var(--gold-dim);
+}
+
+/* ══════════════════════════════════════════════
+   8. SCROLLBAR — consistent across modules
+══════════════════════════════════════════════ */
+::-webkit-scrollbar              { width: 6px; height: 6px; }
+::-webkit-scrollbar-track        { background: var(--surface); }
+::-webkit-scrollbar-thumb        { background: var(--border2); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover  { background: var(--gold-dim); }

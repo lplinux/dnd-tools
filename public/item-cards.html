@@ -9,68 +9,10 @@
         href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700&family=Crimson+Text:ital,wght@0,400;0,600;1,400&display=swap"
         rel="stylesheet">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <link rel="stylesheet" href="/theme.css">
+    <link rel="stylesheet" href="/app.css">
+    <script src="/header-component.js"></script>
     <style>
-        *,
-        *::before,
-        *::after {
-            box-sizing: border-box;
-            margin: 0;
-            padding: 0
-        }
-
-        :root,
-        [data-theme="dark"] {
-            --bg: #13100b;
-            --surface: #1e1810;
-            --surface2: #272015;
-            --surface3: #302818;
-            --border: #3d3220;
-            --border2: #554428;
-            --gold: #c9a84c;
-            --gold-dim: #7a6030;
-            --gold-glow: #e8c96a;
-            --text: #e8dcc0;
-            --text-dim: #a09070;
-            --text-muted: #6a5a40;
-            --red: #a03028;
-            --fd: 'Cinzel', 'Georgia', serif;
-            --fb: 'Crimson Text', 'Georgia', serif;
-        }
-
-        [data-theme="light"] {
-            --bg: #f5f0e8;
-            --surface: #fffdf7;
-            --surface2: #f0ece0;
-            --surface3: #e8e2d4;
-            --border: #d4c9b0;
-            --border2: #b8a888;
-            --gold: #8b6914;
-            --gold-dim: #a07820;
-            --text: #2a2218;
-            --text-dim: #5a4e38;
-            --text-muted: #8a7a60;
-            --red: #c0392b;
-            --fd: 'Cinzel', 'Georgia', serif;
-            --fb: 'Crimson Text', 'Georgia', serif;
-        }
-
-        [data-theme="slate"] {
-            --bg: #0d1117;
-            --surface: #161b22;
-            --surface2: #1c2128;
-            --surface3: #22272e;
-            --border: #30363d;
-            --border2: #444c56;
-            --gold: #58a6ff;
-            --gold-dim: #1f6feb;
-            --text: #c9d1d9;
-            --text-dim: #8b949e;
-            --text-muted: #484f58;
-            --red: #f85149;
-            --fd: 'Cinzel', 'Georgia', serif;
-            --fb: 'Crimson Text', 'Georgia', serif;
-        }
-
         html,
         body {
             height: 100%;
@@ -78,10 +20,8 @@
         }
 
         body {
-            font-family: var(--fb);
-            background: var(--bg);
-            color: var(--text);
-            font-size: 15px;
+            display: flex;
+            flex-direction: column;
             transition: background .2s, color .2s
         }
 
@@ -89,63 +29,6 @@
             height: 100vh;
             display: flex;
             flex-direction: column
-        }
-
-        .app-header {
-            background: var(--surface);
-            border-bottom: 2px solid var(--gold-dim);
-            padding: 7px 14px;
-            display: flex;
-            align-items: center;
-            gap: 10px;
-            flex-shrink: 0;
-            box-shadow: 0 2px 12px rgba(0, 0, 0, .5)
-        }
-
-        .app-title {
-            font-family: var(--fd);
-            font-size: .95rem;
-            color: var(--gold);
-            letter-spacing: .08em;
-        }
-
-        .hdr-r {
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            flex-shrink: 0;
-            margin-left: auto
-        }
-
-        .theme-sw {
-            display: flex;
-            gap: 4px;
-        }
-
-        .theme-sw button {
-            width: 18px;
-            height: 18px;
-            border-radius: 50%;
-            border: 2px solid transparent;
-            cursor: pointer;
-            transition: border-color .15s;
-            flex-shrink: 0
-        }
-
-        .theme-sw button.act {
-            border-color: var(--gold) !important
-        }
-
-        .theme-sw button[data-t="dark"] {
-            background: #272015;
-        }
-
-        .theme-sw button[data-t="light"] {
-            background: #f0ece0;
-        }
-
-        .theme-sw button[data-t="slate"] {
-            background: #1c2128;
         }
 
         .app-body {
@@ -487,15 +370,8 @@
 
 <body>
     <div class="app">
-        <div class="app-header">
-            <div class="app-title">🗡️ Item Card Creator</div>
-            <div class="hdr-r">
-                <div class="theme-sw" id="themeSw">
-                    <button data-t="dark" class="act">◐</button>
-                    <button data-t="light">◯</button>
-                    <button data-t="slate">◭</button>
-                </div>
-            </div>
+        <div class="app-header" id="appHeader">
+          <!-- No module-specific controls -->
         </div>
 
         <div class="app-body">
@@ -636,21 +512,8 @@
     </div>
 
     <script>
-        // Theme system
-        const themeSw = document.getElementById('themeSw');
-        const html = document.documentElement;
-        const savedTheme = localStorage.getItem('itemCards-theme') || 'dark';
-        html.setAttribute('data-theme', savedTheme);
-        themeSw.querySelector(`button[data-t="${savedTheme}"]`).classList.add('act');
-
-        themeSw.addEventListener('click', (e) => {
-            if (e.target.tagName !== 'BUTTON') return;
-            const theme = e.target.getAttribute('data-t');
-            html.setAttribute('data-theme', theme);
-            localStorage.setItem('itemCards-theme', theme);
-            themeSw.querySelectorAll('button').forEach(btn => btn.classList.remove('act'));
-            e.target.classList.add('act');
-        });
+        // Init standard header (theme is now managed by header-component)
+        initAppHeader({ icon: '🗡️', name: 'Item Card Creator' });
 
         function toggleTypeFields() {
             const type = document.getElementById('formItemType').value;

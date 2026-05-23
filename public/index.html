@@ -8,27 +8,10 @@
     <link
         href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700&family=Crimson+Text:ital,wght@0,400;1,400&display=swap"
         rel="stylesheet">
+    <link rel="stylesheet" href="/theme.css">
+    <link rel="stylesheet" href="/app.css">
+    <script src="/header-component.js"></script>
     <style>
-        * {
-            box-sizing: border-box;
-            margin: 0;
-            padding: 0;
-        }
-
-        :root {
-            --bg: #13100b;
-            --surface: #1e1810;
-            --surface2: #272015;
-            --border: #3d3220;
-            --border2: #554428;
-            --gold: #c9a84c;
-            --gold-dim: #7a6030;
-            --text: #e8dcc0;
-            --text-dim: #a09070;
-            --fd: 'Cinzel', 'Georgia', serif;
-            --fb: 'Crimson Text', 'Georgia', serif;
-        }
-
         html,
         body {
             height: 100%;
@@ -546,18 +529,8 @@
 </head>
 
 <body>
-    <div class="header">
-        <div class="title">🎲 D&D Tools</div>
-        <div class="header-right">
-            <div id="userDisplay" style="display: none;">
-                <span class="user-info">
-                    <span id="currentUsername"></span>
-                    <span class="role-badge" id="roleDisplay"></span>
-                </span>
-            </div>
-            <button id="loginBtn" onclick="openLogin()">🔐 Login</button>
-            <button id="logoutBtn" onclick="logout()" style="display: none; background: #dc3545;">Logout</button>
-        </div>
+    <div class="app-header" id="appHeader">
+        <!-- Module slot intentionally empty: login/logout are in the header-component right section -->
     </div>
 
     <div class="container">
@@ -591,6 +564,12 @@
     </div>
 
     <script>
+        // Apply saved theme immediately on load
+        (function () {
+            const t = localStorage.getItem('hc-theme') || 'dark';
+            document.documentElement.setAttribute('data-theme', t);
+        })();
+
         let currentUser = null;
 
         // Module definitions
@@ -688,11 +667,10 @@
         }
 
         function updateUI() {
-            document.getElementById('userDisplay').style.display = 'flex';
-            document.getElementById('loginBtn').style.display = 'none';
-            document.getElementById('logoutBtn').style.display = 'block';
-            document.getElementById('currentUsername').textContent = currentUser.username;
-            document.getElementById('roleDisplay').textContent = currentUser.role.toUpperCase();
+            // When logged in, hide the Login button the header-component rendered
+            // and rebuild the header so the Account menu appears instead.
+            // The simplest approach: re-run initAppHeader — it will detect the user.
+            initAppHeader({ icon: '🎲', name: 'D&D Tools', hideBack: true, loginClick: openLogin });
         }
 
         function canAccess(module) {
@@ -781,10 +759,9 @@
         async function logout() {
             await fetch('/api/auth/logout', { method: 'POST' });
             currentUser = null;
-            document.getElementById('userDisplay').style.display = 'none';
-            document.getElementById('loginBtn').style.display = 'block';
-            document.getElementById('logoutBtn').style.display = 'none';
             renderModules();
+            // Rebuild header to show Login button again
+            initAppHeader({ icon: '🎲', name: 'D&D Tools', hideBack: true, loginClick: openLogin });
         }
 
         // Close modal on background click
@@ -867,7 +844,8 @@
         });
         document.addEventListener('keydown', e => { if (e.key === 'Escape') closeDocs(); });
 
-        // Initialize
+        // Initialize standard header (no back button on home page)
+        initAppHeader({ icon: '🎲', name: 'D&D Tools', hideBack: true, loginClick: openLogin });
         checkAuth();
     </script>
 

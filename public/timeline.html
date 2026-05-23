@@ -8,89 +8,10 @@
   <link
     href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700&family=Crimson+Text:ital,wght@0,400;0,600;1,400&display=swap"
     rel="stylesheet">
+  <link rel="stylesheet" href="/theme.css">
+  <link rel="stylesheet" href="/app.css">
   <script src="/header-component.js"></script>
   <style>
-    *,
-    *::before,
-    *::after {
-      box-sizing: border-box;
-      margin: 0;
-      padding: 0
-    }
-
-    /* ── THEME: DARK (default) ── */
-    :root,
-    [data-theme="dark"] {
-      --bg: #13100b;
-      --surface: #1e1810;
-      --surface2: #272015;
-      --surface3: #302818;
-      --border: #3d3220;
-      --border2: #554428;
-      --gold: #c9a84c;
-      --gold-dim: #7a6030;
-      --gold-glow: #e8c96a;
-      --special-bg: #1f1800;
-      --special-fg: #f0d060;
-      --text: #e8dcc0;
-      --text-dim: #a09070;
-      --text-muted: #6a5a40;
-      --red: #a03028;
-      --red-hover: #c03838;
-      --today: #ffffff;
-      --today-bg: rgba(255, 255, 255, 0.07);
-      --fd: 'Cinzel', 'Georgia', serif;
-      --fb: 'Crimson Text', 'Georgia', serif;
-    }
-
-    /* ── THEME: LIGHT ── */
-    [data-theme="light"] {
-      --bg: #f5f0e8;
-      --surface: #fffdf7;
-      --surface2: #f0ece0;
-      --surface3: #e8e2d4;
-      --border: #d4c9b0;
-      --border2: #b8a888;
-      --gold: #8b6914;
-      --gold-dim: #a07820;
-      --gold-glow: #c8920a;
-      --special-bg: #fff8e0;
-      --special-fg: #8b6914;
-      --text: #2a2218;
-      --text-dim: #5a4e38;
-      --text-muted: #8a7a60;
-      --red: #c0392b;
-      --red-hover: #a03020;
-      --today: #1a1a2e;
-      --today-bg: rgba(0, 0, 0, 0.06);
-      --fd: 'Cinzel', 'Georgia', serif;
-      --fb: 'Crimson Text', 'Georgia', serif;
-    }
-
-    /* ── THEME: SLATE ── */
-    [data-theme="slate"] {
-      --bg: #0d1117;
-      --surface: #161b22;
-      --surface2: #1c2128;
-      --surface3: #22272e;
-      --border: #30363d;
-      --border2: #444c56;
-      --gold: #58a6ff;
-      --gold-dim: #1f6feb;
-      --gold-glow: #79c0ff;
-      --special-bg: #0d1117;
-      --special-fg: #ffa657;
-      --text: #c9d1d9;
-      --text-dim: #8b949e;
-      --text-muted: #484f58;
-      --red: #f85149;
-      --red-hover: #ff7b72;
-      --today: #58a6ff;
-      --today-bg: rgba(88, 166, 255, 0.07);
-      --fd: 'Cinzel', 'Georgia', serif;
-      --fb: 'Crimson Text', 'Georgia', serif;
-    }
-
     html,
     body {
       height: 100%;
@@ -98,51 +19,7 @@
     }
 
     body {
-      font-family: var(--fb);
-      background: var(--bg);
-      color: var(--text);
-      font-size: 15px;
       transition: background .2s, color .2s
-    }
-
-    /* theme switcher */
-    .theme-sw {
-      display: flex;
-      gap: 4px;
-      align-items: center
-    }
-
-    .theme-sw button {
-      width: 18px;
-      height: 18px;
-      border-radius: 50%;
-      border: 2px solid transparent;
-      cursor: pointer;
-      transition: border-color .15s, transform .1s;
-      flex-shrink: 0
-    }
-
-    .theme-sw button:hover {
-      transform: scale(1.2)
-    }
-
-    .theme-sw button.act {
-      border-color: var(--gold) !important
-    }
-
-    .theme-sw button[data-t="dark"] {
-      background: #272015;
-      border-color: #554428
-    }
-
-    .theme-sw button[data-t="light"] {
-      background: #f0ece0;
-      border-color: #b8a888
-    }
-
-    .theme-sw button[data-t="slate"] {
-      background: #1c2128;
-      border-color: #444c56
     }
 
     /* hide-eye toggle */
@@ -169,37 +46,11 @@
       opacity: .45
     }
 
-    /* ── APP SHELL ── */
+    /* Full-height flex column wrapper (body > .app > .app-body) */
     .app {
       height: 100vh;
       display: flex;
       flex-direction: column
-    }
-
-    .app-header {
-      background: var(--surface);
-      border-bottom: 2px solid var(--gold-dim);
-      padding: 7px 14px;
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      flex-shrink: 0;
-      box-shadow: 0 2px 12px rgba(0, 0, 0, .5)
-    }
-
-    .app-title {
-      font-family: var(--fd);
-      font-size: .95rem;
-      color: var(--gold);
-      letter-spacing: .08em;
-      white-space: nowrap;
-      flex-shrink: 0
-    }
-
-    .app-title span {
-      color: var(--text-dim);
-      font-size: .7rem;
-      margin-left: 7px
     }
 
     /* search */
@@ -297,15 +148,6 @@
       font-size: .8rem;
       color: var(--text-muted);
       font-style: italic
-    }
-
-    /* header-right */
-    .hdr-r {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      flex-shrink: 0;
-      margin-left: auto
     }
 
     .zoom-row {
@@ -1312,37 +1154,30 @@
 <body>
   <div class="app">
     <!-- HEADER -->
-    <div class="app-header">
-      <div class="app-title">⚔ Timeline <span id="cal-badge">Harptos</span></div>
+    <div class="app-header" id="appHeader">
+      <!-- Module slot — initAppHeader() wraps these in .app-header__module -->
+      <span class="app-header__name" style="font-size:.75rem;opacity:.7;" id="cal-badge">Harptos</span>
       <div class="search-wrap">
         <span class="si">🔍</span>
         <input id="srch" type="text" placeholder="Search events…" oninput="onSearch()" onkeydown="onSearchKey(event)"
           autocomplete="off">
         <div class="sr" id="sr"></div>
       </div>
-      <div class="hdr-r">
-        <div class="mode-sw" id="modeSw" style="display:none">
-          <button class="mode-btn active" id="modePublicBtn" onclick="setMode('public')">🔓 Public</button>
-          <button class="mode-btn" id="modePrivateBtn" onclick="setMode('private')">🔐 Private</button>
-        </div>
-        <div class="vt">
-          <button id="vt-graph" class="active" onclick="setView('graph')">Graph</button>
-          <button id="vt-table" onclick="setView('table')">Table</button>
-        </div>
-        <div class="zoom-row">
-          <button class="btn sm" onclick="fitAll()">Fit</button>
-          <input type="range" id="zoom" min="0" max="100" value="50" oninput="onZoomSlider(+this.value)">
-          <span class="zoom-lbl" id="zlbl">Month</span>
-        </div>
-        <button class="btn sm" onclick="exportData()">Export</button>
-        <button class="btn sm" onclick="importData()">Import</button>
-        <div class="theme-sw" title="Switch theme">
-          <button data-t="dark" onclick="setTheme('dark')" title="Dark"></button>
-          <button data-t="light" onclick="setTheme('light')" title="Light"></button>
-          <button data-t="slate" onclick="setTheme('slate')" title="Slate"></button>
-        </div>
-        <div id="userMenuMount"></div>
+      <div class="mode-sw" id="modeSw" style="display:none">
+        <button class="mode-btn active" id="modePublicBtn" onclick="setMode('public')">🔓 Public</button>
+        <button class="mode-btn" id="modePrivateBtn" onclick="setMode('private')">🔐 Private</button>
       </div>
+      <div class="vt">
+        <button id="vt-graph" class="active" onclick="setView('graph')">Graph</button>
+        <button id="vt-table" onclick="setView('table')">Table</button>
+      </div>
+      <div class="zoom-row">
+        <button class="btn sm" onclick="fitAll()">Fit</button>
+        <input type="range" id="zoom" min="0" max="100" value="50" oninput="onZoomSlider(+this.value)">
+        <span class="zoom-lbl" id="zlbl">Month</span>
+      </div>
+      <button class="btn sm" onclick="exportData()">Export</button>
+      <button class="btn sm" onclick="importData()">Import</button>
     </div>
 
     <!-- PRIVATE MODE: campaign/player selector bar -->
@@ -1745,7 +1580,7 @@
     function setTheme(t) {
       _theme = t;
       document.documentElement.setAttribute('data-theme', t);
-      document.querySelectorAll('.theme-sw button').forEach(b => b.classList.toggle('act', b.dataset.t === t));
+      localStorage.setItem('hc-theme', t);
       saveUIState(); renderTimeline();
     }
 
@@ -4355,8 +4190,6 @@
 
         // Hide authenticated UI
         document.getElementById('modeSw').style.display = 'none';
-        const uMount = document.getElementById('userMenuMount');
-        if (uMount) uMount.innerHTML = '';
 
         // Show a loading indicator in the private canvas area
         setMode('private');
@@ -4409,11 +4242,10 @@
 
       if (_authUser) {
         document.getElementById('modeSw').style.display = 'flex';
-        initHeaderComponent('userMenuMount');
+      }
+      await initAppHeader({ icon: '⚔', name: 'Timeline' });
+      if (_authUser) {
         await populatePrivCampaigns();
-      } else {
-        document.getElementById('userMenuMount').innerHTML =
-          '<a href="/" style="color:var(--gold-dim);font-family:var(--fd);font-size:.65rem;letter-spacing:.06em;text-decoration:none;">Login \u2192</a>';
       }
 
       if (!_profiles.length) {
@@ -4429,7 +4261,6 @@
       initMonthUI();
       document.getElementById('cal-badge').textContent = currentCal() === 'harptos' ? 'Harptos' : 'Gregorian';
       document.documentElement.setAttribute('data-theme', _theme);
-      document.querySelectorAll('.theme-sw button').forEach(b => b.classList.toggle('act', b.dataset.t === _theme));
       setView(_view);
       renderAll();
       initEvDrag();
