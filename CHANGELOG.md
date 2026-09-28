@@ -1,8 +1,1161 @@
 # Changelog
 
 All notable changes to **dnd-tools** are documented here.
-Versions correspond to GitHub releases; changes are derived from inspecting
-the actual diffs between tags.
+Changes are derived from inspecting the actual diffs. NOTE: everything from
+4.0.0 up is marked *Unreleased* and is not tagged — the newest tag is `0.1.0`.
+Only the 0.x entries correspond to GitHub releases.
+
+---
+
+## [4.19.0] – Unreleased — SRD/Open5e assisted entry, legacy cleanup, safe PC round-trip
+
+- **Fixed: the PC Sheet PDF printed only about one screen of the stat block.** The embedded
+  NPC sheet has always posted its real height, but nothing consumed the message — it
+  appeared exactly once in the repo, at the sender — so the iframe stayed at a fixed 900px,
+  and an iframe prints only its own box. `StatsTab` now sizes the frame from that message
+  (and filters by `e.source`, since two instances are mounted while printing and each was
+  reacting to the other's frame, re-pushing stats over unsaved edits). Also unclipped the
+  panes capped in `vh` — relationships, DM notes and the relationship graph each printed at
+  most half a page — let textareas grow past their `rows`, and replaced the 800ms guess
+  before `window.print()` with the frame's own ready signal.
+- **A 🖨 Print control in the PC Sheet's Stats toolbar**, beside Save Stats and Clear, which
+  prints the stat block on its own — it prints the iframe's own document, so the embedded
+  sheet's print stylesheet applies and the other five sections are not dragged along. The
+  header PDF button stays as the whole-sheet print. (Until now there was no way to print
+  just the stat block from in here: the embedded sheet suppresses its own 🖨 button.)
+- **NPC sheet: Senses and Languages now look identical.** After the move into Traits &
+  Features, Senses matched `.field > input[type=text]` but Languages' input sits nested
+  inside its combobox, so the `>` combinator skipped it and it rendered as an unstyled
+  browser box. Both arms are now listed, and the generic combobox rule is scoped to the
+  header so it no longer flattens them.
+- **NPC sheet: the Defenses tag boxes are no longer twice their intended height.** A
+  specificity collision — `.npc-sheet .field input[type=text]` (50px min-height, its own
+  border and fill, `width:100%`) matched exactly one element in the sheet, the TagInput's
+  search box, and beat `.tag-input` on every shared property. Each box therefore drew a
+  second bordered box inside itself and forced chips onto their own line. Rule split and
+  scoped; the five boxes also got real placeholders.
+- **Senses and Languages moved into Traits & Features** as compact fields — they hold
+  sentences, not the two or three characters the stats bar is sized for. Languages keeps its
+  SRD picker. Pure UI move; both remain plain `stats_json` strings.
+- **A box that crosses a page now prints as two complete boxes**, via
+  `box-decoration-break: clone`, instead of one sliced through with no bottom edge on the
+  first page and no top edge on the second.
+- **Defenses & Damage Traits keeps its boxes on paper** — the print rules used to strip them
+  to bare text, which left labels with nothing under them now that the section always prints.
+  They have a min-height so they can be filled in by hand.
+- **The PC Sheet PDF's page margin is scoped to a named page** (`@page pcsheet`). Vite leaves
+  a lazily loaded route stylesheet in the document after you navigate away, so a bare `@page`
+  here would also apply to the NPC sheet's own print once both pages had been visited in one
+  session. Naming it confines it.
+  The parchment sheet deliberately declares **no** `@page` and keeps the browser default: a
+  zero margin looked wrong, and giving it a named page of its own was worse — naming a page
+  forces a break wherever the name changes, so the sheet generated a blank page before and
+  after itself inside the app shell.
+- **Passive Investigation** sits beside Passive Perception and Initiative in the core stats
+  bar, derived the same way (10 + the Investigation skill total) rather than typed into
+  Senses by hand.
+- **Legendary & Lair can always be collapsed**, not only while empty. Visibility is
+  tri-state: it follows the content by default — hidden on an ordinary PC, shown once it
+  holds anything — and an explicit show/hide overrides that. Nothing is deleted when it is
+  put away, and the reveal control says when there is content behind it.
+- **Defenses & Damage Traits always prints**, blank or not: empty boxes there are useful to
+  write into on a printed sheet. The Traits & Features textareas still drop out when empty,
+  since those are prose rather than checklists.
+- **The printed stat block is sharp instead of blurry.** `.npc-sheet::before` is a paper-grain
+  overlay covering the whole sheet at `opacity: .6`, and a partially transparent layer over
+  content makes the print engine rasterise everything beneath it — vector text became a
+  bitmap, which is why the PDF looked soft everywhere at once rather than in one place. The
+  overlay is now dropped in print; real paper has its own texture. Also in this pass: the
+  print mirror matches the control's 13px instead of shrinking to 12px, a tall box may break
+  across a page (with orphan/widow protection) rather than jumping wholesale to the next one
+  and leaving a third of a page blank, a section whose fields are all empty no longer prints
+  a bare heading, and focus styling is neutralised so whichever field happened to be focused
+  stops printing differently from its neighbour.
+- **The NPC sheet / stat block prints properly.** Three defects, all visible on one page:
+  a `<textarea>` cannot grow to its content on paper — `autoGrow` writes an inline pixel
+  height measured at *screen* width, which survives into print and clips once the text
+  reflows narrower (and `height: auto` is no help, since a textarea then sizes from its
+  `rows`) — so print now swaps each control for a plain text mirror of the same value.
+  Blank fields no longer print as empty labelled boxes, and labels are kept with their
+  boxes across page breaks. Languages also printed with three sides where Senses had four,
+  because a print rule stripped the bottom border from every combobox rather than just the
+  header ones.
+- **The Stats tab's 🖨 Print keeps the parchment design**, printing the embedded sheet's own
+  document. The problems that made it look wrong were in that sheet's print rules, not in
+  the parchment itself, and are fixed above: textareas print as flowing text rather than
+  clipped controls, blank fields are dropped, and labels stay with their boxes.
+- **The PC Sheet PDF prints as a document, not a stack of tabs.** Sections now flow into one
+  another instead of forcing a page break each — a short character used to produce six
+  mostly-empty pages — and margins are set in two layers: `@page`, plus padding on the
+  document itself, because the browser's print dialog has its own Margins setting that
+  overrides `@page` and was letting text run to the paper's edge. The **Stats Sheet is no longer included**: it has its own
+  print button in its toolbar, so printing it here only duplicated it and made the document
+  far longer than it needed to be.
+
+- **The PC Sheet print document no longer reuses the editable tabs.** It renders plain
+  markup on an explicit light palette, so long text flows and paginates instead of printing
+  inside a scrolled textarea, the dark app surfaces stop printing as opaque blocks, and a
+  section heading is never orphaned from the text below it.
+- **Legendary & Lair auto-hides when empty**, with a reveal — and a matching hide, so the
+  reveal is not one-way — for sheets that need it;
+  roughly 340px of dead space on an ordinary PC. Derived from content rather than a stored
+  flag, so no new `stats_json` key.
+
+- **Fixed: the PC Sheet's relationship graph could crash.** `RelGraph` called 7 hooks, then
+  early-returned on an empty relationship list, then called 3 more — so deleting a
+  character's last relationship while a DM cross-connection kept the component mounted threw
+  *"Rendered fewer hooks than expected"* and blanked the Relations tab. All ten hooks now run
+  before the early return.
+- **Fixed: the server accepted requests before the schema existed.** `initializeDatabase()`
+  ran inside the `app.listen` callback, so the socket was open during setup and a DDL failure
+  called `process.exit(1)` on an already-listening server. Schema now completes first.
+- **Caster Type follows the Class** — locked when the class determines it, and deliberately
+  left editable for the martial classes so Eldritch Knight and Arcane Trickster can be third
+  casters. The previous code forced `none` there, which blocked them.
+- **"Go to Today"** on the timeline toolbar, in both the campaign and public views. The
+  public timeline API now returns `today_marker`, so that view renders the marker at all.
+- **Senses and Languages are readable** — both hold sentences and were being rendered in the
+  1rem display face sized for the two-character numeric fields beside them.
+
+- **Assisted entry from the SRD and Open5e.** The NPC sheet can fill an entire stat block
+  from one pick — 341 SRD monsters plus ~3,200 from Open5e — and offers pickers for species,
+  subclass and languages, each of which suggests without restricting (free text always wins).
+  Item Cards gains the same against ~1,900 magic items. New `api/srd.js` companions
+  `api/open5e.js`, `components/SrdCombobox.jsx` and `data/srdMap.js`.
+  - **Subclasses**: the SRD licenses only one per class, so the picker merges three sources —
+    a local list of official PHB 2024 / PHB 2014 / Xanathar's / Tasha's names (115 entries,
+    names only; the rules text is not licensed anywhere), the SRD, and ~110 third-party
+    Open5e ones. De-duplicated, 2024 first, everything older badged with its book.
+  - Fixed a latent trap in `api/srd.js`: `lookupByResource` fell through to `damage-types`
+    for any unrecognised resource, so a new lookup would silently 404 and cache the miss.
+
+- **PC sheet export/import is round-trip safe, and import is DM-only.** Bundles are now
+  `version: 2` with a `scope`: a DM export carries `private_info` and every DM note; a player
+  export omits both keys entirely rather than blanking them. Import writes a field only when
+  the bundle carries it. This fixes three defects — `private_info` being destroyed by a
+  player-produced bundle, DM notes doubling on every cycle (2 → 4 → 6 …), and relationships
+  losing `parent_id`, `is_dm_only`, `status_label` and `created_by_role`, which flattened the
+  family tree. `POST /api/pc/:playerId/import` is now `requireRole(['dm'])`.
+
+- **Fixed: the server served a dead page outside Docker.** Vite wrote to `frontend/dist` while
+  `app.js` looked in `public/app/`, and only the Dockerfile copied between them — so
+  `node app.js` on the host registered no SPA catch-all, 404'd every React route and served a
+  fallback page that loaded a script deleted months ago. Vite now builds straight to
+  `public/app/`, the catch-all is unconditional, and a missing build reports itself instead of
+  failing obscurely.
+
+- **Legacy cleanup.** Deleted `public/index.html`, `public/app.css` and `public/theme.css`
+  (the last duplicated every token already in `styles/globals.css`); the orphaned
+  `/api/timeline-private/*` routes and their six client methods (the DM's private journal has
+  run on `/api/player-timelines/*` since the migration); the `api/index.js` barrel, the unused
+  `ModalField` component, `resourceForTagKey`, `requireRolePage`, `requireAuthPage`,
+  `usePcSheet.importSheet`, `journeyMapsApi.updateScope` and its route; and four empty
+  directories left by a brace-expansion mishap. Stale Vite dev proxies for a `LegacyIframe`
+  that no longer exists were removed — they were breaking dev deep-links to the public pages.
+
+- **Docs corrected against the code** — `ARCH.md` claimed a `connect-pg-simple` session store
+  that was never a dependency (it is the in-memory default) and was missing ~24 routes
+  including the whole import/export and stats surface; `.env.example` and `README.md`
+  documented `DATABASE_URL`, which `app.js` does not read; React/Router/Vite versions were
+  three majors behind; `docs/pc-sheet` described a `pc_public_tokens` table that does not
+  exist (tokens are stateless HMACs).
+
+## [4.18.0] – Unreleased — Route section polish + no-jump refresh
+
+- **Journey Map movement is derived from the Timeline** — you no longer draw movement paths or manage
+  trackers on the map. The Draw tool is now **routes (roads) only**, and paths are computed live:
+  - a **🌍 Party** path from events that are party events **or** involve **3+ players**,
+  - one **👤 path per player** from their remaining (fewer-than-3-player, non-party) events — a
+    2-player event feeds both players' paths, and
+  - one **🎭 path per NPC** from **any** event that tags that NPC — **including the DM's own
+    timelines** (NPC movements are usually logged there; a prior bug excluded DM timelines, so NPC
+    paths never appeared),
+  each connecting the events' locations in date order (stops at unpinned locations are skipped).
+  Movement paths are read-only on the map — edit the Timeline to change them.
+  - **Public map**: the DM (map owner) sees the Party path + all player paths + all NPC paths; a
+    logged-in player sees the Party path + **their own** player path; anonymous visitors see no
+    movement paths. **NPC paths are DM-only** — never shown on the public map (the earlier per-NPC
+    public toggle was removed; `campaign_npcs.path_public` is now dormant).
+  - **Per-path Show/Hide** — each path in the **Movement (from Timeline)** sidebar list has a 👁/🙈
+    button to hide its line on your own map (local view declutter; resets on reload).
+  - Backend: derivation is computed server-side for the public map (Node mirror of the client util);
+    the `/player-timelines/:cid/all` feed now includes `is_dm_player`. Trackers table is left in place
+    but unused by the map.
+- **Fixed: Journey Map import no longer 409s on existing locations** — importing a map into a campaign
+  that already has some of those locations now **reuses** the existing campaign locations by name
+  (case-insensitive) instead of failing; new locations are still created.
+- **Timeline: solo a player** — clicking a player's **name** in the Players sidebar shows only that
+  player's events (everyone else hidden); click again to clear. The 👁 eye toggle still hides/shows
+  individual players; solo overrides while active. Ephemeral (not persisted).
+
+- **Import/export consolidation — one import hub, per-module export.** Manage Campaigns → **Import** now
+  **sniffs the file type** and routes it: `campaign` restores a new campaign (unchanged), `journey-map`
+  merges into the selected campaign, and `pc-sheet` / `timeline` prompt for a target player then import
+  onto them. The per-module **Import** buttons (Journey Map, PC Sheet) were removed — **Export** stays in
+  each module. New: a **Timeline export** (⬇ in the campaign selector bar) producing a portable
+  `type:'timeline'` file (actors by name/kind, locations by name), plus backend
+  `GET /api/player-timelines/:id/export` and `POST /api/campaigns/:id/import/timeline` (matches
+  actors/locations by name, creates missing locations). Journey-map import logic moved to a shared
+  `api/importJourneyMap.js` util. The campaign-bundle import path is unchanged.
+- **Item Cards: richer Special Abilities editor** — the abilities toolbar gains **Underline**,
+  **Numbered list**, and **Highlight** (gold background + dark text, so it reads on the dark editor and
+  the white printed card) alongside the existing bold / italic / bullets / clear. List markers now
+  render reliably in the editor, preview, and print.
+- **Item Cards: two-sided cards, 9-up on A4** — printing now uses a clean **Front** (name / type /
+  rarity / stats / flavour) + **Back** (abilities) model, each face auto-fitting its font (the old
+  single-stream "continuation" pages are gone — a physical card has two sides). Collect cards with
+  **➕ Add to print set** (remembered in the browser) and **🖨 Print set — double-sided** to print
+  **up to 9 cards per A4** (3 × 3): each sheet emits a page of Fronts then a page of Backs, with the
+  backs **mirrored per row** so they line up when you flip on the **long edge**. A single card prints
+  one-per-page (front then back). The live preview is capped to the real card width (63 mm).
+- **Admin onboarding docs** — the User Panel README now has a **First steps** section (account/role
+  setup before handing off to DMs) and a **capability matrix** (player vs dm vs admin).
+- **Default location-pin images by type (admin)** — an admin can upload a **default pin image per
+  location type** (city / town / village / port / …) in **User Management → Location Pin Defaults**, so
+  every location of that type shows it automatically without editing each location. Global (shared by
+  all campaigns), stored in a new `location_type_images` table. A pin now resolves: its own image →
+  the type default → the built-in vector icon — applied on both the editor and public maps (the public
+  endpoint returns a `type_images` map). New `GET /api/location-type-images` (auth) and
+  `PUT /api/location-type-images/:sizeType` (admin) endpoints.
+- **Custom location-pin images** — a campaign location can now carry a **custom image** (Manage
+  Campaigns → Locations → edit → **Pin image**: Upload / Clear). Its Journey-Map pin renders as that
+  image (circular) on every map — editor and public — instead of the size/type vector icon; locations
+  without an image are unchanged. Images are auto-compressed to a small (~256 px) thumbnail so map
+  payloads stay light, stored base64 in `campaign_locations.image_data`, and round-trip through the
+  campaign export/import. New `PUT /api/campaigns/:cid/locations/:lid/image` endpoint; `compressImage`
+  gained `{ maxDim, maxBytes }` options.
+- **Item Cards: rarity-coloured print cards** — the printable cards' border and a top accent bar are
+  now coloured by the item's rarity (matching the live preview / rulebook convention).
+- **Journey Map: click a location to focus it** — selecting a location in the sidebar list now centres
+  the map on its pin (zooming in to at least 1×). Clicking a pin directly on the map still just selects
+  it, so pin-dragging is unaffected. New `centerOn()` on the map viewport hook.
+- **Fixed: players couldn't create a private timeline** — the **＋ New timeline** button was only shown
+  when at least one timeline already existed, so a player (or DM) with zero timelines had no way to make
+  one. The button now appears whenever a specific timeline-owner is selected, and the empty state gets a
+  **＋ Create your first timeline** button. The selector-bar status message now wraps to its own line so
+  it no longer crowds the dropdowns.
+- **Item Cards: print-ready front / back / continuation cards** — a new **🖨 Print** button lays the
+  card content out as a single stream across fixed-size **63 × 88 mm** cards (Front → Back →
+  Continuation). The font **auto-fits** (14→8 px) to keep everything on one card before spilling to the
+  next; `@media print` reveals only the cards, one per page. The existing PNG download is unchanged.
+  (Also corrected the docs, which previously claimed a front/back layout that didn't exist and linked a
+  removed `full-item-cards` page.)
+- **Cleanup: retired journey trackers + NPC `path_public` (code-only)** — the dead `journey_trackers`
+  feature (auto-created player trackers, tracker CRUD endpoints/UI, export/import hydration) and the
+  dormant `campaign_npcs.path_public` flag (PATCH endpoint, API, derivation property) were removed from
+  the codebase. Movement is fully derived from the timeline; NPC paths are always DM-only. New exports
+  no longer emit `trackers[]` or `path_public`; **old bundles that still contain them import fine** (the
+  fields are ignored). The physical `journey_trackers` table and `path_public` column are left dormant
+  (no destructive migration). Also synced **ARCH.md** to the real schema and refreshed the journey-map /
+  manage-campaigns export field references.
+- **Public map details: hide routes touching hidden locations** — the **Paths** list (and its count)
+  in the public map's details panel now omits any route whose anchored locations aren't visible, so
+  it never lists a road to a location the viewer can't see. Routes remain undrawn on the public map
+  and still power distance calc through hidden cities.
+- **Fixed: Edit-Event modal player & manual-connection lists** — those checkbox lists rendered as
+  unstyled overflowing text because their CSS (`.pchks`/`.pcl`) was scoped to `.tl-app`, while the
+  modal portals to `document.body` (outside `.tl-app`). Unscoped those timeline-unique rules so they
+  apply inside modals too; the lists are scrollable boxes again.
+- **Fixed: timeline event hover tooltip** — event hover no longer shows nothing; the React-rendered
+  tooltip now overrides the stylesheet's `#tip { display: none }` resting state (inline `display:block`),
+  so hovering an event again shows its title, location, date, players, and description.
+- **Party timeline events** — the DM can flag a new campaign event as a **🌍 Party event
+  (whole group)**; it's stored once (no owning player/timeline, `player_timeline_entries.is_party`)
+  and shows as a single shared **"Party" lane** in the combined DM view and the public timeline,
+  and alongside each player's own events. New `/api/timeline-party/:campaignId` CRUD (DM-authored,
+  readable by campaign members); the combined + public queries UNION the party lane in.
+- **Timeline search boxes** — the "New Event" form and the Edit-event modal now have a
+  **Filter players…** box above the player checkboxes, and the sidebar **Players** and
+  **Locations** sections each got a search box (location drag-reorder is disabled while filtering,
+  since indices only make sense unfiltered).
+- **Search-events dropdown fixed** — the "Search events…" results list was being clipped by the
+  toolbar's overflow and hidden behind the timeline; it now renders in a portal positioned under
+  the search box, above everything, and is fully visible/clickable.
+- **Timeline date axis is more legible** — year markers are larger/bolder in bright gold, month
+  labels use higher-contrast text, and all date labels get a background halo so they read clearly
+  over the striped rows instead of overlapping/blending.
+
+- **Map names sit on parchment plates** — location, region and road/path names on the Journey
+  Map now render on a small rounded parchment plate (aged-paper fill + brown border, dark ink)
+  instead of stroke-outlined text, so they stay readable over busy map art. Shared editor +
+  public map (`components/map/MapLabel.jsx`); pin-label auto-declutter accounts for the plates.
+  - **Road names are tinted** per route type (road/flight/maritime) so they read differently
+    from location names on the plate.
+  - **Road/path name plates are draggable** — with the Select/Move tool, select a road or path
+    and drag its name plate (and its distance readout, which follows) to any spot, so it no
+    longer sits on top of towns or other labels. The position persists (`journey_paths.label_x/label_y`);
+    default is the path midpoint.
+  - Public-map location labels now use the same **per-size/type text formatting** as the editor
+    (big cities large/caps, minor places small/italic), instead of a single uniform style.
+- **Location pins are type icons you can resize** — Journey Map pins are no longer a plain
+  black circle. Each pin draws a vector icon chosen by its size/type (castle for big cities,
+  house/tent for small towns & villages, bed for inns, landmark, anchor for ports, … with a
+  map-pin fallback), on a subtle disc for legibility. Each pin has its own **size slider** in
+  the location details panel (`icon_scale`, persisted on `journey_map_locations`), so you can
+  fit it to the map art; icons scale crisply with zoom. The same icons render on the public map.
+- **Public Journey Map: routes are always hidden** — the road/route network is never drawn on
+  the public map (players just see locations + the tracker paths they're allowed to). Tracker
+  path visibility is unchanged (DM all; player own + party; anonymous none).
+- **Public Journey Map is now player-safe** — the shared map (`/journey-map-public/:token`)
+  no longer leaks DM-hidden content, and tracker paths are shown per viewer:
+  - Locations hidden in Manage Campaign (`is_public = false`, cascades to children) are
+    omitted; distances/events for hidden locations are filtered out too.
+  - Tracker paths: the **DM** (map owner) sees all; a **logged-in player** sees only their
+    **own** path plus **party** paths (a `type='group'` tracker); an **anonymous** visitor
+    sees none. The endpoint reads the session cookie to decide (still token-gated).
+  - To attribute a path to a user, `journey_trackers` gained a persistent `player_id`
+    (FK `campaign_players`); the auto-created per-player trackers now set it, and existing
+    ones are backfilled by name. Public paths also now carry `kind`/`route_type`, so roads
+    render correctly on the public map.
+- **Faster first load / smaller bundle** — pages are now route-lazy-loaded (`React.lazy`
+  + a `Suspense` spinner in the app shell), so each page ships as its own chunk that
+  downloads on first navigation. The initial JS bundle dropped from ~587 kB to ~261 kB
+  (~179 kB → ~83 kB gzip), and Vite's "chunk larger than 500 kB" build warning is gone.
+- **Players only see their own character(s)** — `GET /api/campaigns/:id/players` now returns
+  just the requesting user's assigned character(s) when the role is `player` (the DM still
+  gets the full roster). Previously the PC-sheet player picker listed — and leaked — every
+  character in the campaign, even though opening someone else's was already blocked server-side
+  by `canAccessPC`. A player with a single character now has it auto-selected.
+
+- **Journey Map route sections show full names** — the "Sections" panel no longer truncates
+  the segment label ("Lost City …"); it now wraps and shows the whole
+  "Start → End" city pair. The walk/horse/fly travel times moved fully into a **hover
+  bubble** (which also repeats the segment name), so the row stays clean.
+- **Roads are named after their endpoints by default** — drawing a route between two pinned
+  locations now names it `"Start City ⇄ End City"` instead of the generic "Road" / "Flight
+  route" / "Maritime route" (which still applies when an end isn't a placed location). The
+  name is editable in the Road Info panel as before.
+- **No more scroll-to-top / lost zoom on refresh** — mutations that used to refetch behind a
+  full-tab spinner now refresh in place:
+  - *Manage Campaigns*: `reload()` is silent (spinner only on initial select / campaign
+    switch), so adding/editing/deleting a player, location, NPC or timeline — and toggling a
+    location's visibility — no longer jumps the page to the top. Location visibility flips
+    optimistically with no refetch.
+  - *Char Tree*: connection add/edit/delete refresh silently and the canvas auto-fits only on
+    first mount, so it keeps your zoom/pan; toggling a connection's visibility flips
+    optimistically.
+  - *PC Sheet*: toggling a relationship's visibility updates local state instead of
+    re-listing all relationships.
+- **Manage Campaigns: Export moved to Settings** — the campaign Export/backup button now lives in the
+  **Settings** tab (under "Export / Backup") instead of the page header, keeping it with the other
+  campaign-level settings. Docs also gained a **Compatibility & migrations** section explaining
+  cross-version export/import behavior.
+- **Export/import now round-trips the new fields** — the campaign bundle (v3) and standalone
+  Journey-Map import previously dropped several recently-added fields. Fixed so export→import
+  preserves: per-pin **`icon_scale`**, road **name-label positions** (`label_x`/`label_y`),
+  each tracker's **player link** (via a `player_ref`), and — most importantly — **party timeline
+  events** (a new top-level `party_events[]` array; they were silently lost before, as the export's
+  timeline query excluded entries with no owning player/timeline). Additions are back-compatible;
+  older bundles just fall back to defaults. Module docs updated to match.
+- **Consistent alphabetical sorting** — normalized the user-facing lists that previously showed in
+  insertion/creation order: campaign lists & selectors, the assign-user dropdown, timelines list,
+  PC-sheet campaign/player selectors, the UserPanel users table, Journey Map campaign/map selectors +
+  tracker/route/path lists, Timeline campaign/timeline/profile selectors, and the PDF list. Fixed-order
+  UI/game lists (tools, months, abilities, etc.) and date-sorted lists are unchanged.
+- **Public map: distances compute through hidden cities** — road lines and hidden city pins
+  stay off the public map, but the road network is now sent for calculation only, so distances
+  between visible locations are computed even when the shortest path runs through hidden cities.
+  Pairs that can't be computed simply don't appear (and hidden cities never show as rows).
+- **Journey Map: tool shortcuts auto-open the relevant sidebar section** — picking a tool
+  (by key or click) other than Select/Move expands the section you'll need: Draw → Tools
+  (path/route + type) and, for path mode, Trackers; Place/Region/Measure → Locations.
+- **Journey Map: names declutter to hover** — only big/huge location names stay drawn on the
+  map; every other pin's name is hidden and appears on hover (editor + public).
+- **Map labels are formatted per type** — on the editor map each name style now signals
+  what it is: pinned locations vary by **size/type** (big cities large/bold/gold caps,
+  towns plain, minor places like inns small, dim, italic); **roads** read like route
+  signage (upper-case, letter-spaced, bold in the route colour); and **tracker paths**
+  render italic in the tracker colour.
+- **Location labels auto-declutter** — overlapping pin labels are nudged vertically so
+  they no longer sit on top of each other; a faint leader line connects a label to its
+  pin when it's pulled away.
+- **Regions excluded from the Distance Matrix** — the matrix is point-to-point, so
+  polygon regions (which are areas) no longer appear as rows/columns.
+- **Proximity filter is explained** — hovering the "N locations hidden by proximity
+  filter" note in the location details panel now shows the exact size-tier + road-distance
+  rules that decide what's listed.
+
+## [4.14.0] – Unreleased — Login: save password + Remember me
+
+- The login inputs now have `name="username"` / `name="password"`, so browsers and
+  password managers offer to **save and autofill** credentials (previously they
+  couldn't, the fields were nameless). On successful login the app also calls the
+  **Credential Management API** (`navigator.credentials.store`) to prompt the save
+  directly — Chrome's automatic heuristic often skips SPA (fetch) logins.
+- New **"Remember me"** checkbox → the server extends the session cookie to 30 days
+  (`POST /api/auth/login` accepts `rememberMe`); default stays 24h.
+
+## [4.17.0] – Unreleased — PC Sheet relationship fixes & campaign polish
+
+- **Timeline deep-links from Manage Campaigns work** — the Timeline page now reads the
+  `?campaign=&player=&mode=private` query params it's opened with: it switches to Campaign
+  mode, selects that campaign, and (when a player is given) loads that player's timeline —
+  instead of ignoring them and showing the default personal view.
+- **Cross-connections now show in the PC-sheet graph** — visible (and, for the DM, all)
+  DM cross-connections render as external nodes (🧟 NPC / 👤 player / relationship) below
+  the ego graph, joined to the character (or the linked relationship) by a dashed, labelled
+  edge. Previously the graph drew only the character's own relationships, so a
+  cross-connection to an NPC never appeared there.
+- **Hide players from the char tree** — the Char Tree tab now lists each player (with their
+  relationship pills) and a 👁/🙈 toggle; hiding a player drops that player, their
+  relationships, and any cross-connection touching them from the graph so it can be
+  decluttered. (Client-side per session.)
+- **DM Cross-Connections in three columns** — the char-tree cross-connection list is split
+  into **👥 Relationship links** (relationship↔relationship), **👤 Player links** (any
+  connection with a player), and **🧟 NPC links** (NPC↔NPC or relationship↔NPC), each sorted
+  A–Z by the left-hand entity.
+
+
+- **DM can hide relationships again** — fixed a frontend/backend field-name mismatch: the
+  UI used `dm_only`/`status` while the DB/API use `is_dm_only`/`status_label`, so hiding a
+  relationship (and the status label) silently had no effect. Aligned the chips, graph,
+  and add/edit modal; the edit endpoint now also accepts `is_dm_only` (DM/admin only).
+- **Relationship graph fills the space** — the PC-sheet graph is now tall (70vh) and
+  auto-fits all nodes to the box on load/resize (⤢ re-fits), instead of a short clipped box.
+- **Print just the graph** — a 🖨 control on the graph opens a print window with only the
+  relationship graph (framed to its content bounds).
+
+## [4.16.0] – Unreleased — PC Sheet: condensed relationships & DM notes
+
+- **Condensed Family Tree & Relationship Matrix** — the tall nested list is now a compact
+  set of chips grouped by relation type (with children shown inline as ↳), plus a
+  **Cross-connections** section (DM links to other players/NPCs, grouped by the external
+  entity). The PC relationships endpoint already returned `cross_connections`; the hook now
+  surfaces them.
+- **DM notes are small cards** — replaced the large single-column notes with a compact grid
+  of minimal cards (content + a Hidden/Visible badge, Show/Hide, and delete).
+- **Relationship graphs — less overlap/clutter**: the PC-sheet ego graph now spreads a
+  parent's children over a wider arc at a growing orbit radius (no more stacked child
+  nodes) and widens the social fan as it fills; the campaign char-tree uses a larger
+  node gap so labels stop colliding and fans overlapping cross-connections apart.
+
+## [4.15.0] – Unreleased — Journey Map polish
+
+- **Esc / Enter on all dialogs** — every modal now cancels on **Esc** and triggers its
+  primary action on **Enter** (shared `Modal` gained an `onSubmit`, skipping textareas;
+  the confirm dialog confirms on Enter). Wired across journey, PC, campaign and timeline
+  modals.
+- **Multi-point route bending** — a road section can hold **several** bend control points
+  (a smooth Catmull-Rom spline). Double-click a selected road to add a bend point where
+  you click; drag each diamond to shape it; double-click a diamond to remove it. Handles
+  sit on the control points, away from the centre distance label. Still shape-only —
+  bending never adds a waypoint or changes distance.
+- **Regions are locked by default** — a placed region no longer moves/reshapes on a
+  stray drag; select it and click **✏️ Edit shape & position** in the details panel to
+  unlock (vertex + body handles appear); any change of selection re-locks it.
+- **Section travel-time hover is a floating bubble** — the 🚶/🐎/🦅 estimate now pops
+  above the section row instead of squeezing in on the right and truncating the names.
+- **Continent-scope Distance Matrix hides minor sub-locations** — on a continent-scoped
+  map the matrix no longer lists locations that sit inside another location and are of
+  type Inn / Neighborhood / Other (the locations query now returns `parent_id`).
+- **Routes follow their locations** — a route/path anchor tied to a pinned location now
+  tracks that location live: move the pin and the connected routes move with it
+  (`resolveWaypoints` resolves `locId` anchors to the location's current position at
+  render). Drag handles show only on bare junction points; location anchors move via
+  their pin. Region polygons also now sit *below* routes/paths/pins so they don't grab
+  clicks meant for those.
+- **Pin-location list** — already-pinned locations are hidden from the "Pick location"
+  dropdown, except a region that still has unpinned children (kept as a header so the
+  children can be pinned).
+- **Smart distance sidebar filters by road distance again** — the size/proximity rules
+  now require an actual road-network connection within range; unconnected locations are
+  hidden instead of all showing as "set distance" (Big cities still always list other
+  Big cities, per spec).
+- **Editable road name** — name a road in the Route panel.
+- **Errors now surface to the user** — a global `unhandledrejection` handler shows a
+  toast for otherwise-uncaught API errors (e.g. deleting a location that's in use:
+  "Location is in use on Journey Map …"), instead of only logging to the console.
+- **Export/Import preserve roads** — the campaign export/import and the journey-map
+  JSON now round-trip `kind`, `route_type`, and the per-section `segMiles`/`curve` on
+  waypoints (routes previously came back as plain paths with no distances/curves).
+
+## [4.13.0] – Unreleased — Journey Map: Paths (movement) vs Routes (road network)
+
+Two distinct, separately-drawn concepts:
+
+- **Path** = a player/NPC group's movement — belongs to a tracker, auto-creates &
+  names campaign locations along the way, distance derived from location distances,
+  travel times shown. (Reverted to its original behavior.)
+- **Route** = a **road in a network** (no start/end). Three **types** — `road`,
+  `flight`, `maritime`. Roads are tracker-free; their waypoints are **map-only**
+  (bare `{x,y}` in the road's own data, or a snapped existing location) and **never
+  create campaign locations**. Each **section** (segment between two points) carries
+  its own distance (`segMiles`); the road's total = Σ sections.
+
+Details:
+- **Data**: `journey_paths.kind` (`'path'`|`'route'`) + `route_type`
+  (`road`|`flight`|`maritime`) — idempotent migrations; existing rows → `path`/`road`.
+- **Drawing**: one Draw tool with a **Path | Route** toggle; Route mode adds a
+  road-type selector and needs no tracker. Route draws skip `ensureWaypointLocations`.
+- **Distance**: `geometry.roadDistance` sums per-section `segMiles`;
+  `setRouteSectionDistance` writes `segMiles` on the road (the matrix is untouched by
+  roads). Paths keep deriving from the matrix via `computePathDistance`.
+- **Render**: roads draw by type (road = solid neutral, flight = dotted sky-blue,
+  maritime = dashed teal), translucent so map markers stay visible, no arrowhead,
+  per-section editable distances; sidebar lists **Routes** (typed icons) and **Paths**
+  separately, with a **Hide/Show roads** toggle. Public view mirrors the styling.
+- **All distances derive from the road network**: `geometry.networkDistances` builds a
+  weighted graph from every road's sections (locations are shared nodes, bare junctions
+  are road-local) and runs Dijkstra; `effectiveDistances` exposes the shortest path
+  between any two locations (falling back to the stored matrix for unconnected pairs).
+  Paths, the measure tool, the Distance Matrix and the proximity list all read these.
+- **Edit roads**: delete any road point from the Route panel (the two sections merge and
+  the merged distance is cleared); a road left with <2 points is removed.
+- **Bend roads without adding points**: each section can carry an optional `curve` control
+  point (render-only) so sea/mountain legs can bow into a quadratic Bézier. Drag a section's
+  diamond bend-handle to shape it, double-click to straighten. The curve never affects the
+  distance graph, the section distance, or the Points list (`buildRoadPath` builds the
+  `Q`/`L` path; `setSectionCurve` stores/clears it).
+
+(Supersedes the earlier "routes write the distance matrix" approach.)
+
+## [4.12.0] – Unreleased — Relationship-graph crossing reduction
+
+Reworked both relationship graphs so edges cross far less, while keeping the
+readable structure (family tiers, social fans, NPC row) intact.
+
+**New:** `components/graph/ordering.js` — shared, pure crossing-reduction helpers
+(`minCrossingOrder`, `countCrossings`, `median`, `arrangeAtExtremes`).
+`minCrossingOrder` is exact for ≤ 8 items (brute force) and barycenter-seeded
+local search above that, and is guarded to never return a worse order than the
+input (ties keep the input → no needless re-shuffling).
+
+**Manage Campaigns graph** ([CharTreeTab.jsx](frontend/src/pages/ManageCampaigns/tabs/CharTreeTab.jsx)):
+- Player columns are now ordered so players linked by DM cross-connections sit
+  adjacent — the main source of long crossing edges. (Synthetic checks: 6
+  players 7→0 crossings, 9 players 14→0.)
+- The NPC row is ordered by the **median** x of each NPC's connected nodes
+  (was the mean) — fewer crossings against the fixed layer above.
+
+**PC Sheet graph** ([RelGraph.jsx](frontend/src/pages/PcSheet/components/RelGraph.jsx)):
+- Social-fan and family-tier nodes that have their own child-of relationships
+  are placed at the fan extremes, where their orbits have room, instead of the
+  crowded centre — stops orbiting children overlapping neighbours.
+
+## [4.11.0] – Unreleased — Post-migration bug-fix pass
+
+Targeted fixes across the migrated React modules (from `TODO.md` "Bug fix").
+
+**Round 2 (follow-up reports):**
+- **Journey Map layers now render.** Root cause: a React `<img onLoad>` race — the
+  map is a data-URL already decoded before React attached the handler, so `onLoad`
+  never fired, `loaded` stayed false and the `drawLayers` gate hid all SVG layers
+  (regions/pins/paths) while the image still showed. `MapStage` now detects an
+  already-complete image and triggers the load handler itself.
+- **NPC print shows the whole sheet.** The app shell caps `#root`/`main` to the
+  viewport with `overflow:auto`, so print only captured the on-screen slice. Global
+  `@media print` rules now unclip the shell and hide the app header.
+- Further condensed the PC Sheet Family Tree (graph 240px/34vh, relations list
+  capped at 30vh) and DM Notes (35vh).
+- **Timeline campaign selector now appears.** The `.priv-sel-bar` was permanently
+  `display:none` — it only shows with a `.visible` class the legacy JS added but
+  the React port never did, so DMs couldn't see (let alone use) the campaign
+  dropdown. (Also threaded the campaign id through `selectPlayerOption` to fix a
+  stale-closure that blocked the player path.)
+- **Timeline "Fit" now actually fits.** Content height is linear in zoom
+  (H = A·ppd + B); the old proportional rescale ignored the fixed B term (gap
+  breaks + bottom padding) and always overflowed. Now solved exactly by sampling.
+- **PC Sheet "Generate PDF" prints the whole sheet.** Replaced the new-tab public
+  page (which only held public info, and in dev proxied to a server with no SPA
+  build) with a print-only document that stacks every tab — Character, Stats,
+  Relationships, Public, Private, DM Notes — one section per page.
+
+**General**
+- Removed the duplicate Login button on Home — the shared `AppHeader` already
+  renders one when unauthenticated.
+- Reordered the Home module grid: NPC → Item Cards → Split View → Timeline →
+  PDF Viewer → PC Sheet → Manage Campaigns → Journey Map.
+
+**NPC Sheet**
+- Fixed the doubled `+` on Prof Bonus / Initiative (values were re-formatted).
+- Textareas now auto-grow on load (not only while typing), so loaded sheets show
+  full content on screen and in print; added a print rule so nothing is clipped.
+- Restored the original parchment alignment of the saving-throw row under the
+  ability modifier.
+
+**PC Sheet**
+- Condensed the Family Tree / relationship graph (height 420 → 280, capped at
+  40vh) and constrained the DM Notes list to a scrollable 45vh.
+- Rewrote **Generate PDF**: opens the public print page in a new tab (gesture-safe,
+  no popup block) which self-prints once loaded — replaces the racey hidden-iframe
+  print that produced blank output. `PcPublic` now honours `?print=1`.
+
+**Journey Map**
+- All sidebar sections start collapsed; the "Pick location" selector moved above
+  the placed-locations tree.
+- Distance Matrix modal now opens near full-screen (95vw / 92vh).
+
+**Timeline**
+- "Today Marker" section moved to the top of the sidebar.
+- Toolbar (search / mode / view / zoom) now stays on a single scrollable row
+  instead of wrapping.
+- **Fixed campaign selection for players:** `selectCampaign` passed a stale
+  (empty) campaign id to `selectPlayerOption`, so picking a campaign loaded
+  nothing; the id is now threaded explicitly.
+
+**Scripts**
+- `npm run create-admin` no longer leaks the typed password — it reused a second
+  readline interface while the original kept echoing; now mutes the single
+  interface during entry.
+
+---
+
+## [4.10.0] – Unreleased — Timeline migration (final module)
+
+### Migrated: `pages/Timeline/` + `pages/TimelinePublic/`
+
+Fully converted from `public/timeline.html` (~4.3k lines) to React — the last
+`LegacyIframe` stub is gone, so **every module is now React-owned**. The SVG
+Gantt was rewritten idiomatically (SVG-as-JSX, React state) and all three modes
+are supported.
+
+**Files created:**
+
+| File | Role |
+|---|---|
+| `data/calendar.js` | Harptos/Gregorian systems, `absDay`/`fromAbsDay`, formatting, duration parsing — parameterized by `calType`. |
+| `pages/Timeline/layout.js` | Segment clustering, abs↔pixel mapping, log zoom, granularity, adaptive date marks. |
+| `hooks/useTimeline.js` | Personal (localStorage) mode: profiles + per-profile db + event/player/location/today CRUD. |
+| `hooks/useTimelineCampaign.js` | Campaign (DB) mode: campaign→player→named-timeline, actor resolution (`self_/rel_/cp_/npc_`), entry CRUD via `timelineApi`, share-by-token. |
+| `hooks/useCombinedTimeline.js` + `pages/Timeline/combined.js` | Read-only combined db (synthetic player per timeline×actor) for the public view. |
+| `pages/Timeline/TimelineCanvas.jsx` | The SVG Gantt: location columns, adaptive date axis, duration bars, player + manual connection lines, pie-sliced event circles; drag-to-reschedule, hover-dim tooltip, double-click zoom, `scrollToEvent` + flash. |
+| `pages/Timeline/{Sidebar,TableView,PrivSelBar,svgUtils,Modals}.jsx` | Sidebar (lists + inline new-event form), table view, campaign selector bar, SVG helpers, and all modals (profile/player/location/today/event view+edit with manual links). |
+| `pages/TimelinePublic/index.jsx` | Read-only public combined view at `/timeline-public/:token` with a per-timeline show/hide legend. |
+| `pages/Timeline/timeline.css` | The legacy stylesheet ported and scoped under `.tl-app`. |
+
+**Modes:** personal (localStorage profiles), campaign (DB-backed per player/named
+timeline, incl. DM private + world timelines), and public read-only (token).
+
+**Server:** removed the legacy `/timeline` and `/timeline-public/:token` page
+routes; deleted the dead `public/timeline.html`. All `/api/*` endpoints
+unchanged. The SPA catch-all now serves the React pages.
+
+**DM combined view:** the `— All Players —` option renders a read-only combined
+timeline (one synthetic column per timeline×actor) reusing the same renderer as
+the public view, with a per-timeline show/hide legend (`CombinedLegend`, shared
+with TimelinePublic). It's the default view when a DM opens a campaign.
+
+---
+
+## [4.9.0] – Unreleased — JourneyMap editor migration
+
+### Migrated: `pages/JourneyMap/`
+
+Fully converted from `public/journey-map.html` (~3.5k lines) to React. No
+`LegacyIframe`. The SVG/canvas rendering and pan/zoom were **rewritten
+idiomatically** (React-controlled state, SVG-as-JSX, no `innerHTML`/`document`
+listeners), reusing the `components/map/` renderer built for JourneyMapPublic.
+
+**Files created:**
+
+| File | Role |
+|---|---|
+| `hooks/useJourneyMap.js` | Data + API backbone: campaign/map selection, all map entities, and every mutation (map CRUD, image upload, location/region/tracker/path CRUD, distances, waypoint-event linking, share/export/import). |
+| `components/map/useMapViewport.js` | Shared pan/zoom state + `screenToPct` (used by both MapStage and the interaction hook). |
+| `components/map/compressImage.js` | Canvas resize/JPEG-compress for map backgrounds (≤4096px / ≤2 MB). |
+| `pages/JourneyMap/useMapInteraction.js` | Tool-driven mouse + keyboard: pan, place, select, drag-pin, draw/extend paths, waypoint drag, region draw + body/vertex drag, measure, delete; shortcuts (V/H/P/R/D/M/X, Esc, Alt/⌘ pan, Enter, Delete). |
+| `pages/JourneyMap/index.jsx` | Page shell: header controls, 3-column layout, modal host. |
+| `pages/JourneyMap/Sidebar.jsx` | Tools, background image, scoped location tree, trackers, paths, matrix launcher. |
+| `pages/JourneyMap/DetailsPanel.jsx` | Location (geometry, linked map, proximity-filtered distances) + path (travel times, waypoints, notes) views. |
+| `pages/JourneyMap/EditorLayers.jsx` | Editable SVG layers + draw/region previews + measure overlay. |
+| `pages/JourneyMap/MeasurePanel.jsx` | Floating measure-route readout. |
+| `pages/JourneyMap/constants.js` | Tools, tracker palettes/icons, scopes. |
+| `pages/JourneyMap/modals/` | `NewMapModal`, `ShareModal`, `NamingModal`, `DistanceModal`, `DistanceMatrixModal`, `WaypointEventModal`. |
+
+**Geometry helpers** added to `components/map/geometry.js`: `fmtTravelTime`
+(8 active hours/day), `snapToPin`, `distanceBetween`, `computePathDistance`,
+`locTier`, `proximityVisibleLocations`.
+
+**Behavioural notes / improvements over the vanilla page:**
+- Pan/zoom, drawing and drag are React state — no closure mutation or
+  `innerHTML` string building; selection drives re-render.
+- Coordinate conversion + viewport live in one `useMapViewport` instance shared
+  by the renderer and the interaction hook.
+- Single distance-matrix proximity filter ported verbatim as a pure helper.
+
+**Server:** removed the explicit `GET /journey-map` page route from `app.js`;
+the SPA catch-all now serves the React editor (role enforced client-side via
+`ProtectedRoute` plus the per-request API checks). Deleted the now-dead
+`public/journey-map.html` and `public/journey-map-public.html`.
+
+---
+
+## [4.8.0] – Unreleased — JourneyMapPublic migration
+
+### Migrated: `pages/JourneyMapPublic/`
+
+Fully converted from `public/journey-map-public.html` to React. No `LegacyIframe`.
+The SVG/canvas rendering was **rewritten idiomatically** (React-controlled
+state + SVG-as-JSX) rather than wrapped, and the pan/zoom + rendering layer was
+extracted into a **reusable `components/map/`** module the DM JourneyMap editor
+will reuse when it is migrated.
+
+**Files created:**
+
+| File | Role |
+|---|---|
+| `components/map/geometry.js` | Pure helpers: `pctToSvg`, `fmtTime`, `travelTimes`, `parseWaypoints`, `isRegion`, `waypointEvents`, `linkedEventsForLoc`, `sameId`, `SPEEDS`. |
+| `components/map/MapStage.jsx` | Reusable pan/zoom stage. Scale/offset are component state (no closure mutation); zoom-to-cursor via a native non-passive `wheel` listener; fit-on-load; renders the background image + an overlaid `<svg>` whose contents come from a render-prop receiving the natural image size. |
+| `pages/JourneyMapPublic/MapLayers.jsx` | `Regions` (polygons), `Pins` (circles), `Paths` (directed polylines + distance labels) as presentational SVG components. |
+| `pages/JourneyMapPublic/Tooltips.jsx` | `FloatingTooltip` (cursor-following, viewport-flipping, self-measuring), `PinTooltip`, `EventTooltip`, and the hoverable `EventChip`. |
+| `pages/JourneyMapPublic/DetailsPanel.jsx` | Right panel with three views — map overview / selected location / selected path — including travel-time badges and bidirectional distances. |
+| `pages/JourneyMapPublic/index.jsx` | Page: fetches `journeyMapsApi.publicData(token)`, owns selection + tooltip state, composes header + `MapStage` + layers + panel. |
+
+**Behavioural notes / improvements over the vanilla page:**
+- Selection is a single `{ kind, id }` state (last click wins); pin/region/path
+  highlights and the panel view derive from it — no manual re-render calls.
+- Tooltips are fixed-position React nodes positioned from `clientX/Y` and
+  measured via a ref, instead of mutating a shared DOM node's `innerHTML`.
+- Path arrowheads inherit the path colour via `currentColor` on the group.
+- Map labels use theme tokens (`--text`/`--bg`) so they track the active theme.
+
+**Server:** removed the explicit `GET /journey-map-public/:token` page route
+from `app.js` so the SPA catch-all renders the React page in production. The
+`GET /api/journey-map-public/:token` data endpoint is unchanged.
+
+---
+
+## [4.7.0] – Unreleased — PcPublic migration
+
+### Migrated: `pages/PcPublic.jsx`
+
+Fully converted from `public/pc-public.html` to React. No `LegacyIframe`.
+
+- Read-only public PC sheet served at `/pc-public/:token`, fetching
+  `pcApi.publicData(token)` via `useAsync` (auto-run on `token`).
+- Faithful port of the legacy layout: minimal header (`AppHeader` with
+  `hideBack` + a "📢 Public View" `Badge`), portrait banner with emoji
+  fallback on missing/broken image, and the single "Public Information"
+  block (`whitespace-pre-wrap`), with empty/not-found states.
+- Inline `<style>` replaced with Tailwind + `globals.css` theme tokens.
+
+**Server:** removed the explicit `GET /pc-public/:token` page route from
+`app.js` so the SPA catch-all renders the React page in production. The
+`GET /api/pc-public/:token` data endpoint is unchanged.
+
+---
+
+## [4.6.0] – Unreleased — PcSheet migration
+
+### Migrated: `pages/PcSheet/`
+
+Fully converted from `public/pc-sheet.html` to React. No `LegacyIframe`.
+
+**Files created:**
+
+| File | Role |
+|---|---|
+| `hooks/usePcSheet.js` | All state + all API calls. Campaign/player selectors, character data, relationships, DM notes, portrait upload, export/import, public token. |
+| `components/PortraitBox.jsx` | Portrait display with upload (size + dimension validation), URL input, clear button. |
+| `components/RelationModal.jsx` | Add/edit relationship — name, type, status, link, parent (child-of), DM-only toggle. |
+| `components/RelGraph.jsx` | SVG relationship graph — faithful port of `renderRelGraph()`. Family tiers, social fan, child-of-relationship nodes, tier bands, divider, section labels. Pan/zoom/fit controls. Hover tooltip with relation name and status. Clicking a node opens edit modal. |
+| `tabs/index.jsx` | All six tab components in one file: `CharacterTab`, `StatsTab`, `RelationsTab`, `PublicInfoTab`, `PrivateTab`, `DmNotesTab`. |
+| `PcSheet/index.jsx` | Main page: campaign/player selectors in header, tab bar, tab switcher. |
+
+**Tabs:**
+- **⚔️ Character** — name, portrait, story, traits/flaws/goals, public link copy
+- **🎲 Stats Sheet** — NpcSheet embedded via `<iframe src="/npc-sheet?embedded=1">` with postMessage bridge (`NPC_READY` → `LOAD_STATS` / `COLLECT_STATS` → `STATS_DATA`). Save and Clear toolbar above the iframe.
+- **🌳 Relationships** — flat list (indented for child-of relations) + SVG graph + add/edit modal
+- **📢 Public Info** — textarea visible to all players
+- **🔒 Private Info** — textarea for player + DM
+- **📜 DM Notes** — DM-only notes with per-note visibility toggle and delete (DM role only)
+
+**RelGraph improvements over vanilla:**
+- Pan/zoom is React-controlled state (`useState`) rather than mutating a closure variable
+- Hover tooltip is a React-rendered `<div>` positioned via `clientX/Y` — no canvas used
+- SVG `<g transform>` handles viewport transform cleanly; fitting fires on data change via `useEffect`
+- `onEditRelation` prop wires node-click directly to the edit modal in `RelationsTab`
+
+**StatsTab postMessage bridge:**
+- On iframe load, `NPC_READY` fires → parent sends `LOAD_STATS` with the character's saved stats
+- On "Save Stats" click, parent sends `COLLECT_STATS` → iframe responds with `STATS_DATA` → saved via `pcApi.saveStats`
+- Works with the migrated React NpcSheet (same bridge used by the legacy pc-sheet.html)
+
+`/pc-sheet` Express route removed — React SPA catch-all handles it now.
+
+---
+
+
+## [4.5.0] – Unreleased — ManageCampaigns migration
+
+### Migrated: `pages/ManageCampaigns/`
+
+Fully converted from `public/manage-campaigns.html` to React. No `LegacyIframe`.
+
+**Files created:**
+
+| File | Role |
+|---|---|
+| `constants.js` | Harptos calendar months, location size types, tab definitions, calendar helpers (`absDay`, `doyFromForm`, `formatAbsDay`) |
+| `hooks/useManageCampaigns.js` | All state: campaigns list, active campaign, per-tab data (players/locations/npcs/timelines/meta). All actions wired to `campaignsApi`, `timelineApi`, `usersApi`. |
+| `tabs/PlayersTab.jsx` | Add player (name + user assign), delete, reassign user, create/open timelines |
+| `tabs/LocationsTab.jsx` | Hierarchical location tree (recursive `LocationRow`), add/edit/delete/toggle visibility, search filter, edit modal |
+| `tabs/OtherTabs.jsx` | Three tabs in one file: `NpcsTab` (bulk add by comma, chip delete), `TimelinesTab` (summary cards + navigate to timeline), `SettingsTab` (read-only calendar type, today-marker date picker, danger-zone delete) |
+| `tabs/CharTreeTab.jsx` | Canvas relationship tree (pan/zoom), DM cross-connection list with add/edit/delete/visibility, `ConnModal` for linking relationships |
+| `index.jsx` | Main page: `CampaignSidebar` (campaign list + create form + import), `TabBar`, tab content switcher, Export button in header |
+
+**Design decisions:**
+- Tab data is loaded all at once with `Promise.all` when a campaign is selected — avoids per-tab loading spinners and makes switching instant
+- `buildLayout()` in `CharTreeTab` places player nodes in a horizontal row and NPC nodes below; the canvas drawing logic is a direct port of `drawTree()` from the vanilla version, wrapped in a `useRef`+`useEffect` canvas island
+- `SettingsTab` calendar type is read-only with a note (cannot change after creation) — matches the original constraint
+- `TimelinesTab` navigates to `/timeline` with query params rather than managing timeline data directly, consistent with the original
+
+`/manage-campaigns` Express route removed — React SPA catch-all handles it now.
+
+---
+
+
+## [4.4.0] – Unreleased — SplitView + PdfViewer migration
+
+### Migrated: `pages/SplitView/`
+
+Fully converted from `public/split-view.html` to React. No `LegacyIframe`.
+
+**Architecture:**
+- `hooks/useSplitViewProfiles.js` — all profile/URL/layout state; persists to
+  `localStorage` under `splitview-profiles`; separate `urls` (input fields) and
+  `frames` (committed iframe srcs) so typing in an input doesn't reload iframes
+  mid-edit
+- `SplitView/index.jsx` — fullscreen fixed-grid layout; controls float as an
+  overlay (no AppHeader, same as original); `ControlsOverlay` component for
+  profile/layout/URL management
+
+**Improvements over vanilla version:**
+- Typing in a URL input no longer changes the iframe src — only "Load" (or Enter)
+  commits the URL, preventing unintended page reloads while editing
+- `prompt()` / `confirm()` replaced with inline handlers that still use browser
+  dialogs for now (acceptable for this simple use-case; Modal upgrade is a TODO)
+- Keyboard shortcut `H` toggles controls (added alongside the original Ctrl+1/2/3)
+- Internal relative paths (e.g. `/timeline`) work without a protocol prefix
+
+`/split-view` Express route removed.
+
+---
+
+### Migrated: `pages/PdfViewer/`
+
+Fully converted from `public/pdf-viewer.html` to React. No `LegacyIframe`.
+
+**Architecture:**
+- `hooks/usePdfViewer.js` — all pdf.js state and rendering logic; loads pdf.js
+  from CDN via a dynamically injected `<script>` tag; exposes `canvasRef` /
+  `fsCanvasRef` for the page to attach to canvas elements; `setFsMode()` directs
+  rendering to the correct target; `fitWidth(containerWidth)` for auto-scaling
+- `PdfViewer/index.jsx` — collapsible sidebar, controls bar (reused in fullscreen),
+  fullscreen overlay with its own canvas + dark controls bar
+
+**Improvements over vanilla version:**
+- `rendering` flag shown as a `<Spinner>` overlay on the canvas area instead of
+  silently blocking further renders
+- `usePdfViewer` hook is fully testable in isolation (no DOM coupling in state logic)
+- pdf.js loaded lazily once — script tag injected only if `window.pdfjsLib` is absent
+- Keyboard shortcuts (`←/→`, `+/-`, `F`, `Esc`) properly remove their listeners
+  on unmount via `useEffect` cleanup
+
+`/pdf-viewer` Express route removed.
+
+---
+
+### Added: `writing-mode` Tailwind utilities
+
+`tailwind.config.js` plugin adds `.writing-mode-vertical` and
+`.writing-mode-horizontal` utility classes used by the PdfViewer sidebar toggle.
+
+---
+
+
+## [4.3.0] – Unreleased — ItemCards migration
+
+### Migrated: `pages/ItemCards/`
+
+Fully converted from `public/item-cards.html` to React. No `LegacyIframe`.
+
+**Sub-components:**
+
+- `constants.js` — item types, rarities (with border colours), armor types,
+  type-groupings, and `defaultForm()` factory
+- `RichTextEditor.jsx` — controlled contenteditable editor; Bold / Italic /
+  Bullet list / Clear toolbar; syncs HTML string to parent via `onChange`
+- `ItemCardPreview.jsx` — `forwardRef` card component rendered from form state;
+  scoped `<style>` block keeps CSS-variable styles intact for html2canvas capture
+- `ItemCards/index.jsx` — main page: split form/preview layout, download PNG via
+  CDN html2canvas, clear form, type-change resets type-specific stats
+
+**Fixes over vanilla version:**
+- Type change now resets only type-specific stat fields (weapon/armor/uses),
+  preserving name, rarity, flavor text, attunement and abilities — resolves the
+  "Item Card form fields should reset when Item Type is changed" backlog item ✅
+- `<script>` tag for html2canvas is async so it doesn't block render
+- `forwardRef` pattern means the parent holds the canvas target ref cleanly
+  without DOM queries
+
+`/item-cards` Express route removed — React SPA catch-all handles it now.
+
+---
+
+
+## [4.2.0] – Unreleased — NpcSheet migration + housekeeping fixes
+
+### Migrated: `pages/NpcSheet/`
+
+Fully converted from `public/npc-sheet.html` to React. No `LegacyIframe`.
+
+**Sub-components:**
+- `TagInput.jsx` — reusable autocomplete tag-chip input (keyboard + click, Backspace to remove)
+- `AbilityScores.jsx` — six ability columns with score input, auto-modifier, ST proficiency toggle
+- `SkillsBlock.jsx` — 18 skills in a 3-column grid with 0/proficient/expert cycling
+- `SpellSection.jsx` — spell slot table with used/unused toggles per slot
+- `NpcSheet/index.jsx` — main page assembling all sections
+
+**New shared files:**
+- `src/data/dnd.js` — static D&D 5e constants (abilities, skills, damage types, conditions,
+  classes, spell slots tables, FULL/HALF/WARLOCK caster lists, `abilityMod`, `profBonus`,
+  `fmtMod`, `getSlotArray` helpers). Shared with future PcSheet migration.
+- `src/hooks/useNpcSheet.js` — all sheet state: fields, abilities, skillProfs, tags,
+  spellNames, usedSlots, legRes. Exposes `collectSheet` / `populateSheet` for the
+  embedded postMessage bridge used by PcSheet iframe.
+
+**Embedded mode preserved:** `?embedded=1` hides the header and sets up the
+`postMessage` bridge (`NPC_READY`, `LOAD_STATS`, `COLLECT_STATS`, `STATS_DATA`,
+`IFRAME_RESIZE`) so the PcSheet iframe integration continues to work.
+
+**Print support:** `@media print { .app-header { display:none } }` added to
+`globals.css`; clicking "🖨 Print / PDF" calls `window.print()`.
+
+---
+
+### Fixed: duplicate `const fs` in `app.js`
+
+The static-serving refactor accidentally introduced a second `const fs = require('fs')`.
+Fixed by keeping one declaration at the top:
+
+```js
+const fs         = require('fs');         // sync (existsSync)
+const fsPromises = fs.promises;           // async (readFile, readdir)
+```
+
+All `await fs.readFile` / `await fs.readdir` calls updated to use `fsPromises`.
+
+---
+
+### Fixed: `dnd-tools-db` renamed to `dnd-tools-ref-db`
+
+`container_name` in `docker-compose.yml` and all references in `run.sh` updated.
+
+---
+
+
+## [4.1.0] – Unreleased — UserPanel migration + build fixes
+
+### Migrated: `pages/UserPanel.jsx`
+
+Fully converted from `public/user-panel.html` to React. No `LegacyIframe`.
+
+**Improvements over the vanilla version:**
+- Role change, password reset, and delete now use `<Modal>` components
+  instead of browser `confirm()` / `prompt()` — non-blocking and styled
+- All API calls go through `src/api/users.js`
+- Error and success feedback via `useToast` instead of injected HTML strings
+- `useAsync` hook handles loading / error states for the user list
+- Refresh button to re-fetch without reloading the page
+- "You" label on the current user's row; Delete button disabled for self
+- Accessible table with proper `<th>` elements
+
+---
+
+### Fixed: `Dockerfile` — multi-stage build
+
+The previous single-stage image did not build the React frontend.
+Replaced with a two-stage build:
+- **Stage 1 `frontend-build`** — `node:20-alpine`, runs `npm ci` + `npm run build` inside `frontend/`, outputs to `frontend/dist/`
+- **Stage 2 `production`** — `node:20-alpine`, installs backend deps, copies `public/`, copies `frontend/dist/` → `public/app/`
+- Upgraded base image from `node:25-alpine` (pre-release) to `node:20-alpine` (LTS)
+
+---
+
+### Fixed: `docker-compose.yml`
+
+- Added `SESSION_SECRET` and `ID_SECRET` environment variables (read from `.env` via `${VAR:-default}` syntax)
+- Added `restart: unless-stopped` to the postgres service
+- Bumped healthcheck `retries` from 5 → 10 for slower machines
+- Added comments explaining each section
+
+---
+
+### Fixed: `vite.config.js`
+
+- Fixed `__dirname` for ESM (`fileURLToPath` pattern — required for `"type": "module"` packages)
+- Changed `outDir` from `'../public/app'` (wrong — resolved relative to cwd) to `path.resolve(__dirname, 'dist')` (always correct)
+- The Dockerfile then copies `frontend/dist/` → `public/app/` in the image
+
+---
+
+### Fixed: `app.js` — SPA static serving + catch-all route
+
+Added two blocks after the existing `express.static` calls:
+1. Serves `public/app/` as static assets at `/app/*` (only when the build exists)
+2. A catch-all `GET *` route that serves `public/app/index.html` for any unmatched path, enabling client-side routing — legacy `.html` routes are still handled by Express directly
+
+---
+
+### Fixed: `run.sh`
+
+Added two new steps before Docker build:
+- **Step 4** — `npm install` inside `frontend/` (skipped if `node_modules` is current)
+- **Step 5** — `npm run build` inside `frontend/` (skipped if `dist/` is newer than all source files)
+
+Other improvements:
+- Node.js version check (requires v18+)
+- Better container restart detection (checks `State.Running` before `$COMPOSE up`)
+- Cleaner banner formatting
+- Added `$COMPOSE down -v` to the useful commands list
+
+---
+
+
+## [4.0.0] – Unreleased — React Frontend Scaffold
+
+### Summary
+
+Introduced a fully structured React 18 + Vite frontend in `frontend/`.
+The Express backend (`app.js`, `public/`) is **unchanged** — this is a
+pure frontend refactor. All modules remain accessible during migration via
+a `LegacyIframe` bridge that embeds the original vanilla-JS pages inside
+the React router shell.
+
+---
+
+### New: `frontend/` directory
+
+| Path | Description |
+|---|---|
+| `frontend/package.json`     | React 18, React Router 6, Tailwind CSS 3, Lucide React, Vite 5 |
+| `frontend/vite.config.js`   | Dev proxy to Express on `:3080`; builds to `public/app/` for production |
+| `frontend/tailwind.config.js` | Extends Tailwind with D&D CSS variable tokens (`bg-surface`, `text-gold`, …) |
+| `frontend/index.html`       | SPA entry; applies saved `data-theme` before React mounts to prevent flash |
+
+---
+
+### New: `frontend/src/styles/globals.css`
+
+Single CSS file imported once in `main.jsx`:
+- Tailwind `@base`, `@components`, `@utilities` directives
+- All three theme token sets (`dark` / `light` / `slate`) as CSS variable declarations — identical to the previous `public/theme.css`, enabling Tailwind utilities and legacy vanilla pages to share the same tokens
+- Global resets, scrollbar styles
+- Tailwind `@layer components` entries for `.hdr-btn`, `.hdr-btn-accent`, `.hdr-btn-danger`, `.hdr-sel`, `.hdr-sep` — reusable across all pages
+
+---
+
+### New: Context providers (`frontend/src/contexts/`)
+
+| File | Description |
+|---|---|
+| `ThemeContext.jsx` | Manages `dark`/`light`/`slate` theme with `localStorage` persistence; applies `data-theme` to `<html>` on change |
+| `AuthContext.jsx`  | Fetches session user on mount; exposes `user`, `login()`, `logout()`, `changePassword()`, `loading`, `refresh()` |
+| `ToastContext.jsx` | Global toast notification queue; `toast(msg, type?)` renders timed overlays at the bottom of the screen |
+
+---
+
+### New: API layer (`frontend/src/api/`)
+
+Thin `fetch` wrapper (`client.js`) with `get / post / put / patch / del` helpers.
+Error responses are normalised to `throw new Error(body.error)`.
+
+| Module | Covers |
+|---|---|
+| `auth.js`         | `getUser`, `login`, `logout`, `changePassword` |
+| `campaigns.js`    | Campaigns, players, locations, NPCs, meta, timelines summary, char-tree, export/import |
+| `timeline.js`     | Named player timelines, entries, private (DM) timeline, public share |
+| `pc.js`           | PC character, portrait, stats, relationships, DM notes, export/import, public token |
+| `journeyMaps.js`  | Maps, locations, distances, trackers, paths, share, public data |
+| `users.js`        | User CRUD (admin) |
+| `docs.js`         | Module README fetcher |
+| `index.js`        | Barrel re-export of all modules |
+
+---
+
+### New: Shared hooks (`frontend/src/hooks/`)
+
+| Hook | Description |
+|---|---|
+| `useAuth.js`  | Re-export of `useAuth` from `AuthContext` |
+| `useTheme.js` | Re-export of `useTheme` from `ThemeContext` |
+| `useToast.js` | Re-export of `useToast` from `ToastContext` |
+| `useAsync.js` | Generic async data-fetching hook: `{ data, loading, error, run }`; supports `autoRun` + deps |
+
+---
+
+### New: UI components (`frontend/src/components/ui/`)
+
+| Component | Description |
+|---|---|
+| `Button`    | `default` / `accent` / `danger` / `ghost` variants; `loading` spinner state |
+| `Modal`     | Portal-based accessible dialog; closes on Escape + backdrop click |
+| `Badge`     | Inline label: `default` / `gold` / `danger` / `dm` variants |
+| `Select`    | Styled `<select>` matching `.hdr-sel` |
+| `Spinner`   | Animated loading indicator |
+| `FormField` | `label` + children + `error` wrapper |
+| `index.js`  | Barrel export (`import { Button, Modal, … } from '@/components/ui'`) |
+
+---
+
+### New: Layout components (`frontend/src/components/layout/`)
+
+| Component | Description |
+|---|---|
+| `AppHeader.jsx`    | Standard header for all pages: `[icon][name] | [module slot] → [← Back][▾ Account]`. Account menu contains theme selector, change-password form, and logout. Login button shown when unauthenticated. |
+| `AppLayout.jsx`    | Root `<Outlet>` wrapper providing the full-height flex-column shell |
+| `LegacyIframe.jsx` | Temporary bridge that embeds a vanilla-JS HTML page in an `<iframe>` while it awaits migration |
+
+---
+
+### New: Pages (`frontend/src/pages/`)
+
+| Page | Status | Notes |
+|---|---|---|
+| `Home.jsx`              | ✅ **Fully migrated** | Module grid, login modal, docs modal (fetches README.md), role-based visibility |
+| `NotFound.jsx`          | ✅ **Implemented**    | 404 fallback |
+| `Timeline.jsx`          | 🔲 Stub (LegacyIframe) | Awaiting migration |
+| `ManageCampaigns.jsx`   | 🔲 Stub | |
+| `JourneyMap.jsx`        | 🔲 Stub | |
+| `PcSheet.jsx`           | 🔲 Stub | |
+| `NpcSheet.jsx`          | 🔲 Stub | |
+| `ItemCards.jsx`         | 🔲 Stub | |
+| `PdfViewer.jsx`         | 🔲 Stub | |
+| `SplitView.jsx`         | 🔲 Stub | |
+| `UserPanel.jsx`         | 🔲 Stub | |
+| `PcPublic.jsx`          | 🔲 Stub | Token-based public PC sheet |
+| `JourneyMapPublic.jsx`  | 🔲 Stub | Token-based public journey map |
+| `TimelinePublic.jsx`    | 🔲 Stub | Token-based public timeline |
+
+---
+
+### New: Router (`frontend/src/App.jsx`)
+
+React Router 6 with a `ProtectedRoute` wrapper that redirects to `/` when
+role requirements are not met. All routes are nested under `AppLayout`.
+
+---
+
+### Backend — no changes
+
+`app.js`, `public/*.html`, `public/theme.css`, `public/app.css`,
+`public/header-component.js`, and all API routes are **unchanged**.
+The new frontend communicates with the same REST API as before.
+
+---
+
+### Getting started
+
+```bash
+cd frontend
+npm install
+npm run dev     # React dev server on :5173, proxies /api/* to Express on :3080
+
+# Production build (outputs to public/app/)
+npm run build
+# Then add the SPA catch-all to app.js (see TODO)
+```
 
 ---
 

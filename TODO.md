@@ -1,33 +1,253 @@
 # TODO
 
-## Refactor
+## React Migration (v4.0.0)
+
+The React scaffold is in place (`frontend/`). Each item below is one module
+to migrate from `public/<module>.html` to a proper React page.
+When a module is done: remove its stub entry here, add a CHANGELOG entry,
+and delete the `LegacyIframe` call from its page file.
+
+### Module migration order (suggested — most self-contained first)
+
+- [x] **UserPanel** (`pages/UserPanel.jsx`) ✅ — fully migrated in v4.1.0
+- [x] **NpcSheet** (`pages/NpcSheet/`) ✅ — fully migrated in v4.2.0
+- [x] **ItemCards** (`pages/ItemCards/`) ✅ — fully migrated in v4.3.0
+- [x] **SplitView** (`pages/SplitView/`) ✅ — fully migrated in v4.4.0
+- [x] **PdfViewer** (`pages/PdfViewer/`) ✅ — fully migrated in v4.4.0
+- [x] **ManageCampaigns** (`pages/ManageCampaigns/`) ✅ — fully migrated in v4.5.0
+- [x] **PcSheet** (`pages/PcSheet/`) ✅ — fully migrated in v4.6.0
+- [x] **JourneyMap** (`pages/JourneyMap/`) ✅ — fully migrated in v4.9.0
+      (idiomatic SVG rewrite; reuses the `components/map/` renderer)
+- [x] **PcPublic** (`pages/PcPublic.jsx`) ✅ — fully migrated in v4.7.0
+- [x] **JourneyMapPublic** (`pages/JourneyMapPublic/`) ✅ — fully migrated in v4.8.0
+      (built the reusable `components/map/` renderer — MapStage + SVG layers)
+- [x] **Timeline** (`pages/Timeline/`) ✅ — fully migrated in v4.10.0
+      (idiomatic SVG Gantt; personal + campaign + public modes)
+- [x] **TimelinePublic** (`pages/TimelinePublic/`) ✅ — fully migrated in v4.10.0
+
+> 🎉 React migration complete — every module is React-owned; no `LegacyIframe`
+> stubs remain. The in-app DM combined read-only view is wired (v4.10.0).
+
+### Production build wiring
+
+- [x] Add SPA catch-all route to `app.js` ✅ — done in v4.1.0
+- [x] Serve `public/app/` as static assets ✅ — done in v4.1.0
+- [x] Multi-stage `Dockerfile` builds React frontend ✅ — done in v4.1.0
+- [x] `run.sh` installs frontend deps and builds before Docker build ✅ — done in v4.1.0
+- [x] Build output path reconciled ✅ — Vite now writes straight to `public/app/`,
+      so `cd frontend && npm run build && node app.js` works. It previously wrote
+      to `frontend/dist` and only the Dockerfile copied it across, so running the
+      server outside Docker 404'd every React route and served a dead fallback page.
+
+### Legacy cleanup
+
+- [x] Delete `public/index.html`, `public/app.css`, `public/theme.css` ✅ — the
+      fallback page loaded a `header-component.js` that no longer existed, and
+      `theme.css` duplicated every token already in `styles/globals.css`.
+- [x] Remove the orphaned `/api/timeline-private/*` routes and their client
+      methods ✅ — the DM private journal runs on `/api/player-timelines/*`.
+- [x] Remove dead exports ✅ — `api/index.js` barrel, `resourceForTagKey`,
+      the unused `ModalField` component (its `FIELD_*` constants stay),
+      `requireRolePage` / `requireAuthPage`, `usePcSheet.importSheet`,
+      `journeyMapsApi.updateScope` and its route, four empty brace-expansion dirs.
+
+---
+
+## Refactor (existing — carry forward)
+
 ### General
 
-- [ ] Add theme/colour selector accessible from all modules (near Login / Account button)
-- [ ] Refactor CSS — extract shared variables and component styles into `styles.css` to reduce duplication across HTML files
 - [ ] Pressing "Enter" key should not trigger a lot of submits but only the ones I'm writing or I have open
-- [ ] "Information" modal should be closed when clicking outside the modal
+- [x] "Information" modal should be closed when clicking outside the modal ✅
+      (`components/ui/Modal.jsx` — backdrop click + Escape; the legacy pages it
+      asked about no longer exist)
 
 ### Journey Path Map
 
-- [ ] Refactor Distance Matrix:
-    - [ ] Instead of distance between locations, build a `Route System` where routes are drawn and distance is set by `Route Section`
+- [x] Refactor Distance Matrix: instead of distance between locations, build a `Route System` where routes are drawn and distance is set by `Route Section` ✅ v4.13.0
+      (Routes = a tracker-free road network — road/flight/maritime types, map-only
+      waypoints that don't create campaign locations, per-section distances. Paths =
+      tracker movement, reverted. One Draw tool with a Path|Route toggle.)
+- [x] Route network: compute the real distance between any two locations via shortest
+      path over the drawn roads (uses the per-section distances) ✅ v4.13.0
+      (geometry.networkDistances/effectiveDistances; feeds paths, measure, matrix, proximity)
 
-## Fixes
+### Timelines
+
+- [ ] Add a filter by date so timenline could show only a specific timeframe
+- [x] Add a button to "Go to Today" ✅
+      (📅 beside Fit; `scrollToToday()` on the canvas handle, reusing the same
+      centring as `scrollToEvent`. Disabled when no marker is set. Also added to
+      the public timeline — which required the public API to return
+      `today_marker` at all, so that view now draws the marker too.)
+
+---
+
+## UX — refresh & scroll preservation
+
+Some mutations refetch all data and re-render behind a full-tab loading spinner, which
+unmounts the content and resets scroll to the top (and, in the Char Tree, resets the graph
+zoom/pan). Fix by updating local state optimistically — or at least NOT toggling `loading`
+on a post-mutation refresh — following Timeline/JourneyMap, which already do this.
+
+- [x] Manage Campaigns: stop the full-tab spinner on post-mutation `reload()` ✅ v4.18.0
+      (`loadCampaign(id, { silent })`; `reload()` is now silent — spinner only shows on
+      initial select / campaign switch. Fixes the scroll jump on player add/delete/reassign,
+      location add/edit/delete/toggle-visibility, NPC add/delete, timeline create.)
+- [x] `toggleLocVisibility` / `toggleConnVisibility` flip the flag in local state ✅ v4.18.0
+      (optimistic flip, no refetch; reverts + toasts on error.)
+- [x] Char Tree tab: connection add/edit/delete/toggle no longer remount the tab ✅ v4.18.0
+      (silent reload for add/edit/delete, optimistic flip for toggle; the canvas now
+      auto-fits only on first mount and keeps the user's zoom/pan on later changes.)
+- [x] PC Sheet: `toggleRelVisibility` updates local state instead of re-listing ✅ v4.18.0
+      (`addRelationship`/`editRelationship` still re-list on purpose — they need the
+      server-assigned ids + recomputed `cross_connections`; neither causes a visible jump.)
+- [ ] UserPanel: role-change/delete/create refetch the table — acceptable (table-scoped
+      spinner, no page jump); could update the affected row locally. Left as-is.
+- [ ] General: give long scrollable panes a stable scroll container and avoid `loading`-gated
+      unmounts on refresh so scroll position is preserved app-wide.
+
+---
+
+## Fixes (existing — carry forward)
+
 ### Item Card
 
-- [ ] Item Card form fields should reset when "Item Type" is changed
-
-### Journey Path Map
-
-- [ ] Distance Matrix Modal: locations row/column should stay while scrolling
-    - [ ] The row looks weird when scrolling horizontally as it shows some text on the left side
+- [x] Item Card form fields should reset when "Item Type" is changed ✅ — fixed in v4.3.0
 
 ### PC Sheet
 
-- [ ] Caster Type should be blocked depending on the selected Class 
+- [x] Caster Type should be blocked depending on the selected Class ✅
+      (locked when the class decides it — Full/Half/Warlock lists in `data/dnd.js`;
+      left editable for a blank class, Multiclass, and the martial classes, because
+      an Eldritch Knight Fighter and an Arcane Trickster Rogue are third casters.
+      The old code forced `none` for those, which blocked exactly that.)
 - [ ] Prepare for Multi-Class
+- [ ] Add Button to the HP to add temporary Hit Points and Temporary Max Hitpoints
+- [x] Add Button to print the Character Sheet when inside a PC Sheet. ✅
+      (🖨 Print in the **Stats Sheet toolbar**, beside 💾 Save Stats and 🗑 Clear.
+      It prints the stat block ALONE, in its parchment design, by printing the
+      embedded sheet's own document. The header PDF button remains the
+      whole-character-sheet print, and no longer includes the stat block.)
+- [x] Fix the PC Sheet PDF generation for the whole PC information ✅ — four causes:
+      1. **The Stats iframe was frozen at 900px.** The embedded sheet posts its real
+         height (`IFRAME_RESIZE`) but nothing listened — the message appeared exactly
+         once in the repo, at the sender. An iframe prints only its own box, hence
+         "only what fits on a screen". `StatsTab` now sizes the frame from it, and
+         `pc-print.css`'s `min-height:1500px` override (silently beaten by the inline
+         900) is gone.
+      2. **Viewport-capped panes.** `max-h-[42vh]` (relationships), `max-h-[45vh]`
+         (DM notes) and `height:70vh` (graph) resolve against the *page* in print, so
+         each printed at most half a page. Unclipped in `pc-print.css`.
+      3. **Textareas printed only their `rows`.** Same fix the NPC sheet already had.
+      4. **An 800ms guess** before `window.print()`, inside which the print copy had to
+         load a route, boot React and handshake. Now waits for the frame's own ready
+         signal, with the timeout as a backstop. The print copy's `StatsTab` also had
+         no `key`, so a stale iframe could survive a player switch.
+      5. **The print document reused the editable tabs**, which is why the first attempt
+         still looked wrong: the PDF contained live form controls, so long text printed
+         as a scrolled textarea, and the app's dark surfaces printed as opaque blocks.
+         It now renders plain markup — headings and text, no `<textarea>`, no buttons —
+         on an explicit light palette, with headings kept on the same page as the text
+         they introduce.
+      6. **The stat block is no longer part of this PDF at all** — it has its own print
+         button in the Stats toolbar, so including it here duplicated it. Sections also
+         stopped forcing a page break each, and the page margin is now set explicitly.
 
 ### Manage Campaign
 
-- [ ] Reorganize the Graph with every new connection so lines doesn't cross too much
+- [x] Reorganize the Graph with every new connection so lines doesn't cross too much ✅ v4.12.0
+      (player columns ordered by cross-connection affinity, NPC row by median peer X)
+
+
+## Bug fix
+
+### General
+- [x] Double `login` button on the header. Only the Right one should stay ✅ v4.11.0
+- [x] Order for index: NPC Sheet -> Item Cards => Split View => Timeline => PDF Viewer => PC Character Sheet => Manage Campaigns => Journey Map ✅ v4.11.0
+
+### Scripts
+- [x] `npm run create-admin` password should be hidden when typing ✅ v4.11.0
+      (a second readline interface was echoing it; now mutes the single interface)
+
+### npc-sheet module
+- [x] Print form only shows what's on the screen. Should print everything ✅ v4.11.0
+      (round 2: the app shell capped #root/main to the viewport with overflow;
+      global print rules now unclip the shell + hide the header)
+- [x] Double `+` on prof and initiative ✅ v4.11.0
+- [x] Ability Scores SV are not centered/aligned with the modifier ✅ v4.11.0
+- [x] Improve readibility for senses and languages. Letter is to big. ✅
+      (the two fields that hold sentences now carry a `cs--text` modifier — body
+      face, .78rem, left-aligned — while the seven short numeric fields in that
+      bar keep the 1rem display face they were sized for.)
+- [x] Type to search block is very big and it looks ugly ✅
+      (root cause was a specificity collision: `.npc-sheet .field input[type=text]`
+      — 50px min-height, own border and fill, `width:100%` — matched exactly one
+      element in the sheet, the TagInput's search box, and beat `.tag-input` on
+      every shared property. So each tag box drew a second bordered box inside
+      itself and pushed chips onto their own line. The rule is now split from the
+      textarea rule and scoped to direct children; the five boxes also got real
+      placeholders instead of "Type to search…" five times.)
+- [x] Senses and Languages moved into `Traits & Features` ✅
+      (as compact one-line fields; Languages keeps its SRD picker and its
+      append-don't-replace behaviour. The stats bar's grid was hard-coded to
+      `repeat(8, 1fr)` and is now 6, so no empty columns. Pure UI move — both are
+      plain `stats_json` strings, no schema change. The `cs--text` rule added in
+      the previous round is now dead and removed.)
+- [x] Allow for the `Legendary & Lair` to be hidden ✅
+      (auto-hidden when all four pieces of its state are empty — `legActions`,
+      `lairActions`, `specialAbilities` and the `legRes` checkbox array — with a
+      "+ Legendary & Lair" reveal for sheets that have none yet, and a "− Hide"
+      on the section title to put it away again — offered only while the section
+      is empty, since hiding real content would be wrong. Nothing is persisted:
+      the content is the durable signal, which avoids adding a `stats_json` key
+      that has to be hand-mapped in two places. Loading a dragon from the SRD
+      reveals it; loading a goblin does not.)
+
+### pc-sheet module
+- [x] Export → import round-trip is now safe ✅ — bundles are `version: 2` and
+      declare a `scope`:
+      - **`scope: 'full'`** (DM export) carries `private_info` and every DM note.
+      - **`scope: 'player'`** omits both keys *entirely* rather than blanking them.
+      Import writes a field only when the bundle actually carries it, which fixes
+      all three defects: `private_info` survives a player-produced bundle, DM notes
+      are replaced (not appended, so no more 2 → 4 → 6 doubling) and only from a
+      full export, and relationships now round-trip `parent_id`, `is_dm_only`,
+      `status_label` and `created_by_role` instead of flattening the family tree.
+      **Importing is DM-only** (`requireRole(['dm'])`), through Manage Campaigns →
+      Import. A player can still export their own sheet; it just contains no DM
+      notes at all.
+- [x] 🌳 Family Tree & Relationship Matrix is too big. Condensed the table ✅ v4.11.0
+      (round 2: relations list capped 30vh, graph 240px/34vh)
+- [x] DM Notes are also too big. ✅ v4.11.0 (round 2: capped 35vh)
+- [x] Generate PDF doesn't work. Should print all the pages of the pc-sheet ✅ v4.11.0
+      (round 2: prints a combined all-tabs print document, not just the active tab)
+
+### Journey Map
+
+- [x] Regions, pinned locations, paths are not shown in the map ✅ v4.11.0
+      (round 2: React <img onLoad> race — data-URL map decoded before the handler
+      attached, so `loaded` stayed false and the layer gate hid the SVG; MapStage
+      now detects an already-complete image)
+- [x] By default, all tools in the menu should be collapsed ✅ v4.11.0
+- [x] Distance Matrix should fit the whole screen when opened ✅ v4.11.0
+- [x] Pick location should be at the beginning of the list so it's easier to select ✅ v4.11.0
+
+### Manage Campaign module
+
+- [x] Reorganize the Graph with every new connection so lines doesn't cross too much ✅ v4.12.0
+      (crossing-reduction layout: shared `components/graph/ordering.js` — min-crossing
+      player order + median NPC order; PC Sheet ego graph also reduced via fan extremes)
+
+### timeline module
+- [x] Today marker should be moved on top of the menu ✅ v4.11.0
+- [~] By default, all tools in the menu should be collapsed — already collapsed by
+      default in code; if seen expanded it's remembered `ht-ui` localStorage from a
+      previous session (clearing it restores collapsed). No code change.
+- [x] Search event, type of timeline, selector for table/timeline graph, zoom, etc, should be on a line as a menu ✅ v4.11.0
+- [x] I can't select a campaign when moving to the private timeline ✅ v4.11.0
+      (round 2: the campaign selector bar was permanently `display:none` — the
+      `.priv-sel-bar` needed the `.visible` class the legacy JS used to add)
+- [x] Fit button doesn't fit the timeline ✅ v4.11.0
+      (round 2: content height is linear in ppd — H = A·ppd + B; the old rescale
+      ignored the fixed B term and always overflowed. Now solved exactly.)

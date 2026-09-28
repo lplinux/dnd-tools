@@ -1,0 +1,112 @@
+/* ============================================================================
+   pages/PcSheet/pc-print.css
+   The full-sheet print document (see PcPrintDoc in index.jsx). Hidden on
+   screen; revealed only in @media print, so the PDF button prints every section
+   rather than just the active tab.
+
+   The document renders PLAIN markup — no textareas, no buttons — because
+   reusing the editable tabs meant long text printed inside a scrolled form
+   control and the app's dark surfaces printed as solid blocks.
+   ============================================================================ */
+
+/* Mounted but invisible on screen (off-canvas rather than display:none, so the
+   embedded stats iframe still loads while we wait to print). */
+.pc-print-doc {
+  position: fixed;
+  left: -10000px;
+  top: 0;
+  width: 800px;
+}
+
+.pc-print-title { display: none; }
+
+
+@media print {
+  /* Two layers, because @page alone is not reliable: the browser's own print
+     dialog has a Margins setting (Default / None / Minimum) that overrides it,
+     so on "None" the text still ran to the paper's edge. The padding below is
+     part of the document and cannot be overridden from the dialog.
+     The page is NAMED because the NPC sheet declares its own margin and both
+     stylesheets can be live in one document after navigating between them. */
+  @page pcsheet { margin: 18mm 16mm; }
+
+  /* Show the print document; hide the normal tabbed screen view. */
+  .pc-screen-printing { display: none !important; }
+  .pc-print-doc {
+    position: static !important;
+    left: auto !important;
+    width: 100% !important;
+    /* Paper is white. The app theme is dark, and anything inheriting its
+       surface colours reads as a solid opaque block once the browser is told
+       to honour backgrounds. State the print palette explicitly instead. */
+    background: #fff !important;
+    color: #000 !important;
+    page: pcsheet;
+    font-size: 11pt;
+    line-height: 1.45;
+    padding: 6mm 4mm !important;
+    box-sizing: border-box;
+  }
+  .pc-print-doc * {
+    background: transparent !important;
+    color: #000 !important;
+    box-shadow: none !important;
+  }
+
+  .pc-print-title {
+    display: block;
+    font-family: var(--fd), 'Cinzel', serif;
+    font-size: 1.6rem;
+    margin: 0 0 12px;
+  }
+
+  /* Sections flow into one another. They used to force a page break each, which
+     turned a short character into six mostly-empty pages. Individual blocks
+     still avoid breaking mid-way (see .pc-print-block below). */
+  .pc-print-section { margin: 0 0 16px; }
+
+  /* A heading must never be orphaned from the text it introduces. */
+  .pc-print-block {
+    page-break-inside: avoid;
+    break-inside: avoid;
+    margin: 0 0 14px;
+  }
+  .pc-print-block h3 {
+    font-family: var(--fd), 'Cinzel', serif;
+    font-size: 12pt;
+    margin: 0 0 4px;
+    padding-bottom: 2px;
+    border-bottom: 1px solid #999 !important;
+    page-break-after: avoid;
+    break-after: avoid;
+  }
+  /* Belt and braces: even if a block does have to break, never leave the
+     heading stranded at the foot of a page. */
+  .pc-print-doc h1, .pc-print-doc h2, .pc-print-doc h3 {
+    page-break-after: avoid;
+    break-after: avoid;
+  }
+
+  /* Author's line breaks are meaningful; the text is plain, so it flows and
+     paginates naturally instead of scrolling inside a box. */
+  .pc-print-text { white-space: pre-wrap; orphans: 3; widows: 3; }
+
+  .pc-print-list { margin: 0; padding-left: 18px; }
+  .pc-print-list li { margin-bottom: 3px; page-break-inside: avoid; break-inside: avoid; }
+
+  .pc-print-note {
+    margin: 0 0 8px;
+    padding: 0 0 6px;
+    border-bottom: 1px solid #ccc !important;
+    page-break-inside: avoid;
+    break-inside: avoid;
+  }
+  .pc-print-tag { font-size: 8pt; color: #555 !important; }
+
+  .pc-print-portrait {
+    max-width: 45mm; max-height: 45mm;
+    float: right; margin: 0 0 8px 10px;
+    border: 1px solid #999 !important;
+  }
+
+}

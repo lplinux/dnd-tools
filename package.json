@@ -9,8 +9,8 @@
     "setup": "npm install && node scripts/setup-db.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
-  "author": "",
-  "license": "ISC",
+  "author": "Pablo Furnari",
+  "license": "MIT",
   "description": "D&D 5e Campaign Tools with Authentication",
   "dependencies": {
     "dotenv": "^16.0.0",

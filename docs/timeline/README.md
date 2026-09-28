@@ -12,13 +12,16 @@ A server-backed timeline tool for D&D campaigns. Tracks events for multiple play
 - **Segment-compressed Y axis** — empty years between event clusters collapse to a small gap bar
 - **Today marker** — per-campaign date marker managed from the Campaign Manager
 - **Show/hide players and locations** — for sharing your screen with players
+- **Solo a player** — click a player's **name** in the Players sidebar to show **only** that player's events (everyone else is hidden); click the name again to clear. The 👁 eye button still hides/shows individual players; solo overrides the eye toggles while active
 - **Three themes** — Dark, Light, Slate (persisted in localStorage)
 - **Table view** — chronological table with CSV export
 - **Search** — instant search across titles, descriptions, locations, and player names
 - **Player filter** — live search box in the Players sidebar, New Event player picker, and Edit Event modal to quickly find actors in large campaigns
 - **Drag to move events** — drag any event circle to a new date or column
 - **Location column reorder** — drag location names in the sidebar to reorder columns
-- **Private player timelines** — each player has their own private journal, viewable by the DM in a combined view
+- **Private player timelines** — each player has their own private journal, viewable by the DM in a combined view. Players (and the DM) create their own timelines with the **＋ New** button in the campaign selector bar — this is available even before you have any timeline yet (an empty player also gets a **＋ Create your first timeline** button in the main area)
+- **Party events (DM)** — flag a new event as a 🌍 **Party event** for the whole group; it's stored once and shown in a shared **Party lane** in the combined + public views and alongside each player's own timeline
+- **Drives the Journey Map** — an event's **location + date** feed the map's derived movement paths: party events (and any event involving 3+ players) build the 🌍 Party path, fewer-player events build each involved player's own 👤 path, and events tagging an NPC build that NPC's path, in date order
 - **Public share link** — generate a read-only token to share the timeline with players
 
 ## Usage
@@ -27,16 +30,21 @@ Open `/timeline` in your browser after starting the server.
 
 Select a **Campaign** from the header. DMs see all players and locations. Players see only their own data.
 
-### Timeline Graph View (with demo data)
-![alt text](img/main_screen_dark_mode.png "Main Screen Dark Mode")
-![alt text](img/main_screen_dark_blue_mode.png "Main Screen Dark Blue Mode")
-![alt text](img/main_screen_light_mode.png "Main Screen Light Mode")
+### Views
 
-### Timeline Table View (with demo data)
-![alt text](img/event_table_mode.png "Event Table Mode")
+Two views of the same data, switched from the toolbar:
+
+- **Graph** — an SVG Gantt: one column per location, events drawn as bars down a
+  date axis, with each player's own colour. Zoomable, and **Fit** scales the whole
+  span to the window.
+- **Table** — the same events as a sortable list, which is easier for scanning
+  dates and for copying text out.
 
 ### Create a new Timeline
-![alt text](img/new_timeline_menu.png "New Timeline Menu")
+
+Pick a player (or the DM's own private timeline) in the campaign selector bar,
+then **＋ New Timeline**. A campaign can hold any number of timelines per actor;
+the **World** timeline is the shared one.
 
 ### Set a Today Marker
 
@@ -69,7 +77,11 @@ Typing narrows the list live; clearing the input restores all entries.
 3. Choose a location, date, and optional duration
 4. Click **Add Event** — the timeline scrolls to it and highlights it
 
-![alt text](img/sidebar_menu_2.png "Sidebar Menu to Add Events")
+### Party events (DM only)
+
+To record something that happened to the **whole group**, tick **🌍 Party event (whole group)** at the top of the New Event form. A party event isn't tied to any single player — it's stored once and appears in a shared **Party** lane in the combined view and the public timeline, and alongside every player's own events. Edit or delete it like any other event.
+
+> Party events are **campaign-scoped**: they travel with the whole-campaign export/import (as a top-level `party_events[]` array in the v3 bundle), not with a per-player timeline export.
 
 ### Deleting an event
 
@@ -103,43 +115,43 @@ You can also delete events from the sidebar list.
 
 ## Data storage
 
-All timeline data is stored in PostgreSQL under the campaign. Use the **Export** button to download a JSON backup. The **Import** button can restore from a backup file.
-
-Theme preference is stored in the browser's `localStorage`.
+All campaign timeline data is stored in PostgreSQL under the campaign. Theme preference is stored in
+the browser's `localStorage`.
 
 ---
 
 ## Export / Import
 
-### Export
+### Export a timeline
 
-Click **Export** in the timeline toolbar. Downloads a `.json` file containing the full profile (calendar type, player list, location list) and all events.
+With a specific named timeline selected in the campaign selector bar, click **⬇** to download it as a
+portable `type:'timeline'` `.json`. Actors are stored by **name + kind** (player / npc / relationship)
+and locations by name, so the file can be re-imported into any campaign.
 
-The filename reflects the active timeline name:
+```json
+{
+  "version": 1, "type": "timeline",
+  "timeline": { "name": "Aldric's Journal" },
+  "calendar_type": "harptos",
+  "events": [
+    {
+      "title": "Yawning Portal Brawl", "description": "…", "location": "Waterdeep",
+      "year": 1492, "day_of_year": 8, "duration_days": 1, "is_party": false,
+      "actors": [ { "name": "Aldric", "kind": "player" }, { "name": "Volo", "kind": "npc" } ]
+    }
+  ]
+}
+```
 
-| Mode | Filename |
-|---|---|
-| Public (demo) | `<profile-name>.json` (e.g. `Main-Campaign.json`) |
-| Private — player timeline | `<timeline-name>.json` (e.g. `Aldric-s-Journal.json`) |
-| Private — DM combined view | `<campaign-name>-DM-Combined.json` |
+### Import a timeline
 
-**Private mode exports** store `playerIds` as player **names** rather than internal DB IDs. This makes the file portable: it can be re-imported into any campaign as long as players with those names exist, regardless of their database IDs.
+Import is done from **Manage Campaigns → ⬆ Import** (the single import hub). Select the target campaign,
+drop the timeline file, and choose the **target player** + a timeline name. Events are appended under a
+new timeline for that player; actors are matched to the campaign's players / NPCs / relationships by
+name (unmatched actors are dropped), and any missing location is created.
 
-### Import
-
-Click **Import** and select a previously exported `.json` file.
-
-There are two import modes depending on which view is active:
-
-**DM Timeline (shared)** — the imported data replaces the current timeline's events, players, and locations entirely.
-
-**Private Timeline** — events are *appended* to the selected player's timeline. Existing events are not removed. Players and locations referenced in the file must already exist in the campaign — the importer validates them by name before writing anything. Player names are matched case-insensitively and icon prefixes (`👤`, `🎭`) are stripped automatically.
-
----
-
-## JSON Schema
-
-The importer accepts both the current nested format (`{ profile, db }`) and the legacy flat format (`{ players, locations, events }` at the root). Exports always use the nested format.
+> The legacy per-timeline JSON format below is still accepted by older paths but is superseded by the
+> `type:'timeline'` bundle above.
 
 ### Full example with all fields
 

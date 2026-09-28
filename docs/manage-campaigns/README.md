@@ -66,7 +66,9 @@ Enter the location name and an optional short description, then click **Add** or
 
 ### Editing a location
 
-Click **Edit** on any location row to open a modal. Change the name or description and click **Save**.
+Click **Edit** on any location row to open a modal. Change the name, parent, type, or description and click **Save**.
+
+The modal also has a **Pin image** field: **Upload** a custom image to use as this location's Journey-Map pin (it's shrunk to a small thumbnail and applies on every map), or **Clear** it to fall back to the size/type icon. The image saves immediately (independent of the Save button).
 
 ### Deleting a location
 
@@ -155,11 +157,11 @@ All endpoints require the `dm` or `admin` role unless noted.
 
 ### Export
 
-Click **⬇ Export** in the page header (visible once a campaign is selected). Downloads a `.json` file (v3) containing the complete campaign state:
+Open the **Settings** tab and click **💾 Export Campaign** (under "Export / Backup"). Downloads a `.json` file (v3) containing the complete campaign state:
 
 - Campaign name, description, calendar type, today marker
 - All NPCs (names)
-- All locations — including hidden ones (`is_public: false`), `size_type`, and the full parent/child hierarchy
+- All locations — including hidden ones (`is_public: false`), `size_type`, custom pin **image** (`image_data`), and the full parent/child hierarchy
 - All players with:
   - PC sheet (name, story, traits, flaws, goals, public/private info, portrait image as base64)
   - Full stats JSON block
@@ -167,14 +169,33 @@ Click **⬇ Export** in the page header (visible once a campaign is selected). D
   - PC relationships (including DM-only ones, with nested parent relationships)
   - All named timelines and every entry within them
 - **DM timelines** — the World timeline and Private DM timeline, with all entries and participant refs (DM identity is not written to the file)
+- **Party timeline events** — whole-group events (not tied to any player/timeline), exported as a top-level `party_events[]` array
 - DM cross-connections from the character tree
-- All Journey Maps — including background image, all pins and region polygons, distances, trackers, and paths with waypoints
+- All Journey Maps — including background image, all pins and region polygons (with per-pin `icon_scale`), `scope_type`/`scope_location_ref`, distances, and paths with waypoints, route type, and dragged name-label positions (`label_x`/`label_y`)
+
+> **Retired:** journey-map *trackers* and the per-NPC `path_public` flag are no longer written to the
+> export. Older bundles that still contain a `trackers[]` array or `npcs[].path_public` import fine —
+> those fields are ignored.
 
 **No database IDs appear in the file.** Every cross-reference uses a symbolic `_ref` derived from the entity's name, making the bundle human-readable and portable across instances.
 
-### Import
+### Import — the single import hub
 
-Click **⬆ Import** in the page header and select a previously exported `.json` file. A new campaign is created; existing data is never modified.
+Manage Campaigns is the **one place to import** any of the app's export files. Click **⬆ Import** (in the
+sidebar) and pick a `.json`; the importer **detects the file type** and routes it:
+
+| File `type` | What happens |
+|---|---|
+| `campaign` | Restores a **new campaign** (full bundle; existing data untouched). |
+| `journey-map` | Adds the map to the **currently selected** campaign, reusing/creating locations by name. |
+| `pc-sheet` | Prompts for a **target player** in the selected campaign, then imports the sheet onto them. |
+| `timeline` | Prompts for a **target player** + timeline name, then adds the timeline's events to the selected campaign (actors/locations matched by name). |
+
+> For journey-map / pc-sheet / timeline files you must **select a campaign first** (they merge *into* it).
+> Per-module Import buttons were removed — **Export** still lives in each module (Journey Map, PC Sheet,
+> Timeline), but importing is centralised here.
+
+**Campaign-bundle import** (the `campaign` type) works exactly as before:
 
 - All entities are created inside a single database transaction — any error rolls the entire import back cleanly
 - Parent/child hierarchies (locations, relationships) are restored with a two-pass insert
@@ -184,6 +205,44 @@ Click **⬆ Import** in the page header and select a previously exported `.json`
 - Cross-connections are silently skipped if either end ref cannot be resolved (e.g. a player was removed before export)
 - Username → user account links are resolved against the live users table; unmatched usernames are skipped without error (player is created unlinked)
 - **v2 bundles** (previous format, no `_ref` fields, no character/timeline/map data) are still accepted — the importer falls back to using `name` as the lookup key
+
+---
+
+## Compatibility & migrations
+
+**Cross-version safety.** The importer only checks `type === "campaign"` — there is **no version
+gate**, so an older build and a newer build both accept each other's export files. No import ever
+crashes or corrupts data because of a version mismatch; the only effect is that a field the
+receiving build doesn't understand is dropped.
+
+**Older bundle → newer build — clean.** Every newer field has a default, so nothing breaks:
+
+| Field absent in an older bundle | Imported as |
+|---|---|
+| `party_events[]` | none (no party events) |
+| `journey_maps[].locations[].icon_scale` | `1` |
+| `journey_maps[].paths[].label_x` / `label_y` | `null` (label at default midpoint) |
+| `journey_maps[].scope_type` / `scope_location_ref` | `"continent"` / `null` |
+
+**Newer bundle → older build — imports, but newer-only data is dropped.** It loads without error,
+but a build that predates these fields ignores them, so the following do **not** carry across:
+**party events, per-pin `icon_scale`, road name-label positions, and map scope**.
+(`kind`/`route_type` and all waypoint data — `locId`/`segMiles`/`curve` — do survive.) Round-tripping
+newer → older → newer therefore loses those fields.
+
+> A newer bundle no longer contains journey-map *trackers* or NPC `path_public` at all (both retired),
+> so there's nothing for an older build to drop there.
+
+**Migrations — automatic, no manual steps.** All schema changes are additive and idempotent
+(`ALTER TABLE … ADD COLUMN IF NOT EXISTS …`, and one `ALTER COLUMN … DROP NOT NULL`) and run in the
+server's startup block in `app.js`. There is no separate migration tool or folder — those statements
+*are* the migration record.
+
+- **Upgrading**: just start the newer `app.js`; it self-migrates on boot.
+- **Downgrading**: start the older `app.js` against the already-migrated database — the extra columns
+  simply sit unused, and party-event rows (which have no owning player/timeline) stay in the table
+  but are invisible to the older queries. No data is lost from the database and there are no manual
+  steps.
 
 ---
 
@@ -292,7 +351,7 @@ Click **⬆ Import** in the page header and select a previously exported `.json`
           "year": 1492,
           "day_of_year": 200,
           "duration_days": 1,
-          "player_id_refs": ["p_Aragorn"]
+          "player_id_refs": ["dm_self", "cp_Aragorn"]
         }
       ]
     }
@@ -322,6 +381,7 @@ Click **⬆ Import** in the page header and select a previously exported `.json`
           "x": 42.5,
           "y": 31.0,
           "polygon": null,
+          "icon_scale": 1,
           "campaign_location_ref": "Phandalin",
           "linked_map_ref": null
         }
@@ -329,21 +389,31 @@ Click **⬆ Import** in the page header and select a previously exported `.json`
       "distances": [
         { "from_ref": "Phandalin", "to_ref": "Neverwinter", "distance_miles": 50 }
       ],
-      "trackers": [
-        { "name": "The Party", "type": "group", "color": "#c9a84c" }
-      ],
       "paths": [
         {
-          "name": "Journey to Phandalin",
-          "notes": "Ambushed by goblins on the Triboar Trail.",
+          "name": "Phandalin ⇄ Neverwinter",
+          "notes": "The Triboar Trail.",
           "distance_miles": 50,
-          "tracker_ref": "The Party",
+          "kind": "route",
+          "route_type": "road",
+          "label_x": null,
+          "label_y": null,
           "waypoints": [
-            { "x": 38.0, "y": 22.0, "loc_ref": null },
+            { "x": 38.0, "y": 22.0, "loc_ref": "Neverwinter" },
             { "x": 42.5, "y": 31.0, "loc_ref": "Phandalin" }
           ]
         }
       ]
+    }
+  ],
+  "party_events": [
+    {
+      "title": "The whole party levels up",
+      "description": "Milestone after clearing Cragmaw Castle.",
+      "location": "Cragmaw Castle",
+      "year": 1492,
+      "day_of_year": 60,
+      "duration_days": 1
     }
   ]
 }
@@ -359,22 +429,23 @@ Click **⬆ Import** in the page header and select a previously exported `.json`
 | `campaign.description` | string | No | |
 | `campaign.calendar_type` | string | No | `"harptos"` (default) or `"gregorian"` |
 | `campaign.today_marker` | string/number | No | Absolute day integer; omit to leave unset |
-| `npcs[]` | string[] | No | NPC name strings |
+| `npcs[]` | (string \| object)[] | No | NPC names (exported as `{ name }` objects). Plain strings and legacy `{ name, path_public }` objects are both still accepted on import; `path_public` is ignored (retired). |
 | `locations[]._ref` | string | Yes | Symbolic key for cross-references; defaults to `name` if absent |
 | `locations[].name` | string | Yes | |
 | `locations[].description` | string | No | |
 | `locations[].is_public` | boolean | No | Default `true` |
 | `locations[].size_type` | string | No | `"city"`, `"town"`, `"village"`, `"dungeon"`, `"region"`, etc. |
+| `locations[].image_data` | string | No | Base64 data URL of the location's custom map-pin image (small thumbnail); `null` to use the size/type icon |
 | `locations[].parent_ref` | string | No | `_ref` of the parent location |
 | `players[].player_name` | string | Yes | |
 | `players[].username` | string | No | Matched case-insensitively to existing accounts |
 | `players[].character` | object | No | Full PC sheet fields |
 | `players[].character.picture_data` | string | No | Base64 portrait image |
-| `players[].stats_json` | object | No | Arbitrary stat block JSON |
+| `players[].stats_json` | object | No | Stat block — same shape as `stats` in a `pc-sheet` bundle, see [PC Sheet docs](../pc-sheet/README.md#json-schema) |
 | `players[].dm_notes[]` | object[] | No | `{ content, dm_visible }` |
 | `players[].relationships[]._ref` | string | Yes | Symbolic key scoped to this player |
 | `players[].relationships[].parent_ref` | string | No | `_ref` of parent relationship |
-| `players[].timelines[].entries[].player_id_refs[]` | string[] | No | Tokens like `"self_PlayerName"`, `"rel_PlayerName:RelRef"` |
+| `players[].timelines[].entries[].player_id_refs[]` | string[] | No | Participant tokens — see the table below |
 | `dm_timelines[]` | object[] | No | DM-owned timelines (World timeline, Private DM timeline). Same structure as `players[].timelines[]`. Absent in v2 bundles. |
 | `dm_timelines[].name` | string | Yes | Timeline name, e.g. `"World Timeline"` or `"DM Private Notes"` |
 | `dm_timelines[].entries[].player_id_refs[]` | string[] | No | Same token format as player timeline entries; remapped to new IDs on import |
@@ -384,4 +455,31 @@ Click **⬆ Import** in the page header and select a previously exported `.json`
 | `journey_maps[].locations[].campaign_location_ref` | string | No | `_ref` of the matching campaign location |
 | `journey_maps[].locations[].linked_map_ref` | string | No | `name` of a journey map in this bundle |
 | `journey_maps[].locations[].polygon` | array | No | `[{x,y}]` percentage coords for region shapes |
+| `journey_maps[].locations[].icon_scale` | number | No | Per-pin icon size multiplier (default `1`) |
+| `journey_maps[].scope_type` | string | No | `"continent"` (default) or `"city"` |
+| `journey_maps[].scope_location_ref` | string | No | `_ref` of the campaign location this map is scoped to; `null` for continent maps |
+| `journey_maps[].paths[].kind` | string | No | `"route"` (road network) or `"path"` (legacy movement) |
+| `journey_maps[].paths[].route_type` | string | No | `"road"`, `"flight"`, or `"maritime"` (routes only) |
+| `journey_maps[].paths[].label_x` / `.label_y` | number | No | Dragged name-label position (percent); `null` = default midpoint |
 | `journey_maps[].paths[].waypoints[].loc_ref` | string | No | `_ref` of pinned map location |
+| `journey_maps[].paths[].waypoints[].segMiles` | number | No | Per-section distance for a route segment |
+| `journey_maps[].paths[].waypoints[].curve` | array | No | Bend control points for a curved section |
+| `party_events[]` | object[] | No | Whole-group timeline events (no owning player/timeline). Each: `{ title, description, location, year, day_of_year, duration_days }` |
+
+### Timeline participant tokens
+
+`player_id_refs[]` entries are symbolic on export and resolved to new database IDs on import.
+
+| Token | Refers to |
+|---|---|
+| `self_<PlayerName>` | The player who owns this timeline |
+| `cp_<PlayerName>` | Another player in the campaign |
+| `rel_<PlayerName>:<RelRef>` | One player's relationship, by its `_ref` |
+| `npc_<NpcName>` | A campaign NPC, by name |
+| `dm_self` | The DM's own player row (`dm_timelines` only) |
+
+> ⚠️ A token that doesn't resolve is **passed through verbatim** — no error, no warning, and the
+> participant simply never appears. Likewise a `cross_connections` entry whose `from_ref`/`to_ref`
+> doesn't resolve is **skipped silently**. Check names carefully: `<PlayerName>` must match
+> `players[].player_name` exactly, and because the token is split on the first `_`, **player names
+> must not contain underscores**.

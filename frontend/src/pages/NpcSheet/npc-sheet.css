@@ -1,0 +1,366 @@
+/* ============================================================================
+   pages/NpcSheet/npc-sheet.css
+
+   Faithful port of the original (master) NPC sheet's parchment design, scoped
+   under `.npc-sheet` so it never leaks into the rest of the app. The sheet is
+   intentionally theme-independent — it always renders in the parchment palette
+   below regardless of the app's dark/light/slate theme.
+   ============================================================================ */
+
+.npc-sheet {
+  /* Parchment palette (from the original sheet) */
+  --ink: #1c110a;
+  --ink2: #3a2510;
+  --parch: #f7f0dc;
+  --parch2: #efe6c8;
+  --parch3: #e8dab4;
+  --rule: #a07840;
+  --rule2: #c8a060;
+  --red: #7a1818;
+  --red2: #a02020;
+  --gold: #8a6010;
+  --muted: #7a5c38;
+  --chip-bg: #e0d4b0;
+  --chip-border: #b09060;
+  --fd: 'Cinzel', 'Palatino Linotype', Georgia, serif;
+  --fi: 'IM Fell English', 'Palatino Linotype', Georgia, serif;
+  --ff: 'Cinzel Decorative', 'Cinzel', serif;
+
+  /* The parchment card */
+  position: relative;
+  max-width: 860px;
+  margin: 0 auto;
+  background: var(--parch);
+  border: 1px solid var(--rule);
+  box-shadow: 0 0 0 4px #1a1208, 0 0 0 5px var(--rule), 0 8px 48px rgba(0, 0, 0, .7);
+  padding: 28px 32px 36px;
+  font-family: var(--fi);
+  color: var(--ink);
+  font-size: 14px;
+}
+
+/* Subtle paper grain */
+.npc-sheet::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.65' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='200' height='200' filter='url(%23n)' opacity='.04'/%3E%3C/svg%3E");
+  opacity: .6;
+}
+
+/* Dividers */
+.npc-sheet .sep {
+  margin: 14px 0;
+  height: 14px;
+  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 400 14'%3E%3Cline x1='0' y1='7' x2='170' y2='7' stroke='%23a07840' stroke-width='1.5'/%3E%3Ccircle cx='200' cy='7' r='4' fill='%23a07840'/%3E%3Ccircle cx='185' cy='7' r='2' fill='%23c8a060'/%3E%3Ccircle cx='215' cy='7' r='2' fill='%23c8a060'/%3E%3Cline x1='230' y1='7' x2='400' y2='7' stroke='%23a07840' stroke-width='1.5'/%3E%3C/svg%3E") center/100% 100% no-repeat;
+}
+.npc-sheet .sep-thin { border-top: 1px solid var(--rule2); margin: 10px 0; }
+
+/* Section titles */
+.npc-sheet .sec-title {
+  font-family: var(--fd);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+  color: var(--red);
+  border-bottom: 1.5px double var(--rule);
+  padding-bottom: 4px;
+  margin-bottom: 10px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.npc-sheet .sec-title > span { flex: 1; }
+.npc-sheet .sec-title small {
+  font-size: 9px; color: var(--muted); font-family: var(--fi);
+  text-transform: none; letter-spacing: 0; font-weight: normal;
+}
+
+/* Header */
+.npc-sheet .sheet-head { display: flex; gap: 16px; align-items: flex-start; margin-bottom: 10px; }
+.npc-sheet .head-left { flex: 1; min-width: 0; }
+.npc-sheet .char-name-wrap { border-bottom: 2px solid var(--rule); margin-bottom: 8px; padding-bottom: 4px; }
+.npc-sheet .char-name {
+  width: 100%; background: none; border: none; outline: none;
+  font-family: var(--ff); font-size: 1.6rem; color: var(--ink); letter-spacing: .04em;
+}
+.npc-sheet .char-name::placeholder { color: var(--muted); opacity: .5; font-style: italic; font-family: var(--fi); }
+
+.npc-sheet .meta-row { display: flex; flex-wrap: wrap; gap: 6px 14px; align-items: baseline; margin-bottom: 4px; }
+.npc-sheet .mf { display: flex; align-items: baseline; gap: 3px; }
+.npc-sheet .mf-lbl {
+  font-family: var(--fd); font-size: 9px; font-weight: 600; letter-spacing: .08em;
+  text-transform: uppercase; color: var(--muted);
+}
+.npc-sheet .mf input,
+.npc-sheet .mf select {
+  border: none; border-bottom: 1px solid var(--rule2); outline: none; background: none;
+  font-family: var(--fi); font-size: 13px; color: var(--ink); padding: 0 2px; min-width: 55px;
+  -webkit-appearance: none; appearance: none;
+}
+.npc-sheet .mf select {
+  cursor: pointer; padding-right: 12px;
+  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='5'%3E%3Cpath d='M0 0l4 5 4-5z' fill='%237a5c38'/%3E%3C/svg%3E") right 2px center/8px no-repeat transparent;
+}
+.npc-sheet .mf input.wide { min-width: 120px; }
+
+.npc-sheet .stat-boxes { display: flex; gap: 6px; flex-shrink: 0; }
+.npc-sheet .sbox { border: 2px solid var(--ink2); text-align: center; width: 60px; padding: 3px 6px; background: var(--parch2); }
+.npc-sheet .sbox-lbl { font-family: var(--fd); font-size: 9px; letter-spacing: .08em; color: var(--muted); font-weight: 600; }
+.npc-sheet .sbox input {
+  border: none; outline: none; background: none; text-align: center;
+  font-family: var(--fd); font-size: 1.3rem; font-weight: 600; width: 100%; color: var(--ink);
+}
+
+/* Core stats */
+.npc-sheet .stats-bar {
+  display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px;
+  background: var(--parch2); border: 1px solid var(--rule); padding: 8px 10px; margin-bottom: 10px;
+}
+.npc-sheet .cs { text-align: center; min-width: 0; }
+.npc-sheet .cs-lbl { font-family: var(--fd); font-size: 8px; letter-spacing: .07em; color: var(--muted); font-weight: 600; display: block; margin-bottom: 2px; }
+.npc-sheet .cs input {
+  border: none; border-bottom: 2px solid var(--rule); outline: none; background: none; text-align: center;
+  font-family: var(--fd); font-size: 1rem; font-weight: 600; width: 100%; color: var(--ink);
+}
+.npc-sheet .cs input.derived { color: var(--red2); font-weight: 700; }
+
+/* Ability scores */
+.npc-sheet .ab-grid { display: grid; grid-template-columns: repeat(6, 1fr); gap: 6px; margin-bottom: 6px; }
+.npc-sheet .ab-col { background: var(--parch2); border: 1.5px solid var(--rule); padding: 6px 4px; text-align: center; }
+.npc-sheet .ab-name { font-family: var(--fd); font-size: 10px; font-weight: 600; letter-spacing: .08em; color: var(--red); margin-bottom: 3px; }
+.npc-sheet .ab-score { font-family: var(--fd); font-size: 1.5rem; font-weight: 600; color: var(--ink); width: 100%; border: none; outline: none; background: none; text-align: center; }
+.npc-sheet .ab-lbl { font-family: var(--fd); font-size: 8px; color: var(--muted); font-weight: 600; margin-bottom: 1px; }
+.npc-sheet .ab-val {
+  font-family: var(--fd); font-size: 11px; font-weight: 600; color: var(--ink2);
+  background: var(--parch3); border: 1px solid var(--rule2); padding: 1px 4px; min-width: 32px;
+  text-align: center; display: inline-block;
+}
+.npc-sheet .ab-val.proficient { background: #d4e8d0; border-color: #60a060; color: #205020; }
+.npc-sheet .ab-st-wrap { display: flex; align-items: center; justify-content: right; gap: 3px; margin-top: 2px; margin-right: 42px; }
+.npc-sheet .ab-st-wrap input[type=checkbox] { width: 12px; height: 12px; accent-color: var(--red); cursor: pointer; margin: 0; }
+
+/* Skills */
+.npc-sheet .skills-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 3px 10px; margin-bottom: 8px; }
+.npc-sheet .skill-row { display: flex; align-items: center; gap: 4px; font-size: 12px; padding: 2px 0; border-bottom: 1px dotted var(--parch3); }
+.npc-sheet .skill-val {
+  font-family: var(--fd); font-size: 10px; font-weight: 600; background: var(--parch2);
+  border: 1px solid var(--rule2); padding: 1px 4px; min-width: 28px; text-align: center; flex-shrink: 0;
+}
+.npc-sheet .skill-val.proficient { background: #d4e8d0; border-color: #60a060; color: #205020; }
+.npc-sheet .skill-val.expert { background: #c8d8f8; border-color: #4060a0; color: #102060; }
+.npc-sheet .skill-name { flex: 1; font-family: var(--fi); font-size: 12px; color: var(--ink2); }
+.npc-sheet .skill-name em { font-style: normal; font-size: 9px; color: var(--muted); }
+.npc-sheet .prof-btn {
+  width: 14px; height: 14px; border-radius: 50%; border: 1.5px solid var(--muted); cursor: pointer;
+  flex-shrink: 0; background: transparent; transition: all .1s; display: flex; align-items: center;
+  justify-content: center; padding: 0; font-size: 9px; line-height: 1; color: var(--muted);
+}
+.npc-sheet .prof-btn.prof { background: #60a060; border-color: #60a060; color: #fff; }
+.npc-sheet .prof-btn.expert { background: #4060a0; border-color: #4060a0; color: #fff; }
+
+/* Tag fields */
+.npc-sheet .tag-field { position: relative; }
+.npc-sheet .tag-box {
+  display: flex; flex-wrap: wrap; gap: 4px; min-height: 32px; align-items: center;
+  background: var(--parch2); border: 1px solid var(--rule); border-radius: 2px; padding: 4px 6px; cursor: text;
+}
+.npc-sheet .tag-box:focus-within { border-color: var(--gold); }
+.npc-sheet .tag {
+  display: inline-flex; align-items: center; gap: 3px; background: var(--chip-bg); border: 1px solid var(--chip-border);
+  border-radius: 2px; padding: 1px 6px; font-size: 11px; font-family: var(--fi); color: var(--ink); white-space: nowrap;
+}
+.npc-sheet .tag .tag-x { background: none; border: none; cursor: pointer; color: var(--muted); font-size: 12px; line-height: 1; padding: 0 0 0 2px; font-family: sans-serif; }
+.npc-sheet .tag .tag-x:hover { color: var(--red); }
+.npc-sheet .tag-input { border: none; outline: none; background: none; font-family: var(--fi); font-size: 12px; color: var(--ink); flex: 1; min-width: 80px; padding: 1px 2px; }
+.npc-sheet .tag-dropdown {
+  position: absolute; top: 100%; left: 0; right: 0; z-index: 50; background: var(--parch);
+  border: 1px solid var(--rule); max-height: 160px; overflow-y: auto; box-shadow: 0 4px 12px rgba(0, 0, 0, .3);
+}
+.npc-sheet .tag-opt { padding: 5px 10px; font-family: var(--fi); font-size: 12px; cursor: pointer; color: var(--ink); }
+.npc-sheet .tag-opt:hover, .npc-sheet .tag-opt.focused { background: var(--parch2); }
+
+/* Fields */
+.npc-sheet .field { margin-bottom: 8px; }
+.npc-sheet .field > label {
+  display: block; font-family: var(--fd); font-size: 9px; font-weight: 600; letter-spacing: .09em;
+  text-transform: uppercase; color: var(--red); margin-bottom: 3px;
+}
+/* Textareas only. This used to also match `.field input[type=text]`, which in
+   practice meant exactly one element in the whole sheet — the search input
+   inside every TagInput — and at (0,3,1) it beat `.tag-input` (0,2,0) on every
+   shared property. Each tag box therefore drew a second bordered, filled,
+   50px-tall box inside itself, and `width: 100%` pushed the chips onto their
+   own line. Five of those stacked was most of the Defenses block's height. */
+.npc-sheet .field textarea {
+  width: 100%; background: var(--parch2); border: 1px solid var(--rule); border-radius: 2px;
+  font-family: var(--fi); font-size: 13px; padding: 4px 6px; color: var(--ink); resize: none; overflow: hidden; min-height: 50px;
+}
+.npc-sheet .field textarea:focus { outline: none; border-color: var(--gold); }
+
+/* One-line inputs in a .field — Senses as a bare input, Languages nested inside
+   an SrdCombobox. Both listed so the two look identical side by side; the
+   combobox arm is NOT covered by the `>` selector on its own, which is exactly
+   why Languages came out as an unstyled browser box.
+   Still deliberately excludes TagInput, whose `.tag-input` sits inside its own
+   bordered `.tag-box` and must stay borderless. */
+.npc-sheet .field > input[type=text],
+.npc-sheet .field .srd-combo-row input {
+  width: 100%; background: var(--parch2); border: 1px solid var(--rule); border-radius: 2px;
+  font-family: var(--fi); font-size: 13px; padding: 4px 6px; color: var(--ink);
+}
+.npc-sheet .field > input[type=text]:focus,
+.npc-sheet .field .srd-combo-row input:focus { outline: none; border-color: var(--gold); }
+.npc-sheet .field textarea.tall { min-height: 80px; }
+.npc-sheet .field textarea.xtall { min-height: 110px; }
+.npc-sheet .field-print { display: none; }
+
+/* Reveal control for an auto-hidden section (Legendary & Lair). Understated on
+   purpose — it is an affordance, not a field. */
+.npc-sheet .add-section { margin: 10px 0 4px; }
+.npc-sheet .add-section button {
+  background: none; border: 1px dashed var(--rule); border-radius: 2px;
+  color: var(--muted); font-family: var(--fd); font-size: 10px;
+  letter-spacing: .06em; padding: 4px 10px; cursor: pointer;
+}
+.npc-sheet .add-section button:hover { color: var(--gold); border-color: var(--gold); }
+
+/* Inline "hide" affordance on a section title. */
+.npc-sheet .sec-hide {
+  background: none; border: none; cursor: pointer;
+  color: var(--muted); font-family: var(--fd); font-size: 9px; letter-spacing: .06em;
+}
+.npc-sheet .sec-hide:hover { color: var(--gold); }
+@media print { .npc-sheet .sec-hide { display: none !important; } }
+@media print { .npc-sheet .add-section { display: none !important; } }
+
+.npc-sheet .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 8px; }
+.npc-sheet .three-col { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; margin-bottom: 8px; }
+@media (max-width: 640px) {
+  .npc-sheet .two-col, .npc-sheet .three-col { grid-template-columns: 1fr; }
+  .npc-sheet .stats-bar { grid-template-columns: repeat(4, 1fr); }
+  .npc-sheet .ab-grid { grid-template-columns: repeat(3, 1fr); }
+  .npc-sheet .skills-grid { grid-template-columns: 1fr; }
+}
+
+/* Legendary resistances */
+.npc-sheet .leg-res { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; flex-wrap: wrap; }
+.npc-sheet .leg-res label { font-family: var(--fd); font-size: 9px; font-weight: 600; letter-spacing: .07em; text-transform: uppercase; color: var(--red); }
+.npc-sheet .leg-checks { display: flex; gap: 6px; }
+.npc-sheet .leg-checks input[type=checkbox] { width: 16px; height: 16px; accent-color: var(--red); cursor: pointer; }
+
+/* Spells */
+.npc-sheet .spell-meta-row {
+  display: flex; flex-wrap: wrap; gap: 8px 16px; margin-bottom: 10px;
+  background: var(--parch2); border: 1px solid var(--rule2); padding: 8px 10px;
+}
+.npc-sheet .spell-stat { text-align: center; min-width: 70px; }
+.npc-sheet .spell-stat-lbl { font-family: var(--fd); font-size: 8px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); display: block; margin-bottom: 3px; }
+.npc-sheet .spell-stat-val {
+  font-family: var(--fd); font-size: 1.1rem; font-weight: 600; color: var(--red2); background: #f8e8e0;
+  border: 1.5px solid var(--rule); padding: 2px 6px; display: inline-block; min-width: 44px; text-align: center;
+}
+.npc-sheet .spell-reset-sel { border: 1.5px solid var(--rule); background: var(--parch); font-family: var(--fi); font-size: 12px; padding: 3px 6px; color: var(--ink); outline: none; border-radius: 2px; }
+.npc-sheet .spell-table { width: 100%; border-collapse: collapse; margin-top: 6px; font-size: 12px; }
+.npc-sheet .spell-table th { font-family: var(--fd); font-size: 9px; letter-spacing: .07em; text-transform: uppercase; color: var(--muted); border-bottom: 1.5px solid var(--rule); padding: 3px 4px; text-align: left; }
+.npc-sheet .spell-table td { padding: 3px 4px; border-bottom: 1px dotted var(--parch3); vertical-align: top; }
+.npc-sheet .spell-table td.lvl-cell { font-family: var(--fd); font-size: 9px; font-weight: 600; letter-spacing: .06em; color: var(--muted); white-space: nowrap; width: 65px; padding-top: 5px; }
+.npc-sheet .spell-name-inp { width: 100%; background: none; border: none; border-bottom: 1px dotted var(--parch3); outline: none; font-family: var(--fi); font-size: 12px; color: var(--ink); padding: 2px 0; }
+.npc-sheet .spell-name-inp:focus { border-bottom-color: var(--gold); }
+.npc-sheet .slot-boxes { display: flex; gap: 4px; flex-wrap: wrap; align-items: center; padding-top: 4px; justify-content: flex-end; }
+.npc-sheet .slot-box { width: 14px; height: 14px; border: 1.5px solid var(--rule); border-radius: 2px; cursor: pointer; background: var(--parch2); transition: background .1s; flex-shrink: 0; padding: 0; }
+.npc-sheet .slot-box.used { background: var(--red); border-color: var(--red); }
+.npc-sheet .spell-add-lvl { background: none; border: none; outline: none; font-family: var(--fd); font-size: 9px; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); cursor: pointer; padding: 2px 0; }
+.npc-sheet .spell-add-lvl:hover { color: var(--gold); }
+
+/* SRD 2024 lookup — read-only mirror of each spell input, plus the ⓘ affordance */
+.npc-sheet .spell-chips { display: flex; flex-wrap: wrap; gap: 3px 6px; padding: 3px 0 1px; }
+.npc-sheet .spell-chip { display: inline-flex; align-items: center; gap: 2px; font-family: var(--fi); font-size: 10.5px; color: var(--muted); }
+.npc-sheet .spell-chip:not(:last-child)::after { content: '·'; margin-left: 4px; color: var(--parch3); }
+/* The ⓘ button and the SRD combobox are styled in styles/globals.css — they are
+   used outside `.npc-sheet` too (Item Cards). Only the parchment palette override
+   lives here. */
+.npc-sheet .srd-info-btn { color: var(--muted); }
+.npc-sheet .srd-info-btn:hover { color: var(--gold); }
+/* Layout only. Typography and the underline are deliberately NOT set here: the
+   combobox is dropped into slots that already style their own input (.cs input
+   in the core-stats bar, .mf input in the header), and a `font: inherit` here
+   silently overrode all of it — LANGUAGES stopped matching SENSES beside it. */
+.npc-sheet .srd-combo { flex: 1; min-width: 0; }
+/* Header (.mf) comboboxes stay as bare underlined inputs. Scoped to .mf so it
+   no longer also flattens the boxed .field comboboxes above — source order
+   alone used to decide that, and .field lost. */
+.npc-sheet .mf .srd-combo-row input { flex: 1; min-width: 0; }
+.npc-sheet .mf .srd-combo-row input:focus { border-bottom-color: var(--gold); }
+.npc-sheet .srd-combo-row input { flex: 1; min-width: 0; }
+.npc-sheet .srd-combo-dropdown {
+  background: var(--parch); border: 1px solid var(--rule);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, .3);
+}
+.npc-sheet .srd-combo-opt:hover,
+.npc-sheet .srd-combo-opt.focused { background: var(--parch3); }
+@media print {
+  .npc-sheet .srd-combo-dropdown { display: none !important; }
+  .npc-sheet .mf .srd-combo-row input { border-bottom: none; }
+}
+
+/* Print */
+@media print {
+  /* Deliberately NO @page rule here.
+     A margin of 0 looked wrong, and the named page it needed was worse: naming
+     a page forces a break wherever the name CHANGES, so `.npc-sheet` sitting
+     inside the app shell generated a blank page before and after itself. The
+     browser default margin is fine.
+     Leaking the other way is already handled — pc-print.css names its page, so
+     the PC Sheet's margin cannot reach this sheet even when both stylesheets are
+     live after navigating between the two. */
+  .npc-sheet { max-width: 100%; margin: 0; box-shadow: none; border: none; padding: 10px 14px; }
+  .npc-sheet .tag-dropdown, .npc-sheet .prof-btn, .npc-sheet .tag-input { display: none !important; }
+  /* Defenses keep their boxes on paper. This used to strip them to bare text,
+     which was fine while the section was hidden when empty — now that it always
+     prints, an empty field would otherwise be a label with nothing under it.
+     min-height leaves room to write the answer in by hand. */
+  .npc-sheet .tag-box { min-height: 26px; align-content: flex-start; }
+  /* The paper-grain overlay is dropped on paper.
+     It is an `opacity: .6` layer covering the whole sheet, and a partially
+     transparent layer over content makes the print engine RASTERISE the region
+     beneath it — vector text becomes a bitmap, which is what made the PDF look
+     blurry everywhere at once. Its feTurbulence tile also resamples to a grainy
+     wash at print DPI. Real paper supplies its own texture. */
+  .npc-sheet::before { display: none !important; }
+
+  /* Swap every editable textarea for its print mirror — see FieldArea.
+     Typography matches the control it stands in for, or the text prints a size
+     smaller than it does on screen. */
+  .npc-sheet .field textarea { display: none !important; }
+  .npc-sheet .field-print {
+    display: block; white-space: pre-wrap;
+    font-family: var(--fi); font-size: 13px; line-height: 1.45; color: var(--ink);
+    background: var(--parch2); border: 1px solid var(--rule); border-radius: 2px;
+    padding: 4px 6px;
+    orphans: 3; widows: 3;
+    /* Draw the border, padding and background once PER FRAGMENT, so a box that
+       crosses a page becomes two complete boxes rather than one sliced through
+       with no bottom edge on the first page and no top edge on the second. */
+    -webkit-box-decoration-break: clone;
+    box-decoration-break: clone;
+  }
+  /* Blank fields are noise on paper — an empty bordered box per unused section. */
+  .npc-sheet .field-empty { display: none !important; }
+  /* A label never ends a page on its own, but a TALL box is allowed to break
+     rather than jump wholesale to the next page and leave a third of one blank
+     (orphans/widows above keep at least three lines either side of the split). */
+  .npc-sheet .field label { page-break-after: avoid; break-after: avoid; }
+  .npc-sheet .sec-title { page-break-after: avoid; break-after: avoid; }
+
+  /* Focus styling is a screen affordance; on paper it made whichever field
+     happened to be focused print differently from the one beside it. */
+  .npc-sheet :focus, .npc-sheet :focus-visible {
+    outline: none !important;
+    border-color: var(--rule) !important;
+    box-shadow: none !important;
+  }
+  .npc-sheet, .npc-sheet * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+}

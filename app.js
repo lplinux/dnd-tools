@@ -1,11 +1,12 @@
 require('dotenv').config();
-const express = require('express');
-const path = require('path');
-const fs = require('fs').promises;
-const session = require('express-session');
-const bcrypt = require('bcryptjs');
-const crypto = require('crypto');
-const { Pool } = require('pg');
+const express    = require('express');
+const path       = require('path');
+const fs         = require('fs');               // sync methods (existsSync, etc.)
+const fsPromises = fs.promises;                 // async methods (readFile, readdir)
+const session    = require('express-session');
+const bcrypt     = require('bcryptjs');
+const crypto     = require('crypto');
+const { Pool }   = require('pg');
 
 const app = express();
 const PORT = process.env.PORT || 3080;
@@ -51,7 +52,24 @@ const pool = new Pool({
 // Middleware
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
-app.use(express.static(path.join(__dirname, 'public')));
+
+// ── Static file serving ───────────────────────────────────────────────────────
+//
+// public/app/ is the Vite build output (frontend/vite.config.js writes straight
+// here). It is served at the ROOT, not at /app/, because Vite emits absolute
+// asset paths like /assets/main-xxx.js.
+//
+// The old second layer — public/ itself, holding the pre-React vanilla pages and
+// their theme.css/app.css — is gone; those files were deleted once every module
+// became React-owned.
+//
+// The SPA index is resolved per-request rather than cached at boot: the server
+// is routinely started before `npm run build` has run, and a boot-time flag made
+// that state permanent for the life of the process.
+
+const SPA_INDEX = path.join(__dirname, 'public', 'app', 'index.html');
+
+app.use(express.static(path.join(__dirname, 'public', 'app')));
 app.use('/pdfs', express.static(path.join(__dirname, 'pdfs')));
 
 // Serve module README docs — only whitelisted slugs, no path traversal
@@ -60,7 +78,7 @@ app.get('/api/docs/:module', async (req, res) => {
   const mod = req.params.module;
   if (!DOCS_MODULES.has(mod)) return res.status(404).json({ error: 'Not found' });
   try {
-    const md = await fs.readFile(path.join(__dirname, 'docs', mod, 'README.md'), 'utf8');
+    const md = await fsPromises.readFile(path.join(__dirname, 'docs', mod, 'README.md'), 'utf8');
     res.type('text/plain').send(md);
   } catch { res.status(404).json({ error: 'No documentation found' }); }
 });
@@ -103,26 +121,13 @@ const requireRole = (roles) => async (req, res, next) => {
   }
 };
 
-// Page-serving variant: redirects to / instead of returning JSON errors
-const requireRolePage = (roles) => async (req, res, next) => {
-  if (!req.session.userId) return res.redirect('/');
-  try {
-    const result = await pool.query('SELECT role FROM users WHERE id = $1', [req.session.userId]);
-    if (result.rows.length === 0 || !roles.includes(result.rows[0].role)) return res.redirect('/');
-    next();
-  } catch (error) { res.redirect('/'); }
-};
-const requireAuthPage = (req, res, next) => {
-  if (!req.session.userId) return res.redirect('/');
-  next();
-};
 
 // ============================================
 // AUTH ENDPOINTS
 // ============================================
 
 app.post('/api/auth/login', async (req, res) => {
-  const { username, password } = req.body;
+  const { username, password, rememberMe } = req.body;
 
   if (!username || !password) {
     return res.status(400).json({ error: 'Username and password required' });
@@ -154,6 +159,10 @@ app.post('/api/auth/login', async (req, res) => {
     req.session.userId = user.id;
     req.session.username = user.username;
     req.session.role = user.role;
+    // "Remember me" extends the session cookie to 30 days (default stays 24h).
+    req.session.cookie.maxAge = rememberMe
+      ? 30 * 24 * 60 * 60 * 1000
+      : 24 * 60 * 60 * 1000;
 
     res.json({
       success: true,
@@ -345,20 +354,37 @@ app.get('/api/campaigns', requireAuth, async (req, res) => {
 
 app.post('/api/campaigns', requireRole(['dm']), async (req, res) => {
   const { name, description } = req.body;
+  // The create form sends calendarType; accept the snake_case spelling too. This
+  // used to be dropped on the floor, so every campaign created through the UI
+  // silently fell back to Harptos regardless of what was picked.
+  const calendarType = req.body.calendarType ?? req.body.calendar_type;
 
   if (!name) {
     return res.status(400).json({ error: 'Campaign name required' });
   }
+  if (calendarType && !['harptos', 'gregorian'].includes(calendarType)) {
+    return res.status(400).json({ error: 'calendarType must be "harptos" or "gregorian"' });
+  }
 
+  const client = await pool.connect();
   try {
-    const result = await pool.query(
+    await client.query('BEGIN');
+    const result = await client.query(
       'INSERT INTO campaigns (name, description, dm_user_id) VALUES ($1, $2, $3) RETURNING *',
       [name, description || null, req.session.userId]
     );
+    await client.query(
+      'INSERT INTO campaign_meta (campaign_id, calendar_type) VALUES ($1, $2)',
+      [result.rows[0].id, calendarType || 'harptos']
+    );
+    await client.query('COMMIT');
 
     res.json(result.rows[0]);
   } catch (error) {
+    await client.query('ROLLBACK');
     res.status(500).json({ error: error.message });
+  } finally {
+    client.release();
   }
 });
 
@@ -389,14 +415,26 @@ app.get('/api/campaigns/:campaignId/players', requireRole(['dm', 'player']), asy
   const { campaignId } = req.params;
 
   try {
+    // The DM sees the whole roster; a player only ever sees the character(s)
+    // assigned to them. Enforced here so the API can't leak other players'
+    // characters (the PC endpoints are already guarded by canAccessPC).
+    const playerOnly = req.session.role !== 'dm';
+    const params = [campaignId];
+    let mineOnly = '';
+    if (playerOnly) {
+      params.push(req.session.userId);
+      mineOnly = 'AND cp.id IN (SELECT player_id FROM campaign_user_assignments WHERE user_id = $2)';
+    }
+
     const result = await pool.query(
       `SELECT cp.*, cua.user_id, u.username FROM campaign_players cp
        LEFT JOIN campaign_user_assignments cua ON cp.id = cua.player_id
        LEFT JOIN users u ON cua.user_id = u.id
        WHERE cp.campaign_id = $1
          AND (cp.is_dm_player IS NULL OR cp.is_dm_player = false)
+         ${mineOnly}
        ORDER BY cp.created_at DESC`,
-      [campaignId]
+      params
     );
 
     res.json(result.rows);
@@ -513,19 +551,30 @@ app.get('/api/player-timelines/:campaignId/all', requireAuth, async (req, res) =
       return res.status(403).json({ error: 'Access denied' });
     }
     const result = await pool.query(
-      `SELECT pt.id as timeline_id, pt.name as timeline_name,
-              cp.id as player_id, cp.player_name,
-              u_assign.username,
-              pte.id as entry_id, pte.title, pte.description,
-              pte.location, pte.year, pte.day_of_year, pte.duration_days,
-              pte.player_ids, pte.manual_links
-       FROM player_timelines pt
-       JOIN campaign_players cp ON pt.player_id = cp.id
-       LEFT JOIN campaign_user_assignments cua ON cp.id = cua.player_id
-       LEFT JOIN users u_assign ON cua.user_id = u_assign.id
-       LEFT JOIN player_timeline_entries pte ON pte.timeline_id = pt.id
-       WHERE pt.campaign_id=$1
-       ORDER BY cp.player_name, pt.name, pte.year ASC, pte.day_of_year ASC`,
+      `SELECT * FROM (
+         SELECT pt.id as timeline_id, pt.name as timeline_name,
+                cp.id as player_id, cp.player_name, cp.is_dm_player,
+                u_assign.username,
+                pte.id as entry_id, pte.title, pte.description,
+                pte.location, pte.year, pte.day_of_year, pte.duration_days,
+                pte.player_ids, pte.manual_links, pte.is_party
+         FROM player_timelines pt
+         JOIN campaign_players cp ON pt.player_id = cp.id
+         LEFT JOIN campaign_user_assignments cua ON cp.id = cua.player_id
+         LEFT JOIN users u_assign ON cua.user_id = u_assign.id
+         LEFT JOIN player_timeline_entries pte ON pte.timeline_id = pt.id
+         WHERE pt.campaign_id=$1
+         UNION ALL
+         SELECT NULL::int as timeline_id, '🌍 Party' as timeline_name,
+                NULL::int as player_id, 'Party' as player_name, false as is_dm_player,
+                NULL as username,
+                pte.id as entry_id, pte.title, pte.description,
+                pte.location, pte.year, pte.day_of_year, pte.duration_days,
+                pte.player_ids, pte.manual_links, pte.is_party
+         FROM player_timeline_entries pte
+         WHERE pte.campaign_id=$1 AND pte.is_party=true
+       ) sub
+       ORDER BY player_name, timeline_name, year ASC, day_of_year ASC`,
       [campaignId]
     );
     res.json(result.rows);
@@ -552,6 +601,135 @@ app.get('/api/player-timelines/:timelineId/entries', requireAuth, async (req, re
     );
     res.json(result.rows);
   } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// Export a single named timeline as a portable `type:'timeline'` bundle. Actors are
+// serialised by NAME + kind (player / npc / rel) so the file can be re-imported into
+// any campaign; locations are already names.
+app.get('/api/player-timelines/:timelineId/export', requireAuth, async (req, res) => {
+  const { timelineId } = req.params;
+  try {
+    const tl = await pool.query('SELECT * FROM player_timelines WHERE id=$1', [timelineId]);
+    if (!tl.rows.length) return res.status(404).json({ error: 'Not found' });
+    const t = tl.rows[0];
+    if (!await canAccessTimeline(req.session.userId, req.session.role, t.campaign_id, t.player_id)) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+    const cid = t.campaign_id;
+    const [entriesR, playersR, npcsR, relsR, metaR] = await Promise.all([
+      pool.query('SELECT * FROM player_timeline_entries WHERE timeline_id=$1 ORDER BY year ASC, day_of_year ASC, created_at ASC', [timelineId]),
+      pool.query('SELECT id, player_name FROM campaign_players WHERE campaign_id=$1', [cid]),
+      pool.query('SELECT id, name FROM campaign_npcs WHERE campaign_id=$1', [cid]),
+      pool.query(`SELECT pr.id, pr.name FROM pc_relationships pr
+                  JOIN pc_characters pc ON pc.id = pr.character_id
+                  JOIN campaign_players cp ON cp.id = pc.player_id
+                  WHERE cp.campaign_id=$1`, [cid]),
+      pool.query('SELECT calendar_type FROM campaign_meta WHERE campaign_id=$1', [cid]),
+    ]);
+    const playerName = new Map(playersR.rows.map(r => [String(r.id), r.player_name]));
+    const npcName = new Map(npcsR.rows.map(r => [String(r.id), r.name]));
+    const relName = new Map(relsR.rows.map(r => [String(r.id), r.name]));
+    const stripPrefix = (s) => String(s || '').replace(/^\p{Emoji}\s*/u, '').replace(/\s*\(.*\)$/, '').trim();
+
+    const actorsFor = (tokens) => (tokens || []).map((tok) => {
+      const parts = String(tok).split('_');
+      const prefix = parts[0];
+      const val = parts.slice(1).join('_');
+      if (prefix === 'self' || prefix === 'cp') { const n = playerName.get(val); return n ? { name: stripPrefix(n), kind: 'player' } : null; }
+      if (prefix === 'npc') { const n = npcName.get(val); return n ? { name: stripPrefix(n), kind: 'npc' } : null; }
+      if (prefix === 'rel') { const n = relName.get(val); return n ? { name: stripPrefix(n), kind: 'rel' } : null; }
+      return null;
+    }).filter(Boolean);
+
+    const events = entriesR.rows.map((e) => ({
+      title: e.title, description: e.description || null, location: e.location || null,
+      year: e.year, day_of_year: e.day_of_year, duration_days: e.duration_days || 1,
+      is_party: !!e.is_party,
+      actors: actorsFor(e.player_ids),
+    }));
+    res.json({
+      version: 1, type: 'timeline',
+      timeline: { name: t.name },
+      calendar_type: metaR.rows[0]?.calendar_type || 'harptos',
+      events,
+    });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// Import a `type:'timeline'` bundle into an existing campaign, under a chosen player.
+// Actors are matched by NAME to the target campaign's players / NPCs / relationships;
+// unmatched actors are dropped. Missing locations are created.
+app.post('/api/campaigns/:campaignId/import/timeline', requireRole(['dm', 'admin']), async (req, res) => {
+  const { campaignId } = req.params;
+  const { player_id, timeline_name, events } = req.body;
+  if (!player_id) return res.status(400).json({ error: 'A target player is required' });
+  if (!Array.isArray(events)) return res.status(400).json({ error: 'events[] required' });
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    // Target player must belong to this campaign.
+    const pv = await client.query('SELECT id FROM campaign_players WHERE id=$1 AND campaign_id=$2', [player_id, campaignId]);
+    if (!pv.rows.length) { await client.query('ROLLBACK'); return res.status(400).json({ error: 'Player not found in this campaign' }); }
+
+    const [playersR, npcsR, relsR, locsR] = await Promise.all([
+      client.query('SELECT id, player_name FROM campaign_players WHERE campaign_id=$1', [campaignId]),
+      client.query('SELECT id, name FROM campaign_npcs WHERE campaign_id=$1', [campaignId]),
+      client.query(`SELECT pr.id, pr.name FROM pc_relationships pr
+                    JOIN pc_characters pc ON pc.id = pr.character_id
+                    JOIN campaign_players cp ON cp.id = pc.player_id
+                    WHERE cp.campaign_id=$1`, [campaignId]),
+      client.query('SELECT LOWER(name) AS lname FROM campaign_locations WHERE campaign_id=$1', [campaignId]),
+    ]);
+    const norm = (s) => String(s || '').toLowerCase().trim();
+    const playerIdByName = new Map(playersR.rows.map(r => [norm(r.player_name), r.id]));
+    const npcIdByName = new Map(npcsR.rows.map(r => [norm(r.name), r.id]));
+    const relIdByName = new Map(relsR.rows.map(r => [norm(r.name), r.id]));
+    const existingLocs = new Set(locsR.rows.map(r => r.lname));
+
+    const tokenFor = (actor) => {
+      const n = norm(actor?.name);
+      if (!n) return null;
+      if (actor.kind === 'npc') { const id = npcIdByName.get(n); return id ? `npc_${id}` : null; }
+      if (actor.kind === 'rel') { const id = relIdByName.get(n); return id ? `rel_${id}` : null; }
+      const id = playerIdByName.get(n); // player
+      if (!id) return null;
+      return String(id) === String(player_id) ? `self_${id}` : `cp_${id}`;
+    };
+
+    const tlRes = await client.query(
+      'INSERT INTO player_timelines (campaign_id, player_id, created_by, name) VALUES ($1,$2,$3,$4) RETURNING id',
+      [campaignId, player_id, req.session.userId, (timeline_name || 'Imported Timeline').trim()]
+    );
+    const tlId = tlRes.rows[0].id;
+
+    let n = 0;
+    for (const e of events) {
+      const tokens = (e.actors || []).map(tokenFor).filter(Boolean);
+      const ids = tokens.length ? tokens : [`self_${player_id}`];
+      const loc = e.location || null;
+      if (loc && !existingLocs.has(norm(loc))) {
+        await client.query(
+          'INSERT INTO campaign_locations (campaign_id, name) VALUES ($1,$2) ON CONFLICT (campaign_id, LOWER(name)) DO NOTHING',
+          [campaignId, loc]
+        );
+        existingLocs.add(norm(loc));
+      }
+      await client.query(
+        `INSERT INTO player_timeline_entries
+           (campaign_id, player_id, timeline_id, created_by, title, description, location, year, day_of_year, duration_days, player_ids, is_party)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
+        [campaignId, player_id, tlId, req.session.userId,
+          e.title || '(untitled)', e.description || null, loc,
+          e.year || 1492, e.day_of_year || 1, e.duration_days || 1, ids, !!e.is_party]
+      );
+      n++;
+    }
+    await client.query('COMMIT');
+    res.json({ success: true, timeline_id: tlId, imported: n });
+  } catch (e) {
+    await client.query('ROLLBACK');
+    res.status(500).json({ error: e.message });
+  } finally { client.release(); }
 });
 
 // DELETE a named timeline (and all its entries via cascade)
@@ -693,122 +871,75 @@ async function canAccessTimeline(userId, userRole, campaignId, playerId) {
   return r.rows.length > 0;
 }
 
-// GET all players in a campaign with their timeline entry counts (DM view)
-app.get('/api/timeline-private/:campaignId/players-summary', requireRole(['dm']), async (req, res) => {
+// NOTE: the /api/timeline-private/* routes were removed here.
+// They were an orphaned surface: the DM's private journal is served by the
+// regular /api/player-timelines/* endpoints (the UI filters by timeline name),
+// and nothing had called timeline-private since the React migration.
+
+// ── Party timeline events (campaign-wide; DM-authored, shown to everyone) ──
+// One entry with no owning player/timeline (is_party=true); surfaces as a shared
+// "Party" lane in the combined + public views and alongside a player's own events.
+app.get('/api/timeline-party/:campaignId', requireAuth, async (req, res) => {
   const { campaignId } = req.params;
   try {
-    const result = await pool.query(
-      `SELECT cp.id, cp.player_name, u.username,
-              COUNT(pte.id)::int as entry_count
-       FROM campaign_players cp
-       LEFT JOIN campaign_user_assignments cua ON cp.id = cua.player_id
-       LEFT JOIN users u ON cua.user_id = u.id
-       LEFT JOIN player_timeline_entries pte ON cp.id = pte.player_id
-       WHERE cp.campaign_id=$1
-       GROUP BY cp.id, cp.player_name, u.username
-       ORDER BY cp.player_name`,
+    // Any member of the campaign may read party events.
+    if (req.session.role !== 'dm' && req.session.role !== 'admin') {
+      const m = await pool.query(
+        `SELECT 1 FROM campaign_players cp
+         JOIN campaign_user_assignments cua ON cua.player_id = cp.id
+         WHERE cp.campaign_id=$1 AND cua.user_id=$2 LIMIT 1`,
+        [campaignId, req.session.userId]
+      );
+      if (!m.rows.length) return res.status(403).json({ error: 'Access denied' });
+    }
+    const r = await pool.query(
+      `SELECT * FROM player_timeline_entries
+       WHERE campaign_id=$1 AND is_party=true
+       ORDER BY year ASC, day_of_year ASC`,
       [campaignId]
     );
-    res.json(result.rows);
+    res.json(r.rows);
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// GET all entries for a specific player in a campaign
-app.get('/api/timeline-private/:campaignId/:playerId', requireAuth, async (req, res) => {
-  const { campaignId, playerId } = req.params;
-  try {
-    if (!await canAccessTimeline(req.session.userId, req.session.role, campaignId, playerId)) {
-      return res.status(403).json({ error: 'Access denied' });
-    }
-    const result = await pool.query(
-      `SELECT pte.*, u.username as created_by_name
-       FROM player_timeline_entries pte
-       JOIN users u ON pte.created_by = u.id
-       WHERE pte.campaign_id=$1 AND pte.player_id=$2
-       ORDER BY pte.year ASC, pte.day_of_year ASC, pte.created_at ASC`,
-      [campaignId, playerId]
-    );
-    res.json(result.rows);
-  } catch (e) { res.status(500).json({ error: e.message }); }
-});
-
-// GET all entries for ALL players in a campaign (DM/admin only)
-app.get('/api/timeline-private/:campaignId', requireRole(['admin', 'dm']), async (req, res) => {
+app.post('/api/timeline-party/:campaignId', requireRole(['dm', 'admin']), async (req, res) => {
   const { campaignId } = req.params;
-  try {
-    // DM can only see campaigns they own
-    if (req.session.role === 'dm') {
-      const check = await pool.query('SELECT id FROM campaigns WHERE id=$1 AND dm_user_id=$2', [campaignId, req.session.userId]);
-      if (!check.rows.length) return res.status(403).json({ error: 'Access denied' });
-    }
-    const result = await pool.query(
-      `SELECT pte.*, cp.player_name, u.username as created_by_name
-       FROM player_timeline_entries pte
-       JOIN campaign_players cp ON pte.player_id = cp.id
-       JOIN users u ON pte.created_by = u.id
-       WHERE pte.campaign_id=$1
-       ORDER BY pte.year ASC, pte.day_of_year ASC, pte.created_at ASC`,
-      [campaignId]
-    );
-    res.json(result.rows);
-  } catch (e) { res.status(500).json({ error: e.message }); }
-});
-
-// POST create a new entry
-app.post('/api/timeline-private/:campaignId/:playerId', requireRole(['dm', 'player']), async (req, res) => {
-  const { campaignId, playerId } = req.params;
-  const { title, description, location, year, day_of_year, duration_days, manual_links } = req.body;
+  const { title, description, location, year, day_of_year, duration_days, player_ids, manual_links } = req.body;
   if (!title) return res.status(400).json({ error: 'Title required' });
   try {
-    if (!await canAccessTimeline(req.session.userId, req.session.role, campaignId, playerId)) {
-      return res.status(403).json({ error: 'Access denied' });
-    }
-    const result = await pool.query(
+    const r = await pool.query(
       `INSERT INTO player_timeline_entries
-         (campaign_id, player_id, created_by, title, description, location, year, day_of_year, duration_days, manual_links)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING *`,
-      [campaignId, playerId, req.session.userId, title,
-        description || null, location || null,
-        year || 1492, day_of_year || 1, duration_days || 1,
-        manual_links || []]
+         (campaign_id, player_id, timeline_id, created_by, title, description, location,
+          year, day_of_year, duration_days, player_ids, manual_links, is_party)
+       VALUES ($1,NULL,NULL,$2,$3,$4,$5,$6,$7,$8,$9,$10,true) RETURNING *`,
+      [campaignId, req.session.userId, title, description || null, location || null,
+        year || 1492, day_of_year || 1, duration_days || 1, player_ids || [], manual_links || []]
     );
-    res.json(result.rows[0]);
+    res.json(r.rows[0]);
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// PUT update an entry
-app.put('/api/timeline-private/:campaignId/:playerId/:entryId', requireRole(['dm', 'player']), async (req, res) => {
-  const { campaignId, playerId, entryId } = req.params;
-  const { title, description, location, year, day_of_year, duration_days, manual_links } = req.body;
+app.put('/api/timeline-party/:campaignId/:entryId', requireRole(['dm', 'admin']), async (req, res) => {
+  const { campaignId, entryId } = req.params;
+  const { title, description, location, year, day_of_year, duration_days, player_ids, manual_links } = req.body;
   try {
-    if (!await canAccessTimeline(req.session.userId, req.session.role, campaignId, playerId)) {
-      return res.status(403).json({ error: 'Access denied' });
-    }
-    const result = await pool.query(
+    const r = await pool.query(
       `UPDATE player_timeline_entries
        SET title=$1, description=$2, location=$3, year=$4, day_of_year=$5,
-           duration_days=$6, manual_links=$7, updated_at=CURRENT_TIMESTAMP
-       WHERE id=$8 AND campaign_id=$9 AND player_id=$10 RETURNING *`,
-      [title, description || null, location || null,
-        year, day_of_year, duration_days || 1, manual_links || [],
-        entryId, campaignId, playerId]
+           duration_days=$6, player_ids=COALESCE($7, player_ids), manual_links=$8, updated_at=CURRENT_TIMESTAMP
+       WHERE id=$9 AND campaign_id=$10 AND is_party=true RETURNING *`,
+      [title, description || null, location || null, year, day_of_year, duration_days || 1,
+        player_ids || null, manual_links || [], entryId, campaignId]
     );
-    if (!result.rows.length) return res.status(404).json({ error: 'Entry not found' });
-    res.json(result.rows[0]);
+    if (!r.rows.length) return res.status(404).json({ error: 'Entry not found' });
+    res.json(r.rows[0]);
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// DELETE an entry
-app.delete('/api/timeline-private/:campaignId/:playerId/:entryId', requireRole(['dm', 'player']), async (req, res) => {
-  const { campaignId, playerId, entryId } = req.params;
+app.delete('/api/timeline-party/:campaignId/:entryId', requireRole(['dm', 'admin']), async (req, res) => {
+  const { campaignId, entryId } = req.params;
   try {
-    if (!await canAccessTimeline(req.session.userId, req.session.role, campaignId, playerId)) {
-      return res.status(403).json({ error: 'Access denied' });
-    }
-    await pool.query(
-      'DELETE FROM player_timeline_entries WHERE id=$1 AND campaign_id=$2 AND player_id=$3',
-      [entryId, campaignId, playerId]
-    );
+    await pool.query('DELETE FROM player_timeline_entries WHERE id=$1 AND campaign_id=$2 AND is_party=true', [entryId, campaignId]);
     res.json({ success: true });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -877,24 +1008,35 @@ app.get('/api/timeline-public/:token', async (req, res) => {
 
     const [metaR, entriesR] = await Promise.all([
       pool.query(
-        `SELECT c.name, COALESCE(cm.calendar_type,'harptos') AS calendar_type
+        `SELECT c.name, COALESCE(cm.calendar_type,'harptos') AS calendar_type,
+                cm.today_marker
          FROM campaigns c
          LEFT JOIN campaign_meta cm ON cm.campaign_id = c.id
          WHERE c.id=$1`,
         [campaignId]
       ),
       pool.query(
-        `SELECT pt.id as timeline_id, pt.name as timeline_name,
-                cp.id as player_id, cp.player_name,
-                pte.id as entry_id, pte.title, pte.description,
-                pte.location, pte.year, pte.day_of_year, pte.duration_days,
-                pte.player_ids, pte.manual_links
-         FROM player_timelines pt
-         JOIN campaign_players cp ON pt.player_id = cp.id
-         LEFT JOIN player_timeline_entries pte ON pte.timeline_id = pt.id
-         WHERE pt.campaign_id=$1
-           AND cp.is_dm_player = false
-         ORDER BY cp.player_name, pt.name, pte.year ASC, pte.day_of_year ASC`,
+        `SELECT * FROM (
+           SELECT pt.id as timeline_id, pt.name as timeline_name,
+                  cp.id as player_id, cp.player_name,
+                  pte.id as entry_id, pte.title, pte.description,
+                  pte.location, pte.year, pte.day_of_year, pte.duration_days,
+                  pte.player_ids, pte.manual_links, pte.is_party
+           FROM player_timelines pt
+           JOIN campaign_players cp ON pt.player_id = cp.id
+           LEFT JOIN player_timeline_entries pte ON pte.timeline_id = pt.id
+           WHERE pt.campaign_id=$1
+             AND cp.is_dm_player = false
+           UNION ALL
+           SELECT NULL::int as timeline_id, '🌍 Party' as timeline_name,
+                  NULL::int as player_id, 'Party' as player_name,
+                  pte.id as entry_id, pte.title, pte.description,
+                  pte.location, pte.year, pte.day_of_year, pte.duration_days,
+                  pte.player_ids, pte.manual_links, pte.is_party
+           FROM player_timeline_entries pte
+           WHERE pte.campaign_id=$1 AND pte.is_party=true
+         ) sub
+         ORDER BY player_name, timeline_name, year ASC, day_of_year ASC`,
         [campaignId]
       )
     ]);
@@ -902,47 +1044,23 @@ app.get('/api/timeline-public/:token', async (req, res) => {
     res.json({
       campaign_name: metaR.rows[0]?.name || 'Campaign',
       calendar_type: metaR.rows[0]?.calendar_type || 'harptos',
+      // Campaign-wide and non-sensitive; without it the public view drew no
+      // Today marker at all, so "where are we now?" was unanswerable there.
+      today_marker: metaR.rows[0]?.today_marker ?? null,
       rows: entriesR.rows
     });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// Page route — serves timeline.html which detects the token and enters public mode
-app.get('/timeline-public/:token', (req, res) => {
-  res.sendFile(path.join(__dirname, 'public', 'timeline.html'));
-});
-
-app.get('/npc-sheet', (req, res) => {
-  res.sendFile(path.join(__dirname, 'public', 'npc-sheet.html'));
-});
-
-app.get('/item-cards', (req, res) => {
-  res.sendFile(path.join(__dirname, 'public', 'item-cards.html'));
-});
-
-app.get('/split-view', (req, res) => {
-  res.sendFile(path.join(__dirname, 'public', 'split-view.html'));
-});
-
-app.get('/timeline', requireRolePage(['dm', 'player']), (req, res) => {
-  res.sendFile(path.join(__dirname, 'public', 'timeline.html'));
-});
-
-app.get('/pdf-viewer', requireRolePage(['dm']), (req, res) => {
-  res.sendFile(path.join(__dirname, 'public', 'pdf-viewer.html'));
-});
-
-app.get('/manage-campaigns', requireRolePage(['dm']), (req, res) => {
-  res.sendFile(path.join(__dirname, 'public', 'manage-campaigns.html'));
-});
-
-app.get('/user-panel', requireRolePage(['admin']), (req, res) => {
-  res.sendFile(path.join(__dirname, 'public', 'user-panel.html'));
-});
-
-app.get('/pc-sheet', requireRolePage(['dm', 'player']), (req, res) => {
-  res.sendFile(path.join(__dirname, 'public', 'pc-sheet.html'));
-});
+// ── Page routes ───────────────────────────────────────────────────────────────
+// All modules are now React-owned (served by the SPA catch-all). Their legacy
+// vanilla-JS page routes were removed as each was migrated:
+//   ✅ /user-panel /npc-sheet /item-cards /split-view /pdf-viewer
+//      /manage-campaigns /pc-sheet (v4.1.0–4.6.0)
+//   ✅ /pc-public /journey-map-public /journey-map (v4.7.0–4.9.0)
+//   ✅ /timeline + /timeline-public/:token (v4.10.0)
+// Role enforcement for /timeline is handled client-side (ProtectedRoute) plus
+// the per-request API role checks. The /api/* endpoints are unchanged.
 
 // ============================================
 // PC CHARACTER SHEET API
@@ -1183,6 +1301,7 @@ app.patch('/api/pc/:playerId/relationships/:relId', requireAuth, async (req, res
   if ('status_label' in req.body) updates.status_label = req.body.status_label || null;
   if ('link' in req.body) updates.link = req.body.link || null;
   if ('parent_id' in req.body) updates.parent_id = parseInt(req.body.parent_id) || null;
+  if ('is_dm_only' in req.body && (req.session.role === 'dm' || req.session.role === 'admin')) updates.is_dm_only = !!req.body.is_dm_only;
   if (!Object.keys(updates).length) return res.status(400).json({ error: 'Nothing to update' });
   try {
     if (!await canAccessPC(req.session.userId, req.session.role, playerId)) {
@@ -1269,9 +1388,9 @@ app.delete('/api/pc/:playerId/dm-notes/:noteId', requireRole(['dm']), async (req
   } catch (error) { res.status(500).json({ error: error.message }); }
 });
 
-app.get('/pc-public/:playerToken', (req, res) => {
-  res.sendFile(path.join(__dirname, 'public', 'pc-public.html'));
-});
+// NOTE: GET /pc-public/:token is now served by the React SPA (catch-all route).
+// The legacy public/pc-public.html page route was removed in v4.7.0; only the
+// API endpoint below remains.
 
 // Public PC data — resolve hashed token → real playerId
 app.get('/api/pc-public/:playerToken', async (req, res) => {
@@ -1379,6 +1498,45 @@ app.put('/api/campaigns/:campaignId/locations/:locationId', requireRole(['dm']),
     if (e.code === '23505') return res.status(409).json({ error: `A location named "${name}" already exists in this campaign` });
     res.status(500).json({ error: e.message });
   }
+});
+
+// Set (or clear, with null) a location's custom pin image. Kept off the generic PUT
+// above so callers that don't send an image (e.g. waypoint rename) can't wipe it.
+app.put('/api/campaigns/:campaignId/locations/:locationId/image', requireRole(['dm']), async (req, res) => {
+  try {
+    const result = await pool.query(
+      'UPDATE campaign_locations SET image_data=$1 WHERE id=$2 AND campaign_id=$3 RETURNING id',
+      [req.body.image_data || null, req.params.locationId, req.params.campaignId]
+    );
+    if (!result.rows.length) return res.status(404).json({ error: 'Location not found' });
+    res.json({ success: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ── Global default pin images by location size_type (admin-managed) ──
+// Read is open to any authenticated user (the DM editor needs it to render pins).
+app.get('/api/location-type-images', requireAuth, async (req, res) => {
+  try {
+    const r = await pool.query('SELECT size_type, image_data FROM location_type_images');
+    const out = {};
+    r.rows.forEach((row) => { if (row.image_data) out[row.size_type] = row.image_data; });
+    res.json(out);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// Set (base64) or clear (null) the default image for a size_type. Admin only.
+app.put('/api/location-type-images/:sizeType', requireRole(['admin']), async (req, res) => {
+  const sizeType = String(req.params.sizeType || '').toLowerCase();
+  if (!sizeType) return res.status(400).json({ error: 'size_type required' });
+  try {
+    await pool.query(
+      `INSERT INTO location_type_images (size_type, image_data, updated_at)
+       VALUES ($1, $2, CURRENT_TIMESTAMP)
+       ON CONFLICT (size_type) DO UPDATE SET image_data=EXCLUDED.image_data, updated_at=CURRENT_TIMESTAMP`,
+      [sizeType, req.body.image_data || null]
+    );
+    res.json({ success: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 app.patch('/api/campaigns/:campaignId/locations/:locationId/visibility', requireRole(['dm']), async (req, res) => {
@@ -1735,19 +1893,6 @@ app.delete('/api/journey-maps/:id', requireRole(['dm']), async (req, res) => {
 });
 
 // Update map scope (continent vs city)
-app.patch('/api/journey-maps/:id/scope', requireRole(['dm']), async (req, res) => {
-  try {
-    if (!await dmOwnsMap(req.params.id, req.session.userId))
-      return res.status(403).json({ error: 'Access denied' });
-    const { scope_type, scope_location_id } = req.body;
-    const result = await pool.query(
-      'UPDATE journey_maps SET scope_type=$1, scope_location_id=$2 WHERE id=$3 RETURNING id, scope_type, scope_location_id',
-      [scope_type || 'continent', scope_location_id || null, req.params.id]
-    );
-    res.json(result.rows[0]);
-  } catch (e) { res.status(500).json({ error: e.message }); }
-});
-
 // Get / save map image
 app.get('/api/journey-maps/:id/image', requireRole(['dm']), async (req, res) => {
   try {
@@ -1769,7 +1914,7 @@ app.put('/api/journey-maps/:id/image', requireRole(['dm']), async (req, res) => 
 app.get('/api/journey-maps/:id/locations', requireRole(['dm']), async (req, res) => {
   try {
     const r = await pool.query(
-      `SELECT jml.*, cl.size_type, lm.name AS linked_map_name
+      `SELECT jml.*, cl.size_type, cl.parent_id, cl.image_data, lm.name AS linked_map_name
        FROM journey_map_locations jml
        LEFT JOIN campaign_locations cl ON cl.id = jml.campaign_location_id
        LEFT JOIN journey_maps lm ON lm.id = jml.linked_map_id
@@ -1781,23 +1926,24 @@ app.get('/api/journey-maps/:id/locations', requireRole(['dm']), async (req, res)
 });
 
 app.post('/api/journey-maps/:id/locations', requireRole(['dm']), async (req, res) => {
-  const { campaign_location_id, name, x, y, polygon, linked_map_id } = req.body;
+  const { campaign_location_id, name, x, y, polygon, linked_map_id, icon_scale } = req.body;
   if (!name) return res.status(400).json({ error: 'Name required' });
   try {
     const r = await pool.query(
-      'INSERT INTO journey_map_locations (map_id, campaign_location_id, name, x, y, polygon, linked_map_id) VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *',
-      [req.params.id, campaign_location_id || null, name, x ?? 50, y ?? 50, polygon ? JSON.stringify(polygon) : null, linked_map_id || null]
+      'INSERT INTO journey_map_locations (map_id, campaign_location_id, name, x, y, polygon, linked_map_id, icon_scale) VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *',
+      [req.params.id, campaign_location_id || null, name, x ?? 50, y ?? 50, polygon ? JSON.stringify(polygon) : null, linked_map_id || null, icon_scale ?? 1]
     );
     res.json(r.rows[0]);
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 app.put('/api/journey-maps/:id/locations/:locId', requireRole(['dm']), async (req, res) => {
-  const { x, y, polygon, linked_map_id } = req.body;
+  const { x, y, polygon, linked_map_id, icon_scale } = req.body;
   try {
     const r = await pool.query(
-      'UPDATE journey_map_locations SET x=$1, y=$2, polygon=$3, linked_map_id=$4 WHERE id=$5 AND map_id=$6 RETURNING *',
-      [x, y, polygon !== undefined ? JSON.stringify(polygon) : null, linked_map_id !== undefined ? (linked_map_id || null) : null, req.params.locId, req.params.id]
+      // icon_scale is COALESCEd so callers that only save geometry don't reset it.
+      'UPDATE journey_map_locations SET x=$1, y=$2, polygon=$3, linked_map_id=$4, icon_scale=COALESCE($5, icon_scale) WHERE id=$6 AND map_id=$7 RETURNING *',
+      [x, y, polygon !== undefined ? JSON.stringify(polygon) : null, linked_map_id !== undefined ? (linked_map_id || null) : null, icon_scale ?? null, req.params.locId, req.params.id]
     );
     res.json(r.rows[0]);
   } catch (e) { res.status(500).json({ error: e.message }); }
@@ -1832,42 +1978,17 @@ app.put('/api/journey-maps/:id/distances', requireRole(['dm']), async (req, res)
 });
 
 // ── Trackers ──
-app.get('/api/journey-maps/:id/trackers', requireRole(['dm']), async (req, res) => {
-  try {
-    const r = await pool.query('SELECT * FROM journey_trackers WHERE map_id=$1 ORDER BY created_at ASC', [req.params.id]);
-    res.json(r.rows);
-  } catch (e) { res.status(500).json({ error: e.message }); }
-});
-
-app.post('/api/journey-maps/:id/trackers', requireRole(['dm']), async (req, res) => {
-  const { name, type, color } = req.body;
-  if (!name) return res.status(400).json({ error: 'Name required' });
-  try {
-    const r = await pool.query(
-      'INSERT INTO journey_trackers (map_id, name, type, color) VALUES ($1,$2,$3,$4) RETURNING *',
-      [req.params.id, name, type || 'group', color || '#c9a84c']
-    );
-    res.json(r.rows[0]);
-  } catch (e) { res.status(500).json({ error: e.message }); }
-});
-
-app.delete('/api/journey-maps/:id/trackers/:tid', requireRole(['dm']), async (req, res) => {
-  try {
-    await pool.query('DELETE FROM journey_trackers WHERE id=$1 AND map_id=$2', [req.params.tid, req.params.id]);
-    res.json({ success: true });
-  } catch (e) { res.status(500).json({ error: e.message }); }
-});
-
 // ── Paths ──
+// NOTE: journey_trackers is retired (dormant table). Movement paths are derived
+// from the timeline; stored paths keep their name/colour on the row itself via the
+// tracker_*_override columns (aliased below for response-shape stability).
 app.get('/api/journey-maps/:id/paths', requireRole(['dm']), async (req, res) => {
   try {
     const r = await pool.query(
       `SELECT jp.*,
-              COALESCE(jt.name,  jp.tracker_name_override)  AS tracker_name,
-              COALESCE(jt.color, jp.tracker_color_override) AS tracker_color,
-              jt.type AS tracker_type
+              jp.tracker_name_override  AS tracker_name,
+              jp.tracker_color_override AS tracker_color
        FROM journey_paths jp
-       LEFT JOIN journey_trackers jt ON jp.tracker_id = jt.id
        WHERE jp.map_id=$1 ORDER BY jp.created_at ASC`,
       [req.params.id]
     );
@@ -1876,16 +1997,19 @@ app.get('/api/journey-maps/:id/paths', requireRole(['dm']), async (req, res) => 
 });
 
 app.post('/api/journey-maps/:id/paths', requireRole(['dm']), async (req, res) => {
-  const { tracker_id, tracker_color, tracker_name, name, waypoints, notes } = req.body;
+  const { tracker_id, tracker_color, tracker_name, name, waypoints, notes, kind, route_type, label_x, label_y } = req.body;
+  const ROUTE_TYPES = ['road', 'flight', 'maritime'];
   try {
     const r = await pool.query(
       `INSERT INTO journey_paths
-         (map_id, tracker_id, tracker_color_override, tracker_name_override, name, waypoints, notes, created_by)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,
+         (map_id, tracker_id, tracker_color_override, tracker_name_override, name, waypoints, notes, kind, route_type, label_x, label_y, created_by)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING *`,
       [req.params.id, tracker_id || null,
       tracker_color || null, tracker_name || null,
-      name || 'Path', JSON.stringify(waypoints || []),
-      notes || null, req.session.userId]
+      name || (kind === 'route' ? 'Road' : 'Path'), JSON.stringify(waypoints || []),
+      notes || null, kind === 'route' ? 'route' : 'path',
+      ROUTE_TYPES.includes(route_type) ? route_type : 'road',
+      label_x ?? null, label_y ?? null, req.session.userId]
     );
     const row = r.rows[0];
     row.tracker_color = row.tracker_color_override || row.tracker_color || '#c9a84c';
@@ -1895,11 +2019,12 @@ app.post('/api/journey-maps/:id/paths', requireRole(['dm']), async (req, res) =>
 });
 
 app.put('/api/journey-maps/:id/paths/:pid', requireRole(['dm']), async (req, res) => {
-  const { name, waypoints, notes } = req.body;
+  const { name, waypoints, notes, label_x, label_y } = req.body;
   try {
     const r = await pool.query(
-      'UPDATE journey_paths SET name=$1, waypoints=$2, notes=$3 WHERE id=$4 AND map_id=$5 RETURNING *',
-      [name, JSON.stringify(waypoints), notes || null, req.params.pid, req.params.id]
+      // label_x/label_y are COALESCEd so geometry/name saves don't reset the label position.
+      'UPDATE journey_paths SET name=$1, waypoints=$2, notes=$3, label_x=COALESCE($4, label_x), label_y=COALESCE($5, label_y) WHERE id=$6 AND map_id=$7 RETURNING *',
+      [name, JSON.stringify(waypoints), notes || null, label_x ?? null, label_y ?? null, req.params.pid, req.params.id]
     );
     res.json(r.rows[0]);
   } catch (e) { res.status(500).json({ error: e.message }); }
@@ -1929,38 +2054,152 @@ app.post('/api/journey-maps/:id/share', requireRole(['dm']), async (req, res) =>
 });
 
 // ── Public read-only endpoint ──
+// Node mirror of frontend/src/components/map/derivePaths.js — build Party + per-player
+// + per-NPC movement paths from timeline events. Ordering is calendar-invariant (both
+// calendars are monotonic in year/day), so a plain year*365+doy key is fine for sequencing.
+const PARTY_MIN_PLAYERS = 3; // an event with ≥ this many players is a Party event
+const PLAYER_PATH_PALETTE = ['#3498db', '#e74c3c', '#2ecc71', '#9b59b6', '#f1c40f', '#1abc9c', '#e67e22', '#34495e', '#fd79a8', '#00cec9', '#6c5ce7', '#fab1a0'];
+const NPC_PATH_PALETTE = ['#c0392b', '#2980b9', '#27ae60', '#8e44ad', '#e67e22', '#16a085', '#d35400', '#2c3e50', '#7f8c8d', '#f39c12', '#1abc9c', '#e74c3c'];
+function deriveMovementPaths({ events, pins, players, npcs }) {
+  const orderKey = (y, d) => (y - 1) * 365 + ((d || 1) - 1);
+  const participants = (ev) => {
+    const s = new Set();
+    if (ev.player_id != null && !ev.is_dm_player) s.add(String(ev.player_id));
+    for (const tok of (ev.player_ids || [])) {
+      const parts = String(tok).split('_');
+      if (parts[0] === 'self' || parts[0] === 'cp') s.add(parts.slice(1).join('_'));
+    }
+    return s;
+  };
+  const orderedStops = (evs) => {
+    const stops = (evs || [])
+      .map((e) => { const pin = pins.get(String(e.location || '').toLowerCase()); return pin ? { ...pin, abs: orderKey(e.year, e.day_of_year) } : null; })
+      .filter(Boolean)
+      .sort((a, b) => a.abs - b.abs);
+    const out = [];
+    for (const s of stops) { if (out.length && out[out.length - 1].locId === s.locId) continue; out.push({ x: s.x, y: s.y, locId: s.locId }); }
+    return out;
+  };
+  const isParty = (e) => !!e.is_party || participants(e).size >= PARTY_MIN_PLAYERS;
+  const paths = [];
+
+  // Party — explicit party events OR events involving ≥ 3 players.
+  const partyW = orderedStops(events.filter(isParty));
+  if (partyW.length >= 2) paths.push({ id: 'party', kind: 'path', name: '🌍 Party', tracker_color: '#e8c96a', waypoints: partyW });
+
+  // Per player — the remaining (non-party) events belong to each involved player.
+  const soloEvents = events.filter((e) => !isParty(e));
+  (players || []).forEach((pl, i) => {
+    const pid = String(pl.id);
+    const evs = soloEvents.filter((e) => participants(e).has(pid));
+    const w = orderedStops(evs);
+    if (w.length >= 2) paths.push({ id: `player_${pl.id}`, kind: 'path', name: `👤 ${pl.player_name || 'Player'}`, tracker_color: PLAYER_PATH_PALETTE[i % PLAYER_PATH_PALETTE.length], waypoints: w, playerId: pl.id });
+  });
+
+  // Per NPC — any event tagging that NPC. NPCs are DM-controlled, so their movements
+  // are authored in DM-owned timelines — do NOT exclude DM timelines here.
+  (npcs || []).forEach((npc, i) => {
+    const tok = `npc_${npc.id}`;
+    const evs = events.filter((e) => (e.player_ids || []).includes(tok));
+    const w = orderedStops(evs);
+    if (w.length >= 2) paths.push({ id: `npc_${npc.id}`, kind: 'path', name: `🎭 ${npc.name}`, tracker_color: NPC_PATH_PALETTE[i % NPC_PATH_PALETTE.length], waypoints: w, npcId: npc.id });
+  });
+  return paths;
+}
+
 app.get('/api/journey-map-public/:token', async (req, res) => {
   try {
     const share = await pool.query('SELECT map_id FROM journey_map_shares WHERE token=$1', [req.params.token]);
     if (!share.rows.length) return res.status(404).json({ error: 'Map not found' });
     const mapId = share.rows[0].map_id;
 
-    const [mapR, locsR, distsR, trkR, pathsR] = await Promise.all([
-      pool.query('SELECT id, name, description, map_image FROM journey_maps WHERE id=$1', [mapId]),
-      pool.query(`SELECT jml.id, jml.name, jml.x, jml.y, jml.polygon, cl.description AS location_description, cl.size_type
+    // The public map is viewer-aware. It's token-gated (no requireAuth), but a
+    // logged-in user still sends their session cookie, so we can tailor what's
+    // shown: hidden locations/roads are dropped for everyone; tracker paths are
+    // shown per role (DM owner → all; player → own + party; anonymous → none).
+    const userId = req.session.userId || null;
+    const role   = req.session.role   || null;
+    const isDmOwner = !!userId && role === 'dm' && await dmOwnsMap(mapId, userId);
+
+    const [mapR, locsR, distsR, pathsR] = await Promise.all([
+      pool.query('SELECT id, name, description, map_image, campaign_id FROM journey_maps WHERE id=$1', [mapId]),
+      // Only locations the DM has NOT hidden in Manage Campaign (hide cascades to
+      // children server-side). A pin with no linked campaign_location is treated
+      // as visible.
+      pool.query(`SELECT jml.id, jml.name, jml.x, jml.y, jml.polygon, jml.icon_scale, cl.description AS location_description, cl.size_type, cl.image_data
                   FROM journey_map_locations jml
                   LEFT JOIN campaign_locations cl ON cl.id = jml.campaign_location_id
-                  WHERE jml.map_id=$1 ORDER BY jml.created_at ASC`, [mapId]),
+                  WHERE jml.map_id=$1 AND (cl.is_public IS NULL OR cl.is_public = true)
+                  ORDER BY jml.created_at ASC`, [mapId]),
       pool.query('SELECT from_loc_id, to_loc_id, distance_miles FROM journey_distances WHERE map_id=$1', [mapId]),
-      pool.query('SELECT id, name, type, color FROM journey_trackers WHERE map_id=$1', [mapId]),
+      // journey_trackers retired — stored paths carry their own name/colour via overrides.
       pool.query(
-        `SELECT jp.id, jp.name, jp.waypoints, jp.distance_miles, jp.notes,
-                jt.name AS tracker_name, jt.color AS tracker_color, jt.type AS tracker_type
-         FROM journey_paths jp LEFT JOIN journey_trackers jt ON jp.tracker_id=jt.id
+        `SELECT jp.id, jp.name, jp.kind, jp.route_type, jp.waypoints, jp.distance_miles, jp.notes,
+                jp.tracker_name_override AS tracker_name, jp.tracker_color_override AS tracker_color
+         FROM journey_paths jp
          WHERE jp.map_id=$1 ORDER BY jp.created_at ASC`, [mapId])
     ]);
     if (!mapR.rows.length) return res.status(404).json({ error: 'Map not found' });
 
-    // Collect all unique event IDs referenced in waypoints across all paths
+    const visibleLocIds = new Set(locsR.rows.map(l => String(l.id)));
+    const campaignId = mapR.rows[0].campaign_id;
+
+    const wptsOf = (p) => (Array.isArray(p.waypoints) ? p.waypoints : JSON.parse(p.waypoints || '[]'));
+
+    // Movement paths are DERIVED from timeline events (Party + per-player + per-NPC),
+    // then filtered per viewer:
+    //   • DM owner        → everything
+    //   • logged-in player → Party + their OWN player path + public NPC paths
+    //   • anonymous        → public NPC paths only
+    const [evRows, plRows, npcRows, viewerPlR] = await Promise.all([
+      pool.query(
+        `SELECT pte.player_id, pte.location, pte.year, pte.day_of_year, pte.is_party, pte.player_ids, cp.is_dm_player
+         FROM player_timeline_entries pte
+         LEFT JOIN campaign_players cp ON cp.id = pte.player_id
+         WHERE pte.campaign_id=$1`, [campaignId]),
+      pool.query('SELECT id, player_name FROM campaign_players WHERE campaign_id=$1 AND (is_dm_player IS NULL OR is_dm_player=false) ORDER BY player_name ASC', [campaignId]),
+      pool.query('SELECT id, name FROM campaign_npcs WHERE campaign_id=$1 ORDER BY name ASC', [campaignId]),
+      userId
+        ? pool.query(
+            `SELECT cua.player_id FROM campaign_user_assignments cua
+             JOIN campaign_players cp ON cp.id = cua.player_id
+             WHERE cua.user_id=$1 AND cp.campaign_id=$2`, [userId, campaignId])
+        : Promise.resolve({ rows: [] }),
+    ]);
+    const pins = new Map();
+    locsR.rows.forEach(l => { if (l.name != null) pins.set(String(l.name).toLowerCase(), { x: l.x, y: l.y, locId: l.id }); });
+    const derived = deriveMovementPaths({
+      events: evRows.rows,
+      pins,
+      players: plRows.rows,
+      npcs: npcRows.rows,
+    });
+    // The player ids this logged-in viewer controls in this campaign (own paths).
+    const viewerPlayerIds = new Set(viewerPlR.rows.map(r => String(r.player_id)));
+    const movement = derived.filter(p => {
+      if (isDmOwner) return true;
+      if (p.id === 'party') return !!userId;                                   // any logged-in player
+      if (String(p.id).startsWith('player_')) return viewerPlayerIds.has(String(p.playerId)); // own path only
+      return false;                                                            // NPC paths: DM-only, never public
+    });
+
+    // Roads (routes) are still sent for distance calculation only — the client keeps them
+    // off the map but uses their sections to compute distances (even through hidden cities).
+    const routes = pathsR.rows.filter(p => p.kind === 'route');
+    const visiblePaths = [...routes, ...movement];
+
+    // Distances only between still-visible locations.
+    const visibleDistances = distsR.rows.filter(d =>
+      visibleLocIds.has(String(d.from_loc_id)) && visibleLocIds.has(String(d.to_loc_id)));
+
+    // Events referenced by the surviving paths only.
     const allEventIds = new Set();
-    pathsR.rows.forEach(p => {
-      const wpts = Array.isArray(p.waypoints) ? p.waypoints : JSON.parse(p.waypoints || '[]');
-      wpts.forEach(w => {
+    visiblePaths.forEach(p => {
+      wptsOf(p).forEach(w => {
         (w.eventIds || (w.eventId ? [w.eventId] : [])).forEach(id => allEventIds.add(id));
       });
     });
 
-    // Fetch full event details for those IDs (with player names via campaign_players)
     let eventsById = {};
     if (allEventIds.size > 0) {
       const evR = await pool.query(
@@ -1975,25 +2214,27 @@ app.get('/api/journey-map-public/:token', async (req, res) => {
       evR.rows.forEach(e => { eventsById[e.id] = e; });
     }
 
+    // Global per-type default pin images (so public pins fall back like the editor).
+    const typeImagesR = await pool.query('SELECT size_type, image_data FROM location_type_images');
+    const typeImages = {};
+    typeImagesR.rows.forEach(row => { if (row.image_data) typeImages[row.size_type] = row.image_data; });
+
     res.json({
       map: mapR.rows[0],
       locations: locsR.rows,
-      distances: distsR.rows,
-      trackers: trkR.rows,
-      paths: pathsR.rows,
-      events: eventsById
+      distances: visibleDistances,
+      paths: visiblePaths,
+      events: eventsById,
+      type_images: typeImages
     });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 // ── Page routes ──
-app.get('/journey-map', requireRole(['dm']), (req, res) => {
-  res.sendFile(path.join(__dirname, 'public', 'journey-map.html'));
-});
-
-app.get('/journey-map-public/:token', (req, res) => {
-  res.sendFile(path.join(__dirname, 'public', 'journey-map-public.html'));
-});
+// NOTE: /journey-map and /journey-map-public/:token are now served by the React
+// SPA (catch-all route). Their legacy page routes were removed in v4.8.0–v4.9.0;
+// only the /api/* endpoints remain. Role enforcement for /journey-map is handled
+// client-side (ProtectedRoute) plus the per-request API role checks.
 
 // ============================================
 // PDF API
@@ -2003,7 +2244,7 @@ app.get('/api/pdfs', requireRole(['dm']), async (req, res) => {
   const pdfsDir = path.join(__dirname, 'pdfs');
 
   try {
-    const files = await fs.readdir(pdfsDir);
+    const files = await fsPromises.readdir(pdfsDir);
     const pdfFiles = files.filter(file => file.toLowerCase().endsWith('.pdf'));
     res.json(pdfFiles);
   } catch (error) {
@@ -2033,7 +2274,7 @@ app.get('/api/campaigns/:id/export', requireRole(['dm']), async (req, res) => {
          LEFT JOIN users u ON cua.user_id = u.id
          WHERE cp.campaign_id=$1 AND (cp.is_dm_player IS NULL OR cp.is_dm_player = false)
          ORDER BY cp.created_at ASC`, [id]),
-      pool.query('SELECT id, name, description, is_public, size_type, parent_id FROM campaign_locations WHERE campaign_id=$1 ORDER BY created_at ASC', [id]),
+      pool.query('SELECT id, name, description, is_public, size_type, parent_id, image_data FROM campaign_locations WHERE campaign_id=$1 ORDER BY created_at ASC', [id]),
       pool.query('SELECT id, name FROM campaign_npcs WHERE campaign_id=$1 ORDER BY name ASC', [id]),
       pool.query(
         `SELECT pte.*, pt.name as timeline_name, cp.player_name
@@ -2171,9 +2412,9 @@ app.get('/api/campaigns/:id/export', requireRole(['dm']), async (req, res) => {
     // journey maps
     const mapsOut = [];
     for (const m of journeyMapsRes.rows) {
-      const [jLocsRes, jDistRes, jTrkRes, jPathsRes] = await Promise.all([
+      const [jLocsRes, jDistRes, jPathsRes] = await Promise.all([
         pool.query(
-          `SELECT jml.id, jml.name, jml.x, jml.y, jml.polygon, jml.campaign_location_id, jml.linked_map_id,
+          `SELECT jml.id, jml.name, jml.x, jml.y, jml.polygon, jml.icon_scale, jml.campaign_location_id, jml.linked_map_id,
                   lm.name as linked_map_name
            FROM journey_map_locations jml
            LEFT JOIN journey_maps lm ON lm.id = jml.linked_map_id
@@ -2184,11 +2425,10 @@ app.get('/api/campaigns/:id/export', requireRole(['dm']), async (req, res) => {
            JOIN journey_map_locations fl ON fl.id = jd.from_loc_id
            JOIN journey_map_locations tl ON tl.id = jd.to_loc_id
            WHERE jd.map_id=$1`, [m.id]),
-        pool.query('SELECT name, type, color FROM journey_trackers WHERE map_id=$1 ORDER BY created_at ASC', [m.id]),
+        // journey_trackers retired — no longer exported.
         pool.query(
-          `SELECT jp.name, jp.notes, jp.distance_miles, jp.waypoints, jt.name as tracker_name
+          `SELECT jp.name, jp.notes, jp.distance_miles, jp.waypoints, jp.kind, jp.route_type, jp.label_x, jp.label_y
            FROM journey_paths jp
-           LEFT JOIN journey_trackers jt ON jt.id = jp.tracker_id
            WHERE jp.map_id=$1 ORDER BY jp.created_at ASC`, [m.id]),
       ]);
 
@@ -2211,19 +2451,22 @@ app.get('/api/campaigns/:id/export', requireRole(['dm']), async (req, res) => {
           _ref: jLocRefById[l.id],
           name: l.name, x: l.x, y: l.y,
           polygon: l.polygon || null,
+          icon_scale: l.icon_scale ?? 1,
           campaign_location_ref: l.campaign_location_id ? (locRefById[l.campaign_location_id] || null) : null,
           linked_map_ref: l.linked_map_name || null,
         })),
         distances: jDistRes.rows.map(d => ({ from_ref: d.from_loc_name, to_ref: d.to_loc_name, distance_miles: d.distance_miles })),
-        trackers: jTrkRes.rows.map(t => ({ name: t.name, type: t.type, color: t.color })),
         paths: jPathsRes.rows.map(p => {
           const waypoints = Array.isArray(p.waypoints) ? p.waypoints : JSON.parse(p.waypoints || '[]');
           return {
             name: p.name || null, notes: p.notes || null, distance_miles: p.distance_miles || null,
-            tracker_ref: p.tracker_name || null,
+            kind: p.kind || 'path', route_type: p.route_type || 'road',
+            label_x: p.label_x ?? null, label_y: p.label_y ?? null,
             waypoints: waypoints.map(w => ({
               x: w.x, y: w.y,
               loc_ref: w.locId ? (jLocRefById[w.locId] || null) : null,
+              ...(w.segMiles != null ? { segMiles: w.segMiles } : {}),
+              ...(w.curve ? { curve: w.curve } : {}),
               ...(w.eventIds ? { eventIds: w.eventIds } : {}),
               ...(w.eventTitles ? { eventTitles: w.eventTitles } : {}),
             })),
@@ -2236,6 +2479,7 @@ app.get('/api/campaigns/:id/export', requireRole(['dm']), async (req, res) => {
       _ref: locRefById[l.id],
       name: l.name, description: l.description || null,
       is_public: l.is_public, size_type: l.size_type || null,
+      image_data: l.image_data || null,
       parent_ref: l.parent_id ? (locRefById[l.parent_id] || null) : null,
     }));
 
@@ -2284,6 +2528,18 @@ app.get('/api/campaigns/:id/export', requireRole(['dm']), async (req, res) => {
       }
     }
 
+    // Party timeline events — campaign-scoped, no owning player/timeline (excluded from
+    // the per-player/DM timeline queries above), so export them separately.
+    const partyRes = await pool.query(
+      `SELECT title, description, location, year, day_of_year, duration_days
+       FROM player_timeline_entries WHERE campaign_id=$1 AND is_party=true
+       ORDER BY year ASC, day_of_year ASC`, [id]
+    );
+    const partyEventsOut = partyRes.rows.map(e => ({
+      title: e.title, description: e.description || null, location: e.location || null,
+      year: e.year, day_of_year: e.day_of_year, duration_days: e.duration_days,
+    }));
+
     res.json({
       version: 3,
       exported_at: new Date().toISOString(),
@@ -2293,12 +2549,13 @@ app.get('/api/campaigns/:id/export', requireRole(['dm']), async (req, res) => {
         calendar_type: metaRes.rows[0]?.calendar_type || 'harptos',
         today_marker: metaRes.rows[0]?.today_marker || null,
       },
-      npcs: npcsRes.rows.map(n => n.name),
+      npcs: npcsRes.rows.map(n => ({ name: n.name })),
       locations: locsOut,
       players: playersOut,
       cross_connections: crossOut,
       journey_maps: mapsOut,
       dm_timelines: dmTimelinesOut,
+      party_events: partyEventsOut,
     });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -2307,7 +2564,7 @@ app.get('/api/campaigns/:id/export', requireRole(['dm']), async (req, res) => {
 app.post('/api/campaigns/import', requireRole(['dm']), async (req, res) => {
   const bundle = req.body;
   if (bundle.type !== 'campaign') return res.status(400).json({ error: 'Not a campaign export file' });
-  const { campaign, players = [], locations = [], npcs = [], cross_connections = [], journey_maps = [], dm_timelines = [] } = bundle;
+  const { campaign, players = [], locations = [], npcs = [], cross_connections = [], journey_maps = [], dm_timelines = [], party_events = [] } = bundle;
   if (!campaign?.name) return res.status(400).json({ error: 'Missing campaign name' });
 
   const client = await pool.connect();
@@ -2325,7 +2582,7 @@ app.post('/api/campaigns/import', requireRole(['dm']), async (req, res) => {
       [newId, campaign.calendar_type || 'harptos', campaign.today_marker || null]
     );
 
-    // 2. NPCs
+    // 2. NPCs — accept both string and object forms; any legacy `path_public` is ignored.
     const npcIdByName = {};
     for (const n of npcs) {
       const name = typeof n === 'string' ? n : n?.name;
@@ -2341,11 +2598,11 @@ app.post('/api/campaigns/import', requireRole(['dm']), async (req, res) => {
     const locIdByRef = {};
     for (const l of locations) {
       const r = await client.query(
-        `INSERT INTO campaign_locations (campaign_id, name, description, is_public, size_type)
-         VALUES ($1,$2,$3,$4,$5)
-         ON CONFLICT (campaign_id, LOWER(name)) DO UPDATE SET name=EXCLUDED.name
+        `INSERT INTO campaign_locations (campaign_id, name, description, is_public, size_type, image_data)
+         VALUES ($1,$2,$3,$4,$5,$6)
+         ON CONFLICT (campaign_id, LOWER(name)) DO UPDATE SET name=EXCLUDED.name, image_data=EXCLUDED.image_data
          RETURNING id`,
-        [newId, l.name, l.description || null, l.is_public !== false, l.size_type || null]
+        [newId, l.name, l.description || null, l.is_public !== false, l.size_type || null, l.image_data || null]
       );
       locIdByRef[l._ref || l.name] = r.rows[0].id;
     }
@@ -2557,9 +2814,9 @@ app.post('/api/campaigns/import', requireRole(['dm']), async (req, res) => {
       const jLocIdByRef = {};
       for (const l of (m.locations || [])) {
         const lRes = await client.query(
-          'INSERT INTO journey_map_locations (map_id, campaign_location_id, name, x, y, polygon) VALUES ($1,$2,$3,$4,$5,$6) RETURNING id',
+          'INSERT INTO journey_map_locations (map_id, campaign_location_id, name, x, y, polygon, icon_scale) VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id',
           [mapId, l.campaign_location_ref ? (locIdByRef[l.campaign_location_ref] || null) : null,
-            l.name, l.x ?? 50, l.y ?? 50, l.polygon ? JSON.stringify(l.polygon) : null]
+            l.name, l.x ?? 50, l.y ?? 50, l.polygon ? JSON.stringify(l.polygon) : null, l.icon_scale ?? 1]
         );
         jLocIdByRef[l._ref || l.name] = lRes.rows[0].id;
       }
@@ -2576,27 +2833,36 @@ app.post('/api/campaigns/import', requireRole(['dm']), async (req, res) => {
           [mapId, fl, tl, d.distance_miles]
         );
       }
-      const trackerIdByRef = {};
-      for (const t of (m.trackers || [])) {
-        const tRes = await client.query(
-          'INSERT INTO journey_trackers (map_id, name, type, color) VALUES ($1,$2,$3,$4) RETURNING id',
-          [mapId, t.name, t.type || 'group', t.color || '#c9a84c']
-        );
-        trackerIdByRef[t.name] = tRes.rows[0].id;
-      }
+      // journey_trackers retired — any `m.trackers`/`p.tracker_ref` in older bundles is ignored.
+      const ROUTE_TYPES_IMP = ['road', 'flight', 'maritime'];
       for (const p of (m.paths || [])) {
         const waypoints = (p.waypoints || []).map(w => ({
           x: w.x, y: w.y,
           locId: w.loc_ref ? (jLocIdByRef[w.loc_ref] || null) : null,
+          ...(w.segMiles != null ? { segMiles: w.segMiles } : {}),
+          ...(w.curve ? { curve: w.curve } : {}),
           ...(w.eventIds ? { eventIds: w.eventIds } : {}),
           ...(w.eventTitles ? { eventTitles: w.eventTitles } : {}),
         }));
+        const kind = p.kind === 'route' ? 'route' : 'path';
+        const routeType = ROUTE_TYPES_IMP.includes(p.route_type) ? p.route_type : 'road';
         await client.query(
-          'INSERT INTO journey_paths (map_id, tracker_id, name, notes, distance_miles, waypoints, created_by) VALUES ($1,$2,$3,$4,$5,$6,$7)',
-          [mapId, p.tracker_ref ? (trackerIdByRef[p.tracker_ref] || null) : null,
-            p.name || null, p.notes || null, p.distance_miles || null, JSON.stringify(waypoints), req.session.userId]
+          'INSERT INTO journey_paths (map_id, name, notes, distance_miles, waypoints, kind, route_type, label_x, label_y, created_by) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)',
+          [mapId, p.name || null, p.notes || null, p.distance_miles || null, JSON.stringify(waypoints),
+            kind, routeType, p.label_x ?? null, p.label_y ?? null, req.session.userId]
         );
       }
+    }
+
+    // 9. Party timeline events (campaign-wide; no owning player/timeline)
+    for (const e of party_events) {
+      await client.query(
+        `INSERT INTO player_timeline_entries
+           (campaign_id, player_id, timeline_id, created_by, title, description, location, year, day_of_year, duration_days, is_party)
+         VALUES ($1,NULL,NULL,$2,$3,$4,$5,$6,$7,$8,true)`,
+        [newId, req.session.userId, e.title, e.description || null, e.location || null,
+          e.year || 1492, e.day_of_year || 1, e.duration_days || 1]
+      );
     }
 
     await client.query('COMMIT');
@@ -2611,7 +2877,19 @@ app.post('/api/campaigns/import', requireRole(['dm']), async (req, res) => {
 // EXPORT / IMPORT — PC SHEET
 // ============================================
 
-// Export a full PC sheet (character, relationships, stats, dm-notes)
+// Export a PC sheet (character, relationships, stats, and — for a DM — dm-notes).
+//
+// The bundle declares its own completeness via `scope`:
+//
+//   scope: 'full'    exported by a DM/admin. Carries private_info and every DM
+//                    note, so an import can safely replace both.
+//   scope: 'player'  exported by the player. DM-only material is OMITTED
+//                    ENTIRELY rather than blanked — the keys are absent, not
+//                    empty — so an import can tell "withheld" from "cleared"
+//                    and leave the stored values alone.
+//
+// That distinction is the whole fix for the old round-trip data loss: blanked
+// fields were indistinguishable from intentionally-emptied ones.
 app.get('/api/pc/:playerId/export', requireRole(['dm', 'player']), async (req, res) => {
   const { playerId } = req.params;
   const isPrivileged = ['dm', 'admin'].includes(req.session.role);
@@ -2621,26 +2899,46 @@ app.get('/api/pc/:playerId/export', requireRole(['dm', 'player']), async (req, r
 
     const [charRes, relRes, statsRes, notesRes, playerRes] = await Promise.all([
       pool.query('SELECT * FROM pc_characters WHERE player_id=$1', [playerId]),
+      // Every column the importer needs to rebuild the graph. The old export
+      // selected only 4, so hierarchy, DM-only flags and status labels were
+      // silently dropped on every round-trip.
       pool.query(
-        `SELECT name, relation_type, link, is_family FROM pc_relationships
+        `SELECT id, name, relation_type, link, is_family, is_dm_only,
+                created_by_role, parent_id, status_label
+         FROM pc_relationships
          WHERE character_id = (SELECT id FROM pc_characters WHERE player_id=$1)
          ORDER BY created_at ASC`, [playerId]
       ),
       pool.query('SELECT stats_json FROM pc_char_stats WHERE player_id=$1', [playerId]),
-      pool.query(
-        `SELECT content, dm_visible FROM pc_dm_notes
-         WHERE character_id = (SELECT id FROM pc_characters WHERE player_id=$1)
-         ${isPrivileged ? '' : 'AND dm_visible = true'}
-         ORDER BY created_at ASC`, [playerId]
-      ),
+      isPrivileged
+        ? pool.query(
+          `SELECT content, dm_visible FROM pc_dm_notes
+           WHERE character_id = (SELECT id FROM pc_characters WHERE player_id=$1)
+           ORDER BY created_at ASC`, [playerId],
+        )
+        : Promise.resolve({ rows: [] }),
       pool.query('SELECT player_name FROM campaign_players WHERE id=$1', [playerId]),
     ]);
 
     const char = charRes.rows[0] || {};
-    res.json({
-      version: 1,
+
+    // Relationships are referenced by name (ids are meaningless in another
+    // database), disambiguated when a character has two relations of the same
+    // name — the same scheme the campaign export uses.
+    const nameCount = {};
+    for (const r of relRes.rows) nameCount[r.name] = (nameCount[r.name] || 0) + 1;
+    const seen = {};
+    const refById = {};
+    for (const r of relRes.rows) {
+      seen[r.name] = (seen[r.name] || 0) + 1;
+      refById[r.id] = nameCount[r.name] > 1 ? `${r.name}__${seen[r.name]}` : r.name;
+    }
+
+    const bundle = {
+      version: 2,
       exported_at: new Date().toISOString(),
       type: 'pc-sheet',
+      scope: isPrivileged ? 'full' : 'player',
       player_name: playerRes.rows[0]?.player_name || '',
       character: {
         name: char.name || '',
@@ -2650,17 +2948,42 @@ app.get('/api/pc/:playerId/export', requireRole(['dm', 'player']), async (req, r
         flaws: char.flaws || '',
         goals: char.goals || '',
         public_info: char.public_info || '',
-        private_info: isPrivileged ? (char.private_info || '') : '',
       },
-      relationships: relRes.rows,
+      relationships: relRes.rows.map((r) => ({
+        _ref: refById[r.id],
+        name: r.name,
+        relation_type: r.relation_type || null,
+        link: r.link || null,
+        is_family: r.is_family,
+        is_dm_only: r.is_dm_only,
+        created_by_role: r.created_by_role || null,
+        status_label: r.status_label || null,
+        parent_ref: r.parent_id ? (refById[r.parent_id] || null) : null,
+      })),
       stats: statsRes.rows[0]?.stats_json || {},
-      dm_notes: notesRes.rows,
-    });
+    };
+
+    // Present only on a DM export. Absent — not empty — otherwise.
+    if (isPrivileged) {
+      bundle.character.private_info = char.private_info || '';
+      bundle.dm_notes = notesRes.rows;
+    }
+
+    res.json(bundle);
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// Import a PC sheet into an existing player slot — overwrites character + relationships + stats, appends DM notes
-app.post('/api/pc/:playerId/import', requireRole(['dm', 'player']), async (req, res) => {
+// Import a PC sheet onto an existing player slot.
+//
+// DM-only, by design: the single import hub lives in Manage Campaigns, and a
+// player must not be able to overwrite a sheet — least of all with a bundle
+// their own export deliberately stripped DM material out of.
+//
+// Merge rules follow the bundle's `scope` (see the export above). A key that is
+// ABSENT is "withheld", and the stored value survives; a key that is PRESENT is
+// authoritative, even when empty. Bundles from before `scope` existed (version 1)
+// are treated as player-scope, which is the non-destructive reading.
+app.post('/api/pc/:playerId/import', requireRole(['dm']), async (req, res) => {
   const { playerId } = req.params;
   const bundle = req.body;
   if (bundle.type !== 'pc-sheet') return res.status(400).json({ error: 'Not a pc-sheet export file' });
@@ -2669,23 +2992,31 @@ app.post('/api/pc/:playerId/import', requireRole(['dm', 'player']), async (req, 
     if (!await canAccessPC(req.session.userId, req.session.role, playerId))
       return res.status(403).json({ error: 'Access denied' });
 
-    const { character = {}, relationships = [], stats = {}, dm_notes = [] } = bundle;
+    const { character = {}, relationships = [], stats = {} } = bundle;
+    const isFull = bundle.scope === 'full';
+    const hasPrivateInfo = isFull && Object.prototype.hasOwnProperty.call(character, 'private_info');
+    const hasDmNotes = isFull && Array.isArray(bundle.dm_notes);
+
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
 
-      // Upsert character
       const existing = await client.query('SELECT id FROM pc_characters WHERE player_id=$1', [playerId]);
       let charId;
       if (existing.rows.length) {
         charId = existing.rows[0].id;
+        // private_info is updated only when the bundle actually carries it.
+        // COALESCE would not do: '' is a legitimate value a DM may have chosen.
         await client.query(
           `UPDATE pc_characters SET name=$1, picture_url=$2, story=$3, traits=$4,
-           flaws=$5, goals=$6, public_info=$7, private_info=$8, updated_at=CURRENT_TIMESTAMP
-           WHERE id=$9`,
+           flaws=$5, goals=$6, public_info=$7,
+           private_info = CASE WHEN $8::bool THEN $9 ELSE private_info END,
+           updated_at=CURRENT_TIMESTAMP
+           WHERE id=$10`,
           [character.name || '', character.picture_url || '', character.story || '',
-          character.traits || '', character.flaws || '', character.goals || '',
-          character.public_info || '', character.private_info || '', charId]
+            character.traits || '', character.flaws || '', character.goals || '',
+            character.public_info || '',
+            hasPrivateInfo, character.private_info ?? '', charId],
         );
       } else {
         const ins = await client.query(
@@ -2693,39 +3024,62 @@ app.post('/api/pc/:playerId/import', requireRole(['dm', 'player']), async (req, 
            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING id`,
           [playerId, character.name || '', character.picture_url || '', character.story || '',
             character.traits || '', character.flaws || '', character.goals || '',
-            character.public_info || '', character.private_info || '']
+            character.public_info || '', hasPrivateInfo ? (character.private_info ?? '') : ''],
         );
         charId = ins.rows[0].id;
       }
 
-      // Replace relationships
+      // Relationships are replaced wholesale — but now with every column the
+      // export carries, and in two passes so parent_ref can be resolved to a
+      // real parent_id. Previously only 4 columns survived, which flattened the
+      // family tree and un-hid DM-only relations on every round-trip.
       await client.query('DELETE FROM pc_relationships WHERE character_id=$1', [charId]);
+      const relIdByRef = {};
       for (const r of relationships) {
-        await client.query(
-          'INSERT INTO pc_relationships (character_id, name, relation_type, link, is_family) VALUES ($1,$2,$3,$4,$5)',
-          [charId, r.name, r.relation_type, r.link || '', r.is_family || false]
+        const ref = r._ref || r.name;
+        const ins = await client.query(
+          `INSERT INTO pc_relationships
+             (character_id, name, relation_type, link, is_family, is_dm_only, created_by_role, status_label)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING id`,
+          [charId, r.name, r.relation_type || null, r.link || null,
+            r.is_family || false, r.is_dm_only || false,
+            r.created_by_role || 'dm', r.status_label || null],
         );
+        relIdByRef[ref] = ins.rows[0].id;
+      }
+      for (const r of relationships) {
+        const ref = r._ref || r.name;
+        if (r.parent_ref && relIdByRef[r.parent_ref] && relIdByRef[ref]) {
+          await client.query('UPDATE pc_relationships SET parent_id=$1 WHERE id=$2',
+            [relIdByRef[r.parent_ref], relIdByRef[ref]]);
+        }
       }
 
-      // Upsert stats
       if (stats && Object.keys(stats).length) {
         await client.query(
           `INSERT INTO pc_char_stats (player_id, stats_json, updated_at) VALUES ($1,$2,CURRENT_TIMESTAMP)
            ON CONFLICT (player_id) DO UPDATE SET stats_json=$2, updated_at=CURRENT_TIMESTAMP`,
-          [playerId, JSON.stringify(stats)]
+          [playerId, JSON.stringify(stats)],
         );
       }
 
-      // Append DM notes (do not wipe existing notes)
-      for (const n of dm_notes) {
-        await client.query(
-          'INSERT INTO pc_dm_notes (character_id, content, dm_visible) VALUES ($1,$2,$3)',
-          [charId, n.content || '', n.dm_visible ?? true]
-        );
+      // DM notes: replace only when the bundle is a full (DM) export, which by
+      // construction contains every note. This is what stops the old doubling
+      // (2 → 4 → 6 …) without risking the opposite failure — a player-scope
+      // bundle carries no notes at all, so it leaves the stored ones untouched
+      // rather than deleting them.
+      if (hasDmNotes) {
+        await client.query('DELETE FROM pc_dm_notes WHERE character_id=$1', [charId]);
+        for (const n of bundle.dm_notes) {
+          await client.query(
+            'INSERT INTO pc_dm_notes (character_id, content, dm_visible) VALUES ($1,$2,$3)',
+            [charId, n.content || '', n.dm_visible ?? true],
+          );
+        }
       }
 
       await client.query('COMMIT');
-      res.json({ success: true });
+      res.json({ success: true, scope: isFull ? 'full' : 'player' });
     } catch (e) {
       await client.query('ROLLBACK');
       throw e;
@@ -2930,6 +3284,9 @@ async function initializeDatabase() {
       );
     `);
 
+    // DEPRECATED / DORMANT: journey_trackers is no longer read or written by the app
+    // (movement paths are derived from the timeline). The table + journey_paths.tracker_id
+    // and tracker_*_override columns are kept in place only to avoid a destructive drop.
     await pool.query(`
       CREATE TABLE IF NOT EXISTS journey_trackers (
         id         SERIAL PRIMARY KEY,
@@ -2972,6 +3329,16 @@ async function initializeDatabase() {
         created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       );
     `);
+
+    // Global (admin-managed) default location-pin images, keyed by size_type. A map
+    // pin falls back to its type's image here when the location has no own image.
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS location_type_images (
+        size_type  VARCHAR(50) PRIMARY KEY,
+        image_data TEXT,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
     // Migrate: add calendar_type if it doesn't exist yet
     await pool.query(`
       ALTER TABLE campaign_meta ADD COLUMN IF NOT EXISTS calendar_type VARCHAR(20) DEFAULT 'harptos';
@@ -2981,6 +3348,36 @@ async function initializeDatabase() {
       ALTER TABLE journey_paths ADD COLUMN IF NOT EXISTS tracker_color_override VARCHAR(20);
       ALTER TABLE journey_paths ADD COLUMN IF NOT EXISTS tracker_name_override  VARCHAR(255);
     `);
+    // Migrate: distinguish movement Paths (tracker-bound) from distance Routes
+    // (tracker-free). Existing rows default to 'path'.
+    await pool.query(`
+      ALTER TABLE journey_paths ADD COLUMN IF NOT EXISTS kind VARCHAR(20) NOT NULL DEFAULT 'path';
+    `);
+    // Migrate: road network type for routes (road | flight | maritime).
+    await pool.query(`
+      ALTER TABLE journey_paths ADD COLUMN IF NOT EXISTS route_type VARCHAR(20) NOT NULL DEFAULT 'road';
+    `);
+    // Migrate: draggable name-label position (percent coords). Null → default midpoint.
+    await pool.query(`
+      ALTER TABLE journey_paths ADD COLUMN IF NOT EXISTS label_x FLOAT;
+      ALTER TABLE journey_paths ADD COLUMN IF NOT EXISTS label_y FLOAT;
+    `);
+    // Migrate: link a tracker to the campaign player it represents. Player
+    // trackers are auto-created per campaign player; this makes the link
+    // persistent (not just name-based) so the public map can show a logged-in
+    // player only their own path. Backfill existing player trackers by name.
+    await pool.query(`
+      ALTER TABLE journey_trackers ADD COLUMN IF NOT EXISTS player_id INTEGER REFERENCES campaign_players(id) ON DELETE SET NULL;
+    `);
+    await pool.query(`
+      UPDATE journey_trackers jt SET player_id = cp.id
+      FROM journey_maps jm
+      JOIN campaign_players cp ON cp.campaign_id = jm.campaign_id
+      WHERE jt.map_id = jm.id
+        AND jt.type = 'player'
+        AND jt.player_id IS NULL
+        AND jt.name = cp.player_name;
+    `);
     // Migrate: add timeline_id to player_timeline_entries if missing
     await pool.query(`
       ALTER TABLE player_timeline_entries ADD COLUMN IF NOT EXISTS timeline_id INTEGER REFERENCES player_timelines(id) ON DELETE CASCADE;
@@ -2989,6 +3386,12 @@ async function initializeDatabase() {
     await pool.query(`
       ALTER TABLE player_timeline_entries ADD COLUMN IF NOT EXISTS player_ids TEXT[] DEFAULT '{}';
       ALTER TABLE pc_characters ADD COLUMN IF NOT EXISTS picture_data TEXT;
+    `);
+    // Migrate: party timeline events — one entry shown to the whole group (no
+    // owning player/timeline). Campaign-scoped, DM-authored, shown as a shared lane.
+    await pool.query(`
+      ALTER TABLE player_timeline_entries ADD COLUMN IF NOT EXISTS is_party BOOLEAN NOT NULL DEFAULT false;
+      ALTER TABLE player_timeline_entries ALTER COLUMN player_id DROP NOT NULL;
     `);
     // Migrate: DM player flag and NPCs
     await pool.query(`
@@ -3002,6 +3405,11 @@ async function initializeDatabase() {
         created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         UNIQUE (campaign_id, name)
       );
+    `);
+    // DEPRECATED / DORMANT: path_public is no longer read or written (NPC paths are
+    // always DM-only on the public map). Column kept in place to avoid a destructive drop.
+    await pool.query(`
+      ALTER TABLE campaign_npcs ADD COLUMN IF NOT EXISTS path_public BOOLEAN NOT NULL DEFAULT false;
     `);
 
     // Migrate: location visibility (is_public)
@@ -3017,6 +3425,12 @@ async function initializeDatabase() {
     // Migrate: nested locations (unlimited depth)
     await pool.query(`
       ALTER TABLE campaign_locations ADD COLUMN IF NOT EXISTS parent_id INTEGER REFERENCES campaign_locations(id) ON DELETE SET NULL;
+    `);
+
+    // Migrate: optional custom pin image (base64 data URL; ~256px thumbnail). Falls back
+    // to the size/type vector icon on the map when null.
+    await pool.query(`
+      ALTER TABLE campaign_locations ADD COLUMN IF NOT EXISTS image_data TEXT;
     `);
 
     // Migrate: unique location names per campaign (deduplicate first)
@@ -3049,6 +3463,11 @@ async function initializeDatabase() {
     // Migrate: linked map for regions
     await pool.query(`
       ALTER TABLE journey_map_locations ADD COLUMN IF NOT EXISTS linked_map_id INTEGER REFERENCES journey_maps(id) ON DELETE SET NULL;
+    `);
+
+    // Migrate: per-pin icon scale (1 = default) so each pin can be sized to fit the map art.
+    await pool.query(`
+      ALTER TABLE journey_map_locations ADD COLUMN IF NOT EXISTS icon_scale FLOAT NOT NULL DEFAULT 1;
     `);
 
     // Character relationship trees (DM-only cross-player connections)
@@ -3108,26 +3527,52 @@ async function initializeDatabase() {
   }
 }
 
-app.listen(PORT, async () => {
-  await initializeDatabase();
-  console.log(`\n🎲 D&D Tools running at http://localhost:${PORT}`);
-  console.log(`\n📋 Page routes:`);
-  console.log(`  🔓 Public    : /npc-sheet, /item-cards, /split-view`);
-  console.log(`  🔓 Public    : /timeline-public/:token, /journey-map-public/:token, /pc-public/:token`);
-  console.log(`  🎭 Player/DM : /timeline, /pc-sheet`);
-  console.log(`  👑 DM        : /manage-campaigns, /journey-map, /pdf-viewer`);
-  console.log(`  🛠️ Admin     : /user-panel`);
-  console.log(`\n🔌 API groups:`);
-  console.log(`  /api/auth/*                       Auth (login, logout, change-password)`);
-  console.log(`  /api/users/*                      User management (admin)`);
-  console.log(`  /api/campaigns/*                  Campaigns, players, locations, meta`);
-  console.log(`  /api/player-timelines/*           Timeline CRUD`);
-  console.log(`  /api/timeline-private/*           Private player journals`);
-  console.log(`  /api/timeline-public/:token       Public read-only timeline`);
-  console.log(`  /api/pc/*                         PC sheets, relationships, DM notes`);
-  console.log(`  /api/pc-public/:token             Public read-only PC sheet`);
-  console.log(`  /api/journey-maps/*               Journey maps, locations, paths, trackers`);
-  console.log(`  /api/journey-map-public/:token    Public read-only journey map`);
-  console.log(`  /api/pdfs                         PDF file listing`);
-  console.log(`  /api/proxy-image                  External image proxy`);
+// ── SPA catch-all — must be the very last route ──────────────────────────────
+// Every non-API path returns index.html so React Router can resolve it
+// client-side (including unknown paths, which render NotFound).
+//
+// NOTE: Express 5 uses path-to-regexp v8 which requires named wildcards.
+//       `/{*path}` matches everything including `/`.
+app.get('/{*path}', (req, res) => {
+  // Checked per-request, not at boot: `node app.js` before a build used to
+  // register no catch-all at all, so every React route 404'd for the whole
+  // process lifetime. Say what is wrong instead of failing obscurely.
+  if (!fs.existsSync(SPA_INDEX)) {
+    return res.status(503).type('text/plain').send(
+      'The React frontend has not been built yet.\n\n'
+      + 'Run:  cd frontend && npm install && npm run build\n'
+      + 'then restart, or reload this page.\n',
+    );
+  }
+  res.sendFile(SPA_INDEX);
+});
+
+// Schema first, then accept traffic.
+//
+// This used to be `app.listen(PORT, async () => { await initializeDatabase() … })`,
+// which bound the socket before the tables existed — requests arriving in that
+// window hit a half-built schema, and a DDL failure called process.exit(1) on an
+// already-listening server.
+initializeDatabase().then(() => {
+  app.listen(PORT, () => {
+    console.log(`\n🎲 D&D Tools running at http://localhost:${PORT}`);
+    console.log(`\n📋 Page routes:`);
+    console.log(`  🔓 Public    : /npc-sheet, /item-cards, /split-view`);
+    console.log(`  🔓 Public    : /timeline-public/:token, /journey-map-public/:token, /pc-public/:token`);
+    console.log(`  🎭 Player/DM : /timeline, /pc-sheet`);
+    console.log(`  👑 DM        : /manage-campaigns, /journey-map, /pdf-viewer`);
+    console.log(`  🛠️ Admin     : /user-panel`);
+    console.log(`\n🔌 API groups:`);
+    console.log(`  /api/auth/*                       Auth (login, logout, change-password)`);
+    console.log(`  /api/users/*                      User management (admin)`);
+    console.log(`  /api/campaigns/*                  Campaigns, players, locations, meta`);
+    console.log(`  /api/player-timelines/*           Timeline CRUD`);
+    console.log(`  /api/timeline-public/:token       Public read-only timeline`);
+    console.log(`  /api/pc/*                         PC sheets, relationships, DM notes`);
+    console.log(`  /api/pc-public/:token             Public read-only PC sheet`);
+    console.log(`  /api/journey-maps/*               Journey maps, locations, paths, routes`);
+    console.log(`  /api/journey-map-public/:token    Public read-only journey map`);
+    console.log(`  /api/pdfs                         PDF file listing`);
+    console.log(`  /api/proxy-image                  External image proxy`);
+  });
 });

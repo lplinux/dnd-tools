@@ -39,6 +39,34 @@ The sheet loads immediately. All changes are saved per-section with the **💾 S
 
 An embedded NPC Sheet form used as a D&D 5e stat block. Tracks ability scores, HP, AC, speed, skills, attacks, spell slots, and more. See [NPC Sheet documentation](../npc-sheet/README.md) for all fields.
 
+#### Spells and cantrips
+
+The spell table has **one text input per spell level**, so each `spell_names` entry is a single
+**comma-separated string** — not an array.
+
+| Key | Holds |
+|---|---|
+| `"0"` | **Cantrips.** This row is always shown, for every caster, at every level |
+| `"1"`–`"9"` | Spells for that level |
+
+A level is shown when it has spell slots **or** already has an entry. Levels with no slots show `∞`
+in the Slots column (cantrips, and spells a caster knows but has no matching slot for — a warlock's
+1st/2nd-level spells, since Pact Magic slots are all one level). Use **+ Add spell level…** beneath
+the table to bring back a level that has no slots.
+
+```json
+"spell_names": {
+  "0": "Guidance, Sacred Flame, Spare the Dying, Light, Toll the Dead",
+  "1": "Bless, Healing Word, Inflict Wounds, Guiding Bolt",
+  "2": "Aid, Spiritual Weapon, Lesser Restoration",
+  "3": "Spirit Guardians"
+},
+"used_slots": { "1": [0, 1], "3": [] }
+```
+
+Spell slots are computed from `caster_type` + `level` and are never stored. `used_slots` records
+only which boxes are ticked off, as zero-based indices into that level's slots.
+
 ---
 
 ### 🌳 Relationships
@@ -87,21 +115,31 @@ Per-note visibility toggle:
 | Role | What is included |
 |---|---|
 | DM / Admin | All fields including `private_info` and all DM notes (hidden + visible) |
-| Player | `private_info` omitted; only `dm_visible: true` notes included |
+| Player | `scope: 'player'` — `private_info` and `dm_notes` are omitted entirely (keys absent, not blank) |
 
 ### Who can import
 
-**DM and Admin only.**
+**DM only.** Import is done from **Manage Campaigns → ⬆ Import** (the single import hub):
+drop a `pc-sheet` file, pick the **target player** in the selected campaign, and it imports onto them.
+The PC Sheet page keeps **Export** only (its Import button was removed).
 
-**What happens on import:**
+**What happens on import** depends on the bundle's `scope`, which the export
+stamps according to who produced it:
 
-| Data | Behaviour |
-|---|---|
-| Character fields | Overwritten |
-| Relationships | Replaced entirely |
-| Stats sheet | Overwritten |
-| DM notes | Appended — existing notes preserved |
-| Portrait (base64) | Not restored — re-upload manually |
+| Data | `scope: 'full'` (DM export) | `scope: 'player'` (player export) |
+|---|---|---|
+| Character fields | Overwritten | Overwritten |
+| `private_info` | Overwritten | **Left alone** — the key is absent |
+| Relationships | Replaced, including hierarchy, DM-only flags and status labels | Same |
+| Stats sheet | Overwritten | Overwritten |
+| DM notes | **Replaced** — a full export contains all of them | **Left alone** — the key is absent |
+| Portrait (base64) | Not restored — re-upload manually | Same |
+
+This is what makes the round-trip safe. A player exporting their own sheet and
+handing it back can no longer wipe the DM's private notes, and re-importing a
+DM export no longer doubles the DM notes each time. Bundles written before this
+(`version: 1`, no `scope`) are read as player-scope — the non-destructive
+reading — so they will not clear anything.
 
 ---
 
@@ -205,15 +243,21 @@ Per-note visibility toggle:
     "dm_notes":          "string — stat-block inline note, separate from the DM Notes tab",
 
     "spell_names": {
-      "1": ["string"],
-      "2": ["string"],
-      "3": ["string"],
-      "4": ["string"],
-      "5": ["string"],
-      "6": ["string"],
-      "7": ["string"],
-      "8": ["string"],
-      "9": ["string"]
+      "0": "string — CANTRIPS. Comma-separated, e.g. \"Fire Bolt, Mage Hand\"",
+      "1": "string — comma-separated spell names for this level",
+      "2": "string",
+      "3": "string",
+      "4": "string",
+      "5": "string",
+      "6": "string",
+      "7": "string",
+      "8": "string",
+      "9": "string"
+    },
+
+    "used_slots": {
+      "1": "[number] — indices of spent slots at this level, e.g. [0, 2]",
+      "9": "[number]"
     }
   },
 
@@ -308,7 +352,8 @@ Per-note visibility toggle:
     "lair_actions":  "",
     "special_abilities": "Alert: +5 initiative; cannot be surprised while conscious.\nTough: +2 HP per level.",
     "dm_notes": "",
-    "spell_names": {}
+    "spell_names": {},
+    "used_slots": {}
   },
 
   "dm_notes": [
@@ -371,12 +416,16 @@ pc_char_stats
 pc_relationships
   id, character_id → pc_characters.id
   name, relation_type, link, is_family (bool), created_at
+  is_dm_only (bool)        -- hidden from the player-facing view
+  created_by_role          -- 'player' | 'dm'
+  parent_id → self         -- family-tree nesting
+  status_label             -- Alive / Dead / Deceased / Missing / Unknown
 
 pc_dm_notes
   id, character_id → pc_characters.id
   content, dm_visible (bool), created_at
 
-pc_public_tokens
-  player_id → campaign_players.id  (unique)
-  token, created_at
+-- NOTE: there is no pc_public_tokens table. Public share tokens are stateless:
+-- GET /api/pc/:playerId/public-token returns an HMAC of the id (hashId), and
+-- /api/pc-public/:token reverses it with unhashId. Nothing is persisted.
 ```

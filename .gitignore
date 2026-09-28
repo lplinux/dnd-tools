@@ -4,3 +4,7 @@ pdfs/
 .DS_Store
 .env
 package-lock.json
+
+# Vite build output (frontend/vite.config.js → outDir)
+public/app/
+frontend/dist/
