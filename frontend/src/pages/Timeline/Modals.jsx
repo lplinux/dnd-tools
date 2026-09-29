@@ -222,7 +222,12 @@ function EditEventModal({ open, ev, onClose, tl }) {
       title: ev.title, playerIds: [...(ev.playerIds || [])], location: ev.location,
       year: ev.year, midx: f.midx, day: f.day,
       description: ev.description || '',
-      dur: ev.durationDays > 1 ? formatDuration(ev.durationDays).replace('~', '') : '1d',
+      // The EXACT day count, not the display format. This used to pre-fill with
+      // formatDuration(...).replace('~',''), which is approximate above 30 days
+      // — a 45-day event showed as "2m" and saved back as 60, so merely opening
+      // this modal and pressing save changed the duration. Typing "3m" or "2y"
+      // still converts on save; only the pre-fill is exact.
+      dur: ev.durationDays > 1 ? `${ev.durationDays}d` : '1d',
       manualLinks: [...(ev.manualLinks || [])],
     });
     setLinkQuery('');

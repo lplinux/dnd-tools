@@ -12,7 +12,6 @@ import { campaignsApi }   from '@/api/campaigns';
 import { usersApi }       from '@/api/users';
 import { timelineApi }    from '@/api/timeline';
 import { pcApi }          from '@/api/pc';
-import { client }         from '@/api/client';
 import { compressImage }  from '@/components/map/compressImage';
 import { importJourneyMap } from '@/api/importJourneyMap';
 

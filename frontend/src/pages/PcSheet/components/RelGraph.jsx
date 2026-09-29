@@ -75,12 +75,6 @@ function esc(s) { return (s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').re
 function nodeEl({ r: rel, x, y }, COL, RING, TCOL, onHover, onLeave, onClick) {
   const rt   = rel.relation_type || 'Other';
   const lbl  = (rel.name || '?').length > 14 ? (rel.name || '?').slice(0,13) + '…' : (rel.name || '?');
-  const dmBadge = rel.is_dm_only
-    ? `<text x="${x}" y="${y - NR - 6}" text-anchor="middle" fill="#888" font-size="7" font-family="Cinzel,serif">🔒</text>`
-    : '';
-  const statusText = rel.status_label
-    ? `<text x="${x}" y="${y + NR + 22}" text-anchor="middle" fill="${TCOL[rt] || TCOL.Other}" font-size="7.5" font-style="italic" font-family="Crimson Text,serif">${esc(rel.status_label)}</text>`
-    : '';
 
   return (
     <g key={rel.id} style={{ cursor: 'pointer' }}

@@ -1,6 +1,5 @@
 /** api/docs.js — Module documentation (README.md served as plain text) */
 
-import { client } from './client';
 
 export const docsApi = {
   /**

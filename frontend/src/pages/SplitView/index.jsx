@@ -14,7 +14,7 @@
  * consistent with the original design (adding a header bar wastes vertical space).
  */
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useSplitViewProfiles } from '@/hooks/useSplitViewProfiles';
 import { useConfirm } from '@/contexts/ConfirmContext';
 

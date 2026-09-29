@@ -374,7 +374,6 @@ function drawAll(canvas, nodes, relationships, crossConns, vp) {
   // ── Family tree edges (L-shaped lines) ───────────────────────────────
   ctx.setLineDash([]);
   Object.values(nodes).filter(n => n.isFamily && n.type === 'rel').forEach(n => {
-    const px = `p_${Object.entries(nodes).find(([, pn]) => pn.type === 'player' && pn.bandCX === n.bandCX)?.[0]?.split('_')[1]}`;
     // Draw vertical line from player to tier level
     const playerNode = Object.values(nodes).find(p => p.type === 'player' && p.bandCX === n.bandCX);
     if (!playerNode) return;

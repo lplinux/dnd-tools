@@ -26,7 +26,6 @@ import { ChevronDown, LogOut, KeyRound, ArrowLeft } from 'lucide-react';
 
 import { useAuth }  from '@/hooks/useAuth';
 import { useTheme } from '@/hooks/useTheme';
-import { useToast } from '@/hooks/useToast';
 import { Button, Badge, FormField } from '@/components/ui';
 
 /** Theme swatch button used inside the account dropdown */
@@ -60,7 +59,6 @@ function ThemeSwatch({ id, label, swatch, active, onSelect }) {
 function AccountMenu({ user, onClose }) {
   const { logout, changePassword } = useAuth();
   const { theme, setTheme, themes } = useTheme();
-  const { toast } = useToast();
   const navigate = useNavigate();
 
   const [pw1, setPw1] = useState('');
@@ -168,7 +166,6 @@ export default function AppHeader({
   children,
 }) {
   const { user } = useAuth();
-  const { toast } = useToast();
   const navigate = useNavigate();
   const [menuOpen, setMenuOpen] = useState(false);
   const wrapRef = useRef(null);

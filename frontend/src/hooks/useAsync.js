@@ -43,7 +43,6 @@ export function useAsync(asyncFn, { autoRun = false, deps = [] } = {}) {
     } finally {
       if (mounted.current) setLoading(false);
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [asyncFn]);
 
   // Auto-run on mount / when deps change

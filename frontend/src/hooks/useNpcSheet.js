@@ -35,7 +35,6 @@ import {
   ABILITY_IDS, SKILLS,
   abilityMod, profBonus, fmtMod,
   FULL_CASTERS, HALF_CASTERS, WARLOCKS,
-  SPELL_ABILITY_DEFAULT,
 } from '@/data/dnd';
 
 // ── Default state factories ──────────────────────────────────────────────────

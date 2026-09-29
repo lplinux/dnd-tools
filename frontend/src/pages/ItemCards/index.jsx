@@ -15,7 +15,7 @@
 import { useEffect, useRef, useState } from 'react';
 
 import AppHeader      from '@/components/layout/AppHeader';
-import { Button, FormField } from '@/components/ui';
+import { Button } from '@/components/ui';
 import SrdCombobox    from '@/components/SrdCombobox';
 import { getMagicItem, loadEntries } from '@/api/srd';
 import {

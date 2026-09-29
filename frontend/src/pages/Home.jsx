@@ -305,7 +305,6 @@ function ModuleCard({ mod, onInfo }) {
 // ─────────────────────────────────────────────────────────────────────────────
 export default function Home() {
   const { user } = useAuth();
-  const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const [loginOpen, setLoginOpen] = useState(false);
   const [docsModule, setDocsModule] = useState(null);

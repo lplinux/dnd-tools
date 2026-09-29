@@ -173,16 +173,15 @@ export default function PcSheet() {
   const { toast } = useToast();
 
   const {
-    user, isDM,
+    isDM,
     campaigns, currentCampaignId, onCampaignChange,
-    players, playersLoading, currentPlayerId, currentPlayer, onPlayerChange,
+    players, playersLoading, currentPlayerId, onPlayerChange,
     charData, setCharData, relationships, crossConnections, dmNotes,
-    currentCampaign, sheetLoading, hasSheet,
+    sheetLoading, hasSheet,
     saveCharacter, uploadPortrait,
     addRelationship, editRelationship, deleteRelationship, toggleRelVisibility,
     addDmNote, toggleNoteVisibility, deleteDmNote,
     exportSheet, getPublicLink,
-    loadSheet,
   } = usePcSheet();
 
   // Track active tab per-player so switching player resets to Character

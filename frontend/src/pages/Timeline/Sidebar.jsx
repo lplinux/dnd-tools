@@ -8,7 +8,7 @@
 
 import { useRef, useState } from 'react';
 import {
-  HARPTOS, monthOptions, formatDate, formatDuration, fromAbsDay, harptDayToPeriod, gregDayToMD,
+  HARPTOS, monthOptions, formatDate, formatDuration, fromAbsDay,
 } from '@/data/calendar';
 
 /** Collapsible section wrapper. */

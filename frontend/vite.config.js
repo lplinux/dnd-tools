@@ -1,4 +1,4 @@
-import { defineConfig } from 'vite';
+import { defineConfig } from 'vitest/config';
 import react from '@vitejs/plugin-react';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -36,6 +36,14 @@ export default defineConfig({
       // exists — and proxying them actively broke dev deep-linking, since they
       // are React routes (App.jsx) that Vite must serve itself.
     },
+  },
+
+  test: {
+    // The suite covers pure modules — calendar maths, road-network distances,
+    // SRD payload flattening — so no DOM is needed and `node` keeps it fast.
+    // Add `environment: 'jsdom'` (and the dependency) if component tests arrive.
+    environment: 'node',
+    include: ['src/**/*.test.js'],
   },
 
   build: {

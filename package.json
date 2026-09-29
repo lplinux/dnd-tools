@@ -7,16 +7,25 @@
     "setup-db": "node scripts/setup-db.js",
     "create-admin": "node scripts/create-admin.js",
     "setup": "npm install && node scripts/setup-db.js",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "npm --prefix frontend test",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix"
   },
   "author": "Pablo Furnari",
   "license": "MIT",
   "description": "D&D 5e Campaign Tools with Authentication",
   "dependencies": {
+    "bcryptjs": "^2.4.3",
     "dotenv": "^16.0.0",
     "express": "^5.1.0",
-    "pg": "^8.11.0",
     "express-session": "^1.17.3",
-    "bcryptjs": "^2.4.3"
+    "pg": "^8.11.0"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.39.5",
+    "eslint": "^9.39.5",
+    "eslint-plugin-react": "^7.37.5",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "globals": "^17.12.0"
   }
 }

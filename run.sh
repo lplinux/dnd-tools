@@ -9,16 +9,17 @@
 #    2.  Copy .env.example → .env if missing
 #    3.  npm install         (backend, skipped if up to date)
 #    4.  npm install         (frontend, skipped if up to date)
-#    5.  npm run build       (React → dist/, skipped if already built & unchanged)
-#    6.  docker compose build  (builds the multi-stage image)
-#    7.  Start postgres container
-#    8.  Wait for postgres to be healthy
-#    9.  node scripts/setup-db.js --db-only  (create DB if missing)
-#    10. Start dnd-tools container
-#    11. Wait for backend to return HTTP 200
-#    12. node scripts/setup-db.js            (create initial admin if missing)
-#    13. Print banner
-#    14. Keep running — Ctrl+C cleanly stops everything
+#    5.  npm test            (vitest, ~1s; SKIP_TESTS=1 to bypass)
+#    6.  npm run build       (React → public/app/, skipped if built & unchanged)
+#    7.  docker compose build  (builds the multi-stage image)
+#    8.  Start postgres container
+#    9.  Wait for postgres to be healthy
+#    10. node scripts/setup-db.js --db-only  (create DB if missing)
+#    11. Start dnd-tools container
+#    12. Wait for backend to return HTTP 200
+#    13. node scripts/setup-db.js            (create initial admin if missing)
+#    14. Print banner
+#    15. Keep running — Ctrl+C cleanly stops everything
 # ─────────────────────────────────────────────────────────────────────────────
 
 set -euo pipefail
@@ -47,7 +48,7 @@ header " 🎲  D&D Campaign Tools"
 header "═══════════════════════════════════════════"
 
 # ── 1. Prerequisites ──────────────────────────────────────────────────────────
-header "1/10  Checking prerequisites…"
+header "1/11  Checking prerequisites…"
 
 # Node.js (18+)
 if ! command -v node &>/dev/null; then
@@ -95,7 +96,7 @@ if ! command -v curl &>/dev/null; then
 fi
 
 # ── 2. .env setup ─────────────────────────────────────────────────────────────
-header "2/10  Environment configuration…"
+header "2/11  Environment configuration…"
 
 if [[ ! -f ".env" ]]; then
   if [[ -f ".env.example" ]]; then
@@ -116,7 +117,7 @@ else
 fi
 
 # ── 3. Backend npm install ────────────────────────────────────────────────────
-header "3/10  Backend dependencies…"
+header "3/11  Backend dependencies…"
 
 if [[ ! -d "node_modules" ]] || [[ "package.json" -nt "node_modules" ]]; then
   info "Running npm install (backend)…"
@@ -127,7 +128,7 @@ else
 fi
 
 # ── 4. Frontend npm install ───────────────────────────────────────────────────
-header "4/10  Frontend dependencies…"
+header "4/11  Frontend dependencies…"
 
 if [[ ! -d "frontend/node_modules" ]] || [[ "frontend/package.json" -nt "frontend/node_modules" ]]; then
   info "Running npm install (frontend)…"
@@ -140,28 +141,43 @@ else
 fi
 
 # ── 5. Frontend build ─────────────────────────────────────────────────────────
-header "5/10  Building React frontend…"
+header "5/11  Running tests…"
 
-# Rebuild if dist/ is missing OR if any source file is newer than the last build
+if [[ "${SKIP_TESTS:-0}" == "1" ]]; then
+  warn "SKIP_TESTS=1 — skipping the test suite"
+elif (cd frontend && npm test --silent); then
+  success "Tests passed"
+else
+  err "Tests failed. Fix them, or re-run with SKIP_TESTS=1 to bypass."
+  # Plain exit, not cleanup(): nothing is running yet at this point, and
+  # cleanup() ends in `exit 0` — which would report success on a failed suite.
+  exit 1
+fi
+
+# ── 6. Frontend build ─────────────────────────────────────────────────────────
+header "6/11  Building React frontend…"
+
+# Vite writes straight into public/app/ (see frontend/vite.config.js), which is
+# what Express serves. Rebuild if that is missing, or if any source is newer.
 NEEDS_BUILD=false
-if [[ ! -d "frontend/dist" ]]; then
+if [[ ! -f "public/app/index.html" ]]; then
   NEEDS_BUILD=true
-  info "frontend/dist not found — building…"
+  info "public/app not built yet — building…"
 elif find frontend/src frontend/index.html frontend/tailwind.config.js \
-     -newer frontend/dist/index.html 2>/dev/null | grep -q .; then
+     -newer public/app/index.html 2>/dev/null | grep -q .; then
   NEEDS_BUILD=true
   info "Source files changed — rebuilding…"
 else
-  success "frontend/dist is up to date — skipping build"
+  success "public/app is up to date — skipping build"
 fi
 
 if $NEEDS_BUILD; then
   (cd frontend && npm run build)
-  success "React build complete → frontend/dist/"
+  success "React build complete → public/app/"
 fi
 
 # ── 6. Docker image build ─────────────────────────────────────────────────────
-header "6/10  Building Docker image…"
+header "7/11  Building Docker image…"
 
 info "Running: $COMPOSE build dnd-tools"
 $COMPOSE build dnd-tools
@@ -177,7 +193,7 @@ cleanup() {
 trap cleanup SIGINT SIGTERM
 
 # ── 7. Start postgres ─────────────────────────────────────────────────────────
-header "7/10  Starting PostgreSQL…"
+header "8/11  Starting PostgreSQL…"
 
 mkdir -p pdfs   # ensure the volume mount source exists
 
@@ -201,7 +217,7 @@ mkdir -p pdfs
 chmod 755 pdfs
 
 # ── 8. Wait for postgres healthy ──────────────────────────────────────────────
-header "8/10  Waiting for PostgreSQL to be healthy…"
+header "9/11  Waiting for PostgreSQL to be healthy…"
 
 MAX=60
 for ((i=1; i<=MAX; i++)); do
@@ -221,13 +237,13 @@ done
 echo ""
 
 # ── 9. Create database if missing ─────────────────────────────────────────────
-header "9/10  Database initialisation…"
+header "10/11  Database initialisation…"
 
 node scripts/setup-db.js --db-only
 success "Database ready"
 
 # ── 10. Start the app container ───────────────────────────────────────────────
-header "10/10  Starting app…"
+header "11/11  Starting app…"
 
 APP_RUNNING=false
 if $CONTAINER_CMD inspect dnd-tools &>/dev/null 2>&1; then

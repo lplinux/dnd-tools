@@ -158,7 +158,6 @@ export default function LocationsTab({ locations, actions }) {
   const ef = (key) => (e) => setEditForm(p => ({ ...p, [key]: e.target.value }));
   const ff = (key) => (e) => setForm(p => ({ ...p, [key]: e.target.value }));
 
-  const displayRows = filtered ?? roots;
 
   return (
     <div className="space-y-3">

@@ -11,7 +11,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { sameId, isRegion } from '@/components/map/geometry';
-import { TOOLS, TOOL_HINTS, REGION_SIZE_TYPES } from './constants';
+import { TOOLS, TOOL_HINTS } from './constants';
 
 const ROUTE_ICON = { road: '🛣️', flight: '✈️', maritime: '⚓' };
 

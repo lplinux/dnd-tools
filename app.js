@@ -3520,6 +3520,52 @@ async function initializeDatabase() {
       ALTER TABLE character_relationships ADD COLUMN IF NOT EXISTS is_public BOOLEAN NOT NULL DEFAULT false;
     `);
 
+    // ── Indexes on the foreign keys we actually filter by ───────────────────
+    //
+    // Runs here, last, so every column added by an ALTER above exists. All are
+    // IF NOT EXISTS, so this is idempotent like the rest of this function and
+    // needs no manual step — existing databases pick them up on the next start.
+    //
+    // Deliberately NOT indexed: a column that is already the leading column of
+    // a UNIQUE constraint or index (campaign_locations.campaign_id via
+    // campaign_locations_campaign_name_unique, campaign_npcs.campaign_id,
+    // journey_distances.map_id) and every column-level UNIQUE (pc_char_stats,
+    // campaign_meta, journey_map_shares, campaign_timeline_shares) — those are
+    // indexed already, and a duplicate only costs write throughput.
+    const INDEXES = [
+      // Campaign fan-out — every page starts from one of these.
+      ['idx_campaigns_dm_user',            'campaigns(dm_user_id)'],
+      ['idx_campaign_players_campaign',    'campaign_players(campaign_id)'],
+      ['idx_cua_player',                   'campaign_user_assignments(player_id)'],
+      ['idx_cua_user',                     'campaign_user_assignments(user_id)'],
+      ['idx_campaign_locations_parent',    'campaign_locations(parent_id)'],
+      ['idx_campaign_npcs_campaign_id',    'campaign_npcs(campaign_id)'],
+
+      // Timelines. player_timeline_entries is the largest table here.
+      ['idx_player_timelines_campaign_player', 'player_timelines(campaign_id, player_id)'],
+      ['idx_pte_timeline',                 'player_timeline_entries(timeline_id)'],
+      ['idx_pte_campaign_player',          'player_timeline_entries(campaign_id, player_id)'],
+
+      // PC sheets — read on every sheet load.
+      ['idx_pc_characters_player',         'pc_characters(player_id)'],
+      ['idx_pc_relationships_character',   'pc_relationships(character_id)'],
+      ['idx_pc_dm_notes_character',        'pc_dm_notes(character_id)'],
+
+      // Journey maps.
+      ['idx_journey_maps_campaign',        'journey_maps(campaign_id)'],
+      ['idx_jml_map',                      'journey_map_locations(map_id)'],
+      ['idx_jml_campaign_location',        'journey_map_locations(campaign_location_id)'],
+      ['idx_journey_paths_map',            'journey_paths(map_id)'],
+      ['idx_journey_distances_from',       'journey_distances(from_loc_id)'],
+      ['idx_journey_distances_to',         'journey_distances(to_loc_id)'],
+
+      // DM cross-entity graph.
+      ['idx_character_relationships_campaign', 'character_relationships(campaign_id)'],
+    ];
+    for (const [name, target] of INDEXES) {
+      await pool.query(`CREATE INDEX IF NOT EXISTS ${name} ON ${target}`);
+    }
+
     console.log('✓ Database initialized');
   } catch (error) {
     console.error('✗ Database error:', error.message);

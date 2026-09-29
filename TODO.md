@@ -160,6 +160,17 @@ on a post-mutation refresh — following Timeline/JourneyMap, which already do t
       (player columns ordered by cross-connection affinity, NPC row by median peer X)
 
 
+### Timeline
+
+- [x] **Editing an event silently rounds its duration.** ✅ v4.20.0
+      The edit form pre-filled with `formatDuration(ev.durationDays).replace('~','')` and
+      parsed it back on save — but `formatDuration` is approximate above 30 days. A 45-day
+      event formatted to `~2m`, stripped to `2m`, and parsed back as **60 days**, so opening
+      the modal and saving without touching the duration changed it. The form now pre-fills
+      the exact day count (`45d`); typing `3m` or `2y` still converts on save, only the
+      pre-fill changed. (Found by the new test suite; `data/calendar.test.js` now asserts
+      the corrected round-trip for 1…1000 days.)
+
 ## Bug fix
 
 ### General

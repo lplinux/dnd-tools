@@ -7,6 +7,55 @@ Only the 0.x entries correspond to GitHub releases.
 
 ---
 
+## [4.20.0] – Unreleased — Linting, tests, and indexes on every foreign key we query
+
+- **A test suite — `npm test` finally does something.** Vitest, 69 tests over the pure
+  domain modules: the Harptos calendar (including the five festival days that sit between
+  months, and absolute-day round-trips across leap boundaries), 5e rules arithmetic
+  (negative ability modifiers, proficiency step points, the warlock pact-magic table),
+  the journey-map road network (Dijkstra over route sections, shortest-of-two-routes,
+  sections with no distance set), and the SRD/Open5e payload flattening — which the two
+  APIs shape completely differently and which had only ever been checked by hand.
+  Runs in ~250ms with no DOM. Verified it *can* fail by introducing an off-by-one in
+  `abilityMod` and dropping the reverse edge in the road graph; both were caught.
+  - **It found a real bug on the first run, now fixed**: editing a timeline event silently
+    rounded its duration — 45 days became 60 — because the edit form pre-filled from
+    `formatDuration()`, which is approximate above 30 days, and parsed that back on save.
+    Merely opening the modal and pressing Save changed the event. The form now pre-fills
+    the exact day count (`45d`); typing `3m` or `2y` still converts as before, only the
+    pre-fill changed. The tests assert the corrected behaviour across 1…1000 days.
+
+- **`run.sh` runs the tests before it builds.** Step 5 of 15, ahead of the frontend build
+  and any container start: a failing suite stops the bootstrap with a non-zero exit instead
+  of deploying a broken build over live campaign data. It costs about a second against the
+  build's two and a half, so it is not worth making optional by default — `SKIP_TESTS=1`
+  bypasses it when you need to. Verified both paths by planting a failing test and watching
+  the script stop, and by confirming the bypass skips it.
+  - Also fixed a stale check in the same script: the build step still tested for
+    `frontend/dist`, which stopped existing when Vite's `outDir` moved to `public/app/`, so
+    the "already built" short-circuit never hit and every run rebuilt from scratch while
+    logging a path that was not there.
+
+- **ESLint, actually installed and passing.** The repo declared a `lint` script but eslint
+  was never a dependency, there was no config, and `--ext` had been removed in ESLint 9 — so
+  it had never run once. One flat config at the root now covers both halves (CommonJS/Node
+  for `app.js` and `scripts/`, ESM/JSX with the React plugins for `frontend/src`).
+  `react-hooks/rules-of-hooks` is an error: it catches the conditional-hooks bug that
+  crashed the relationship graph, verified by reintroducing it and watching the linter flag
+  it. It found 39 problems on the first run — all fixed — including the dead `px` variable in
+  `CharTreeTab` whose expression was nonsense anyway, the unreferenced SVG strings in
+  `RelGraph`, and one `exhaustive-deps` suppression that was suppressing nothing.
+  Pinned to ESLint 9 because `eslint-plugin-react` does not yet support 10.
+- **19 indexes on the foreign keys the app filters by.** The schema had exactly *one*
+  explicit index, while `campaign_id`, `player_id`, `map_id`, `character_id` and
+  `timeline_id` — the columns in nearly every WHERE clause — had none. Added at the end of
+  `initializeDatabase()`, so they are created automatically on the next start and need no
+  manual step. Columns already covered by a UNIQUE constraint's leading column are
+  deliberately skipped; a duplicate index only costs write throughput.
+  Verified against a real PostgreSQL: all 19 created, idempotent across a second boot, and
+  the planner switches from a sequential scan to an index scan on the per-sheet character
+  lookup.
+
 ## [4.19.0] – Unreleased — SRD/Open5e assisted entry, legacy cleanup, safe PC round-trip
 
 - **Fixed: the PC Sheet PDF printed only about one screen of the stat block.** The embedded

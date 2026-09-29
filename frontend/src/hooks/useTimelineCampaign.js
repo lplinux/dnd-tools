@@ -38,7 +38,7 @@ export function useTimelineCampaign() {
 
   const [playerOptions, setPlayerOptions] = useState([]); // [{ value, label, group }]
   const [playerSel, setPlayerSel] = useState('');
-  const [dmPlayerId, setDmPlayerId] = useState(null);
+  const [, setDmPlayerId] = useState(null);
 
   const [privPlayerId, setPrivPlayerId] = useState(null);
   const [privPlayers, setPrivPlayers] = useState([]); // actors: { id, name, color }

@@ -13,8 +13,8 @@
  *   - Fullscreen overlay with its own canvas + controls bar
  */
 
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { ChevronLeft, ChevronRight, Maximize2, X, ChevronsLeft, ChevronsRight } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
+import { ChevronLeft, ChevronRight, Maximize2, X } from 'lucide-react';
 
 import AppHeader from '@/components/layout/AppHeader';
 import { Spinner } from '@/components/ui';
@@ -165,7 +165,7 @@ export default function PdfViewer() {
   const viewerContainerRef = useRef(null);
 
   const viewer = usePdfViewer();
-  const { pdfs, pdfsLoading, pdfsError, currentFile, loadPdf, canvasRef, rendering, nextPage, prevPage, zoomStep, setFsMode, fitWidth } = viewer;
+  const { pdfs, pdfsLoading, pdfsError, currentFile, loadPdf, canvasRef, rendering, nextPage, prevPage, zoomStep, setFsMode } = viewer;
 
   // Open fullscreen
   function openFullscreen() {
