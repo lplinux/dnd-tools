@@ -9,6 +9,95 @@ Only the 0.x entries correspond to GitHub releases.
 
 ## [4.20.0] – Unreleased — Linting, tests, and indexes on every foreign key we query
 
+### Small fixes
+
+- **Enter no longer fires several things at once.** Two independent causes, both fixed.
+  - Every open `<Modal>` registered its own `window` keydown listener, so whenever two were
+    open they *all* reacted to the same keypress. That is not an edge case: `ConfirmContext`
+    renders a `<Modal>` too, so every confirmation raised from inside a dialog stacks on one —
+    and Enter then settled the confirm **and** submitted the form behind it, while Escape closed
+    both at once. Modals now share a stack and only the topmost one handles keys. The listener is
+    also registered per open/close rather than per render, since call sites pass inline arrows
+    for `onClose`/`onSubmit` — re-running on those would have floated a background dialog back to
+    the top of the stack on any re-render.
+  - `NewMapModal` and `NamingModal` each declared `onSubmit` on the Modal *and* an `Enter`
+    handler on their own inputs, so a single keypress ran the action twice — two journey maps
+    from one Create, a double save from the naming dialog. The redundant input handlers are gone;
+    Enter-to-submit comes from the Modal alone. Swept the rest of the codebase for the same
+    pairing and found no others.
+
+- **The NPC/stat sheet no longer pre-fills Senses and Languages.** They defaulted to `Darkvision`
+  and `Common`, which put traits on every new sheet that most characters do not have — and a wrong
+  default is worse than a blank field, because it reads as deliberate and survives until somebody
+  notices. Both now start empty; the greyed placeholders (`Darkvision 60 ft., Blindsight 30 ft.`,
+  `Common, Elvish…`) still show the expected shape.
+- **A player's printed PDF now includes the DM notes shared with them.** The print document gated
+  the whole DM Notes section on `isDM`, so a player's PDF omitted notes their own DM Notes tab was
+  showing them. The Visible/Hidden status line stays DM-only — on a player's copy every note is one
+  shared with them, so the label carries no information.
+
+- **PC Sheet — Clear did nothing.** It posted `LOAD_STATS` with an empty payload, but
+  `populateSheet` ignores `{}` by design (it has to, or loading a blank sheet would wipe one), so
+  the button was a silent no-op. Added a `CLEAR_STATS` message that calls the sheet's own
+  `clearSheet()`.
+- **PC Sheet — a black band under the stat block.** The embedded sheet was sized only to its own
+  reported height, so a short sheet left the rest of the scroll container showing the app's dark
+  background. The frame now fills at least the visible area, and the wrapper carries the parchment
+  colour so nothing shows through during reflow.
+- **PC Sheet — the printed PDF began with a blank page.** `pc-print.css` declared a *named* page
+  (`@page pcsheet`), and a page-name change forces a break — everything ahead of the print document
+  sits on the unnamed default page, so every print started with an empty sheet. The name existed to
+  fence off the NPC sheet's own margin, which no longer declares one, so a plain `@page` does the
+  job. (Same trap that caused the NPC sheet's blank pages earlier.)
+- **DM notes marked visible were invisible to players.** The API has always been `requireAuth` and
+  filtered to `dm_visible = true` for non-DMs, but the client only fetched notes when the viewer was
+  a DM, and the tab itself was DM-gated — so the visibility toggle did nothing a player could see.
+  Players now get the tab once at least one note is shared, read-only: no compose box, no toggle, no
+  delete.
+- **A player's export now includes their `private_info` and the DM notes shared with them**, so the
+  file they keep matches the sheet they see. Hidden notes and DM-only relationships are still
+  omitted. Import is unchanged and still ignores both unless the bundle is `scope: 'full'` — a
+  player-scope bundle holds only the visible subset, so writing from it would delete the DM's hidden
+  material.
+- **Relationships tab** — the chip list was a stack of per-type rows up to 42vh tall, pushing the
+  graph below the fold. It is now a single sideways-scrolling line, with **➕ Add Relation** moved
+  above the graph.
+- **Journey Map — a pin could not be placed inside a region.** The region polygon covers a large
+  area and its `mousedown` handler called `stopPropagation()` for every tool except pan, so the
+  click selected the region instead of reaching the stage. The creation tools (place, draw, region,
+  measure) now fall through, as pan already did.
+- **Manage Campaigns — the player Reassign control looked like a refresh button.** It was a bare
+  ♻-style icon for what is a save action; it is now a labelled **Save** button.
+
+- **The player PC-sheet export was leaking DM-only relationships — and fixing that exposed a
+  data-loss bug underneath it.** The read path has always withheld `is_dm_only` relationships
+  from players (`app.js:1177`), but the export selected every row regardless of role, so a
+  player clicking Export received the name, type, link and status of relations the UI
+  deliberately hides from them. The export now applies the same predicate.
+  - That fix could not ship alone. Import replaced relationships with an unconditional
+    `DELETE ... WHERE character_id=$1`, and a player bundle happened to carry the DM-only rows
+    back, so they survived *by accident*. Filtering the export would have turned an information
+    leak into silent, permanent deletion of every DM-only relationship on the next import.
+    The delete is now scoped by the bundle's `scope` — the same "absent means withheld" rule
+    already applied to `private_info` and `dm_notes`.
+  - A third trap sat below that: `parent_id` is `ON DELETE CASCADE`, so a surviving DM-only
+    child whose parent was being replaced would have been cascade-deleted anyway. Those links
+    are cleared before the delete and the row re-parents to root.
+  - And symmetrically: a player-scope import now ignores any `is_dm_only` row the bundle
+    *does* carry. Files exported before this change still contain them, and would otherwise
+    have duplicated the DM's own rows on every import — the same doubling that used to afflict
+    DM notes. It also stops a hand-edited player file smuggling a row into the DM's hidden set.
+  Version-1 bundles read as player-scope, so they become non-destructive here too.
+
+- **PC sheet import has a discoverable entry point.** It was always possible — the sidebar
+  hub sniffs the file type and asks for a target player — but the button sits inside the
+  "New Campaign" panel labelled only "Import", so it reads as *import a campaign*, and the
+  Players tab had no import at all. Each player row now carries its own **⬆ Import**: pick the
+  file, confirm, done — the target is the row, so there is no target prompt. It rejects
+  anything that is not a `pc-sheet` export and names both the incoming character and the
+  destination player in the confirmation, along with what the bundle's scope will overwrite.
+  The sidebar hub is unchanged and still handles all four types.
+
 - **A test suite — `npm test` finally does something.** Vitest, 69 tests over the pure
   domain modules: the Harptos calendar (including the five festival days that sit between
   months, and absolute-day round-trips across leap boundaries), 5e rules arithmetic

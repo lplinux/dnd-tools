@@ -10,7 +10,7 @@ A server-backed timeline tool for D&D campaigns. Tracks events for multiple play
 - **Per-player colour lanes** — each player gets their own horizontal lane within a location column
 - **Connection lines** — bezier curves link each player's events in chronological order
 - **Segment-compressed Y axis** — empty years between event clusters collapse to a small gap bar
-- **Today marker** — per-campaign date marker managed from the Campaign Manager
+- **Today marker** — per-campaign date marker managed from the Campaign Manager, with a **Go to Today** button in the toolbar that scrolls the graph straight to it
 - **Show/hide players and locations** — for sharing your screen with players
 - **Solo a player** — click a player's **name** in the Players sidebar to show **only** that player's events (everyone else is hidden); click the name again to clear. The 👁 eye button still hides/shows individual players; solo overrides the eye toggles while active
 - **Three themes** — Dark, Light, Slate (persisted in localStorage)

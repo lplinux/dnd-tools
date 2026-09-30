@@ -4,10 +4,11 @@
  * Campaign players: add, delete, reassign user, open/create timelines.
  */
 
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Trash2, RefreshCw } from 'lucide-react';
+import { Trash2, Save, Upload } from 'lucide-react';
 import { Button, Modal, FormField } from '@/components/ui';
+import { useToast } from '@/hooks/useToast';
 
 export default function PlayersTab({ players, allUsers, campaignId, actions }) {
   const navigate = useNavigate();
@@ -17,6 +18,14 @@ export default function PlayersTab({ players, allUsers, campaignId, actions }) {
   const [reassigns,  setReassigns]  = useState({});     // { [pid]: newUserId }
   const [tlModal,    setTlModal]    = useState(null);   // player object | null
   const [tlName,     setTlName]     = useState('');
+
+  // Per-player PC-sheet import. One shared file input, retargeted per row, the
+  // same pattern the sidebar hub uses — a hidden input per row would be dozens
+  // of identical nodes. `pendingPlayer` is the row the picker was opened from.
+  const fileRef = useRef(null);
+  const [pendingPlayer, setPendingPlayer] = useState(null); // player object | null
+  const [importModal,   setImportModal]   = useState(null); // { player, bundle } | null
+  const { toast } = useToast();
 
   const sorted = [...players].sort((a, b) =>
     (a.player_name || '').localeCompare(b.player_name || ''));
@@ -34,6 +43,39 @@ export default function PlayersTab({ players, allUsers, campaignId, actions }) {
     const newId = reassigns[pid];
     if (newId === undefined) return;
     await actions.reassignPlayer(pid, newId || null);
+  }
+
+  function openImportFor(player) {
+    setPendingPlayer(player);
+    fileRef.current?.click();
+  }
+
+  async function handleFilePicked(e) {
+    const file = e.target.files?.[0];
+    // Reset immediately so picking the same file twice still fires onChange.
+    e.target.value = '';
+    const player = pendingPlayer;
+    setPendingPlayer(null);
+    if (!file || !player) return;
+
+    let bundle;
+    try { bundle = JSON.parse(await file.text()); }
+    catch { toast('That file is not valid JSON.', 'error'); return; }
+
+    if (bundle?.type !== 'pc-sheet') {
+      toast('Unrecognized file — expected a pc-sheet export.', 'error');
+      return;
+    }
+    // Import replaces the sheet outright, and a row button is far easier to
+    // mis-click than the sidebar flow, so confirm before writing.
+    setImportModal({ player, bundle });
+  }
+
+  async function confirmImport() {
+    if (!importModal) return;
+    const { player, bundle } = importModal;
+    setImportModal(null);
+    await actions.importPcSheetInto(player.id, bundle);
   }
 
   async function handleCreateTl() {
@@ -67,7 +109,7 @@ export default function PlayersTab({ players, allUsers, campaignId, actions }) {
           <table className="w-full text-sm font-body border-collapse">
             <thead>
               <tr className="border-b border-border">
-                {['Character', 'User', 'Reassign', 'Timeline', ''].map(h => (
+                {['Character', 'User', 'Reassign', 'Timeline', 'Sheet', ''].map(h => (
                   <th key={h} className="text-left px-3 py-2 font-display text-[0.6rem] uppercase tracking-wider text-text-dim">{h}</th>
                 ))}
               </tr>
@@ -89,8 +131,9 @@ export default function PlayersTab({ players, allUsers, campaignId, actions }) {
                           <option key={u.id} value={u.id}>{u.username}</option>
                         ))}
                       </select>
-                      <Button variant="default" onClick={() => handleReassign(p.id)}>
-                        <RefreshCw size={11} />
+                      <Button variant="default" onClick={() => handleReassign(p.id)}
+                        title={`Save the selected user for ${p.player_name}`}>
+                        <Save size={11} className="inline mr-1" /> Save
                       </Button>
                     </div>
                   </td>
@@ -105,6 +148,12 @@ export default function PlayersTab({ players, allUsers, campaignId, actions }) {
                     </div>
                   </td>
                   <td className="px-3 py-2">
+                    <Button variant="default" onClick={() => openImportFor(p)}
+                      title={`Import a PC sheet onto ${p.player_name}`}>
+                      <Upload size={11} className="inline mr-1" /> Import
+                    </Button>
+                  </td>
+                  <td className="px-3 py-2">
                     <Button variant="danger" onClick={() => actions.deletePlayer(p.id)} title="Delete player">
                       <Trash2 size={12} />
                     </Button>
@@ -115,6 +164,34 @@ export default function PlayersTab({ players, allUsers, campaignId, actions }) {
           </table>
         </div>
       )}
+
+      {/* Shared, retargeted per row by openImportFor(). */}
+      <input ref={fileRef} type="file" accept=".json" className="hidden" onChange={handleFilePicked} />
+
+      {/* Import confirmation */}
+      <Modal
+        open={!!importModal}
+        onClose={() => setImportModal(null)}
+        onSubmit={confirmImport}
+        title={`Import PC Sheet — ${importModal?.player?.player_name ?? ''}`}
+      >
+        <div className="flex flex-col gap-3">
+          <p className="text-sm text-text-dim">
+            Import <strong className="text-text">{importModal?.bundle?.character?.name || 'this character'}</strong>
+            {' '}onto <strong className="text-text">{importModal?.player?.player_name}</strong>?
+          </p>
+          <p className="text-[0.7rem] text-text-muted">
+            Replaces that player's current sheet, stats and relationships.
+            {importModal?.bundle?.scope === 'full'
+              ? ' This is a DM export, so private info and DM notes are replaced too.'
+              : ' This is a player export, so private info, DM notes and DM-only relationships are left untouched.'}
+          </p>
+          <div className="flex gap-2 justify-end">
+            <Button variant="ghost" onClick={() => setImportModal(null)}>Cancel</Button>
+            <Button variant="accent" onClick={confirmImport}>Import</Button>
+          </div>
+        </div>
+      </Modal>
 
       {/* New timeline modal */}
       <Modal open={!!tlModal} onClose={() => setTlModal(null)} onSubmit={handleCreateTl} title={`New Timeline — ${tlModal?.player_name}`}>

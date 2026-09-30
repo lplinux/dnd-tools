@@ -73,7 +73,9 @@ only which boxes are ticked off, as zero-based indices into that level's slots.
 
 A relationship tracker with two views:
 
-- **List view** — table of all relationships
+- **List view** — a single horizontal strip of relationship chips, grouped by type and scrolling
+  sideways, so it stays one line tall however many relations there are
+- **➕ Add Relation** — directly below the list, above the graph
 - **Graph view** — SVG diagram separating family (left) from social (right) connections. Re-renders automatically when the tab is opened or the panel is resized.
 
 #### Relationship types
@@ -97,14 +99,20 @@ Private notes for the player's eyes only. Never shown on the public share page.
 
 ---
 
-### 📜 DM Notes *(DM and admin only)*
+### 📜 DM Notes
 
-Per-note visibility toggle:
+Notes the DM keeps against a character, each with a visibility toggle:
 
 | State | Player sees it |
 |---|---|
 | 👁 Visible | Yes |
 | 🙈 Hidden | No |
+
+**The DM** always has this tab, and can add notes, toggle each one's visibility, and delete them.
+
+**A player** sees the tab only once the DM has shared at least one note, and then sees just the
+shared ones, read-only — no compose box, no toggle, no delete. The API never sends a player a
+hidden note, so nothing is hidden in the browser only.
 
 ---
 
@@ -114,13 +122,18 @@ Per-note visibility toggle:
 
 | Role | What is included |
 |---|---|
-| DM / Admin | All fields including `private_info` and all DM notes (hidden + visible) |
-| Player | `scope: 'player'` — `private_info` and `dm_notes` are omitted entirely (keys absent, not blank) |
+| DM / Admin | `scope: 'full'` — everything: `private_info`, **all** DM notes (hidden + visible) and **all** relationships |
+| Player | `scope: 'player'` — their own `private_info` and the DM notes **shared with them** (`dm_visible`), so their copy matches what the sheet shows them. **Hidden DM notes and DM-only relationships are omitted entirely** |
 
 ### Who can import
 
-**DM only.** Import is done from **Manage Campaigns → ⬆ Import** (the single import hub):
-drop a `pc-sheet` file, pick the **target player** in the selected campaign, and it imports onto them.
+**DM only.** There are two routes, both in Manage Campaigns:
+
+- **Players tab → ⬆ Import** on a player's row — the direct route. Pick the `.json`, confirm, done;
+  the target player is the row you clicked, so there is no target prompt.
+- **Sidebar → ⬆ Import** (the general import hub) — accepts any of the four export types. For a
+  `pc-sheet` file it asks which player to assign it to.
+
 The PC Sheet page keeps **Export** only (its Import button was removed).
 
 **What happens on import** depends on the bundle's `scope`, which the export
@@ -129,15 +142,28 @@ stamps according to who produced it:
 | Data | `scope: 'full'` (DM export) | `scope: 'player'` (player export) |
 |---|---|---|
 | Character fields | Overwritten | Overwritten |
-| `private_info` | Overwritten | **Left alone** — the key is absent |
-| Relationships | Replaced, including hierarchy, DM-only flags and status labels | Same |
+| `private_info` | Overwritten | **Ignored** — the bundle carries it, but not authoritatively |
+| Relationships | **All** replaced, including hierarchy, DM-only flags and status labels | Only **non-DM-only** ones replaced — DM-only relationships are **left alone**, since the bundle does not carry them |
 | Stats sheet | Overwritten | Overwritten |
-| DM notes | **Replaced** — a full export contains all of them | **Left alone** — the key is absent |
+| DM notes | **Replaced** — a full export contains all of them | **Ignored** — the bundle holds only the shared ones, so writing from it would delete the hidden ones |
 | Portrait (base64) | Not restored — re-upload manually | Same |
 
 This is what makes the round-trip safe. A player exporting their own sheet and
-handing it back can no longer wipe the DM's private notes, and re-importing a
-DM export no longer doubles the DM notes each time. Bundles written before this
+handing it back can no longer wipe the DM's private notes or DM-only
+relationships, and re-importing a DM export no longer doubles the DM notes each
+time.
+
+> **Carrying a field and being authoritative for it are different things.** A
+> player's export *includes* `private_info` and the shared DM notes, so the file
+> they keep is a complete copy of their own sheet. The importer still ignores
+> both unless `scope` is `full`, because a player-scope bundle only ever holds
+> the subset a player may see — writing from it would silently drop the DM's
+> hidden material. Anything a player cannot see is neither exported to them nor
+> restorable from their file.
+
+> A DM-only relationship that was the *parent* of a visible one survives a
+> player-scope import, but re-parents to root — the bundle has no way to express
+> a link to a node it cannot see. Bundles written before this
 (`version: 1`, no `scope`) are read as player-scope — the non-destructive
 reading — so they will not clear anything.
 
@@ -147,9 +173,10 @@ reading — so they will not clear anything.
 
 ```json
 {
-  "version": 1,
+  "version": 2,
   "exported_at": "ISO 8601 timestamp",
   "type": "pc-sheet",
+  "scope": "'full' (DM export) | 'player' (player export)",
 
   "player_name": "string — informational only, not used on import",
 
@@ -276,9 +303,10 @@ reading — so they will not clear anything.
 
 ```json
 {
-  "version": 1,
+  "version": 2,
   "exported_at": "2025-03-14T10:00:00.000Z",
   "type": "pc-sheet",
+  "scope": "full",
   "player_name": "Thorn Ashwick",
 
   "character": {

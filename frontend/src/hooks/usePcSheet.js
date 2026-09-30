@@ -84,7 +84,11 @@ export function usePcSheet() {
       const [char, rels, notes, stats] = await Promise.all([
         pcApi.get(id),
         pcApi.listRelationships(id),
-        isDM ? pcApi.listNotes(id) : Promise.resolve([]),
+        // Fetched for players too. The endpoint is requireAuth and already
+        // filters to `dm_visible = true` for non-DMs, so a player sees exactly
+        // the notes the DM chose to share — which is the point of that flag.
+        // Skipping the call here meant the flag did nothing in the UI.
+        pcApi.listNotes(id),
         pcApi.getStats(id),
       ]);
       // `stats` lives in pc_char_stats, not on the pc_characters row — merge it in
@@ -99,7 +103,7 @@ export function usePcSheet() {
     } finally {
       setSheetLoading(false);
     }
-  }, [currentPlayerId, isDM, toast]);
+  }, [currentPlayerId, toast]);
 
   // A player only gets their own character(s) from the API; if there's exactly
   // one, open it automatically so they don't have to pick from a 1-item list.

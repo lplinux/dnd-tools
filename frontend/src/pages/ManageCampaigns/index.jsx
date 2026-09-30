@@ -193,7 +193,7 @@ export default function ManageCampaigns() {
             players={players}
             allUsers={allUsers}
             campaignId={currentId}
-            actions={{ addPlayer, deletePlayer, reassignPlayer, createTimeline }}
+            actions={{ addPlayer, deletePlayer, reassignPlayer, createTimeline, importPcSheetInto }}
           />
         );
       case 'locations':

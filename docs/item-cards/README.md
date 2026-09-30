@@ -4,6 +4,7 @@ A browser-based magic item card creator for D&D 5e. Generate formatted cards sty
 
 ## Features
 
+- **Load from SRD** — fill a whole card from a published magic item (see below)
 - Item name, type, rarity, and attunement toggle
 - Type-specific stats — weapon (damage / type / properties), armour (AC / type), consumable/potion (uses)
 - Flavour text and a rich-text **Special Abilities** editor — **bold, italic, underline, bullet list, numbered list, highlight** (gold), and clear-formatting
@@ -13,13 +14,34 @@ A browser-based magic item card creator for D&D 5e. Generate formatted cards sty
   - Each card has two faces: **Front** (name / type / rarity / stats / flavour) and **Back** (special abilities). The font on each face **auto-fits** (shrinks between 14 px and 8 px) to fit the card.
   - Cards are a fixed **63 × 88 mm** (poker/MTG size). A single card prints one per page; a **set** prints **up to 9 cards per A4** (3 × 3).
   - Designed for **double-sided** printing: a page of Fronts is followed by a page of Backs whose cells are **mirrored per row** so each back lands behind its front when you flip on the long edge. Cut along the card borders.
-  - The card **border and a top accent bar are coloured by rarity** (grey / green / blue / purple / gold), matching the on-screen preview and the 5e rulebook convention.
+  - The card **border and a top accent bar are coloured by rarity** (grey / green / blue / purple / gold / theme gold — see the table below), matching the on-screen preview and the 5e rulebook convention.
 
 ## Usage
 
 Open `/item-cards` in your browser after starting the server.
 
 Fill in the form on the left — the card preview on the right updates in real time.
+
+### Load from SRD
+
+The **Load from SRD** picker at the top of the form fills a card from a published magic item —
+**262 items from the 2024 SRD plus roughly 1,600 from Open5e**. Type to filter, pick an entry, and
+it fills:
+
+| Card field | Filled from |
+|---|---|
+| Name | The item's name |
+| Type | Mapped from its equipment category |
+| Rarity | The item's rarity — left as-is when it isn't one of the six the card offers |
+| Attunement | The item's attunement flag |
+| Special Abilities | Its description text, one paragraph per line |
+
+Everything stays editable afterwards — the lookup is a starting point, not a lock. Fields the item
+doesn't specify keep whatever you already typed.
+
+Entries outside the current edition carry a small badge naming their source, so third-party and
+older material is obvious. Content comes from SRD 5.2 (CC-BY-4.0, via dnd5eapi.co) and Open5e
+(OGL / CC-BY / ORC).
 
 ### Downloading a PNG
 
@@ -59,8 +81,8 @@ Cards are colour-coded by rarity following the D&D 5e convention:
 | Uncommon | Green |
 | Rare | Blue |
 | Very Rare | Purple |
-| Legendary | Orange |
-| Artifact | Gold |
+| Legendary | Gold (`#ffd700`) |
+| Artifact | Theme gold (`var(--gold)`, follows the active theme) |
 
 ## Notes
 

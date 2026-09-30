@@ -57,7 +57,16 @@ and delete the `LegacyIframe` call from its page file.
 
 ### General
 
-- [ ] Pressing "Enter" key should not trigger a lot of submits but only the ones I'm writing or I have open
+- [x] Pressing "Enter" key should not trigger a lot of submits but only the ones I'm writing or I have open ✅ v4.20.0
+      Two separate causes. (1) Every open `<Modal>` listened on `window`, so with
+      more than one open they all reacted to the same keypress — and that happens
+      routinely, because `ConfirmContext` renders a `<Modal>` of its own, so any
+      confirm raised from inside a dialog stacks on it. Enter settled the confirm
+      *and* submitted the form underneath; Escape closed both at once. Modals now
+      keep a stack and only the topmost handles keys. (2) `NewMapModal` and
+      `NamingModal` each declared `onSubmit` on the Modal *and* an `Enter`
+      handler on their inputs, so one keypress ran the action twice — a second
+      journey map, a second save. The redundant input handlers are gone.
 - [x] "Information" modal should be closed when clicking outside the modal ✅
       (`components/ui/Modal.jsx` — backdrop click + Escape; the legacy pages it
       asked about no longer exist)

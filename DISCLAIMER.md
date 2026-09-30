@@ -10,8 +10,9 @@ and reviewed the results, but the code itself was produced by an AI assistant.
 
 This software is provided **as is**, for learning, hobby, and experimentation
 purposes. It is **not production-ready** and is **not recommended for
-production use**. It has not undergone the security review, hardening, testing,
-or auditing that production software requires.
+production use**. There is a unit-test suite and a linter, but the project has
+not undergone the security review, hardening, integration/end-to-end testing or
+independent auditing that production software requires.
 
 If you choose to use, deploy, or build on this code:
 

@@ -55,6 +55,20 @@ by Express's catch-all route (with `/api/*` reserved for the API).
 
 **Requirements:** Node.js 18+, PostgreSQL 14+.
 
+### The one-command option
+
+`run.sh` does the whole bootstrap — checks prerequisites, creates `.env` from the example,
+installs both dependency trees, **runs the test suite**, builds the frontend, then brings up
+PostgreSQL and the app in containers and waits for each to be healthy:
+
+```bash
+bash run.sh          # Ctrl+C stops everything cleanly
+SKIP_TESTS=1 bash run.sh   # bypass the test gate
+```
+
+It needs Docker (or Podman) with Compose. A failing test stops the run before anything is built
+or started. The manual steps below are the same thing by hand, without containers.
+
 ### 1. Backend (Express)
 
 ```bash
@@ -113,6 +127,28 @@ node app.js   # serves public/app/index.html as the SPA entry point
 > The SPA catch-all route is already wired in `app.js` (it serves
 > `public/app/index.html` for any non-API path), so a built frontend is served
 > automatically.
+
+---
+
+## Code quality — tests and linting
+
+Both run from the repo root and cover both halves of the codebase.
+
+```bash
+npm test          # Vitest — the pure domain modules (calendar, 5e rules,
+                  #   road-network distances, SRD/Open5e payload flattening)
+npm run lint      # ESLint 9, flat config, CommonJS backend + ESM/JSX frontend
+npm run lint:fix  # the same, with autofixable problems corrected
+```
+
+In `frontend/` there is also `npm run test:watch` for a watching Vitest.
+
+The suite is `environment: 'node'` over pure modules only — there is no DOM and no backend
+harness, so it runs in about a second. `run.sh` gates the bootstrap on it (step 5 of 15).
+
+`react-hooks/rules-of-hooks` is an **error**: it catches conditional-hook bugs, which have
+crashed a page here before. `exhaustive-deps` is a warning, because changing a dependency array
+needs judgement rather than a reflex fix.
 
 ---
 
@@ -212,10 +248,12 @@ First run: use `node scripts/create-admin.js` to create the initial admin accoun
 dnd-tools/
 ├── app.js                        # Express server + all API routes + DB schema
 ├── package.json                  # Backend: express, pg, express-session, bcryptjs
+├── eslint.config.mjs             # Flat config covering both halves (see Code quality)
 ├── .env / .env.example
 ├── Dockerfile
 ├── docker-compose.yml
-├── run.sh
+├── run.sh                        # One-command bootstrap (see Quick start)
+├── README.md / ARCH.md / CHANGELOG.md / TODO.md / DISCLAIMER.md / LICENSE
 │
 ├── scripts/
 │   ├── setup-db.js               # Manual DB initialisation script
@@ -232,13 +270,11 @@ dnd-tools/
 │   ├── timeline/README.md
 │   └── user-panel/README.md
 │
-├── public/                       # Served by Express (mostly build output now)
-│   ├── index.html                # No-build fallback home (when SPA not built)
-│   ├── theme.css                 # CSS variable tokens (also used by the SPA)
-│   ├── app.css                   # Shared styles (also used by the SPA)
-│   └── app/                      # Vite build output (gitignored)
+├── public/
+│   └── app/                      # Vite build output (gitignored) — the only thing here
 │   # NOTE: all legacy *.html module pages were removed as each module
-│   #       was migrated to React (v4.1.0–v4.10.0).
+│   #       was migrated to React (v4.1.0–v4.10.0), along with the no-build
+│   #       fallback page and its theme.css / app.css.
 │
 └── frontend/                     # React 19 + Vite SPA
     ├── index.html
@@ -257,26 +293,41 @@ dnd-tools/
         │   ├── timeline.js
         │   ├── pc.js
         │   ├── journeyMaps.js
+        │   ├── importJourneyMap.js  # shared journey-map import util
         │   ├── users.js
         │   ├── docs.js
-        │   └── index.js          # barrel re-export
+        │   ├── srd.js            # dnd5eapi.co 2024 SRD client (cached)
+        │   ├── open5e.js         # Open5e client (OGL / CC-BY / ORC content)
+        │   └── locationTypeImages.js
         ├── contexts/
         │   ├── ThemeContext.jsx   # dark/light/slate + localStorage
         │   ├── AuthContext.jsx    # session user, login, logout, changePassword
         │   └── ToastContext.jsx   # toast(msg, type?) queue
-        ├── hooks/
+        ├── data/                 # Pure domain modules (all unit-tested)
+        │   ├── calendar.js       # Harptos + Gregorian maths, duration parsing
+        │   ├── dnd.js            # ability mods, proficiency, spell slots
+        │   ├── srdMap.js         # flattens SRD / Open5e payloads
+        │   └── officialSubclasses.js  # 115 subclasses, PHB 2014/2024 + XGE + TCE
+        ├── hooks/                # 13 hooks; the shared ones are:
         │   ├── useAuth.js
         │   ├── useTheme.js
         │   ├── useToast.js
-        │   └── useAsync.js       # generic { data, loading, error, run }
+        │   ├── useAsync.js       # generic { data, loading, error, run }
+        │   └── …                 # plus one per module: usePcSheet, useNpcSheet,
+        │                         #   useManageCampaigns, useJourneyMap, useTimeline,
+        │                         #   useTimelineCampaign, useCombinedTimeline,
+        │                         #   usePdfViewer, useSplitViewProfiles
         ├── components/
         │   ├── layout/
         │   │   ├── AppHeader.jsx  # [icon][name] | [slot] → [Back][Account▾]
         │   │   ├── AppLayout.jsx  # <Outlet> wrapper
         │   ├── map/              # Reusable map renderer (public view + DM editor)
         │   │   ├── MapStage.jsx       # Pan/zoom SVG stage (render-prop layers)
+        │   │   ├── MapLabel.jsx       # Collision-aware location labels
         │   │   ├── useMapViewport.js  # Shared pan/zoom state + screenToPct
         │   │   ├── compressImage.js   # Canvas resize/compress for backgrounds
+        │   │   ├── derivePaths.js     # Builds movement paths from timeline events
+        │   │   ├── pinIcons.jsx       # Built-in vector pin icons per location type
         │   │   └── geometry.js        # pctToSvg, distances, travel times, waypoint helpers
         │   └── ui/
         │       ├── Button.jsx     # default/accent/danger/ghost variants
@@ -285,17 +336,26 @@ dnd-tools/
         │       ├── Select.jsx     # styled <select>
         │       ├── Spinner.jsx    # animated loading indicator
         │       ├── FormField.jsx  # label + input + error wrapper
+        │       ├── InfoCard.jsx   # InfoCard + InfoRow read-only detail blocks
+        │       ├── ModalField.jsx # FIELD_INPUT / FIELD_LABEL class constants
         │       └── index.js       # barrel export
-        └── pages/
-            ├── Home.jsx           # ✅ Fully migrated
-            ├── NotFound.jsx       # ✅ Implemented
-            ├── JourneyMap/        # ✅ Migrated (v4.9.0) — DM editor
-            ├── JourneyMapPublic/  # ✅ Migrated (v4.8.0)
-            ├── PcPublic.jsx       # ✅ Migrated (v4.7.0)
-            ├── Timeline/          # ✅ Migrated (v4.10.0) — SVG Gantt, 3 modes
-            └── …                  # UserPanel, NpcSheet, ItemCards, SplitView,
-                                   #   PdfViewer, ManageCampaigns, PcSheet,
-                                   #   TimelinePublic ✅ (all React-owned)
+        └── pages/                # All React-owned; the migration is complete
+            ├── Home.jsx
+            ├── NotFound.jsx
+            ├── PcPublic.jsx
+            ├── UserPanel.jsx
+            ├── JourneyMap/       # DM editor          + JourneyMap.jsx  (shim)
+            ├── JourneyMapPublic/ #                    + JourneyMapPublic.jsx
+            ├── Timeline/         # SVG Gantt, 3 modes + Timeline.jsx
+            ├── ManageCampaigns/  #                    + ManageCampaigns.jsx
+            ├── PcSheet/          #                    + PcSheet.jsx
+            ├── NpcSheet/         #                    + NpcSheet.jsx
+            ├── ItemCards/        #                    + ItemCards.jsx
+            ├── SplitView/        #                    + SplitView.jsx
+            └── PdfViewer/        #                    + PdfViewer.jsx
+            # Multi-file pages are a folder plus a one-line `Name.jsx` shim that
+            # re-exports `./Name/index` — App.jsx lazy-imports the shim, which
+            # keeps each page in its own route chunk.
 ```
 
 ---

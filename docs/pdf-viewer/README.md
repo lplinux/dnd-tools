@@ -2,12 +2,23 @@
 
 A browser-based PDF viewer that serves files from the server's `pdfs/` folder. Keep your rulebooks, supplements, and adventures accessible during a session without switching applications.
 
+**Access:** DM only — `/pdf-viewer` (the `/api/pdfs` listing is DM-only too).
+
 ## Features
 
-- Lists all PDFs in the `pdfs/` folder automatically
-- Full in-browser rendering (no plugin required — uses the browser's built-in PDF engine)
-- Fast navigation between files via the sidebar list
-- Works offline once files are loaded
+- Lists all PDFs in the `pdfs/` folder automatically, in a collapsible sidebar
+- **Page-by-page rendering** onto a canvas via [pdf.js](https://mozilla.github.io/pdf.js/) — no
+  browser plugin and no reliance on the browser's own PDF engine, so every browser renders it
+  identically
+- **Zoom** — slider, `+` / `−` buttons, and **Fit to width**
+- **Direct page number input**, plus previous/next page controls
+- **Fullscreen** overlay with its own canvas and controls bar
+- **Keyboard navigation** — `←` `→` `↑` `↓` to change page, `+` / `−` to zoom, `F` for fullscreen,
+  `Escape` to close it
+
+> **pdf.js is loaded from a CDN** (`cdnjs.cloudflare.com`, v3.11.174), so the first page render on a
+> given browser needs internet access even though the PDFs themselves are served locally. Once the
+> library is cached by the browser, viewing works offline.
 
 ## Usage
 

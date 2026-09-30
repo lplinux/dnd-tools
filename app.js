@@ -2902,21 +2902,34 @@ app.get('/api/pc/:playerId/export', requireRole(['dm', 'player']), async (req, r
       // Every column the importer needs to rebuild the graph. The old export
       // selected only 4, so hierarchy, DM-only flags and status labels were
       // silently dropped on every round-trip.
+      //
+      // DM-only relationships are withheld from a player's export, matching the
+      // normal read path (GET /api/pc/:playerId/relationships), which has always
+      // filtered them. Without this, Export handed a player the name, type, link
+      // and status of relationships the UI deliberately hides from them.
+      // A child whose parent is filtered out resolves to `parent_ref: null`
+      // below and re-parents to root — correct for a bundle whose recipient
+      // cannot see that parent.
       pool.query(
         `SELECT id, name, relation_type, link, is_family, is_dm_only,
                 created_by_role, parent_id, status_label
          FROM pc_relationships
          WHERE character_id = (SELECT id FROM pc_characters WHERE player_id=$1)
+           ${isPrivileged ? '' : 'AND is_dm_only = false'}
          ORDER BY created_at ASC`, [playerId]
       ),
       pool.query('SELECT stats_json FROM pc_char_stats WHERE player_id=$1', [playerId]),
-      isPrivileged
-        ? pool.query(
-          `SELECT content, dm_visible FROM pc_dm_notes
-           WHERE character_id = (SELECT id FROM pc_characters WHERE player_id=$1)
-           ORDER BY created_at ASC`, [playerId],
-        )
-        : Promise.resolve({ rows: [] }),
+      // A player's own export carries the notes the DM shared with them — the
+      // same set the sheet already shows them — so their copy is complete.
+      // Hidden notes stay out. Import still ignores notes from a player-scope
+      // bundle entirely (see `hasDmNotes` there): the bundle holds only the
+      // visible subset, so replacing from it would delete the hidden ones.
+      pool.query(
+        `SELECT content, dm_visible FROM pc_dm_notes
+         WHERE character_id = (SELECT id FROM pc_characters WHERE player_id=$1)
+           ${isPrivileged ? '' : 'AND dm_visible = true'}
+         ORDER BY created_at ASC`, [playerId],
+      ),
       pool.query('SELECT player_name FROM campaign_players WHERE id=$1', [playerId]),
     ]);
 
@@ -2963,11 +2976,16 @@ app.get('/api/pc/:playerId/export', requireRole(['dm', 'player']), async (req, r
       stats: statsRes.rows[0]?.stats_json || {},
     };
 
-    // Present only on a DM export. Absent — not empty — otherwise.
-    if (isPrivileged) {
-      bundle.character.private_info = char.private_info || '';
-      bundle.dm_notes = notesRes.rows;
-    }
+    // Both are present on either export, so a player's own copy is complete:
+    // private_info is the player's own section, and dm_notes holds whatever the
+    // DM shared (the query above filters the hidden ones out for a player).
+    //
+    // This does NOT make a player bundle authoritative on import — `scope` still
+    // governs that, and the importer gates both fields on `scope === 'full'`.
+    // A player-scope bundle carries only what a player may see, so writing from
+    // it would silently drop the DM's private_info and hidden notes.
+    bundle.character.private_info = char.private_info || '';
+    bundle.dm_notes = notesRes.rows;
 
     res.json(bundle);
   } catch (e) { res.status(500).json({ error: e.message }); }
@@ -3029,13 +3047,45 @@ app.post('/api/pc/:playerId/import', requireRole(['dm']), async (req, res) => {
         charId = ins.rows[0].id;
       }
 
-      // Relationships are replaced wholesale — but now with every column the
-      // export carries, and in two passes so parent_ref can be resolved to a
-      // real parent_id. Previously only 4 columns survived, which flattened the
-      // family tree and un-hid DM-only relations on every round-trip.
-      await client.query('DELETE FROM pc_relationships WHERE character_id=$1', [charId]);
+      // Relationships are replaced with every column the export carries, in two
+      // passes so parent_ref can be resolved to a real parent_id. Previously only
+      // 4 columns survived, which flattened the family tree and un-hid DM-only
+      // relations on every round-trip.
+      //
+      // How much is replaced depends on scope, the same "absent means withheld"
+      // rule already applied to private_info and dm_notes. A player-scope bundle
+      // carries no DM-only relationships (the export filters them out), so it
+      // must not be authoritative for them either — otherwise a blanket DELETE
+      // would destroy every DM-only relation with nothing to restore it.
+      if (!isFull) {
+        // parent_id is ON DELETE CASCADE, so a surviving DM-only child whose
+        // parent is about to be deleted would be cascade-deleted with it. Cut
+        // those links first; the orphans re-parent to root, which is the only
+        // meaning left once the parent is gone.
+        await client.query(
+          `UPDATE pc_relationships SET parent_id = NULL
+            WHERE character_id = $1 AND is_dm_only = true
+              AND parent_id IN (SELECT id FROM pc_relationships
+                                 WHERE character_id = $1 AND is_dm_only = false)`,
+          [charId],
+        );
+      }
+      await client.query(
+        isFull
+          ? 'DELETE FROM pc_relationships WHERE character_id=$1'
+          : 'DELETE FROM pc_relationships WHERE character_id=$1 AND is_dm_only=false',
+        [charId],
+      );
+      // Not authoritative in either direction: a player-scope bundle must neither
+      // delete DM-only relationships nor introduce them. Bundles exported before
+      // the export started filtering them still carry them, and would otherwise
+      // duplicate the DM's own rows on every import — the same doubling that used
+      // to afflict DM notes. Also stops a hand-edited player file smuggling a row
+      // into the DM's hidden set.
+      const incomingRels = isFull ? relationships : relationships.filter((r) => !r.is_dm_only);
+
       const relIdByRef = {};
-      for (const r of relationships) {
+      for (const r of incomingRels) {
         const ref = r._ref || r.name;
         const ins = await client.query(
           `INSERT INTO pc_relationships
@@ -3047,7 +3097,7 @@ app.post('/api/pc/:playerId/import', requireRole(['dm']), async (req, res) => {
         );
         relIdByRef[ref] = ins.rows[0].id;
       }
-      for (const r of relationships) {
+      for (const r of incomingRels) {
         const ref = r._ref || r.name;
         if (r.parent_ref && relIdByRef[r.parent_ref] && relIdByRef[ref]) {
           await client.query('UPDATE pc_relationships SET parent_id=$1 WHERE id=$2',

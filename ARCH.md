@@ -253,12 +253,6 @@ When a waypoint is drawn on or snapped to an existing map pin, `locId` is set au
 | PUT | `/api/player-timelines/:timelineId/entries/:eid` | auth | Edit entry |
 | DELETE | `/api/player-timelines/:timelineId/entries/:eid` | auth | Delete entry |
 | DELETE | `/api/player-timelines/:timelineId` | auth | Delete timeline |
-| GET | `/api/timeline-private/:campaignId` | admin/dm | Combined DM view |
-| GET | `/api/timeline-private/:campaignId/:playerId` | auth | Player's private timeline |
-| POST | `/api/timeline-private/:campaignId/:playerId` | dm/player | Add private entry |
-| PUT | `/api/timeline-private/:campaignId/:playerId/:eid` | dm/player | Edit private entry |
-| DELETE | `/api/timeline-private/:campaignId/:playerId/:eid` | dm/player | Delete private entry |
-| GET | `/api/timeline-private/:campaignId/players-summary` | dm | Players summary |
 | GET | `/api/timeline-party/:cid` | auth | Party (campaign-wide) events |
 | POST/PUT/DELETE | `/api/timeline-party/:cid[/:entryId]` | dm/admin | Party event CRUD |
 | GET | `/api/timeline-public/:token` | — | Public read-only data |
@@ -331,12 +325,26 @@ When a waypoint is drawn on or snapped to an existing map pin, `locId` is set au
 | GET | `/api/pc/:playerId/export` | dm/player | PC sheet bundle — `scope: full` for a DM, `scope: player` otherwise |
 | POST | `/api/pc/:playerId/import` | **dm** | Apply a PC sheet bundle (see below) |
 
-**PC sheet scope.** A player's export omits `private_info` and `dm_notes`
-entirely rather than blanking them, and import only writes a field the bundle
-actually carries. That is what makes the round-trip safe: a player-scope bundle
-cannot clear the DM's private notes, and a DM-scope bundle replaces notes
-outright instead of appending them (which used to double them on every cycle).
-Importing is DM-only, through Manage Campaigns → Import.
+**PC sheet scope.** A player's export carries their own `private_info` and the
+DM notes flagged `dm_visible`, so their file is a complete copy of the sheet as
+they see it. It omits **hidden DM notes** and **DM-only relationships** entirely
+rather than blanking them. Import writes a field only when the bundle is
+authoritative for it — `private_info` and `dm_notes` are applied only from a
+`full` bundle, because a player-scope one holds just the visible subset. That is what makes the round-trip safe:
+a player-scope bundle cannot clear the DM's private notes, and a DM-scope bundle
+replaces notes outright instead of appending them (which used to double them on
+every cycle).
+
+The relationship rule mirrors the rest: a `full` bundle replaces every
+relationship, a `player` bundle replaces only the non-DM-only ones and leaves
+DM-only rows in place. Because `pc_relationships.parent_id` is
+`ON DELETE CASCADE`, a surviving DM-only child whose parent is being replaced
+has its `parent_id` cleared *before* the delete — otherwise the cascade would
+take it along. Such a row re-parents to root, which is the only meaning left
+once its parent is gone.
+
+Importing is DM-only: **Manage Campaigns → Players tab → ⬆ Import** on a row, or
+the sidebar import hub.
 
 ---
 

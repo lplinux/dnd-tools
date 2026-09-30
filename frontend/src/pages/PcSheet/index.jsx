@@ -38,18 +38,22 @@ const TABS = [
   { id: 'relations',  label: '🌳 Relationships',  role: 'any' },
   { id: 'public',     label: '📢 Public Info',    role: 'any' },
   { id: 'private',    label: '🔒 Private Info',   role: 'any' },
-  { id: 'dmnotes',    label: '📜 DM Notes',       role: 'dm'  },
+  // 'shared' — the DM always sees this tab; a player sees it only when the DM
+  // has actually shared a note with them (the API only ever returns the
+  // dm_visible ones to a player, so a non-empty list means exactly that).
+  { id: 'dmnotes',    label: '📜 DM Notes',       role: 'shared' },
 ];
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Tab bar
 // ─────────────────────────────────────────────────────────────────────────────
-function TabBar({ tabs, active, isDM, onSelect }) {
+function TabBar({ tabs, active, isDM, hasSharedNotes, onSelect }) {
   return (
     <div className="flex overflow-x-auto border-b border-border flex-shrink-0 bg-surface">
       {tabs.map(t => {
         if (t.role === 'dm' && !isDM) return null;
-        const isDmTab = t.role === 'dm';
+        if (t.role === 'shared' && !isDM && !hasSharedNotes) return null;
+        const isDmTab = t.role === 'dm' || t.role === 'shared';
         return (
           <button
             key={t.id}
@@ -101,6 +105,9 @@ function PcPrintDoc({
 }) {
   const portrait = charData?.picture_data || charData?.picture_url || null;
   const visibleRels = relationships ?? [];
+  // A player prints the notes shared with them, the same ones their DM Notes tab
+  // shows. The API never sends them a hidden note, so the filter is belt and
+  // braces rather than the thing keeping hidden notes off a player's PDF.
   const notes = isDM ? (dmNotes ?? []) : (dmNotes ?? []).filter((n) => n.dm_visible);
 
   return (
@@ -138,14 +145,18 @@ function PcPrintDoc({
       <PrintSection title="Public Information" body={charData?.public_info} />
       <PrintSection title="Private Information" body={charData?.private_info} />
 
-      {isDM && notes.length > 0 && (
+      {notes.length > 0 && (
         <section className="pc-print-section">
           <div className="pc-print-block">
             <h3>DM Notes</h3>
             {notes.map((n) => (
               <div key={n.id} className="pc-print-note">
                 <div className="pc-print-text">{n.content}</div>
-                <span className="pc-print-tag">{n.dm_visible ? 'Visible to player' : 'Hidden'}</span>
+                {/* The Visible/Hidden status only means anything to the DM —
+                    every note on a player's copy is one shared with them. */}
+                {isDM && (
+                  <span className="pc-print-tag">{n.dm_visible ? 'Visible to player' : 'Hidden'}</span>
+                )}
               </div>
             ))}
           </div>
@@ -292,6 +303,7 @@ export default function PcSheet() {
               tabs={TABS}
               active={activeTab}
               isDM={isDM}
+              hasSharedNotes={(dmNotes ?? []).length > 0}
               onSelect={setActiveTab}
             />
 
@@ -330,8 +342,8 @@ export default function PcSheet() {
               {activeTab === 'private' && (
                 <PrivateTab charData={charData} actions={actions} />
               )}
-              {activeTab === 'dmnotes' && isDM && (
-                <DmNotesTab notes={dmNotes} actions={actions} />
+              {activeTab === 'dmnotes' && (
+                <DmNotesTab notes={dmNotes} isDM={isDM} actions={actions} />
               )}
             </div>
           </>

@@ -15,8 +15,27 @@
 import { useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 
+/**
+ * Every open modal used to listen on `window`, so with two of them open all of
+ * them reacted to the same keypress. That is not a rare case: ConfirmContext
+ * renders its own <Modal>, so any confirm raised from inside a dialog stacks on
+ * one — and then Enter settled the confirm *and* submitted the form underneath
+ * it, while Escape closed both at once.
+ *
+ * Newest last; only the entry on top handles keys.
+ */
+const openModals = [];
+
 export default function Modal({ open, onClose, onSubmit, title, children, className = '' }) {
   const dialogRef = useRef(null);
+
+  // The key handler is registered once per open/close, not per render, so the
+  // stack order stays put. Call sites pass inline arrows for onClose/onSubmit,
+  // which change identity every render — re-running the effect on those would
+  // pop and re-push this modal, floating a background dialog back to the top.
+  const onCloseRef  = useRef(onClose);
+  const onSubmitRef = useRef(onSubmit);
+  useEffect(() => { onCloseRef.current = onClose; onSubmitRef.current = onSubmit; });
 
   const focusables = () =>
     Array.from(
@@ -28,16 +47,22 @@ export default function Modal({ open, onClose, onSubmit, title, children, classN
   // Close on Escape + trap Tab focus inside the dialog
   useEffect(() => {
     if (!open) return undefined;
+    const token = {};
+    openModals.push(token);
+
     function onKey(e) {
-      if (e.key === 'Escape') { onClose(); return; }
+      // Only the topmost dialog acts; anything stacked underneath stays inert.
+      if (openModals[openModals.length - 1] !== token) return;
+
+      if (e.key === 'Escape') { onCloseRef.current?.(); return; }
       // Enter triggers the primary action — but not from a multi-line textarea,
       // an IME composition, or when a button/anchor is focused (let it click).
-      if (e.key === 'Enter' && onSubmit && !e.isComposing) {
+      if (e.key === 'Enter' && onSubmitRef.current && !e.isComposing) {
         const el = document.activeElement;
         const tag = el?.tagName;
         if (tag === 'TEXTAREA' || tag === 'BUTTON' || tag === 'A' || el?.isContentEditable) return;
         e.preventDefault();
-        onSubmit();
+        onSubmitRef.current();
         return;
       }
       if (e.key !== 'Tab') return;
@@ -53,8 +78,12 @@ export default function Modal({ open, onClose, onSubmit, title, children, classN
       }
     }
     window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [open, onClose, onSubmit]);
+    return () => {
+      window.removeEventListener('keydown', onKey);
+      const i = openModals.indexOf(token);
+      if (i !== -1) openModals.splice(i, 1);
+    };
+  }, [open]);
 
   // On open, focus the dialog unless a child already claimed focus (e.g. an
   // input with autoFocus), so the focus trap has a starting point.

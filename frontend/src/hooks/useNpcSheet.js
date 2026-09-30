@@ -55,7 +55,11 @@ function defaultFields() {
   return {
     charName: '', charClass: '', subclass: '', race: '', sex: '', alignment: '',
     level: '1', cr: '',
-    hp: '', ac: '', speed: '30 ft', senses: 'Darkvision', langs: 'Common',
+    // senses and langs start blank on purpose: pre-filling them with
+    // "Darkvision" / "Common" put traits on every sheet that most characters
+    // don't have, and a wrong default is worse than an empty field — it reads
+    // as deliberate and survives until someone notices.
+    hp: '', ac: '', speed: '30 ft', senses: '', langs: '',
     casterType: 'none', spellAbility: '', slotReset: 'Long Rest',
     personality: '', specTraits: '', features: '', equipment: '',
     actions: '', bonusActions: '', legActions: '', lairActions: '',

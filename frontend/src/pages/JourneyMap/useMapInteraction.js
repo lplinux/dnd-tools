@@ -376,8 +376,16 @@ export function useMapInteraction(viewport, jm, { placeLocId, onOpenNaming, draw
     jm.addSectionCurvePoint(path, secIdx, pct);
   }
 
+  // Tools that put something new on the canvas must win over whatever is already
+  // under the cursor. A region's polygon covers a large area, and swallowing the
+  // click here made it impossible to place a pin inside a region at all — the
+  // click selected the region instead of ever reaching the stage handler. Fall
+  // through for those tools, exactly as `pan` already did. Pins render above
+  // regions, so the new pin is visible once placed.
+  const CANVAS_TOOLS = ['pan', 'place', 'draw', 'region', 'measure'];
+
   async function onRegionDown(loc, e) {
-    if (activeTool === 'pan') return;
+    if (CANVAS_TOOLS.includes(activeTool)) return;
     e.stopPropagation();
     if (activeTool === 'delete') {
       if (await confirm('Remove this region from the map?', { title: 'Remove region', confirmLabel: 'Remove' })) deletePlacedLoc(loc.id);

@@ -46,6 +46,8 @@ export default function NewMapModal({ open, onClose, onCreate, campaignLocs }) {
   const inputCls = FIELD_INPUT;
 
   return (
+    // Enter-to-create comes from the Modal's onSubmit alone. The name input used
+    // to carry its own Enter handler too, so one keypress created two maps.
     <Modal open={open} onClose={onClose} onSubmit={handleCreate} title="New Journey Map">
       <div className="flex flex-col gap-3">
         <div>
@@ -56,7 +58,6 @@ export default function NewMapModal({ open, onClose, onCreate, campaignLocs }) {
             autoFocus
             placeholder="e.g., Road to Baldur's Gate"
             onChange={(e) => setName(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && handleCreate()}
           />
         </div>
         <div>

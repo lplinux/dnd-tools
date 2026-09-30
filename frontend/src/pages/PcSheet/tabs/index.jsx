@@ -242,7 +242,10 @@ export function StatsTab({ playerId, charData, onSaveStats }) {
 
   async function handleClear() {
     if (!await confirm('Clear the stats sheet?', { title: 'Clear stats', confirmLabel: 'Clear' })) return;
-    iframeRef.current?.contentWindow?.postMessage({ type: 'LOAD_STATS', payload: {} }, '*');
+    // Not LOAD_STATS with an empty payload: populateSheet bails on `{}` (it has
+    // to, or an empty save would wipe a sheet), so that was a silent no-op.
+    // CLEAR_STATS calls the sheet's own clearSheet() instead.
+    iframeRef.current?.contentWindow?.postMessage({ type: 'CLEAR_STATS' }, '*');
   }
 
   return (
@@ -261,14 +264,20 @@ export function StatsTab({ playerId, charData, onSaveStats }) {
         </Button>
       </div>
 
-      {/* NpcSheet iframe */}
-      <div className="flex-1 overflow-y-auto">
+      {/* NpcSheet iframe.
+          min-h-full on the frame, not just a pixel height: a short sheet left
+          the rest of the scroll container showing the app's dark background as
+          a black band under the parchment. The frame now always fills at least
+          the visible area, and still grows past it via frameH when the sheet is
+          taller. The wrapper carries the parchment colour too, so the band can
+          never come back during the frame's own reflow. */}
+      <div className="flex-1 overflow-y-auto bg-[#f7f0dc]">
         <iframe
           ref={iframeRef}
           src={`/npc-sheet?embedded=1&player=${playerId}`}
           title="Stats Sheet"
-          className="w-full border-0"
-          style={{ height: frameH, minHeight: 400 }}
+          className="w-full border-0 block"
+          style={{ height: frameH, minHeight: '100%' }}
           scrolling="no"
           sandbox="allow-same-origin allow-scripts allow-forms allow-popups allow-modals"
         />
@@ -442,21 +451,35 @@ export function RelationsTab({ relationships: rawRelationships, crossConnections
         {(!relationships.length && !crossConnections.length) ? (
           <p className="text-text-dim italic text-sm py-2 text-center">No relations yet — add some below.</p>
         ) : (
-          <div className="space-y-3 max-h-[42vh] overflow-y-auto pr-1 mb-3">
-            {Object.entries(groups).map(([type, rels]) => (
-              <div key={type}>
-                <div className="text-[10px] font-display uppercase tracking-wider text-text-dim mb-1">{TYPE_ICON[type] || '👤'} {type}</div>
-                <div className="flex flex-wrap gap-2">
+          /* One line. The list used to stack a row per relation type and take up
+             to 42vh, pushing the graph — the thing you actually read — below the
+             fold. Everything now flows in a single strip that scrolls sideways,
+             with each type's label inline as a separator rather than a heading. */
+          <div className="mb-3">
+            <div className="flex items-center gap-2 overflow-x-auto whitespace-nowrap pb-2">
+              {Object.entries(groups).map(([type, rels], gi, arr) => (
+                <div key={type} className="flex items-center gap-2 flex-shrink-0">
+                  <span className="text-[10px] font-display uppercase tracking-wider text-text-dim flex-shrink-0">
+                    {TYPE_ICON[type] || '👤'} {type}
+                  </span>
                   {rels.flatMap((r) => [
                     <Chip key={r.id} rel={r} />,
                     ...(childrenOf[r.id] || []).map((c) => <Chip key={c.id} rel={c} isChild />),
                   ])}
+                  {gi < arr.length - 1 && <span className="text-border2 flex-shrink-0">|</span>}
                 </div>
-              </div>
-            ))}
+              ))}
+            </div>
             {cross}
           </div>
         )}
+
+        {/* Above the graph, so adding a relation doesn't mean scrolling past it. */}
+        <div className="flex justify-end mb-3">
+          <Button variant="accent" onClick={() => { setEditRel(null); setRelModal(true); }}>
+            ➕ Add Relation
+          </Button>
+        </div>
 
         {/* SVG graph */}
         {(relationships.length > 0 || crossConnections.length > 0) && (
@@ -468,12 +491,6 @@ export function RelationsTab({ relationships: rawRelationships, crossConnections
             onEditRelation={openEdit}
           />
         )}
-
-        <div className="flex justify-end mt-3">
-          <Button variant="accent" onClick={() => { setEditRel(null); setRelModal(true); }}>
-            ➕ Add Relation
-          </Button>
-        </div>
       </Card>
 
       <RelationModal
@@ -543,7 +560,7 @@ export function PrivateTab({ charData, actions }) {
 // ─────────────────────────────────────────────────────────────────────────────
 // DmNotesTab
 // ─────────────────────────────────────────────────────────────────────────────
-export function DmNotesTab({ notes: rawNotes, actions }) {
+export function DmNotesTab({ notes: rawNotes, isDM = true, actions }) {
   const confirm = useConfirm();
   const notes = rawNotes ?? [];
   const [content,  setContent]  = useState('');
@@ -562,7 +579,17 @@ export function DmNotesTab({ notes: rawNotes, actions }) {
 
   return (
     <div className="space-y-4">
+      {/* A player reaches this tab only when the DM has shared a note, and then
+          sees the shared ones read-only — no compose box, no visibility toggle,
+          no delete. The API never sends them a hidden note in the first place. */}
+      {!isDM && (
+        <p className="text-text-dim text-xs italic">
+          Notes your DM has chosen to share with you.
+        </p>
+      )}
+
       {/* Add note */}
+      {isDM && (
       <Card title="➕ Add DM Note">
         <div className="flex flex-col gap-2">
           <FormField label="Content">
@@ -582,10 +609,13 @@ export function DmNotesTab({ notes: rawNotes, actions }) {
           </div>
         </div>
       </Card>
+      )}
 
       {/* Note cards — compact grid of small cards */}
       {!notes.length ? (
-        <p className="text-text-dim italic text-sm text-center py-6">No DM notes yet.</p>
+        <p className="text-text-dim italic text-sm text-center py-6">
+          {isDM ? 'No DM notes yet.' : 'Your DM has not shared any notes with you yet.'}
+        </p>
       ) : (
         <div
           className="grid gap-2.5 max-h-[45vh] overflow-y-auto pr-1"
@@ -595,17 +625,19 @@ export function DmNotesTab({ notes: rawNotes, actions }) {
             <div key={note.id}
               className={`bg-surface2 border rounded-sm p-2.5 ${note.dm_visible ? 'border-[var(--gold-dim)]' : 'border-border'}`}>
               <div className="text-[12px] leading-snug whitespace-pre-wrap text-text mb-1.5">{note.content}</div>
-              <div className="flex items-center gap-1.5 flex-wrap">
-                <span className={`text-[9px] font-display tracking-wider rounded-sm px-1.5 py-0.5 ${note.dm_visible ? 'bg-[#2d3a1a] text-[#9fd49f]' : 'bg-[#3a1a1a] text-[#d49f9f]'}`}>
-                  {note.dm_visible ? '👁 Visible' : '🙈 Hidden'}
-                </span>
-                <button onClick={() => actions.toggleNoteVisibility(note.id, !note.dm_visible)}
-                  className="text-[10px] rounded-sm bg-surface3 border border-border2 text-text-dim hover:text-text px-1.5 py-0.5">
-                  {note.dm_visible ? 'Hide' : 'Show'}
-                </button>
-                <button onClick={async () => { if (await confirm('Delete this note?', { title: 'Delete note', confirmLabel: 'Delete' })) actions.deleteDmNote(note.id); }}
-                  className="ml-auto text-[11px] leading-none rounded-sm bg-danger text-text px-1.5 py-0.5" title="Delete">×</button>
-              </div>
+              {isDM && (
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  <span className={`text-[9px] font-display tracking-wider rounded-sm px-1.5 py-0.5 ${note.dm_visible ? 'bg-[#2d3a1a] text-[#9fd49f]' : 'bg-[#3a1a1a] text-[#d49f9f]'}`}>
+                    {note.dm_visible ? '👁 Visible' : '🙈 Hidden'}
+                  </span>
+                  <button onClick={() => actions.toggleNoteVisibility(note.id, !note.dm_visible)}
+                    className="text-[10px] rounded-sm bg-surface3 border border-border2 text-text-dim hover:text-text px-1.5 py-0.5">
+                    {note.dm_visible ? 'Hide' : 'Show'}
+                  </button>
+                  <button onClick={async () => { if (await confirm('Delete this note?', { title: 'Delete note', confirmLabel: 'Delete' })) actions.deleteDmNote(note.id); }}
+                    className="ml-auto text-[11px] leading-none rounded-sm bg-danger text-text px-1.5 py-0.5" title="Delete">×</button>
+                </div>
+              )}
             </div>
           ))}
         </div>

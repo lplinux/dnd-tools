@@ -35,6 +35,8 @@ export default function NamingModal({ data, onClose, onSave }) {
   }
 
   return (
+    // Enter-to-save comes from the Modal's onSubmit alone. Both inputs used to
+    // carry their own Enter handler too, so one keypress saved twice.
     <Modal open={open} onClose={onClose} onSubmit={save} title="✏️ Name Path & Locations">
       <p className="text-[12px] text-text-dim mb-3 leading-relaxed">
         Give the path a name. Any waypoints placed on empty space also need a location name.
@@ -60,7 +62,6 @@ export default function NamingModal({ data, onClose, onSave }) {
             value={locNames[i]?.name ?? ''}
             autoFocus={!path && i === 0}
             onChange={(e) => update(i, 'name', e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && save()}
           />
           <label className={labelCls}>Description (optional)</label>
           <input
@@ -68,7 +69,6 @@ export default function NamingModal({ data, onClose, onSave }) {
             value={locNames[i]?.desc ?? ''}
             placeholder="e.g. A ruined tower at the crossroads…"
             onChange={(e) => update(i, 'desc', e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && save()}
           />
         </div>
       ))}

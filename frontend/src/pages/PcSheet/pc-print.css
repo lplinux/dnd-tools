@@ -26,9 +26,12 @@
      dialog has a Margins setting (Default / None / Minimum) that overrides it,
      so on "None" the text still ran to the paper's edge. The padding below is
      part of the document and cannot be overridden from the dialog.
-     The page is NAMED because the NPC sheet declares its own margin and both
-     stylesheets can be live in one document after navigating between them. */
-  @page pcsheet { margin: 18mm 16mm; }
+     The page is deliberately NOT named. It used to be `@page pcsheet`, to keep
+     the NPC sheet's own margin from leaking in — but npc-sheet.css no longer
+     declares an @page at all, and naming a page forces a break wherever the
+     name changes. Everything before .pc-print-doc sits on the unnamed default
+     page, so the switch to `pcsheet` emitted a blank first page every print. */
+  @page { margin: 18mm 16mm; }
 
   /* Show the print document; hide the normal tabbed screen view. */
   .pc-screen-printing { display: none !important; }
@@ -41,7 +44,6 @@
        to honour backgrounds. State the print palette explicitly instead. */
     background: #fff !important;
     color: #000 !important;
-    page: pcsheet;
     font-size: 11pt;
     line-height: 1.45;
     padding: 6mm 4mm !important;

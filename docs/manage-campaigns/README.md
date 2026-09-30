@@ -195,6 +195,14 @@ sidebar) and pick a `.json`; the importer **detects the file type** and routes i
 > Per-module Import buttons were removed — **Export** still lives in each module (Journey Map, PC Sheet,
 > Timeline), but importing is centralised here.
 
+### Import — the per-player shortcut
+
+A `pc-sheet` file has one obvious destination, so the **Players** tab carries its own
+**⬆ Import** on each player's row. It takes the same file the sidebar hub does, but the
+target is the row you clicked, so it confirms and imports in one step rather than asking
+which player to assign it to. Anything that is not a `pc-sheet` export is rejected there —
+use the sidebar hub for the other three types.
+
 **Campaign-bundle import** (the `campaign` type) works exactly as before:
 
 - All entities are created inside a single database transaction — any error rolls the entire import back cleanly

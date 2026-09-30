@@ -296,8 +296,10 @@ export default function NpcSheet() {
   // reverting whatever the user was typing.
   const collectRef  = useRef(collectSheet);
   const populateRef = useRef(populateSheet);
+  const clearRef    = useRef(clearSheet);
   useEffect(() => { collectRef.current  = collectSheet;  }, [collectSheet]);
   useEffect(() => { populateRef.current = populateSheet; }, [populateSheet]);
+  useEffect(() => { clearRef.current    = clearSheet;    }, [clearSheet]);
 
   useEffect(() => {
     if (!isEmbedded) return undefined;
@@ -312,6 +314,9 @@ export default function NpcSheet() {
       if (!e.data || typeof e.data !== 'object') return;
       if (e.data.type === 'LOAD_STATS')    { populateRef.current(e.data.payload ?? {}); setTimeout(sendResize, 200); }
       if (e.data.type === 'COLLECT_STATS') { e.source?.postMessage({ type: 'STATS_DATA', payload: collectRef.current() }, e.origin ?? '*'); }
+      // Distinct from LOAD_STATS with an empty payload: populateSheet ignores
+      // `{}` by design, so the host's Clear button needs its own message.
+      if (e.data.type === 'CLEAR_STATS')   { clearRef.current(); setTimeout(sendResize, 200); }
     }
 
     window.addEventListener('message', handleMessage);

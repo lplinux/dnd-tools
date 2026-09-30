@@ -95,15 +95,19 @@ Each row in the Users table has three action buttons:
 
 ### Change Role
 
-Cycles the user's role through `player → dm → admin → player`. A confirmation prompt shows the new role before applying. Use this to promote a player to DM or to revoke admin access.
+Cycles the user's role through **`admin → dm → player → admin`**. A confirmation dialog names the
+new role before applying, so check it before confirming — the cycle runs *down* the privilege
+ladder, which means a **`player` becomes an `admin`** in one click, not a `dm`.
+
+To make a player a DM, click twice: `player → admin → dm`, confirming each step.
 
 ### Reset Password
 
-Prompts for a new password and updates it immediately. The user can continue using any active sessions — they are not logged out automatically.
+Opens a dialog for the new password and updates it immediately. The user can continue using any active sessions — they are not logged out automatically.
 
 ### Delete
 
-Permanently removes the user account. A confirmation prompt is shown first. Deleting a user does **not** delete campaign or character data associated with them — player characters and timeline entries are linked to `campaign_players`, not directly to `users`.
+Permanently removes the user account. A confirmation dialog is shown first. Deleting a user does **not** delete campaign or character data associated with them — player characters and timeline entries are linked to `campaign_players`, not directly to `users`.
 
 ---
 
