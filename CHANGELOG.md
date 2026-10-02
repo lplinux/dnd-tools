@@ -10,6 +10,24 @@ Only the 0.x entries correspond to GitHub releases.
 ## [4.20.0] – Unreleased — Linting, tests, and indexes on every foreign key we query
 
 
+
+### Node guard: finished the job
+
+Follow-up to the Node 24 move. Raising the version check left three strings behind that still
+said 18 — including, worst of the three, **the message shown when Node is not installed at all**,
+which pointed at "nodejs.org (v18+)" and would have sent someone to install a runtime the very
+next check rejects.
+
+Both failure paths now share one `node_install_help` helper, so they cannot drift apart again,
+and both say something useful instead of just refusing: the version required, the version
+`.nvmrc` pins, a platform-appropriate install command, the fact that a bare `nvm install` reads
+`.nvmrc`, and that Node 18 and 20 are themselves past end-of-life (April 2025 and April 2026).
+
+Prompted by `EBADENGINE` warnings from a bootstrap on Node v18.20.8 — `react-router@7` and
+`vitest@4` both require ≥20. That run predated the guard change; with the current script it stops
+at step 1 before npm runs at all. The accompanying npm "new major version" notice needs nothing:
+it is npm's own, and it resolves when Node moves.
+
 ### `run.sh` now actually bootstraps a clean machine, and Node moves to 24 LTS
 
 The honest answer to "does run.sh handle a clean environment?" was **no** — it failed on *every*

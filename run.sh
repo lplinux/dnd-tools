@@ -5,7 +5,7 @@
 #  From a fresh clone:   ./run.sh
 #
 #  Steps:
-#    1.  Verify prerequisites (Node.js 18+, npm, Docker/Podman + Compose)
+#    1.  Verify prerequisites (Node.js 20+, npm, Docker/Podman + Compose)
 #    2.  Copy .env.example → .env if missing
 #    3.  npm install         (backend, skipped if up to date)
 #    4.  npm install         (frontend, skipped if up to date)
@@ -56,14 +56,33 @@ header "════════════════════════
 # ── 1. Prerequisites ──────────────────────────────────────────────────────────
 header "1/11  Checking prerequisites…"
 
-# Node.js (18+)
+# Node.js (20+). Shared by both failure paths below so they cannot drift apart
+# again — the "not installed" message used to say v18+ while the version check
+# demanded 20, which would have sent someone to install a runtime the very next
+# line rejects.
+node_install_help() {
+  local want
+  want=$(cat .nvmrc 2>/dev/null || echo 24)
+  echo "  This project needs Node 20 or later; it targets ${want} (.nvmrc), and the"
+  echo "  container image runs Node 24 LTS."
+  case "$(uname -s)" in
+    Darwin) echo "    brew install node@${want}      — or, with nvm installed:  nvm install" ;;
+    Linux)  echo "    https://nodejs.org/en/download — or, with nvm installed:  nvm install" ;;
+    *)      echo "    https://nodejs.org/en/download" ;;
+  esac
+  echo "  (nvm reads .nvmrc, so a bare 'nvm install' in this directory is enough.)"
+  echo "  Note: Node 18 reached end-of-life in April 2025 and Node 20 in April 2026."
+}
+
 if ! command -v node &>/dev/null; then
-  err "Node.js is not installed. Download it from https://nodejs.org (v18+)."
+  err "Node.js is not installed."
+  node_install_help
   exit 1
 fi
 NODE_MAJOR=$(node -e 'process.stdout.write(process.versions.node.split(".")[0])')
 if [[ "$NODE_MAJOR" -lt 20 ]]; then
   err "Node.js v$NODE_MAJOR found — v20 or later is required."
+  node_install_help
   exit 1
 fi
 success "Node.js $(node -e 'process.stdout.write(process.versions.node)')"

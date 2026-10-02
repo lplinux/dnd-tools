@@ -55,8 +55,12 @@ by Express's catch-all route (with `/api/*` reserved for the API).
 
 ## Quick start — local development
 
-**Requirements:** Node.js 20+ (the container runs 24 LTS; `.nvmrc` says 24). PostgreSQL is
-supplied by `run.sh` in a container — you only need your own if you skip Docker.
+**Requirements:** Node.js **20+** — `.nvmrc` pins **24**, so `nvm install` in this directory
+gets you the right one, and the container image runs Node 24 LTS. PostgreSQL is supplied by
+`run.sh` in a container; you only need your own if you skip Docker.
+
+> Node 18 reached end-of-life in April 2025 and Node 20 in April 2026. `run.sh` refuses anything
+> below 20 and tells you how to upgrade.
 
 ### The one-command option
 
