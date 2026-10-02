@@ -40,7 +40,7 @@ Captured for later — nothing here has been designed or scoped yet.
 ### NPC Management — a new module, or a section of Manage Campaigns
 
 - [ ] **Manage NPCs and other characters properly**, the way LoreForge does — somewhere richer
-      than the current `campaign_npcs` table, which holds little more than a name.
+      than the current `campaign_npcs` table, which holds little more than a name. Important to have a flag to define NPCs with Sheet (enemies/allies) and without it.
 - [ ] **Public and private information per NPC**, so a DM can write everything down in one place
       and reveal only part of it. The split should work the way it already does elsewhere in the
       app: *withheld server-side*, not merely un-rendered — see the PC sheet's
