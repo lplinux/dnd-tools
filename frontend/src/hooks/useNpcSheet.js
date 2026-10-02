@@ -51,6 +51,21 @@ function defaultTags() {
   return { resist: [], immune: [], vuln: [], condimmune: [], damagetype: [] };
 }
 
+/**
+ * Resolve current/max HP from a stored sheet, tolerating the pre-max_hp format
+ * where a single `hp` string held "27/40". Returns undefined for a value the
+ * bundle does not carry, so populateSheet's `?? prev` keeps the current one.
+ */
+function splitHp(d) {
+  const rawMax = d.max_hp ?? d.maxHp;
+  const rawHp = d.hp;
+  if (rawMax === undefined && typeof rawHp === 'string' && rawHp.includes('/')) {
+    const [cur, max] = rawHp.split('/', 2);
+    return { cur: cur.trim(), max: max.trim() };
+  }
+  return { cur: rawHp, max: rawMax };
+}
+
 function defaultFields() {
   return {
     charName: '', charClass: '', subclass: '', race: '', sex: '', alignment: '',
@@ -59,7 +74,7 @@ function defaultFields() {
     // "Darkvision" / "Common" put traits on every sheet that most characters
     // don't have, and a wrong default is worse than an empty field — it reads
     // as deliberate and survives until someone notices.
-    hp: '', ac: '', speed: '30 ft', senses: '', langs: '',
+    hp: '', maxHp: '', tempHp: '', tempMaxHp: '', ac: '', speed: '30 ft', senses: '', langs: '',
     casterType: 'none', spellAbility: '', slotReset: 'Long Rest',
     personality: '', specTraits: '', features: '', equipment: '',
     actions: '', bonusActions: '', legActions: '', lairActions: '',
@@ -190,6 +205,9 @@ export function useNpcSheet() {
     level:      fields.level,
     cr:         fields.cr,
     hp:         fields.hp,
+    max_hp:       fields.maxHp,
+    temp_hp:      fields.tempHp,
+    temp_max_hp:  fields.tempMaxHp,
     ac:         fields.ac,
     speed:      fields.speed,
     senses:     fields.senses,
@@ -234,7 +252,13 @@ export function useNpcSheet() {
       alignment: d.alignment ?? prev.alignment,
       level: String(d.level ?? prev.level),
       cr: d.cr ?? prev.cr,
-      hp: d.hp ?? prev.hp,
+      // Legacy sheets kept HP as one free-text box, and people wrote "27/40" in
+      // it. Split that on load so those sheets land in the new current/max pair
+      // instead of showing "27/40" as the current value.
+      hp: splitHp(d).cur ?? prev.hp,
+      maxHp: splitHp(d).max ?? prev.maxHp,
+      tempHp: d.temp_hp ?? d.tempHp ?? prev.tempHp,
+      tempMaxHp: d.temp_max_hp ?? d.tempMaxHp ?? prev.tempMaxHp,
       ac: d.ac ?? prev.ac,
       speed: d.speed ?? prev.speed,
       senses: d.senses ?? prev.senses,

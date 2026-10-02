@@ -317,7 +317,83 @@ function EditEventModal({ open, ev, onClose, tl }) {
   );
 }
 
-export default function TimelineModals({ modal, onClose, onOpen, tl }) {
+/**
+ * Date-range filter. Both bounds are inclusive, and an event is kept when its
+ * span *overlaps* the window rather than starting inside it — a 45-day journey
+ * that began before the window is still happening during it, and dropping it
+ * would misrepresent the timeframe.
+ *
+ * Either bound may be left off: From alone means "everything after", To alone
+ * means "everything before".
+ */
+function DateRangeModal({ open, onClose, tl, range, onApply }) {
+  const { calType } = tl;
+  const [useFrom, setUseFrom] = useState(false);
+  const [useTo, setUseTo] = useState(false);
+  const [fy, setFy] = useState(1492); const [fm, setFm] = useState(0); const [fd, setFd] = useState(1);
+  const [ty, setTy] = useState(1492); const [tm, setTm] = useState(0); const [td, setTd] = useState(1);
+
+  // Seed from the current filter, or from the span of the events themselves so
+  // the pickers open somewhere meaningful rather than on year 1492 day 1.
+  useEffect(() => {
+    if (!open) return;
+    const evs = tl.db.events;
+    const starts = evs.map((e) => absDay(e.year, e.dayOfYear, calType));
+    const lo = starts.length ? Math.min(...starts) : absDay(1492, 1, calType);
+    const hi = starts.length
+      ? Math.max(...evs.map((e) => absDay(e.year, e.dayOfYear, calType) + Math.max(1, e.durationDays || 1) - 1))
+      : lo;
+    const seed = (abs, setY, setM, setD) => {
+      const p = fromAbsDay(abs, calType);
+      const f = formMidxFromDoy(p.dayOfYear, p.year, calType);
+      setY(p.year); setM(f.midx); setD(f.day);
+    };
+    setUseFrom(range?.from != null);
+    setUseTo(range?.to != null);
+    seed(range?.from ?? lo, setFy, setFm, setFd);
+    seed(range?.to ?? hi, setTy, setTm, setTd);
+  }, [open, range, calType, tl.db.events]);
+
+  function apply() {
+    const from = useFrom ? absDay(+fy, doyFromForm(fm, +fd, +fy, calType), calType) : null;
+    const to   = useTo   ? absDay(+ty, doyFromForm(tm, +td, +ty, calType), calType) : null;
+    if (from != null && to != null && to < from) { onApply({ from: to, to: from }); onClose(); return; }
+    onApply(from == null && to == null ? null : { from, to });
+    onClose();
+  }
+
+  return (
+    <Modal open={open} onClose={onClose} onSubmit={apply} title="⏳ Filter by date">
+      <p className="text-sm text-text-muted mb-3">
+        Show only events overlapping this timeframe. Leave a bound unchecked for an open end.
+      </p>
+
+      <label className="flex items-center gap-2 cursor-pointer text-sm mb-2">
+        <input type="checkbox" className="w-4 h-4 accent-[var(--gold)]" checked={useFrom} onChange={(e) => setUseFrom(e.target.checked)} />
+        <span>From</span>
+      </label>
+      <div className={useFrom ? '' : 'opacity-40 pointer-events-none'}>
+        <MonthDayYear cal={calType} year={fy} midx={fm} day={fd} setYear={setFy} setMidx={setFm} setDay={setFd} />
+      </div>
+
+      <label className="flex items-center gap-2 cursor-pointer text-sm mt-4 mb-2">
+        <input type="checkbox" className="w-4 h-4 accent-[var(--gold)]" checked={useTo} onChange={(e) => setUseTo(e.target.checked)} />
+        <span>To</span>
+      </label>
+      <div className={useTo ? '' : 'opacity-40 pointer-events-none'}>
+        <MonthDayYear cal={calType} year={ty} midx={tm} day={td} setYear={setTy} setMidx={setTm} setDay={setTd} />
+      </div>
+
+      <div className="flex justify-end gap-2 mt-4">
+        <Button variant="danger" onClick={() => { onApply(null); onClose(); }}>Clear filter</Button>
+        <Button variant="ghost" onClick={onClose}>Cancel</Button>
+        <Button variant="accent" onClick={apply}>Apply</Button>
+      </div>
+    </Modal>
+  );
+}
+
+export default function TimelineModals({ modal, onClose, onOpen, tl, dateRange, onApplyRange }) {
   // Resolve the freshest event for view/edit modals.
   const ev = modal?.data ? tl.db.events.find((e) => e.id === modal.data.id) || modal.data : null;
   return (
@@ -328,6 +404,7 @@ export default function TimelineModals({ modal, onClose, onOpen, tl }) {
       <SetTodayModal open={modal?.type === 'set-today'} onClose={onClose} tl={tl} />
       <ViewEventModal open={modal?.type === 'view-event'} ev={ev} onClose={onClose} onOpen={onOpen} tl={tl} />
       <EditEventModal open={modal?.type === 'edit-event'} ev={ev} onClose={onClose} tl={tl} />
+      <DateRangeModal open={modal?.type === 'date-range'} onClose={onClose} tl={tl} range={dateRange} onApply={onApplyRange} />
     </>
   );
 }

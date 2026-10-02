@@ -13,3 +13,5 @@ export { default as Spinner }   from './Spinner';
 export { default as FormField } from './FormField';
 export { InfoCard, InfoRow }    from './InfoCard';
 export { FIELD_INPUT, FIELD_LABEL } from './ModalField';
+export { default as Markdown }  from './Markdown';
+export { renderMd }             from './renderMarkdown';

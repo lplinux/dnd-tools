@@ -99,6 +99,26 @@ Private notes for the player's eyes only. Never shown on the public share page.
 
 ---
 
+### 📔 Diary
+
+Your own session diary, private to you. Your DM can read it; no other player can, and nobody but
+you can edit or delete an entry. Entries can be filed into **categories** of your choosing
+(*Session notes*, *Theories*, *People we met*…), and the list groups by them — click a group
+heading to collapse it.
+
+The DM sees this same tab on your sheet, read-only, and all players' diaries together in the
+Diary module.
+
+### Printing the sheet
+
+**PDF** in the header prints the whole character — story, traits, relationships, public and
+private info, the DM notes you are allowed to see — and then **your diary, starting on a fresh
+page**, so the sheet and the journal can be separated once printed. The diary section appears
+only when there is something in it.
+
+The **Stats Sheet** tab has its own 🖨 button, which prints the stat block alone in its parchment
+design.
+
 ### 📜 DM Notes
 
 Notes the DM keeps against a character, each with a visibility toggle:
@@ -120,6 +140,8 @@ hidden note, so nothing is hidden in the browser only.
 
 ### Who can export
 
+The file is named `character-<campaign>-<character>-<date>.json`.
+
 | Role | What is included |
 |---|---|
 | DM / Admin | `scope: 'full'` — everything: `private_info`, **all** DM notes (hidden + visible) and **all** relationships |
@@ -131,7 +153,7 @@ hidden note, so nothing is hidden in the browser only.
 
 - **Players tab → ⬆ Import** on a player's row — the direct route. Pick the `.json`, confirm, done;
   the target player is the row you clicked, so there is no target prompt.
-- **Sidebar → ⬆ Import** (the general import hub) — accepts any of the four export types. For a
+- **Sidebar → ⬆ Import** (the general import hub) — accepts any of the five export types. For a
   `pc-sheet` file it asks which player to assign it to.
 
 The PC Sheet page keeps **Export** only (its Import button was removed).
@@ -213,7 +235,10 @@ reading — so they will not clear anything.
     "spell_ability": "int | wis | cha",
     "slot_reset":    "Long Rest | Short Rest",
 
-    "hp":     "string or number",
+    "hp":          "string or number — CURRENT hit points",
+    "max_hp":      "string or number — maximum hit points",
+    "temp_hp":     "string or number — temporary hit points, blank when unused",
+    "temp_max_hp": "string or number — change to the maximum, blank when unused",
     "ac":     "string or number",
     "speed":  "string",
     "senses": "string",

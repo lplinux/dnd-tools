@@ -18,7 +18,7 @@
 import { useEffect, useRef, useState } from 'react';
 
 import AppHeader from '@/components/layout/AppHeader';
-import { Button } from '@/components/ui';
+import { Button, Modal, FIELD_INPUT, FIELD_LABEL } from '@/components/ui';
 import SrdCombobox from '@/components/SrdCombobox';
 import SrdInfo, { useSrdIndex } from '@/components/SrdInfo';
 import { getClass, getMonster, getSpecies, getSubclass, loadEntries, toSlug } from '@/api/srd';
@@ -124,6 +124,18 @@ export default function NpcSheet() {
           skillProfs, cycleSkill, tags, addTag, removeTag,
           spellNames, setSpellName, usedSlots, toggleSlot,
           legRes, toggleLegRes, clearSheet, applySrd, collectSheet, populateSheet } = sheet;
+
+  // HP is edited in a dialog rather than inline, so the stats bar can show the
+  // effective totals without any box being both a derived readout and an input.
+  const [hpModal, setHpModal] = useState(false);
+  // Parsed leniently: these are free-text boxes, so "12", "+12" and "-4" all have
+  // to read sensibly, and anything unparseable counts as 0 rather than colouring
+  // the readout on nonsense.
+  const num = (v) => { const n = parseInt(String(v ?? '').trim(), 10); return Number.isFinite(n) ? n : 0; };
+  const curNum = num(fields.hp);
+  const maxNum = num(fields.maxHp);
+  const tempHpNum = num(fields.tempHp);
+  const tempMaxNum = num(fields.tempMaxHp);
 
   // The spell table shows when a caster type is chosen; the caster controls in
   // the header show whenever the class is a spellcaster (mirrors the original).
@@ -485,7 +497,48 @@ export default function NpcSheet() {
 
           {/* ── CORE STATS ── */}
           <div className="stats-bar">
-            <div className="cs"><span className="cs-lbl">HP</span><input type="text" placeholder="0" {...bind('hp')} /></div>
+            {/* HP reads out as Current/Max, where "current" is the EFFECTIVE
+                total (current + temporary) and "max" the effective maximum.
+                Both are derived and read-only: editing happens in the Manage HP
+                dialog, so there is one place to change a value rather than two
+                that can disagree. Green means a temporary value is in play. */}
+            <div className="cs">
+              <span className="cs-lbl">
+                HP
+                <button
+                  type="button"
+                  className="cs-add no-print"
+                  title="Manage HP — current, max and temporary"
+                  onClick={() => setHpModal(true)}
+                >
+                  ✎
+                </button>
+              </span>
+              <button type="button" className="hp-readout" onClick={() => setHpModal(true)}
+                title="Manage HP — current, max and temporary">
+                <span className={tempHpNum > 0 ? 'hp-temp' : undefined}>
+                  {fields.hp === '' ? '—' : curNum + tempHpNum}
+                </span>
+                <span className="hp-sep">/</span>
+                <span className={tempMaxNum !== 0 ? 'hp-temp' : undefined}>
+                  {fields.maxHp === '' ? '—' : maxNum + tempMaxNum}
+                </span>
+              </button>
+            </div>
+            <div className="cs">
+              <span className="cs-lbl">TEMP HP</span>
+              <button type="button" className={`hp-readout${tempHpNum > 0 ? ' hp-temp' : ''}`}
+                onClick={() => setHpModal(true)} title="Manage HP">
+                {fields.tempHp === '' ? '—' : fields.tempHp}
+              </button>
+            </div>
+            <div className="cs">
+              <span className="cs-lbl">TEMP MAX HP</span>
+              <button type="button" className={`hp-readout${tempMaxNum !== 0 ? ' hp-temp' : ''}`}
+                onClick={() => setHpModal(true)} title="Manage HP">
+                {fields.tempMaxHp === '' ? '—' : fields.tempMaxHp}
+              </button>
+            </div>
             <div className="cs"><span className="cs-lbl">AC</span><input type="text" placeholder="0" {...bind('ac')} /></div>
             <div className="cs"><span className="cs-lbl">SPEED</span><input type="text" placeholder="30 ft" {...bind('speed')} /></div>
             <div className="cs"><span className="cs-lbl">PROF BONUS</span><input className="derived" type="text" readOnly value={derived.profBonus} /></div>
@@ -648,6 +701,40 @@ export default function NpcSheet() {
 
         </div>
       </main>
+
+      {/* Manage HP — one place to set all four values. A dialog rather than the
+          old inline expansion: the stats bar can then show effective totals
+          without a box having to be both a derived readout and an input. */}
+      <Modal open={hpModal} onClose={() => setHpModal(false)} onSubmit={() => setHpModal(false)} title="❤️ Manage HP">
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+          <div>
+            <label className={FIELD_LABEL}>Current HP</label>
+            <input className={FIELD_INPUT} type="text" placeholder="0" autoFocus {...bind('hp')} />
+          </div>
+          <div>
+            <label className={FIELD_LABEL}>Max HP</label>
+            <input className={FIELD_INPUT} type="text" placeholder="0" {...bind('maxHp')} />
+          </div>
+          <div>
+            <label className={FIELD_LABEL}>Temp HP</label>
+            <input className={FIELD_INPUT} type="text" placeholder="0" {...bind('tempHp')} />
+          </div>
+          <div>
+            <label className={FIELD_LABEL}>Temp Max HP</label>
+            <input className={FIELD_INPUT} type="text" placeholder="e.g. -4" {...bind('tempMaxHp')} />
+          </div>
+        </div>
+        <p className="text-[0.7rem] text-text-muted mt-3">
+          The sheet shows <strong>current + temp</strong> over <strong>max + temp max</strong>, in
+          green while either temporary value is set.
+        </p>
+        <div className="flex justify-end gap-2 mt-4">
+          <Button variant="ghost" onClick={() => { setField('tempHp', ''); setField('tempMaxHp', ''); }}>
+            Clear temporary
+          </Button>
+          <Button variant="accent" onClick={() => setHpModal(false)}>Done</Button>
+        </div>
+      </Modal>
     </>
   );
 }

@@ -42,8 +42,10 @@ by Express's catch-all route (with `/api/*` reserved for the API).
 | `/pc-public/:token` | Shared read-only PC Sheet | Public (token) |
 | `/journey-map-public/:token` | Shared Journey Map | Public (token) |
 | `/timeline-public/:token` | Shared Timeline | Public (token) |
+| `/diary-public/:token` | Shared Campaign Diary | Public (token) |
 | `/timeline` | Campaign Timeline | DM, Player |
 | `/pc-sheet` | Player Character Sheet | DM, Player |
+| `/diary` | Campaign Diary (+ every player's diary) | DM |
 | `/manage-campaigns` | Campaign Manager | DM |
 | `/journey-map` | Journey Path Map | DM |
 | `/pdf-viewer` | In-browser PDF Viewer | DM |
@@ -268,7 +270,8 @@ dnd-tools/
 │   ├── pdf-viewer/README.md
 │   ├── split-view/README.md
 │   ├── timeline/README.md
-│   └── user-panel/README.md
+│   ├── user-panel/README.md
+│   └── diary/README.md
 │
 ├── public/
 │   └── app/                      # Vite build output (gitignored) — the only thing here

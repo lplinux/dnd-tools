@@ -101,6 +101,21 @@ campaign_timeline_shares
   id, campaign_id (FK UNIQUE), token (UNIQUE), created_at
 ```
 
+### Diary
+
+```
+campaign_diary_entries
+  id, campaign_id (FK campaigns), created_by (FK users), title, body,
+  session_no, session_date, status ('draft'|'published'), published_at,
+  created_at, updated_at
+player_diary_entries
+  id, campaign_id (FK campaigns), player_id (FK campaign_players),
+  created_by (FK users), title, body, session_no, session_date,
+  created_at, updated_at
+campaign_diary_shares
+  id, campaign_id (FK campaigns, UNIQUE), token (UNIQUE), created_at
+```
+
 ### Player Characters
 
 ```
@@ -230,7 +245,7 @@ When a waypoint is drawn on or snapped to an existing map pin, `locId` is set au
 | GET | `/api/campaigns/:id/meta` | dm/player | Get campaign meta (today marker, etc.) |
 | PUT | `/api/campaigns/:id/meta` | dm | Update campaign meta |
 | GET | `/api/campaigns/:id/timelines` | dm | List player timelines |
-| GET | `/api/campaigns/:id/public-token` | dm/admin | Get/create public share token |
+| GET | `/api/campaigns/:id/public-token` | dm/admin | Get/create public share token (whole campaign) |
 | PUT | `/api/campaigns/:id/players/:pid/reassign` | dm | Reassign a player to another user |
 | PUT | `/api/campaigns/:id/locations/:lid/image` | dm | Set/clear a location image |
 | PATCH | `/api/campaigns/:id/locations/:lid/visibility` | dm | Toggle location visibility (cascades) |
@@ -253,6 +268,21 @@ When a waypoint is drawn on or snapped to an existing map pin, `locId` is set au
 | PUT | `/api/player-timelines/:timelineId/entries/:eid` | auth | Edit entry |
 | DELETE | `/api/player-timelines/:timelineId/entries/:eid` | auth | Delete entry |
 | DELETE | `/api/player-timelines/:timelineId` | auth | Delete timeline |
+| PATCH | `/api/player-timelines/:timelineId/entries/:entryId/visibility` | dm/admin | Reveal/hide one event to players |
+| PATCH | `/api/timeline-party/:campaignId/:entryId/visibility` | dm/admin | Same, for a party event |
+| GET | `/api/player-timelines/:timelineId/public-token` | dm/admin | Share token scoped to ONE timeline |
+
+**Event visibility.** `player_timeline_entries.visible_to_players` gates whether a
+non-DM ever receives an event. It is filtered in SQL on every read path — the
+per-timeline list, the party list and the public share — so a hidden event never
+reaches the browser rather than merely going unrendered. A DM's new event starts
+**hidden**; an event a player writes on their own timeline starts visible, since
+defaulting that to hidden would stop a player seeing what they just typed.
+
+**Two kinds of share token.** `campaign_timeline_shares` grants the whole
+campaign (every player's timeline plus party events); `player_timeline_shares`
+grants exactly one timeline and deliberately excludes party events, which are
+campaign-wide. Both are resolved by `GET /api/timeline-public/:token`.
 | GET | `/api/timeline-party/:cid` | auth | Party (campaign-wide) events |
 | POST/PUT/DELETE | `/api/timeline-party/:cid[/:entryId]` | dm/admin | Party event CRUD |
 | GET | `/api/timeline-public/:token` | — | Public read-only data |
@@ -260,6 +290,72 @@ When a waypoint is drawn on or snapped to an existing map pin, `locId` is set au
 > The former `/api/timeline-private/*` group was removed: the DM's private
 > journal is just another `player_timelines` row, reached through the endpoints
 > above.
+
+### Diary
+
+| Method | Path | Role | Description |
+|---|---|---|---|
+| GET/POST | `/api/campaign-diary/:campaignId` | dm/admin | List / create campaign diary entries |
+| PUT/DELETE | `/api/campaign-diary/:campaignId/entries/:entryId` | dm/admin | Edit / delete an entry |
+| PATCH | `/api/campaign-diary/:campaignId/entries/:entryId/status` | dm/admin | draft ↔ published |
+| GET/DELETE | `/api/campaign-diary/:campaignId/share` | dm/admin | Get (stable) / revoke the public token |
+| GET | `/api/campaign-diary/:campaignId/export` | dm/admin | Standalone `type: 'campaign-diary'` bundle |
+| POST | `/api/campaign-diary/:campaignId/import` | dm/admin | **Replaces** the campaign's diary from a bundle |
+| GET | `/api/player-diary/:campaignId/all` | dm/admin | Every player's diary, read-only |
+| GET | `/api/player-diary/:campaignId/:playerId` | auth | One player's diary (owner or their DM) |
+| POST/PUT/DELETE | `/api/player-diary/:campaignId/:playerId[/entries/:entryId]` | auth | Owner only |
+| GET | `/api/diary-public/:token` | — | Published campaign entries, read-only |
+| GET | `/api/campaign-diary/:campaignId/roster` | dm/admin | DM name + characters, portraits and public bios (printed book) |
+| GET | `/api/diary-public/:token/roster` | — | Same, for a reader printing from the share link |
+
+**Two tables, not one.** `campaign_diary_entries` and `player_diary_entries` are separate so the
+public handler's SQL *names* the campaign table and nothing else — leaking a player's private
+diary to an anonymous reader would require naming the other table, not forgetting a `WHERE`
+clause. `player_timeline_entries` is the counter-example: its merged shape forces an `is_party`
+check on every read path.
+
+**Read/write asymmetry.** Reads of a player diary reuse `canAccessTimeline` (owner OR the
+campaign's DM OR admin). Writes use `ownsPlayer` instead, because `canAccessTimeline` returns true
+for the DM and a diary the UI calls "private" should not be editable by someone else. Entry
+mutations are scoped `WHERE id=$n AND player_id=$n AND campaign_id=$n` — the guard only proves the
+caller owns the player they *named*, not that they own the entry id.
+
+**Draft state.** New campaign entries are drafts because the column default says so; the create
+handler never reads `status` from the body. `published_at` is set on first publish and preserved
+across unpublish/republish. The public endpoint filters `status='published'` in SQL and selects an
+explicit column list, so a DM-only column added later cannot leak by merely existing. It is also
+session-blind, unlike the public journey map, so what it returns is reproducible with a
+cookie-less `curl`.
+
+**Export file names.** Every module's download is named by one helper,
+`api/downloadBundle.js`: `<module>[-<campaign>][-<name>]-<YYYY-MM-DD>.json`, e.g.
+`character-leruhy-teudis-2026-10-02.json`. It also carries the Blob/anchor plumbing that was
+previously copy-pasted into five hooks, each with its own idea of a filename. The date is local,
+not UTC, so a file saved late in the evening is not dated tomorrow. The module prefix is cosmetic —
+the importer routes on the `type` field inside the bundle, so renaming a file changes nothing.
+
+**Roster.** The printed book credits the table on its title page and carries an annex of
+character bios. That data is a separate fetch, not part of the diary payload: portraits are
+base64 and have no business loading on every page view of a diary nobody is printing. It returns
+`public_info` only — the same material the public PC sheet already exposes.
+
+**Grouping.** `campaign_diary_entries.chapter` and `player_diary_entries.category` are free
+`VARCHAR(120)` text, not a lookup table: both are the author's own filing system, and a fixed
+vocabulary would be wrong for somebody within a week. The UI offers a datalist of values already
+in use. Groups render in first-appearance order, so the entry ordering decides the arc.
+
+**Standalone export/import.** The diary has its own bundle (`type: 'campaign-diary'`, v1)
+alongside riding in the full campaign export, so it can be backed up or handed over on its own
+without a campaign restore losing it either. The import **replaces** rather than merges — one
+`DELETE … WHERE campaign_id=$1` then re-insert, inside a transaction — which is what stops a
+re-import doubling the entries, and makes it the only destructive branch in the import hub. Entry
+status travels with the bundle, since replace means restore. The share token is never exported:
+it is bound to the campaign it was minted for. The route validates `bundle.type` server-side
+*before* the delete, not just in the hub, because this endpoint is reachable directly.
+
+**`campaign_diary_shares`** is a third share table beside the timeline and journey-map ones, with
+its own token namespace. Unlike journey maps it is *stable* on re-request (the DM presses Share to
+re-copy a link, not to rotate it); revocation is a separate, deliberate `DELETE`.
 
 ### Player Characters
 

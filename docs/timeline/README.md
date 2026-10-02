@@ -16,13 +16,26 @@ A server-backed timeline tool for D&D campaigns. Tracks events for multiple play
 - **Three themes** — Dark, Light, Slate (persisted in localStorage)
 - **Table view** — chronological table with CSV export
 - **Search** — instant search across titles, descriptions, locations, and player names
+- **Filter by date** — ⏳ in the zoom row sets a From/To window; either bound may be left off for
+  an open end. Events are kept when their span *overlaps* the window, so a long journey already
+  under way still appears. A toolbar chip shows the range and how many events it keeps, and clears
+  it in one click. Fit frames the filtered set. The filter is view-only and never changes stored
+  data
 - **Player filter** — live search box in the Players sidebar, New Event player picker, and Edit Event modal to quickly find actors in large campaigns
 - **Drag to move events** — drag any event circle to a new date or column
 - **Location column reorder** — drag location names in the sidebar to reorder columns
 - **Private player timelines** — each player has their own private journal, viewable by the DM in a combined view. Players (and the DM) create their own timelines with the **＋ New** button in the campaign selector bar — this is available even before you have any timeline yet (an empty player also gets a **＋ Create your first timeline** button in the main area)
 - **Party events (DM)** — flag a new event as a 🌍 **Party event** for the whole group; it's stored once and shown in a shared **Party lane** in the combined + public views and alongside each player's own timeline
 - **Drives the Journey Map** — an event's **location + date** feed the map's derived movement paths: party events (and any event involving 3+ players) build the 🌍 Party path, fewer-player events build each involved player's own 👤 path, and events tagging an NPC build that NPC's path, in date order
-- **Public share link** — generate a read-only token to share the timeline with players
+- **Hide/reveal events (DM)** — every event carries a visibility flag. A **DM-authored event starts
+  hidden**; the 👁 beside it in the Events list reveals it to the players when the party learns of
+  it. Hidden events are filtered out server-side, so they never reach a player's browser or the
+  public link. An event a *player* writes on their own timeline starts visible — hiding it from
+  them would make no sense
+- **Public share link** — 🔗 Share copies a read-only link. In the combined view it shares the
+  **whole campaign**; with a single timeline selected it shares **only that timeline** (a separate
+  token that excludes other players' timelines and campaign-wide party events). The confirmation
+  names which one you copied, because the two links look identical
 
 ## Usage
 
@@ -125,7 +138,8 @@ the browser's `localStorage`.
 ### Export a timeline
 
 With a specific named timeline selected in the campaign selector bar, click **⬇** to download it as a
-portable `type:'timeline'` `.json`. Actors are stored by **name + kind** (player / npc / relationship)
+portable `type:'timeline'` file, named `timeline-<campaign>-<timeline>-<date>.json`. Actors are
+stored by **name + kind** (player / npc / relationship)
 and locations by name, so the file can be re-imported into any campaign.
 
 ```json

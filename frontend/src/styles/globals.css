@@ -275,3 +275,18 @@ body {
   main { flex: none !important; display: block !important; }
   body { background: white !important; color: black !important; }
 }
+
+/* ── Diary reading view ─────────────────────────────────────── */
+/* The public diary is read for minutes at a time, so it gets a larger size and
+   a looser rhythm than the app's dense panels. renderMd bakes its own classes
+   into the HTML, so these reach the elements by descent rather than by prop. */
+.diary-read            { font-size: 1.02rem; line-height: 1.7; }
+.diary-read p          { margin-bottom: .85em; }
+.diary-read h1,
+.diary-read h2         { margin-top: 1.4em; }
+/* ### is the in-entry sub-heading. It must read as subordinate to the session
+   title above it, not compete with it. */
+.diary-read h3         { margin-top: 1.3em; font-size: .78rem; opacity: .95; }
+.diary-read blockquote { margin: 1em 0; }
+.diary-read li         { margin-bottom: .3em; }
+.diary-read strong     { color: var(--text); font-weight: 600; }

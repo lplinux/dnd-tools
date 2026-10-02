@@ -127,6 +127,37 @@
 }
 .npc-sheet .cs input.derived { color: var(--red2); font-weight: 700; }
 
+/* HP / Temp HP / Temp Max HP are readouts, not inputs — editing happens in the
+   Manage HP dialog — so they are buttons styled to sit flush with the real
+   fields beside them. Green marks a value a temporary effect is changing. */
+.npc-sheet .cs .hp-readout {
+  display: block; width: 100%; padding: 0;
+  border: none; border-bottom: 2px solid var(--rule); background: none;
+  font-family: var(--fd); font-size: 1rem; font-weight: 600; text-align: center;
+  color: var(--ink); cursor: pointer;
+}
+.npc-sheet .cs .hp-readout:hover { border-bottom-color: var(--ink2); }
+.npc-sheet .cs .hp-readout .hp-sep { color: var(--muted); margin: 0 1px; font-weight: 400; }
+/* On the combined box only the affected half turns green, so a character with
+   temp HP but an untouched maximum does not read as though both changed. */
+.npc-sheet .cs .hp-readout .hp-temp,
+.npc-sheet .cs .hp-readout.hp-temp { color: #1d6b32; }
+.npc-sheet .cs .hp-readout.hp-temp { border-bottom-color: #1d6b32; }
+
+/* Print: a button renders with no affordance on paper, but keep it legible. */
+@media print {
+  .npc-sheet .cs .hp-readout { border-bottom-width: 1px; cursor: default; }
+}
+/* The +/− that reveals TEMP HP / TEMP MAX HP beside the HP box. Sits inside the
+   label, so it must not inherit the label's block display or push the box down. */
+.npc-sheet .cs-add {
+  display: inline-block; margin-left: 3px; padding: 0 3px;
+  border: 1px solid var(--rule); border-radius: 2px; background: none;
+  font-family: var(--fd); font-size: 9px; line-height: 1.1; font-weight: 700;
+  color: var(--muted); cursor: pointer; vertical-align: middle;
+}
+.npc-sheet .cs-add:hover { color: var(--ink); border-color: var(--ink2); }
+
 /* Ability scores */
 .npc-sheet .ab-grid { display: grid; grid-template-columns: repeat(6, 1fr); gap: 6px; margin-bottom: 6px; }
 .npc-sheet .ab-col { background: var(--parch2); border: 1.5px solid var(--rule); padding: 6px 4px; text-align: center; }

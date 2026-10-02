@@ -55,15 +55,24 @@ export default function PrivSelBar({ tl }) {
         <button
           className="btn sm gld"
           style={{ marginLeft: 'auto' }}
-          title="Copy a public read-only link to this campaign's combined timeline"
+          title={tl.combined || !tl.timelineId
+            ? "Copy a public read-only link to this campaign's combined timeline"
+            : 'Copy a public read-only link to THIS timeline only'}
           onClick={async () => {
-            const url = await tl.getShareUrl();
-            if (!url) return;
-            try { await navigator.clipboard.writeText(url); window.alert(`Public link copied:\n${url}`); }
-            catch { window.prompt('Public link:', url); }
+            const share = await tl.getShareUrl();
+            if (!share?.url) return;
+            // Name the scope in the confirmation: the two links look identical,
+            // and handing out the campaign-wide one by mistake shares every
+            // player's timeline.
+            const what = share.scope === 'timeline'
+              ? 'this timeline only'
+              : 'the whole campaign (every player’s timeline)';
+            const msg = `Public link copied — shows ${what}:\n${share.url}`;
+            try { await navigator.clipboard.writeText(share.url); window.alert(msg); }
+            catch { window.prompt(`Public link — shows ${what}:`, share.url); }
           }}
         >
-          🔗 Share
+          🔗 Share {tl.combined || !tl.timelineId ? 'campaign' : 'timeline'}
         </button>
       )}
 

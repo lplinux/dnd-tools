@@ -16,6 +16,8 @@ export const timelineApi = {
   addEntry:      (tlId, d)       => client.post(`/player-timelines/${tlId}/entries`, d),
   updateEntry:   (tlId, eid, d)  => client.put(`/player-timelines/${tlId}/entries/${eid}`, d),
   removeEntry:   (tlId, eid)     => client.del(`/player-timelines/${tlId}/entries/${eid}`),
+  setEntryVisibility: (tlId, eid, visible) =>
+    client.patch(`/player-timelines/${tlId}/entries/${eid}/visibility`, { visible }),
 
   // ── Private (DM/admin) ────────────────────────────────
 
@@ -24,7 +26,12 @@ export const timelineApi = {
   partyAdd:    (cid, d)       => client.post(`/timeline-party/${cid}`, d),
   partyUpdate: (cid, eid, d)  => client.put(`/timeline-party/${cid}/${eid}`, d),
   partyRemove: (cid, eid)     => client.del(`/timeline-party/${cid}/${eid}`),
+  setPartyVisibility: (cid, eid, visible) =>
+    client.patch(`/timeline-party/${cid}/${eid}/visibility`, { visible }),
 
   // ── Public share ──────────────────────────────────────
   publicData: (token) => client.get(`/timeline-public/${token}`),
+  // Token scoped to ONE timeline, as opposed to campaignsApi.getPublicToken,
+  // which shares every timeline in the campaign.
+  timelinePublicToken: (tlId) => client.get(`/player-timelines/${tlId}/public-token`),
 };

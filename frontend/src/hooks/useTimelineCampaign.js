@@ -23,6 +23,7 @@ import { pcApi } from '@/api/pc';
 import { useAuth } from '@/hooks/useAuth';
 import { doyFromForm, parseDuration } from '@/data/calendar';
 import { buildCombinedDb } from '@/pages/Timeline/combined';
+import { downloadBundle } from '@/api/downloadBundle';
 
 const PLAYER_PALETTE = ['#c0392b', '#2980b9', '#27ae60', '#8e44ad', '#e67e22', '#16a085', '#d35400', '#2c3e50', '#7f8c8d', '#f39c12', '#1abc9c', '#e74c3c'];
 const WORLD = '🌍 World Timeline';
@@ -103,7 +104,8 @@ export function useTimelineCampaign() {
   const loadActors = useCallback(async (cid, playerId, isDmTimeline, dmName) => {
     const allPlayers = await campaignsApi.listPlayers(cid).catch(() => []);
     const self = (allPlayers || []).find((p) => String(p.id) === String(playerId));
-    const { relationships: rels = [] } = (await pcApi.listRelationships(playerId).catch(() => ({}))) || {};
+    const { relationships: rels = [], cross_connections: cross = [] } =
+      (await pcApi.listRelationships(playerId).catch(() => ({}))) || {};
     const selfName = self ? self.player_name : (isDmTimeline ? (dmName || 'DM') : 'You');
 
     const actors = [{ id: `self_${playerId}`, name: selfName, color: PLAYER_PALETTE[0] }];
@@ -124,6 +126,39 @@ export function useTimelineCampaign() {
       const npcs = await campaignsApi.listNpcs(cid).catch(() => []);
       (npcs || []).forEach((n, i) => actors.push({ id: `npc_${n.id}`, name: `🎭 ${n.name}`, color: PLAYER_PALETTE[(off + i) % PLAYER_PALETTE.length] }));
     }
+
+    // The far end of each cross-connection becomes an actor too. Without this a
+    // player could see an event tagged with a connected NPC or another party
+    // member but had no row for them — nothing to search, filter, solo or hide,
+    // and the event's colour dot resolved to nothing. The API already returns
+    // only `is_public` cross-connections to a player, so this adds exactly the
+    // ones the DM has shared and never leaks a hidden link.
+    const seenIds = new Set(actors.map((a) => a.id));
+    const endpointActorId = (type, id) => (
+      type === 'relationship' ? `rel_${id}`
+        : type === 'player' ? `cp_${id}`
+          : type === 'npc' ? `npc_${id}`
+            : null
+    );
+    (cross || []).forEach((row) => {
+      [
+        [row.from_entity_type, row.from_entity_id, row.from_rel_name || row.from_entity_player_name || row.from_npc_name],
+        [row.to_entity_type, row.to_entity_id, row.to_rel_name || row.to_entity_player_name || row.to_npc_name],
+      ].forEach(([type, id, name]) => {
+        const aid = endpointActorId(type, id);
+        // Skip the player themselves — they are already `self_<id>`, and adding
+        // `cp_<id>` for the same person would list them twice under two names.
+        if (!aid || !name || seenIds.has(aid)) return;
+        if (type === 'player' && String(id) === String(playerId)) return;
+        seenIds.add(aid);
+        actors.push({
+          id: aid,
+          name: `🔗 ${name}`,
+          color: PLAYER_PALETTE[actors.length % PLAYER_PALETTE.length],
+        });
+      });
+    });
+
     setPrivPlayers(actors);
   }, []);
 
@@ -228,15 +263,13 @@ export function useTimelineCampaign() {
     if (!timelineId) return;
     try {
       const bundle = await timelineApi.exportTimeline(timelineId);
-      const name = (timelines.find((t) => String(t.id) === String(timelineId))?.name) || 'timeline';
-      const blob = new Blob([JSON.stringify(bundle, null, 2)], { type: 'application/json' });
-      const a = document.createElement('a');
-      a.href = URL.createObjectURL(blob);
-      a.download = `${name.replace(/\s+/g, '-').toLowerCase()}.json`;
-      a.click();
-      URL.revokeObjectURL(a.href);
+      downloadBundle(bundle, {
+        module: 'timeline',
+        campaign: campaigns.find((c) => String(c.id) === String(campaignId))?.name,
+        name: timelines.find((t) => String(t.id) === String(timelineId))?.name,
+      });
     } catch (e) { setStatus(e.message || 'Export failed'); }
-  }, [timelineId, timelines]);
+  }, [timelineId, timelines, campaigns, campaignId]);
 
   // ── Derived db ─────────────────────────────────────────────
   const todayAbs = meta.today_marker != null && !Number.isNaN(parseInt(meta.today_marker)) ? parseInt(meta.today_marker) : null;
@@ -262,6 +295,9 @@ export function useTimelineCampaign() {
       durationDays: e.duration_days || 1,
       playerIds: (e.player_ids && e.player_ids.length) ? e.player_ids : [`self_${privPlayerId}`],
       manualLinks: (e.manual_links || []).map(String),
+      // The API only ever sends a player events they may see, so for a player
+      // this is always true — it drives the DM's reveal/hide control.
+      visibleToPlayers: e.visible_to_players !== false,
     }));
     // Party events show alongside the player's own, in a shared "Party" lane.
     if (partyEntries.length) {
@@ -277,6 +313,7 @@ export function useTimelineCampaign() {
         playerIds: ['party'],
         manualLinks: [],
         isParty: true,
+        visibleToPlayers: e.visible_to_players !== false,
       }));
     }
     return { players, locations, locationOrder: [...locations], events, todayAbs };
@@ -359,12 +396,39 @@ export function useTimelineCampaign() {
 
   const moveEventToAbsDay = useCallback(() => {}, []); // handled via updateEvent(year/doy/loc) from drag
 
-  // Stable public share link for the whole campaign's combined timeline.
+  // Share link for whatever is actually on screen: the campaign-wide token in the
+  // combined view, and a token scoped to just that timeline when one is selected.
+  // The link used to be the campaign one either way, so sharing "this player's
+  // timeline" silently handed over every timeline in the campaign.
   const getShareUrl = useCallback(async () => {
     if (!campaignId) return null;
-    const r = await campaignsApi.getPublicToken(campaignId).catch(() => null);
-    return r?.token ? `${window.location.origin}/timeline-public/${r.token}` : null;
-  }, [campaignId]);
+    const scoped = !combined && timelineId;
+    const r = scoped
+      ? await timelineApi.timelinePublicToken(timelineId).catch(() => null)
+      : await campaignsApi.getPublicToken(campaignId).catch(() => null);
+    if (!r?.token) return null;
+    return {
+      url: `${window.location.origin}/timeline-public/${r.token}`,
+      scope: scoped ? 'timeline' : 'campaign',
+    };
+  }, [campaignId, combined, timelineId]);
+
+  // DM-only: reveal or hide one event from the players.
+  const toggleEventVisibility = useCallback(async (eventId, visible) => {
+    const partyId = String(eventId).startsWith('party_') ? String(eventId).slice(6) : null;
+    try {
+      if (partyId) {
+        await timelineApi.setPartyVisibility(campaignId, partyId, visible);
+        setPartyEntries((prev) => prev.map((e) => (String(e.id) === partyId ? { ...e, visible_to_players: visible } : e)));
+      } else {
+        await timelineApi.setEntryVisibility(timelineId, eventId, visible);
+        setEntries((prev) => prev.map((e) => (String(e.id) === String(eventId) ? { ...e, visible_to_players: visible } : e)));
+      }
+    } catch (e) {
+      // Nothing optimistic to revert — the row is only patched on success.
+      setStatus(e.message);
+    }
+  }, [campaignId, timelineId]);
 
   // ── UI / visibility / derived selectors (mirror personal) ──
   const toggleSection = useCallback((k) => setUi((u) => ({ ...u, collapsed: { ...u.collapsed, [k]: !u.collapsed[k] } })), []);
@@ -394,7 +458,7 @@ export function useTimelineCampaign() {
     campaigns, campaignId, loadCampaigns, selectCampaign,
     playerOptions, playerSel, selectPlayerOption,
     timelines, timelineId, selectTimeline, createTimeline, deleteTimeline, exportTimeline,
-    status, isDM, privPlayerId, getShareUrl,
+    status, isDM, privPlayerId, getShareUrl, toggleEventVisibility,
     // combined (read-only all-players) view
     combined, tree: combined ? (combinedDb?.tree || []) : [], hiddenTimelines, toggleTimeline,
     // shared interface

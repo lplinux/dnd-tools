@@ -9,7 +9,254 @@ Only the 0.x entries correspond to GitHub releases.
 
 ## [4.20.0] – Unreleased — Linting, tests, and indexes on every foreign key we query
 
+### New module — 📔 Diary
+
+- **Every export is named the same way**, and by one helper rather than five copies:
+
+  ```
+  <module>[-<campaign>][-<name>]-<YYYY-MM-DD>.json
+  campaign-the-last-performance-2026-10-02.json
+  character-leruhy-teudis-2026-10-02.json
+  ```
+
+  Each of the five hooks previously had its own copy of the Blob/anchor dance and its own idea of
+  a filename — `teudis.json`, `journey-map-x.json`, `leruhy-campaign.json` — so a folder of
+  exports gave no clue what any of them were or when they were taken. The date matters most:
+  these are backups, and backups that cannot be ordered are hard to trust. It is the **local**
+  date, not UTC, so a file saved late in the evening is not dated tomorrow.
+  - Accents are folded rather than dropped (`Ailyssë` → `ailysse`), names are capped so a long
+    title cannot blow up the filename, and absent parts are omitted instead of leaving double
+    hyphens.
+  - The module prefix is cosmetic: the importer routes on the `type` field inside the bundle, so
+    renaming a download changes nothing.
+  - 9 tests cover the naming, including the local-vs-UTC date boundary and the accent folding.
+
+- **The PC Sheet's PDF now includes the player's diary, starting on a fresh page** — so the sheet
+  and the journal can be separated once printed. It is the only section that forces a break, and
+  it renders only when there are entries: an empty one would cost a blank page, which is the exact
+  failure the old per-section breaks were removed for. Diary bodies are markdown rather than the
+  plain text the rest of the sheet holds, and an entry is allowed to break across pages (long
+  prose, orphan/widow protected) unlike the short blocks above it. The diary is fetched at print
+  time, since the sheet does not otherwise load it; a failure there costs the diary section, not
+  the printout.
+- The home tile is **Campaign Diary**, and sits beside Manage Campaigns.
+
+- **A player's diary moved onto their character sheet** (PC Sheet → 📔 Diary). It is part of the
+  character, and a player had no reason to visit a separate module that showed them nothing else —
+  the campaign diary there was never theirs to see. `/diary` is consequently **DM-only** now. The
+  DM reaches one player's diary from their sheet, read-only, or all of them from the module.
+- **Each player gets their own sub-tab** in the DM's Player Diaries view. Stacking every diary in
+  one scroll made it impossible to read any single one.
+- **Entries are compact cards in a grid** rather than full-width rows — a campaign runs to dozens,
+  and the list had become a scroll. A card carries enough to recognise an entry and opens the full
+  text on click, rather than expanding in place and reflowing the grid under the pointer.
+- **Draft/Published is one control, not a badge beside a button.** The state and the way to change
+  it were always the same thing; now the badge *is* the toggle. It stays a plain badge where the
+  view is read-only.
+- **Groups collapse**, individually or all at once. The component tracks which groups are *shut*
+  rather than which are open, so a group created later appears instead of hiding silently.
+- **The printed book credits the table and ends with an annex of the party** — the DM's name and
+  characters on the title page, then a portrait and public bio for each character at the back.
+  The roster is a separate fetch made only when printing: portraits are base64 and have no
+  business loading on every page view of a diary nobody is printing. It returns `public_info`
+  only, the same material the public PC sheet already exposes, and a failed fetch costs the annex
+  rather than the book.
+
+- **Fixed: publishing or unpublishing an entry returned a 500.** The status update used `$1` both
+  as the value for `status` and in a comparison, so Postgres inferred `varchar` from one and `text`
+  from the other and rejected the whole statement with *"inconsistent types deduced for parameter
+  $1"*. Reported as an unpublish bug; it was failing in **both** directions, and had simply never
+  been exercised because the imported entries arrived already published. Fixed with explicit
+  `::varchar` casts, verified against a real PostgreSQL including that `published_at` is still set
+  once on first publish and preserved across unpublish/republish.
+- **Diary entries are grouped.** The campaign diary by **chapter**, a player diary by **category** —
+  free text with a datalist of values already in use, so a new group is one keystroke away. Groups
+  render in first-appearance order (your session ordering decides the arc, not an alphabetical
+  sort), and ungrouped entries collect at the end rather than being hidden. A list that is entirely
+  ungrouped renders flat, without a pointless heading.
+- **The public diary reads a page at a time.** One entry per view, numbered jump buttons,
+  Previous/Next, and the page in the URL so a reader can bookmark or link the exact session being
+  discussed. Chapters show above the title.
+- **Better typography.** `###` is now the in-entry sub-heading, styled to sit clearly below the
+  session title instead of competing with it, and the reading view gets a larger size and looser
+  rhythm than the app's dense panels. In the printed book, an entry whose body opens with a single
+  italic line has it lifted into the header as a subtitle — left in the prose it became the first
+  paragraph and **the drop cap landed on it**, so a page opened with a giant "1" taken from
+  "16 - Eleint".
+
+- **The diary now has its own export file, and prints as a book.**
+  - **Standalone export/import.** `⬇ Export` on the Diary page downloads a
+    `type: 'campaign-diary'` bundle; importing goes through the usual Manage Campaigns hub. The
+    diary still rides in the full campaign bundle as well, so a campaign restore does not lose it
+    — the standalone file is for moving a diary on its own.
+  - **The diary import REPLACES rather than merges**, which makes it the only destructive branch
+    in the import hub. That is deliberate: a merge would double every entry on a second import of
+    the same file. It therefore asks first, and names real numbers — *"Replace this campaign's
+    diary with the 12 entries in this file? Its current 5 entries will be permanently deleted."* —
+    because "are you sure?" with no counts is not a decision anyone can actually make. The route
+    validates `bundle.type` **before** the delete and runs the whole thing in a transaction, and
+    it checks that server-side rather than trusting the hub, since the endpoint is reachable
+    directly.
+  - **⬆ Import on the Diary page too**, beside Export — the same shortcut the Players tab has for
+    PC sheets. The Manage Campaigns hub stays the general entry point; this is the one you reach
+    for when you are already looking at the diary you are about to replace. It carries the same
+    type check and the same counted confirmation.
+  - **🖨 Print book** — title page, contents, one session per page, Cinzel headings over Crimson
+    Text with a drop cap opening each entry. Published entries only, on the DM's page and on the
+    public link, so a reader can keep their own copy.
+
+- **The book prints from its own window, and that is the whole design.** Vite leaves a lazily
+  loaded route's stylesheet in the document after you navigate away, so an `@page` rule in a diary
+  stylesheet would silently become global and change the PC and NPC sheets' margins — and *naming*
+  the page to confine it is exactly the bug that produced blank first pages twice already. A
+  separate document has its own page context and cannot leak. It also drops three other traps for
+  free: no theme tokens in scope (nothing prints as a dark block), no dependence on the positional
+  `#root > div` un-clip chain, and no component mounting twice with live side effects.
+  - A happy side effect: `renderMd`'s Tailwind classes are inert in a document that never loads
+    the app's CSS, so the book stylesheet styles semantic elements instead of fighting `text-gold`.
+  - It waits on `document.fonts.ready` rather than guessing with a timeout — the fonts are
+    Google-hosted with `display=swap`, so printing too early renders the whole book in Georgia.
+    Nothing else in the repo does this yet.
+  - Deliberately **no** `break-inside: avoid` on an entry (long prose; forcing it whole leaves a
+    third of a page blank), **no** texture or opacity overlay (it makes the print engine rasterise
+    the text beneath it), and a `:first-of-type` guard so the first entry emits no leading blank page.
+  - **No page numbers or running headers.** Chrome implements neither `counter(page)` in `@page`
+    nor margin boxes, so they are not achievable from CSS here; the docs say so rather than
+    shipping something that silently prints nothing.
+  - 16 new tests cover the builder as a pure string: drafts never appear, a `<script>` in a title
+    or body comes out escaped, the first entry carries no page break, and a bad date does not
+    print "Invalid Date".
+
+- Fixed pre-existing doc drift: the campaign bundle was documented as v3 in four places while
+  `app.js` has been emitting v4.
+
+Session summaries, in two halves with deliberately different privacy.
+
+- **Campaign diary (DM).** Write-ups per session, with a **draft → published** state. Players
+  cannot see it in the app at all — not in a hidden tab, not in a request they could read. It
+  leaves the server only through a **public share link**, and only published entries do.
+- **Player diaries.** One per player, private to them. The campaign's DM can **read** them; no
+  other player can, and **nobody but the owner can write** them. That asymmetry is deliberate:
+  reads reuse `canAccessTimeline` (owner OR their DM OR admin), writes use a narrower
+  `ownsPlayer`, because a diary the UI calls private should not be editable by someone else.
+- **One public link per campaign**, stable on re-request so a link already pasted into Discord
+  keeps working — unlike journey-map shares, which rotate. Revoking is a separate, labelled action
+  that warns the old URL will stop opening.
+
+Three decisions worth recording, because each closes a leak by construction rather than by
+remembering to check:
+
+- **Two tables, not one with a nullable `player_id`.** The public handler's SQL *names*
+  `campaign_diary_entries`; leaking a player's private diary to an anonymous reader would require
+  naming the other table, not forgetting a `WHERE` clause. `player_timeline_entries` is the
+  counter-example — its merged shape forces an `is_party` check on every read path and an
+  `AND false` in the public handler.
+- **Drafts are filtered in SQL**, and the public endpoint selects an **explicit column list**
+  rather than `*`, so a DM-only column added to the table later cannot start leaking merely by
+  existing. It is also session-blind, so what the link returns is reproducible with a cookie-less
+  `curl`.
+- **Entry mutations are scoped `WHERE id=$n AND player_id=$n AND campaign_id=$n`.** The ownership
+  guard only proves the caller owns the player they *named* — this is what stops them naming their
+  own player while addressing another player's entry id.
+
+Supporting changes:
+
+- **The markdown renderer is now shared.** It was inlined in Home's docs modal; it is now
+  `components/ui/renderMarkdown.js` plus a `<Markdown>` wrapper, used by the docs modal, the diary
+  editor preview, the DM's lists and the public page. One renderer, one safety argument.
+- **Links are new, and are the only place user text reaches an HTML attribute**, so they get an
+  allowlist (`http://`, `https://`, site-relative `/`) plus quote escaping, which the existing
+  three-character escape does not do. A rejected URL renders as literal text. A test caught that
+  the first allowlist accepted `//evil.example.com` — a *protocol-relative* URL that looks local
+  and is not — before it shipped.
+- **Campaign export carries both diaries**, draft status included, and never the share token: the
+  import creates a new campaign, so a carried token would collide on `UNIQUE` or resolve an old
+  URL to new content. Bundle `version` 3 → 4; v3 bundles still import.
+- New `test/diaryPrivacy.test.js` asserts the privacy boundary against app.js as text — the public
+  handler never names the player table, filters drafts, selects no `*`, and every player-diary
+  mutation is doubly scoped. Verified it fails by injecting both leaks and watching it catch them.
+
 ### Small fixes
+
+- **Fixed: sharing a single timeline returned 403.** The new
+  `GET /api/player-timelines/:timelineId/public-token` was registered *after*
+  `GET /api/player-timelines/:campaignId/:playerId`, and Express matches in registration order —
+  so every call hit the older handler with `playerId="public-token"` and failed its access check.
+  Moved above it, where `/all`, `/entries` and `/export` already sit for the same reason.
+  - Added a test that reads the route table out of `app.js` and fails if any route is shadowed by
+    an earlier parameterised one. It confirms nothing else in the app is currently unreachable, and
+    it checks itself against the exact pair that broke. The suite now covers the backend too
+    (`test/`, no server needed) — 72 tests.
+- **Stat sheet: HP redesigned around the effective totals.** The bar now reads
+  **current / max** with **Temp HP** and **Temp Max HP** beside it, and the figures shown are the
+  effective ones — current **+** temp over max **+** temp max. Each half turns green only while a
+  temporary value is affecting *it*, so a character with temp HP and an untouched maximum does not
+  read as though both changed. All four values are edited in a **✎ Manage HP** dialog instead of
+  the previous inline expansion: with one editing surface, no box has to be both a derived readout
+  and an input, which is what made the earlier version ambiguous.
+  - Current and maximum HP are now separate fields (`hp`, `max_hp`). Sheets that kept both in one
+    box as `"27/40"` are split on load, so existing characters land in the new pair instead of
+    showing `27/40` as their current HP.
+
+- **Timeline: the DM decides which events the players can see.** Every event now carries
+  `visible_to_players`, and a DM-authored event **starts hidden** — 👁 in the Events list reveals it
+  when the party learns of it. It is filtered in SQL on every read path (per-timeline list, party
+  list, public share), so a hidden event never reaches a player's browser rather than merely going
+  unrendered. An event a *player* writes on their own timeline starts visible: defaulting that to
+  hidden would stop them seeing what they had just typed.
+  - The migration adds the column with `DEFAULT true` and only *then* switches the default to
+    `false`. That order is the whole point: it backfills every existing event as visible, so
+    nothing players can already see vanishes on upgrade, while everything created afterwards starts
+    hidden. Verified against a real PostgreSQL — existing rows came out visible, new inserts hidden,
+    and a second boot neither re-backfilled nor re-revealed anything.
+- **Timeline: the public share link now matches what you are sharing.** It was always the
+  campaign-wide token, so "share this player's timeline" silently handed over *every* timeline in
+  the campaign. Selecting a single timeline now produces a token scoped to that timeline alone
+  (`player_timeline_shares`), which also excludes campaign-wide party events; the combined view
+  still shares the campaign. The copy confirmation names the scope, since the two links are
+  indistinguishable by sight. The new table sits alongside the old one rather than relaxing its
+  `NOT NULL UNIQUE campaign_id`, which would have put existing share links at risk.
+- **Timeline: a player can filter and search by their cross-connections.** `loadActors` pulled only
+  a player's own relationships, so an event tagged with a connected NPC or another party member had
+  no row to search, solo or hide, and its colour dot resolved to nothing. The far end of each
+  cross-connection is now an actor. The API already returns only `is_public` cross-connections to a
+  player, so this surfaces exactly what the DM shared.
+- **Timeline: the Locations list shows only locations that still have events**, after *all* filters
+  — the date range plus the per-player eye toggles and solo. A "Show N without events" button keeps
+  empty locations reachable for reorder and delete, and drag-reorder is disabled whenever the list
+  is a subset, since its indices address the full ordered list.
+- **Timeline: the toolbar buttons say what they do** — `⊡ Fit`, `⏳ Dates…`, `📅 Today` instead of
+  bare glyphs. A tooltip only helps someone who already suspects the button does what they want.
+- **Stat sheet: temp HP and temp max HP colour the HP box.** Temporary HP reads as a bonus (green)
+  and a temporary maximum as a penalty (red), and the HP field itself is tinted and underlined in
+  the matching colour whenever either is in play, with the delta shown beside the HP label — so the
+  printed number is never quietly wrong without saying so.
+
+- **Timeline: filter by date.** ⏳ in the zoom row opens a From/To picker; either bound can be
+  left off for an open end. An event survives when its span **overlaps** the window rather than
+  starting inside it — a 45-day journey that began earlier is still under way during the
+  timeframe you are looking at, and dropping it would misrepresent the period. A chip in the
+  toolbar names the active range and the kept/total count with one click to clear, because a
+  filtered timeline is otherwise indistinguishable from an empty one; Fit frames the filtered
+  set rather than a span whose events are no longer drawn. View-only — it never touches stored
+  data, so it applies to personal and campaign timelines alike.
+- **Stat sheet: temporary HP and temporary max HP.** A `+` on the HP label reveals both, and they
+  reveal themselves for any sheet that already carries a value, so loading a character mid-effect
+  never hides it behind a click nobody knows to make. Stored in `stats_json` as `temp_hp` /
+  `temp_max_hp`, and `populateSheet` accepts either spelling like every other field. Behind a
+  toggle because most characters have neither, and two permanently empty boxes in the core stats
+  bar would be clutter on every sheet to serve a few.
+- **User Panel: role change and delete update their row instead of refetching the table.** Both
+  already know the exact resulting value, so the round trip only bought a table-wide spinner.
+  Create still refetches deliberately — its response carries only id/username/role while the table
+  also shows Email and Created, so appending locally would mean two blank cells or an invented
+  client-side timestamp.
+- **Scroll preservation audited app-wide.** Every remaining `loading`-gated unmount turned out to
+  be an initial load, an explicit Refresh, or a deliberate context switch (player change, campaign
+  switch) — all cases where resetting scroll is correct. No post-mutation refetch unmounts a pane
+  any more. The audit did surface one real defect: **`addDmNote` appended a new note while the API
+  returns notes newest-first**, so a note sat at the bottom of the list until the next load quietly
+  moved it to the top. It prepends now.
 
 - **Enter no longer fires several things at once.** Two independent causes, both fixed.
   - Every open `<Modal>` registered its own `window` keydown listener, so whenever two were

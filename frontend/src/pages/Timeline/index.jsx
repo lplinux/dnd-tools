@@ -16,7 +16,7 @@ import { useTimeline } from '@/hooks/useTimeline';
 import { useTimelineCampaign } from '@/hooks/useTimelineCampaign';
 import { useAuth } from '@/hooks/useAuth';
 import AppHeader from '@/components/layout/AppHeader';
-import { absDay, formatDate } from '@/data/calendar';
+import { absDay, fromAbsDay, formatDate } from '@/data/calendar';
 import {
   sliderToPPD, ppdToSlider, granLabel, buildSegments, segTotalH, MIN_PPD, MAX_PPD,
 } from './layout';
@@ -42,6 +42,46 @@ export default function Timeline() {
   const [modal, setModal] = useState(null);
   const openModal = (type, data) => setModal({ type, data });
   const closeModal = () => setModal(null);
+
+  // Date-range filter: { from, to } as absolute days, either bound nullable.
+  // View-only state, like the search box — it never touches stored data.
+  const [dateRange, setDateRange] = useState(null);
+
+  // Events surviving the filter. An event is kept when its span OVERLAPS the
+  // window, not merely when it starts inside it: a long journey that began
+  // earlier is still under way during the timeframe being looked at.
+  const rangedEvents = useMemo(() => {
+    const all = tl.db.events;
+    if (!dateRange || (dateRange.from == null && dateRange.to == null)) return all;
+    return all.filter((e) => {
+      const start = absDay(e.year, e.dayOfYear, tl.calType);
+      const end = start + Math.max(1, e.durationDays || 1) - 1;
+      if (dateRange.from != null && end < dateRange.from) return false;
+      if (dateRange.to != null && start > dateRange.to) return false;
+      return true;
+    });
+  }, [tl.db.events, dateRange, tl.calType]);
+
+  const rangeActive = rangedEvents.length !== tl.db.events.length
+    || !!(dateRange && (dateRange.from != null || dateRange.to != null));
+
+  // The canvas and table read events off `tl`, so hand them a view whose db
+  // carries the filtered list. Mutations live on `tl` itself and operate on the
+  // hook's own state, so they are unaffected by the swap. The modals keep the
+  // real `tl` — editing an event must see the full set.
+  const viewTl = useMemo(
+    () => (rangeActive ? { ...tl, db: { ...tl.db, events: rangedEvents } } : tl),
+    [tl, rangedEvents, rangeActive],
+  );
+
+  const rangeLabel = useMemo(() => {
+    if (!dateRange) return null;
+    const f = dateRange.from != null ? fromAbsDay(dateRange.from, tl.calType) : null;
+    const t = dateRange.to != null ? fromAbsDay(dateRange.to, tl.calType) : null;
+    const fs = f ? formatDate(f.year, f.dayOfYear, tl.calType) : '…';
+    const ts = t ? formatDate(t.year, t.dayOfYear, tl.calType) : '…';
+    return `${fs} → ${ts}`;
+  }, [dateRange, tl.calType]);
 
   // Load campaigns the first time campaign mode is entered.
   useEffect(() => {
@@ -129,7 +169,9 @@ export default function Timeline() {
   const fit = useCallback(() => {
     const body = document.getElementById('tl-body');
     const h = body?.clientHeight || 500;
-    const evs = tl.db.events;
+    // The filtered set, so Fit frames what is actually drawn rather than a
+    // span whose events the date filter has removed.
+    const evs = rangedEvents;
     if (!evs.length) { tl.setPpd(sliderToPPD(50)); return; }
     const h1 = segTotalH(buildSegments(evs, 1, tl.calType), 1);
     const h2 = segTotalH(buildSegments(evs, 2, tl.calType), 2);
@@ -139,7 +181,7 @@ export default function Timeline() {
     const ppd = A > 0 ? clamp((target - B) / A, MIN_PPD, MAX_PPD) : MIN_PPD;
     tl.setPpd(ppd);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tl.calType, tl.db.events]);
+  }, [tl.calType, rangedEvents]);
 
   useEffect(() => {
     if (fitKey == null) return undefined;
@@ -199,11 +241,39 @@ export default function Timeline() {
             <button className={tl.ui.view === 'table' ? 'active' : ''} onClick={() => tl.setView('table')}>Table</button>
           </div>
 
+          {/* Say plainly that events are being withheld, and offer one click out
+              of it — a filtered timeline is otherwise indistinguishable from an
+              empty one. */}
+          {rangeActive && (
+            <div className="flex items-center gap-1.5 text-[11px] bg-[var(--gold-dim)] text-bg rounded-sm px-2 py-1 whitespace-nowrap">
+              <span>⏳ {rangeLabel}</span>
+              <span className="opacity-75">({rangedEvents.length}/{tl.db.events.length})</span>
+              <button
+                onClick={() => setDateRange(null)}
+                title="Clear date filter"
+                className="font-bold leading-none px-1 hover:opacity-70"
+              >
+                ×
+              </button>
+            </div>
+          )}
+
           <div className="zoom-row" style={{ marginLeft: 'auto' }}>
             <span>Zoom</span>
             <input type="range" min={0} max={100} value={ppdToSlider(tl.ppd)} onChange={(e) => tl.setPpd(sliderToPPD(+e.target.value))} aria-label="Zoom" />
             <span className="zoom-lbl">{granLabel(tl.ppd)}</span>
-            <button className="btn sm" title="Fit all" onClick={fit}>⊡</button>
+            {/* Labelled, not icon-only: ⊡ / ⏳ / 📅 are not self-explanatory, and a
+                tooltip only helps someone who already suspects the button does
+                something they want. */}
+            <button className="btn sm" title="Zoom so the whole timeline fits on screen" onClick={fit}>⊡ Fit</button>
+            <button
+              className="btn sm"
+              style={rangeActive ? { background: 'var(--gold-dim)', color: 'var(--bg)' } : undefined}
+              title={rangeActive ? `Date filter: ${rangeLabel}` : 'Filter by date'}
+              onClick={() => openModal('date-range')}
+            >
+              ⏳ {rangeActive ? 'Dates' : 'Dates…'}
+            </button>
             <button
               className="btn sm"
               title={tl.db.todayAbs == null
@@ -212,7 +282,7 @@ export default function Timeline() {
               disabled={tl.db.todayAbs == null}
               onClick={() => canvasRef.current?.scrollToToday()}
             >
-              📅
+              📅 Today
             </button>
           </div>
         </div>
@@ -225,7 +295,7 @@ export default function Timeline() {
             <CombinedLegend tree={campaignTl.tree} hiddenTimelines={campaignTl.hiddenTimelines} onToggle={campaignTl.toggleTimeline} />
           ) : (
             <Sidebar
-              tl={tl}
+              tl={viewTl}
               onOpenModal={openModal}
               onScrollToEvent={jumpToEvent}
               hideProfileBar={mode === 'campaign'}
@@ -257,18 +327,21 @@ export default function Timeline() {
             </div>
           ) : tl.ui.view === 'table' ? (
             <TableView
-              tl={tl}
+              tl={viewTl}
               readOnly={isCombined}
               onEdit={(id) => openModal('view-event', tl.db.events.find((e) => e.id === id))}
               onDelete={(id) => { if (window.confirm('Delete this event?')) tl.deleteEvent(id); }}
             />
           ) : (
-            <TimelineCanvas ref={canvasRef} tl={tl} onEventClick={isCombined ? undefined : onEventClick} readOnly={isCombined} />
+            <TimelineCanvas ref={canvasRef} tl={viewTl} onEventClick={isCombined ? undefined : onEventClick} readOnly={isCombined} />
           )}
         </div>
       </div>
 
-      <TimelineModals modal={modal} onClose={closeModal} onOpen={openModal} tl={tl} />
+      <TimelineModals
+        modal={modal} onClose={closeModal} onOpen={openModal} tl={tl}
+        dateRange={dateRange} onApplyRange={setDateRange}
+      />
     </>
   );
 }

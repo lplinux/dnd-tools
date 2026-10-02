@@ -118,7 +118,8 @@ Region polygons are stored as a `JSONB` array of `{x, y}` percentage-coordinate 
 
 ## Export
 
-Click **⬇ Export** when a map is loaded. Downloads a JSON file containing:
+Click **⬇ Export** when a map is loaded. Downloads
+`journey-map-<campaign>-<map>-<date>.json` containing:
 
 - Map name and description
 - **Map background image** (`map_image`, base64 data URL — already compressed to ≤ 2 MB at upload time)

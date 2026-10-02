@@ -67,6 +67,46 @@
      still avoid breaking mid-way (see .pc-print-block below). */
   .pc-print-section { margin: 0 0 16px; }
 
+  /* The diary is the one section that DOES start its own page, so the sheet and
+     the journal can be separated once printed. The component renders this only
+     when there are entries — an empty one would cost a blank page, which is the
+     exact failure the per-section breaks above were removed for. */
+  .pc-print-diary {
+    page-break-before: always;
+    break-before: page;
+  }
+  .pc-print-diary-title {
+    font-family: var(--fd), 'Cinzel', serif;
+    font-size: 1.3rem;
+    margin: 0 0 10px;
+    padding-bottom: 3px;
+    border-bottom: 2px solid #999 !important;
+  }
+  .pc-print-diary-meta {
+    font-family: var(--fd), 'Cinzel', serif;
+    font-size: 8pt;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+    color: #555 !important;
+    margin: -2px 0 4px;
+  }
+  /* A diary entry is prose and may well exceed a page, so it is allowed to
+     break — unlike the short blocks above — with orphan/widow protection doing
+     the work instead. */
+  .pc-print-diary .pc-print-block {
+    page-break-inside: auto;
+    break-inside: auto;
+    orphans: 3;
+    widows: 3;
+  }
+  /* The markdown renderer's own sub-headings, one level down from an entry title. */
+  .pc-print-diary h3 { font-size: 11.5pt; }
+  .pc-print-diary .pc-print-text h3 {
+    font-size: 10pt;
+    border-bottom: none !important;
+    margin-top: 8px;
+  }
+
   /* A heading must never be orphaned from the text it introduces. */
   .pc-print-block {
     page-break-inside: avoid;

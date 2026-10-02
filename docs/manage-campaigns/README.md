@@ -148,8 +148,8 @@ All endpoints require the `dm` or `admin` role unless noted.
 | `PUT` | `/api/campaigns/:id/meta` | Update campaign metadata |
 | `GET` | `/api/campaigns/:id/timelines` | Get player timeline summary |
 | `POST` | `/api/player-timelines/:campaignId/:playerId` | Create a new timeline for a player |
-| `GET` | `/api/campaigns/:id/export` | Export full campaign snapshot as JSON (v3) |
-| `POST` | `/api/campaigns/import` | Import a campaign from a v3 (or v2) JSON bundle |
+| `GET` | `/api/campaigns/:id/export` | Export full campaign snapshot as JSON (v4) |
+| `POST` | `/api/campaigns/import` | Import a campaign bundle — v4, and older v2/v3 still load |
 
 ---
 
@@ -157,7 +157,8 @@ All endpoints require the `dm` or `admin` role unless noted.
 
 ### Export
 
-Open the **Settings** tab and click **💾 Export Campaign** (under "Export / Backup"). Downloads a `.json` file (v3) containing the complete campaign state:
+Open the **Settings** tab and click **💾 Export Campaign** (under "Export / Backup"). Downloads
+`campaign-<campaign>-<date>.json` (v4) containing the complete campaign state:
 
 - Campaign name, description, calendar type, today marker
 - All NPCs (names)
@@ -190,10 +191,28 @@ sidebar) and pick a `.json`; the importer **detects the file type** and routes i
 | `journey-map` | Adds the map to the **currently selected** campaign, reusing/creating locations by name. |
 | `pc-sheet` | Prompts for a **target player** in the selected campaign, then imports the sheet onto them. |
 | `timeline` | Prompts for a **target player** + timeline name, then adds the timeline's events to the selected campaign (actors/locations matched by name). |
+| `campaign-diary` | **Replaces** the selected campaign's diary with the file's entries. ⚠️ See below. |
 
-> For journey-map / pc-sheet / timeline files you must **select a campaign first** (they merge *into* it).
-> Per-module Import buttons were removed — **Export** still lives in each module (Journey Map, PC Sheet,
-> Timeline), but importing is centralised here.
+> For journey-map / pc-sheet / timeline / campaign-diary files you must **select a campaign first**
+> (they merge *into* it). Per-module Import buttons were removed — **Export** still lives in each
+> module (Journey Map, PC Sheet, Timeline, Diary), but importing is centralised here.
+
+> ⚠️ **`campaign-diary` is the only destructive type.** Every other import adds to what is there;
+> a diary import deletes the selected campaign's existing entries and installs the file's instead,
+> keeping their draft/published status. That is what stops re-importing the same file building up
+> duplicates. You are told how many entries will be deleted and how many will arrive, and asked to
+> confirm, before anything is touched.
+
+### Import — the per-module shortcuts
+
+Two files have one obvious destination, so they can also be imported from the module itself
+rather than here:
+
+- a **`pc-sheet`** file, from the **Players** tab (see below);
+- a **`campaign-diary`** file, from the **Diary** page's own **⬆ Import**.
+
+Both apply to what you are already looking at, so neither asks you to pick a target. The sidebar
+hub below remains the general entry point and accepts all five types.
 
 ### Import — the per-player shortcut
 
@@ -201,7 +220,7 @@ A `pc-sheet` file has one obvious destination, so the **Players** tab carries it
 **⬆ Import** on each player's row. It takes the same file the sidebar hub does, but the
 target is the row you clicked, so it confirms and imports in one step rather than asking
 which player to assign it to. Anything that is not a `pc-sheet` export is rejected there —
-use the sidebar hub for the other three types.
+use the sidebar hub for the other four types.
 
 **Campaign-bundle import** (the `campaign` type) works exactly as before:
 
@@ -254,7 +273,7 @@ server's startup block in `app.js`. There is no separate migration tool or folde
 
 ---
 
-## Bundle format (v3)
+## Bundle format (v4)
 
 ```json
 {
@@ -491,3 +510,28 @@ server's startup block in `app.js`. There is no separate migration tool or folde
 > doesn't resolve is **skipped silently**. Check names carefully: `<PlayerName>` must match
 > `players[].player_name` exactly, and because the token is split on the first `_`, **player names
 > must not contain underscores**.
+
+---
+
+## Export file names
+
+Every module names its export the same way, so a folder of backups sorts and reads sensibly:
+
+```
+<module>[-<campaign>][-<name>]-<YYYY-MM-DD>.json
+```
+
+| Module | Example |
+|---|---|
+| Campaign | `campaign-the-last-performance-2026-10-02.json` |
+| PC Sheet | `character-leruhy-teudis-2026-10-02.json` |
+| Campaign Diary | `campaign-diary-leruhy-2026-10-02.json` |
+| Timeline | `timeline-leruhy-macro-2026-10-02.json` |
+| Journey Map | `journey-map-leruhy-road-to-nyth-2026-10-02.json` |
+
+The date is the **local** date you saved the file, not UTC — an export taken late in the evening
+carries that day, not tomorrow. Names are lowercased, accents are folded (`Ailyssë` → `ailysse`)
+and anything that is not a letter or digit becomes a hyphen.
+
+The **module prefix is not what the importer reads** — it routes on the `type` field inside the
+file, so renaming a download is harmless.

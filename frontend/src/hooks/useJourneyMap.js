@@ -21,6 +21,7 @@ import { useToast } from '@/hooks/useToast';
 import { sameId, parseWaypoints, snapToPin, effectiveDistances, curvePoints } from '@/components/map/geometry';
 import { derivePaths } from '@/components/map/derivePaths';
 import { compressImage } from '@/components/map/compressImage';
+import { downloadBundle } from '@/api/downloadBundle';
 
 export function useJourneyMap() {
   const { toast } = useToast();
@@ -529,13 +530,12 @@ export function useJourneyMap() {
       map_image: img.image || null,
       locations: locs, distances: dists, paths: pths,
     };
-    const slug = (meta.name || 'map').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(new Blob([JSON.stringify(bundle, null, 2)], { type: 'application/json' }));
-    a.download = `journey-map-${slug}.json`;
-    a.click();
-    URL.revokeObjectURL(a.href);
-  }, [mapId, maps]);
+    downloadBundle(bundle, {
+      module: 'journey-map',
+      campaign: campaigns.find((c) => String(c.id) === String(campaignId))?.name,
+      name: meta.name,
+    });
+  }, [mapId, maps, campaigns, campaignId]);
 
   // Journey-map import now lives in the central Manage-Campaigns importer
   // (frontend/src/api/importJourneyMap.js).

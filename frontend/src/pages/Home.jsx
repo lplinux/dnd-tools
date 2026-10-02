@@ -14,7 +14,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Info, ExternalLink } from 'lucide-react';
 
 import AppHeader from '@/components/layout/AppHeader';
-import { Button, Modal, Spinner, FormField } from '@/components/ui';
+import { Button, Modal, Spinner, FormField, Markdown } from '@/components/ui';
 import { useAuth } from '@/hooks/useAuth';
 import { useToast } from '@/hooks/useToast';
 import { docsApi } from '@/api/docs';
@@ -88,6 +88,15 @@ const MODULES = [
     docs: 'manage-campaigns',
   },
   {
+    key: 'diary',
+    icon: '📔',
+    title: 'Campaign Diary',
+    desc: "Session summaries — your campaign diary, shareable by link, plus every player's private diary. (A player's own diary lives on their PC Sheet.)",
+    url: '/diary',
+    access: ['dm'],
+    docs: 'diary',
+  },
+  {
     key: 'journeymap',
     icon: '🗺️',
     title: 'Journey Path Map',
@@ -130,37 +139,12 @@ function DocsModal({ mod, onClose }) {
       .catch(e  => { setErr(e.message); setLoading(false); });
   }, [mod.docs]);
 
-  /** Very basic markdown → HTML: headings, bold, code, lists */
-  function renderMd(text) {
-    const escaped = text
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;');
-
-    const html = escaped
-      .replace(/^### (.+)$/gm, '<h3 class="font-display text-gold text-sm uppercase tracking-wider mt-4 mb-1">$1</h3>')
-      .replace(/^## (.+)$/gm, '<h2 class="font-display text-gold text-base uppercase tracking-wider mt-5 mb-2">$1</h2>')
-      .replace(/^# (.+)$/gm, '<h1 class="font-display text-gold text-lg uppercase tracking-wider mb-3">$1</h1>')
-      .replace(/\*\*(.+?)\*\*/g, '<strong class="text-text">$1</strong>')
-      .replace(/`(.+?)`/g, '<code class="bg-surface3 px-1 rounded text-xs font-mono text-[var(--special-fg)]">$1</code>')
-      .replace(/^- (.+)$/gm, '<li class="ml-4 list-disc text-text-dim">$1</li>')
-      .replace(/^\d+\. (.+)$/gm, '<li class="ml-4 list-decimal text-text-dim">$1</li>')
-      .replace(/\n\n/g, '</p><p class="mb-2">')
-      .replace(/^/, '<p class="mb-2">')
-      .replace(/$/, '</p>');
-
-    return html;
-  }
-
   return (
     <Modal open onClose={onClose} title={`${mod.icon} ${mod.title}`} className="max-w-lg">
       {loading && <div className="flex justify-center py-8"><Spinner /></div>}
       {err     && <p className="text-danger text-sm">{err}</p>}
       {md      && (
-        <div
-          className="text-text-dim text-sm leading-relaxed font-body"
-          dangerouslySetInnerHTML={{ __html: renderMd(md) }}
-        />
+        <Markdown className="text-text-dim text-sm leading-relaxed font-body">{md}</Markdown>
       )}
     </Modal>
   );

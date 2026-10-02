@@ -43,7 +43,9 @@ export default defineConfig({
     // SRD payload flattening — so no DOM is needed and `node` keeps it fast.
     // Add `environment: 'jsdom'` (and the dependency) if component tests arrive.
     environment: 'node',
-    include: ['src/**/*.test.js'],
+    // `../test/` holds suites about the backend that still need no server —
+    // currently the Express route-ordering guard, which reads app.js as text.
+    include: ['src/**/*.test.js', '../test/**/*.test.js'],
   },
 
   build: {

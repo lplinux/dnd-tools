@@ -73,7 +73,7 @@ app.use(express.static(path.join(__dirname, 'public', 'app')));
 app.use('/pdfs', express.static(path.join(__dirname, 'pdfs')));
 
 // Serve module README docs — only whitelisted slugs, no path traversal
-const DOCS_MODULES = new Set(['npc-sheet', 'item-cards', 'split-view', 'timeline', 'pdf-viewer', 'pc-sheet', 'manage-campaigns', 'journey-map', 'user-panel']);
+const DOCS_MODULES = new Set(['npc-sheet', 'item-cards', 'split-view', 'timeline', 'pdf-viewer', 'pc-sheet', 'manage-campaigns', 'journey-map', 'user-panel', 'diary']);
 app.get('/api/docs/:module', async (req, res) => {
   const mod = req.params.module;
   if (!DOCS_MODULES.has(mod)) return res.status(404).json({ error: 'Not found' });
@@ -591,11 +591,16 @@ app.get('/api/player-timelines/:timelineId/entries', requireAuth, async (req, re
     if (!await canAccessTimeline(req.session.userId, req.session.role, t.campaign_id, t.player_id)) {
       return res.status(403).json({ error: 'Access denied' });
     }
+    // A player never receives an event the DM has not revealed. Filtered in SQL,
+    // not in the client, so a hidden event is not merely un-rendered — it never
+    // reaches the browser.
+    const canSeeHidden = ['dm', 'admin'].includes(req.session.role);
     const result = await pool.query(
       `SELECT pte.*, u.username as created_by_name
        FROM player_timeline_entries pte
        JOIN users u ON pte.created_by = u.id
        WHERE pte.timeline_id=$1
+         ${canSeeHidden ? '' : 'AND pte.visible_to_players = true'}
        ORDER BY pte.year ASC, pte.day_of_year ASC, pte.created_at ASC`,
       [timelineId]
     );
@@ -760,14 +765,20 @@ app.post('/api/player-timelines/:timelineId/entries', requireAuth, async (req, r
     if (!await canAccessTimeline(req.session.userId, req.session.role, t.campaign_id, t.player_id)) {
       return res.status(403).json({ error: 'Access denied' });
     }
+    // A DM's new event starts hidden — that is the point of the flag. A player
+    // writing on their own timeline is not revealing anything to themselves, so
+    // theirs stays visible; defaulting it to hidden would make a player unable to
+    // see the event they just typed.
+    const authoredByDm = ['dm', 'admin'].includes(req.session.role);
     const result = await pool.query(
       `INSERT INTO player_timeline_entries
-         (campaign_id, player_id, timeline_id, created_by, title, description, location, year, day_of_year, duration_days, player_ids)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING *`,
+         (campaign_id, player_id, timeline_id, created_by, title, description, location, year, day_of_year, duration_days, player_ids, visible_to_players)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING *`,
       [t.campaign_id, t.player_id, timelineId, req.session.userId,
         title, description || null, location || null,
       year || 1492, day_of_year || 1, duration_days || 1,
-      player_ids && player_ids.length ? player_ids : ['self_' + t.player_id]]
+      player_ids && player_ids.length ? player_ids : ['self_' + t.player_id],
+      !authoredByDm]
     );
     res.json(result.rows[0]);
   } catch (e) { res.status(500).json({ error: e.message }); }
@@ -816,6 +827,30 @@ app.delete('/api/player-timelines/:timelineId/entries/:entryId', requireAuth, as
 });
 
 // GET all timelines for a player in a campaign
+// NOTE ON ORDERING: this must stay ABOVE `/:campaignId/:playerId` below.
+// Express matches in registration order, and `public-token` is a perfectly good
+// :playerId — registered after it, this route never ran and every call came back
+// 403 from the other handler's access check. `/all`, `/entries` and `/export`
+// live up here for the same reason.
+// DM generates / retrieves a stable token scoped to ONE timeline. Unlike the
+// campaign token above, this one reveals that timeline and nothing else.
+app.get('/api/player-timelines/:timelineId/public-token', requireRole(['dm', 'admin']), async (req, res) => {
+  const { timelineId } = req.params;
+  try {
+    const tl = await pool.query('SELECT * FROM player_timelines WHERE id=$1', [timelineId]);
+    if (!tl.rows.length) return res.status(404).json({ error: 'Timeline not found' });
+    const t = tl.rows[0];
+    if (!await canAccessTimeline(req.session.userId, req.session.role, t.campaign_id, t.player_id)) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+    const existing = await pool.query('SELECT token FROM player_timeline_shares WHERE timeline_id=$1', [timelineId]);
+    if (existing.rows.length) return res.json({ token: existing.rows[0].token, scope: 'timeline' });
+    const token = hashId(parseInt(timelineId)) + crypto.randomBytes(4).toString('hex');
+    await pool.query('INSERT INTO player_timeline_shares (timeline_id, token) VALUES ($1,$2)', [timelineId, token]);
+    res.json({ token, scope: 'timeline' });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 app.get('/api/player-timelines/:campaignId/:playerId', requireAuth, async (req, res) => {
   const { campaignId, playerId } = req.params;
   try {
@@ -871,6 +906,415 @@ async function canAccessTimeline(userId, userRole, campaignId, playerId) {
   return r.rows.length > 0;
 }
 
+// ── Diary (session summaries) ───────────────────────────────────────────────
+// Two halves with deliberately different privacy:
+//   campaign_diary_entries — the DM's write-ups. Players never see these in the
+//     app at all; they reach them only through a public share link, and only
+//     once published.
+//   player_diary_entries   — private to the owning player. The campaign's DM may
+//     READ them (so they can weave player notes into prep) but never write them:
+//     "private" should not mean somebody else can rewrite it.
+
+/** DM owns the campaign; admin passes. Mirrors dmOwnsMap. */
+async function dmOwnsCampaign(campaignId, userId, role) {
+  if (role === 'admin') return true;
+  const r = await pool.query('SELECT id FROM campaigns WHERE id=$1 AND dm_user_id=$2', [campaignId, userId]);
+  return r.rows.length > 0;
+}
+
+/** The canonical "does this user own this player" check. */
+async function ownsPlayer(userId, playerId) {
+  const r = await pool.query(
+    'SELECT id FROM campaign_user_assignments WHERE player_id=$1 AND user_id=$2',
+    [parseInt(playerId), parseInt(userId)],
+  );
+  return r.rows.length > 0;
+}
+
+const DIARY_ORDER = 'ORDER BY session_no ASC NULLS LAST, session_date ASC NULLS LAST, created_at ASC';
+
+// ── Campaign diary (DM only) ──
+app.get('/api/campaign-diary/:campaignId/share', requireRole(['dm', 'admin']), async (req, res) => {
+  const { campaignId } = req.params;
+  try {
+    if (!await dmOwnsCampaign(campaignId, req.session.userId, req.session.role))
+      return res.status(403).json({ error: 'Access denied' });
+    // Stable, not rotating: the DM presses Share mainly to re-copy the URL, and
+    // rotating here would silently kill every link already pasted somewhere.
+    // Revocation is the separate DELETE below, so it stays a deliberate act.
+    const existing = await pool.query('SELECT token FROM campaign_diary_shares WHERE campaign_id=$1', [campaignId]);
+    if (existing.rows.length) return res.json({ token: existing.rows[0].token });
+    const token = hashId(parseInt(campaignId)) + crypto.randomBytes(4).toString('hex');
+    await pool.query('INSERT INTO campaign_diary_shares (campaign_id, token) VALUES ($1,$2)', [campaignId, token]);
+    res.json({ token });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.delete('/api/campaign-diary/:campaignId/share', requireRole(['dm', 'admin']), async (req, res) => {
+  const { campaignId } = req.params;
+  try {
+    if (!await dmOwnsCampaign(campaignId, req.session.userId, req.session.role))
+      return res.status(403).json({ error: 'Access denied' });
+    await pool.query('DELETE FROM campaign_diary_shares WHERE campaign_id=$1', [campaignId]);
+    res.json({ success: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.get('/api/campaign-diary/:campaignId', requireRole(['dm', 'admin']), async (req, res) => {
+  const { campaignId } = req.params;
+  try {
+    if (!await dmOwnsCampaign(campaignId, req.session.userId, req.session.role))
+      return res.status(403).json({ error: 'Access denied' });
+    const r = await pool.query(`SELECT * FROM campaign_diary_entries WHERE campaign_id=$1 ${DIARY_ORDER}`, [campaignId]);
+    res.json(r.rows);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/api/campaign-diary/:campaignId', requireRole(['dm', 'admin']), async (req, res) => {
+  const { campaignId } = req.params;
+  const { title, body, session_no, session_date, chapter } = req.body;
+  if (!title || !String(title).trim()) return res.status(400).json({ error: 'Title required' });
+  if (String(title).length > 255) return res.status(400).json({ error: 'Title too long (max 255)' });
+  try {
+    if (!await dmOwnsCampaign(campaignId, req.session.userId, req.session.role))
+      return res.status(403).json({ error: 'Access denied' });
+    // `status` is NOT read from the body — a new entry is always a draft, and
+    // the column default is what enforces it.
+    const r = await pool.query(
+      `INSERT INTO campaign_diary_entries (campaign_id, created_by, title, body, session_no, session_date, chapter)
+       VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *`,
+      [campaignId, req.session.userId, String(title).trim(), body || null, session_no || null,
+        session_date || null, chapter ? String(chapter).slice(0, 120) : null],
+    );
+    res.json(r.rows[0]);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.put('/api/campaign-diary/:campaignId/entries/:entryId', requireRole(['dm', 'admin']), async (req, res) => {
+  const { campaignId, entryId } = req.params;
+  const { title, body, session_no, session_date, chapter } = req.body;
+  if (!title || !String(title).trim()) return res.status(400).json({ error: 'Title required' });
+  if (String(title).length > 255) return res.status(400).json({ error: 'Title too long (max 255)' });
+  try {
+    if (!await dmOwnsCampaign(campaignId, req.session.userId, req.session.role))
+      return res.status(403).json({ error: 'Access denied' });
+    const r = await pool.query(
+      `UPDATE campaign_diary_entries
+          SET title=$1, body=$2, session_no=$3, session_date=$4, chapter=$5, updated_at=CURRENT_TIMESTAMP
+        WHERE id=$6 AND campaign_id=$7 RETURNING *`,
+      [String(title).trim(), body || null, session_no || null, session_date || null,
+        chapter ? String(chapter).slice(0, 120) : null, entryId, campaignId],
+    );
+    if (!r.rows.length) return res.status(404).json({ error: 'Entry not found' });
+    res.json(r.rows[0]);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.patch('/api/campaign-diary/:campaignId/entries/:entryId/status', requireRole(['dm', 'admin']), async (req, res) => {
+  const { campaignId, entryId } = req.params;
+  const { status } = req.body;
+  // Validated here so a typo is a 400 rather than a 500 from the CHECK constraint.
+  if (!['draft', 'published'].includes(status))
+    return res.status(400).json({ error: "status must be 'draft' or 'published'" });
+  try {
+    if (!await dmOwnsCampaign(campaignId, req.session.userId, req.session.role))
+      return res.status(403).json({ error: 'Access denied' });
+    const r = await pool.query(
+      `UPDATE campaign_diary_entries
+          SET status=$1::varchar,
+              -- Set once, on first publish, and kept thereafter: un-publishing to
+              -- fix a typo should not reset "published three weeks ago".
+              --
+              -- The ::varchar casts are load-bearing. Without them Postgres infers
+              -- $1 as varchar from the SET above and as text from the comparison
+              -- below, then rejects the whole statement with "inconsistent types
+              -- deduced for parameter $1" — a 500 on every publish AND unpublish.
+              published_at = CASE WHEN $1::varchar='published' AND published_at IS NULL
+                                  THEN CURRENT_TIMESTAMP ELSE published_at END,
+              updated_at=CURRENT_TIMESTAMP
+        WHERE id=$2 AND campaign_id=$3 RETURNING id, status, published_at`,
+      [status, entryId, campaignId],
+    );
+    if (!r.rows.length) return res.status(404).json({ error: 'Entry not found' });
+    res.json(r.rows[0]);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.delete('/api/campaign-diary/:campaignId/entries/:entryId', requireRole(['dm', 'admin']), async (req, res) => {
+  const { campaignId, entryId } = req.params;
+  try {
+    if (!await dmOwnsCampaign(campaignId, req.session.userId, req.session.role))
+      return res.status(403).json({ error: 'Access denied' });
+    const r = await pool.query(
+      'DELETE FROM campaign_diary_entries WHERE id=$1 AND campaign_id=$2 RETURNING id',
+      [entryId, campaignId],
+    );
+    if (!r.rows.length) return res.status(404).json({ error: 'Entry not found' });
+    res.json({ success: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ── Campaign diary: standalone export / import ──
+// A diary-only bundle, independent of the full campaign export (which still
+// carries the diary too, so a campaign restore loses nothing). Lets a diary be
+// backed up or handed to another DM on its own.
+app.get('/api/campaign-diary/:campaignId/export', requireRole(['dm', 'admin']), async (req, res) => {
+  const { campaignId } = req.params;
+  try {
+    if (!await dmOwnsCampaign(campaignId, req.session.userId, req.session.role))
+      return res.status(403).json({ error: 'Access denied' });
+    const [campR, entriesR] = await Promise.all([
+      pool.query('SELECT name FROM campaigns WHERE id=$1', [campaignId]),
+      pool.query(
+        `SELECT title, body, session_no, session_date, status, published_at, chapter
+           FROM campaign_diary_entries WHERE campaign_id=$1 ${DIARY_ORDER}`,
+        [campaignId],
+      ),
+    ]);
+    // No share token: a token is bound to the campaign it was minted for, so
+    // carrying one across would either collide on the UNIQUE constraint or point
+    // an already-pasted URL at different content. Every other export does the same.
+    res.json({
+      version: 1,
+      exported_at: new Date().toISOString(),
+      type: 'campaign-diary',
+      campaign_name: campR.rows[0]?.name || 'Campaign',
+      entries: entriesR.rows,
+    });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// REPLACES the target campaign's diary — this is a restore, not a merge, so
+// re-importing the same file twice leaves the same entries rather than doubling
+// them. Destructive by design; the client confirms with real counts first.
+app.post('/api/campaign-diary/:campaignId/import', requireRole(['dm', 'admin']), async (req, res) => {
+  const { campaignId } = req.params;
+  const bundle = req.body;
+  // Checked here as well as in the import hub: this is a direct endpoint, and
+  // the wrong file type arriving at a destructive route should 400, not delete.
+  if (bundle?.type !== 'campaign-diary') return res.status(400).json({ error: 'Not a campaign-diary export file' });
+  if (!Array.isArray(bundle.entries)) return res.status(400).json({ error: 'Bundle has no entries array' });
+  try {
+    if (!await dmOwnsCampaign(campaignId, req.session.userId, req.session.role))
+      return res.status(403).json({ error: 'Access denied' });
+  } catch (e) { return res.status(500).json({ error: e.message }); }
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const del = await client.query('DELETE FROM campaign_diary_entries WHERE campaign_id=$1 RETURNING id', [campaignId]);
+    let imported = 0;
+    for (const e of bundle.entries) {
+      if (!e?.title) continue;
+      await client.query(
+        `INSERT INTO campaign_diary_entries
+           (campaign_id, created_by, title, body, session_no, session_date, status, published_at, chapter)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+        [campaignId, req.session.userId, String(e.title).slice(0, 255), e.body || null,
+          e.session_no ?? null, e.session_date || null,
+          // Status travels with the entry: "replace" means restore, so the file
+          // is authoritative about what was already published.
+          e.status === 'published' ? 'published' : 'draft', e.published_at || null,
+          e.chapter ? String(e.chapter).slice(0, 120) : null],
+      );
+      imported += 1;
+    }
+    await client.query('COMMIT');
+    res.json({ success: true, imported, replaced: del.rowCount });
+  } catch (e) {
+    await client.query('ROLLBACK');
+    res.status(500).json({ error: e.message });
+  } finally {
+    client.release();
+  }
+});
+
+// Roster for the printed book: the title page names the table, and the annex
+// at the back carries each character's portrait and public bio. Fetched
+// separately rather than folded into the diary payload — portraits are base64
+// and would be dead weight on every page view of a diary nobody is printing.
+const ROSTER_SQL = `
+  SELECT cp.player_name, pc.name AS character_name,
+         pc.picture_data, pc.picture_url, pc.public_info
+    FROM campaign_players cp
+    LEFT JOIN pc_characters pc ON pc.player_id = cp.id
+   WHERE cp.campaign_id = $1 AND cp.is_dm_player = false
+   ORDER BY cp.player_name ASC`;
+
+const DM_SQL = `
+  SELECT u.username AS dm_name FROM campaigns c
+    JOIN users u ON u.id = c.dm_user_id WHERE c.id = $1`;
+
+async function diaryRoster(campaignId) {
+  const [dm, roster] = await Promise.all([
+    pool.query(DM_SQL, [campaignId]),
+    pool.query(ROSTER_SQL, [campaignId]),
+  ]);
+  // public_info only — never private_info, and never the DM notes. This is the
+  // same material the public PC sheet already exposes.
+  return { dm_name: dm.rows[0]?.dm_name || null, players: roster.rows };
+}
+
+app.get('/api/campaign-diary/:campaignId/roster', requireRole(['dm', 'admin']), async (req, res) => {
+  const { campaignId } = req.params;
+  try {
+    if (!await dmOwnsCampaign(campaignId, req.session.userId, req.session.role))
+      return res.status(403).json({ error: 'Access denied' });
+    res.json(await diaryRoster(campaignId));
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// Same roster, for a reader printing from the share link. Token-gated, and it
+// returns only what the public PC sheet already exposes.
+app.get('/api/diary-public/:token/roster', async (req, res) => {
+  try {
+    const share = await pool.query('SELECT campaign_id FROM campaign_diary_shares WHERE token=$1', [req.params.token]);
+    if (!share.rows.length) return res.status(404).json({ error: 'Not found' });
+    res.json(await diaryRoster(share.rows[0].campaign_id));
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ── Player diaries ──
+// NOTE ON ORDERING: this must stay ABOVE `/:campaignId/:playerId` below.
+// `all` is a perfectly good :playerId — registered after it, this route never
+// runs and every DM call comes back 403 from the other handler's access check.
+// Exactly the trap that broke /api/player-timelines/:timelineId/public-token;
+// test/routeOrder.test.js fails if this is ever reordered.
+app.get('/api/player-diary/:campaignId/all', requireRole(['dm', 'admin']), async (req, res) => {
+  const { campaignId } = req.params;
+  try {
+    if (!await dmOwnsCampaign(campaignId, req.session.userId, req.session.role))
+      return res.status(403).json({ error: 'Access denied' });
+    // is_dm_player excluded: the DM's own writing belongs in the campaign diary,
+    // and their pseudo-player is hidden from every other player-facing list too.
+    const r = await pool.query(
+      `SELECT pde.*, cp.player_name
+         FROM player_diary_entries pde
+         JOIN campaign_players cp ON cp.id = pde.player_id
+        WHERE pde.campaign_id=$1 AND cp.is_dm_player = false
+        ORDER BY cp.player_name ASC, pde.session_no ASC NULLS LAST,
+                 pde.session_date ASC NULLS LAST, pde.created_at ASC`,
+      [campaignId],
+    );
+    res.json(r.rows);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.get('/api/player-diary/:campaignId/:playerId', requireAuth, async (req, res) => {
+  const { campaignId, playerId } = req.params;
+  try {
+    // Reads reuse canAccessTimeline verbatim — it already encodes
+    // DM-owns-campaign OR player-owns-row OR admin, which is exactly the rule.
+    if (!await canAccessTimeline(req.session.userId, req.session.role, campaignId, playerId))
+      return res.status(403).json({ error: 'Access denied' });
+    const r = await pool.query(
+      `SELECT * FROM player_diary_entries WHERE campaign_id=$1 AND player_id=$2 ${DIARY_ORDER}`,
+      [campaignId, playerId],
+    );
+    res.json(r.rows);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// Writes are owner-only, NOT canAccessTimeline: that returns true for the
+// campaign's DM, which would let them edit a diary labelled private.
+app.post('/api/player-diary/:campaignId/:playerId', requireAuth, async (req, res) => {
+  const { campaignId, playerId } = req.params;
+  const { title, body, session_no, session_date, category } = req.body;
+  if (!title || !String(title).trim()) return res.status(400).json({ error: 'Title required' });
+  if (String(title).length > 255) return res.status(400).json({ error: 'Title too long (max 255)' });
+  try {
+    if (!await ownsPlayer(req.session.userId, playerId))
+      return res.status(403).json({ error: 'Access denied' });
+    // canAccessTimeline's player branch never checks that the player belongs to
+    // the campaign in the path, so without this a row could be created with a
+    // mismatched campaign_id and then be invisible to every scoped query.
+    const cp = await pool.query('SELECT campaign_id FROM campaign_players WHERE id=$1', [playerId]);
+    if (!cp.rows.length || String(cp.rows[0].campaign_id) !== String(campaignId))
+      return res.status(400).json({ error: 'Player does not belong to that campaign' });
+    const r = await pool.query(
+      `INSERT INTO player_diary_entries (campaign_id, player_id, created_by, title, body, session_no, session_date, category)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,
+      [campaignId, playerId, req.session.userId, String(title).trim(), body || null, session_no || null,
+        session_date || null, category ? String(category).slice(0, 120) : null],
+    );
+    res.json(r.rows[0]);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.put('/api/player-diary/:campaignId/:playerId/entries/:entryId', requireAuth, async (req, res) => {
+  const { campaignId, playerId, entryId } = req.params;
+  const { title, body, session_no, session_date, category } = req.body;
+  if (!title || !String(title).trim()) return res.status(400).json({ error: 'Title required' });
+  if (String(title).length > 255) return res.status(400).json({ error: 'Title too long (max 255)' });
+  try {
+    if (!await ownsPlayer(req.session.userId, playerId))
+      return res.status(403).json({ error: 'Access denied' });
+    // Scoped by entry AND player AND campaign. The guard above only proves the
+    // caller owns the player they NAMED — this is what stops them naming their
+    // own player while addressing somebody else's entry id.
+    const r = await pool.query(
+      `UPDATE player_diary_entries
+          SET title=$1, body=$2, session_no=$3, session_date=$4, category=$5, updated_at=CURRENT_TIMESTAMP
+        WHERE id=$6 AND player_id=$7 AND campaign_id=$8 RETURNING *`,
+      [String(title).trim(), body || null, session_no || null, session_date || null,
+        category ? String(category).slice(0, 120) : null, entryId, playerId, campaignId],
+    );
+    if (!r.rows.length) return res.status(404).json({ error: 'Entry not found' });
+    res.json(r.rows[0]);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.delete('/api/player-diary/:campaignId/:playerId/entries/:entryId', requireAuth, async (req, res) => {
+  const { campaignId, playerId, entryId } = req.params;
+  try {
+    if (!await ownsPlayer(req.session.userId, playerId))
+      return res.status(403).json({ error: 'Access denied' });
+    const r = await pool.query(
+      'DELETE FROM player_diary_entries WHERE id=$1 AND player_id=$2 AND campaign_id=$3 RETURNING id',
+      [entryId, playerId, campaignId],
+    );
+    if (!r.rows.length) return res.status(404).json({ error: 'Entry not found' });
+    res.json({ success: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ── Public diary read — token only, no auth ──
+app.get('/api/diary-public/:token', async (req, res) => {
+  try {
+    const share = await pool.query('SELECT campaign_id FROM campaign_diary_shares WHERE token=$1', [req.params.token]);
+    // Unknown and revoked tokens are the same generic 404 — "this link was
+    // revoked" would confirm the campaign exists to anyone guessing.
+    if (!share.rows.length) return res.status(404).json({ error: 'Not found' });
+    const campaignId = share.rows[0].campaign_id;
+
+    const [campR, entriesR] = await Promise.all([
+      pool.query('SELECT name FROM campaigns WHERE id=$1', [campaignId]),
+      // Explicit columns, never SELECT *: a DM-only column added to this table
+      // later must not start leaking merely by existing. No created_by (a user
+      // id), no status (nothing left to say once filtered), no edit timestamps.
+      //
+      // The draft filter is in SQL, per the house rule that withheld rows never
+      // reach the browser. This query also names only campaign_diary_entries —
+      // player diaries are a different table and are unreachable from here.
+      pool.query(
+        `SELECT id, title, body, session_no, session_date, published_at, chapter
+           FROM campaign_diary_entries
+          WHERE campaign_id=$1 AND status='published'
+          ORDER BY session_no ASC NULLS LAST, session_date ASC NULLS LAST, created_at ASC`,
+        [campaignId],
+      ),
+    ]);
+
+    // Session-blind on purpose: unlike the public journey map this never tailors
+    // its output to a logged-in cookie, so "did we leak?" stays reproducible
+    // with a cookie-less curl.
+    res.json({
+      campaign_name: campR.rows[0]?.name || 'Campaign',
+      entries: entriesR.rows,
+    });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 // NOTE: the /api/timeline-private/* routes were removed here.
 // They were an orphaned surface: the DM's private journal is served by the
 // regular /api/player-timelines/* endpoints (the UI filters by timeline name),
@@ -892,9 +1336,11 @@ app.get('/api/timeline-party/:campaignId', requireAuth, async (req, res) => {
       );
       if (!m.rows.length) return res.status(403).json({ error: 'Access denied' });
     }
+    const canSeeHidden = ['dm', 'admin'].includes(req.session.role);
     const r = await pool.query(
       `SELECT * FROM player_timeline_entries
        WHERE campaign_id=$1 AND is_party=true
+         ${canSeeHidden ? '' : 'AND visible_to_players = true'}
        ORDER BY year ASC, day_of_year ASC`,
       [campaignId]
     );
@@ -999,12 +1445,70 @@ app.get('/api/campaigns/:campaignId/public-token', requireRole(['dm', 'admin']),
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// DM reveals / hides one event to the players. DM-only by design: the flag is
+// the DM's editorial control over what the party has learned.
+app.patch('/api/player-timelines/:timelineId/entries/:entryId/visibility',
+  requireRole(['dm', 'admin']), async (req, res) => {
+    const { timelineId, entryId } = req.params;
+    const { visible } = req.body;
+    try {
+      const tl = await pool.query('SELECT * FROM player_timelines WHERE id=$1', [timelineId]);
+      if (!tl.rows.length) return res.status(404).json({ error: 'Timeline not found' });
+      const t = tl.rows[0];
+      if (!await canAccessTimeline(req.session.userId, req.session.role, t.campaign_id, t.player_id)) {
+        return res.status(403).json({ error: 'Access denied' });
+      }
+      const r = await pool.query(
+        'UPDATE player_timeline_entries SET visible_to_players=$1 WHERE id=$2 AND timeline_id=$3 RETURNING id, visible_to_players',
+        [!!visible, entryId, timelineId],
+      );
+      if (!r.rows.length) return res.status(404).json({ error: 'Entry not found' });
+      res.json(r.rows[0]);
+    } catch (e) { res.status(500).json({ error: e.message }); }
+  });
+
+// Same, for a party event (campaign-scoped, no owning timeline).
+app.patch('/api/timeline-party/:campaignId/:entryId/visibility',
+  requireRole(['dm', 'admin']), async (req, res) => {
+    const { campaignId, entryId } = req.params;
+    const { visible } = req.body;
+    try {
+      if (req.session.role === 'dm') {
+        const check = await pool.query('SELECT id FROM campaigns WHERE id=$1 AND dm_user_id=$2', [campaignId, req.session.userId]);
+        if (!check.rows.length) return res.status(403).json({ error: 'Access denied' });
+      }
+      const r = await pool.query(
+        'UPDATE player_timeline_entries SET visible_to_players=$1 WHERE id=$2 AND campaign_id=$3 AND is_party=true RETURNING id, visible_to_players',
+        [!!visible, entryId, campaignId],
+      );
+      if (!r.rows.length) return res.status(404).json({ error: 'Entry not found' });
+      res.json(r.rows[0]);
+    } catch (e) { res.status(500).json({ error: e.message }); }
+  });
+
 // Public read-only combined data — no auth required
 app.get('/api/timeline-public/:token', async (req, res) => {
   try {
+    // Two kinds of token: campaign-wide (every player's timeline) and
+    // timeline-scoped (exactly one). Resolve the campaign one first, then fall
+    // back to a per-timeline share.
+    let campaignId = null;
+    let onlyTimelineId = null;
     const share = await pool.query('SELECT campaign_id FROM campaign_timeline_shares WHERE token=$1', [req.params.token]);
-    if (!share.rows.length) return res.status(404).json({ error: 'Not found' });
-    const campaignId = share.rows[0].campaign_id;
+    if (share.rows.length) {
+      campaignId = share.rows[0].campaign_id;
+    } else {
+      const tShare = await pool.query(
+        `SELECT pts.timeline_id, pt.campaign_id
+         FROM player_timeline_shares pts
+         JOIN player_timelines pt ON pt.id = pts.timeline_id
+         WHERE pts.token=$1`,
+        [req.params.token],
+      );
+      if (!tShare.rows.length) return res.status(404).json({ error: 'Not found' });
+      onlyTimelineId = tShare.rows[0].timeline_id;
+      campaignId = tShare.rows[0].campaign_id;
+    }
 
     const [metaR, entriesR] = await Promise.all([
       pool.query(
@@ -1024,9 +1528,12 @@ app.get('/api/timeline-public/:token', async (req, res) => {
                   pte.player_ids, pte.manual_links, pte.is_party
            FROM player_timelines pt
            JOIN campaign_players cp ON pt.player_id = cp.id
-           LEFT JOIN player_timeline_entries pte ON pte.timeline_id = pt.id
+           LEFT JOIN player_timeline_entries pte
+             ON pte.timeline_id = pt.id
+            AND pte.visible_to_players = true
            WHERE pt.campaign_id=$1
              AND cp.is_dm_player = false
+             ${onlyTimelineId ? 'AND pt.id = $2' : ''}
            UNION ALL
            SELECT NULL::int as timeline_id, '🌍 Party' as timeline_name,
                   NULL::int as player_id, 'Party' as player_name,
@@ -1035,9 +1542,15 @@ app.get('/api/timeline-public/:token', async (req, res) => {
                   pte.player_ids, pte.manual_links, pte.is_party
            FROM player_timeline_entries pte
            WHERE pte.campaign_id=$1 AND pte.is_party=true
+             AND pte.visible_to_players = true
+             -- Excluded from a timeline-scoped share: party events belong to the
+             -- whole campaign, and a link that claims to show one timeline must
+             -- not quietly carry campaign-wide content to an unauthenticated
+             -- reader. The campaign-wide token still includes them.
+             ${onlyTimelineId ? 'AND false' : ''}
          ) sub
          ORDER BY player_name, timeline_name, year ASC, day_of_year ASC`,
-        [campaignId]
+        onlyTimelineId ? [campaignId, onlyTimelineId] : [campaignId]
       )
     ]);
 
@@ -2306,11 +2819,15 @@ app.get('/api/campaigns/:id/export', requireRole(['dm']), async (req, res) => {
     // per-player data
     const playersOut = [];
     for (const p of playersRes.rows) {
-      const [charRes, statsRes, notesRes, relsRes] = await Promise.all([
+      const [charRes, statsRes, notesRes, relsRes, diaryRes] = await Promise.all([
         pool.query('SELECT name, picture_url, picture_data, story, traits, flaws, goals, public_info, private_info FROM pc_characters WHERE player_id=$1', [p.id]),
         pool.query('SELECT stats_json FROM pc_char_stats WHERE player_id=$1', [p.id]),
         pool.query('SELECT content, dm_visible FROM pc_dm_notes WHERE character_id=(SELECT id FROM pc_characters WHERE player_id=$1) ORDER BY created_at ASC', [p.id]),
         pool.query('SELECT id, name, relation_type, link, is_family, is_dm_only, parent_id FROM pc_relationships WHERE character_id=(SELECT id FROM pc_characters WHERE player_id=$1) ORDER BY created_at ASC', [p.id]),
+        // The player's private diary. Carried because the bundle is already a
+        // DM-only artifact holding private_info and DM notes, and losing a
+        // player's session write-ups on a restore is the worst data loss here.
+        pool.query('SELECT title, body, session_no, session_date, category FROM player_diary_entries WHERE player_id=$1 ORDER BY session_no ASC NULLS LAST, created_at ASC', [p.id]),
       ]);
 
       const relRefById = {};
@@ -2382,6 +2899,11 @@ app.get('/api/campaigns/:id/export', requireRole(['dm']), async (req, res) => {
           parent_ref: r.parent_id ? (relRefById[r.parent_id] || null) : null,
         })),
         timelines: timelinesOut,
+        diary: diaryRes.rows.map(e => ({
+          title: e.title, body: e.body || null,
+          session_no: e.session_no, session_date: e.session_date,
+          category: e.category || null,
+        })),
       });
       p._relRefById = relRefById;
     }
@@ -2540,8 +3062,18 @@ app.get('/api/campaigns/:id/export', requireRole(['dm']), async (req, res) => {
       year: e.year, day_of_year: e.day_of_year, duration_days: e.duration_days,
     }));
 
+    // Campaign diary. Statuses travel too, so a restored campaign keeps the
+    // draft/published split. The share TOKEN deliberately does not — the import
+    // creates a new campaign, so a carried token would either collide on the
+    // UNIQUE constraint or resolve an old pasted URL to different content.
+    const diaryRes = await pool.query(
+      `SELECT title, body, session_no, session_date, status, published_at, chapter
+         FROM campaign_diary_entries WHERE campaign_id=$1
+        ORDER BY session_no ASC NULLS LAST, created_at ASC`, [id],
+    );
+
     res.json({
-      version: 3,
+      version: 4,
       exported_at: new Date().toISOString(),
       type: 'campaign',
       campaign: {
@@ -2556,6 +3088,7 @@ app.get('/api/campaigns/:id/export', requireRole(['dm']), async (req, res) => {
       journey_maps: mapsOut,
       dm_timelines: dmTimelinesOut,
       party_events: partyEventsOut,
+      campaign_diary: diaryRes.rows,
     });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -2564,7 +3097,7 @@ app.get('/api/campaigns/:id/export', requireRole(['dm']), async (req, res) => {
 app.post('/api/campaigns/import', requireRole(['dm']), async (req, res) => {
   const bundle = req.body;
   if (bundle.type !== 'campaign') return res.status(400).json({ error: 'Not a campaign export file' });
-  const { campaign, players = [], locations = [], npcs = [], cross_connections = [], journey_maps = [], dm_timelines = [], party_events = [] } = bundle;
+  const { campaign, players = [], locations = [], npcs = [], cross_connections = [], journey_maps = [], dm_timelines = [], party_events = [], campaign_diary = [] } = bundle;
   if (!campaign?.name) return res.status(400).json({ error: 'Missing campaign name' });
 
   const client = await pool.connect();
@@ -2643,6 +3176,18 @@ app.post('/api/campaigns/import', requireRole(['dm']), async (req, res) => {
       if (p.username) {
         const uid = userByName[p.username.toLowerCase()];
         if (uid) await client.query('INSERT INTO campaign_user_assignments (player_id, user_id) VALUES ($1,$2)', [playerId, uid]);
+      }
+
+      // The player's private diary. `created_by` is the importing DM because the
+      // original author's user row may not exist in this instance; the diary is
+      // still scoped to the player, which is what governs who can read it.
+      for (const e of (p.diary || [])) {
+        await client.query(
+          `INSERT INTO player_diary_entries (campaign_id, player_id, created_by, title, body, session_no, session_date, category)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
+          [newId, playerId, req.session.userId, e.title, e.body || null, e.session_no ?? null,
+            e.session_date || null, e.category ? String(e.category).slice(0, 120) : null],
+        );
       }
 
       let charId = null;
@@ -2862,6 +3407,20 @@ app.post('/api/campaigns/import', requireRole(['dm']), async (req, res) => {
          VALUES ($1,NULL,NULL,$2,$3,$4,$5,$6,$7,$8,true)`,
         [newId, req.session.userId, e.title, e.description || null, e.location || null,
           e.year || 1492, e.day_of_year || 1, e.duration_days || 1]
+      );
+    }
+
+    // 10. Campaign diary. Statuses are preserved, so a restored campaign keeps
+    //     its draft/published split. No share token is created — the new
+    //     campaign starts with no live public link, as every other share does.
+    for (const e of campaign_diary) {
+      await client.query(
+        `INSERT INTO campaign_diary_entries
+           (campaign_id, created_by, title, body, session_no, session_date, status, published_at, chapter)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+        [newId, req.session.userId, e.title, e.body || null, e.session_no ?? null,
+          e.session_date || null, e.status === 'published' ? 'published' : 'draft',
+          e.published_at || null, e.chapter ? String(e.chapter).slice(0, 120) : null],
       );
     }
 
@@ -3371,10 +3930,69 @@ async function initializeDatabase() {
       );
     `);
 
+    // Diary — session summaries. Two tables rather than one with a nullable
+    // player_id, deliberately: the public share handler's SQL names
+    // campaign_diary_entries and nothing else, so leaking a player's private
+    // diary to an anonymous reader is unrepresentable rather than one forgotten
+    // `AND player_id IS NULL` away. player_timeline_entries is the cautionary
+    // tale — its merged shape forces an is_party check on every read path.
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS campaign_diary_entries (
+        id           SERIAL PRIMARY KEY,
+        campaign_id  INTEGER NOT NULL REFERENCES campaigns(id) ON DELETE CASCADE,
+        created_by   INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        title        VARCHAR(255) NOT NULL,
+        body         TEXT,
+        session_no   INTEGER,
+        session_date DATE,
+        status       VARCHAR(20) NOT NULL DEFAULT 'draft'
+                       CHECK (status IN ('draft','published')),
+        published_at TIMESTAMP,
+        created_at   TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at   TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+
+      -- Private to the owning player. The campaign's DM may READ these (see the
+      -- guards on /api/player-diary/*) but never write them.
+      -- campaign_id is denormalised on purpose: it lets every mutation scope its
+      -- WHERE by both campaign AND player, which is the cross-player defence.
+      CREATE TABLE IF NOT EXISTS player_diary_entries (
+        id           SERIAL PRIMARY KEY,
+        campaign_id  INTEGER NOT NULL REFERENCES campaigns(id) ON DELETE CASCADE,
+        player_id    INTEGER NOT NULL REFERENCES campaign_players(id) ON DELETE CASCADE,
+        created_by   INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        title        VARCHAR(255) NOT NULL,
+        body         TEXT,
+        session_no   INTEGER,
+        session_date DATE,
+        created_at   TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at   TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+
+      -- Its own token namespace: a timeline token must never resolve a diary.
+      CREATE TABLE IF NOT EXISTS campaign_diary_shares (
+        id          SERIAL PRIMARY KEY,
+        campaign_id INTEGER NOT NULL UNIQUE REFERENCES campaigns(id) ON DELETE CASCADE,
+        token       VARCHAR(255) NOT NULL UNIQUE,
+        created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
+
     await pool.query(`
       CREATE TABLE IF NOT EXISTS campaign_timeline_shares (
         id          SERIAL PRIMARY KEY,
         campaign_id INTEGER NOT NULL UNIQUE REFERENCES campaigns(id) ON DELETE CASCADE,
+        token       VARCHAR(255) NOT NULL UNIQUE,
+        created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+      -- Share links scoped to ONE timeline. Kept in its own table rather than as
+      -- a nullable timeline_id on the table above, whose campaign_id is
+      -- NOT NULL UNIQUE: relaxing that constraint on a live table to make room
+      -- for per-timeline rows would put every existing share link at risk for no
+      -- benefit. A token here grants that timeline and nothing else.
+      CREATE TABLE IF NOT EXISTS player_timeline_shares (
+        id          SERIAL PRIMARY KEY,
+        timeline_id INTEGER NOT NULL UNIQUE REFERENCES player_timelines(id) ON DELETE CASCADE,
         token       VARCHAR(255) NOT NULL UNIQUE,
         created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       );
@@ -3442,6 +4060,29 @@ async function initializeDatabase() {
     await pool.query(`
       ALTER TABLE player_timeline_entries ADD COLUMN IF NOT EXISTS is_party BOOLEAN NOT NULL DEFAULT false;
       ALTER TABLE player_timeline_entries ALTER COLUMN player_id DROP NOT NULL;
+    `);
+    // Migrate: diary grouping. The campaign diary is organised into chapters
+    // (an arc of sessions); a player diary into categories the player chooses
+    // (Session notes, Theories, People…). Free text rather than a lookup table:
+    // both are the author's own filing system, and a fixed vocabulary would be
+    // wrong for somebody within a week.
+    await pool.query(`
+      ALTER TABLE campaign_diary_entries ADD COLUMN IF NOT EXISTS chapter VARCHAR(120);
+      ALTER TABLE player_diary_entries   ADD COLUMN IF NOT EXISTS category VARCHAR(120);
+    `);
+    // Migrate: per-event visibility to players. The DM authors an event, then
+    // reveals it when the party learns of it.
+    //
+    // Added with DEFAULT true and only THEN switched to false, deliberately:
+    // `ADD COLUMN ... DEFAULT true` backfills every existing row as visible, so
+    // nothing players can already see disappears the first time this runs, while
+    // `SET DEFAULT false` makes every event created afterwards start hidden.
+    // Doing it in one statement with DEFAULT false would have silently hidden
+    // every event in every live campaign. Both statements are idempotent: the
+    // ADD is a no-op once the column exists, so later boots never re-backfill.
+    await pool.query(`
+      ALTER TABLE player_timeline_entries ADD COLUMN IF NOT EXISTS visible_to_players BOOLEAN NOT NULL DEFAULT true;
+      ALTER TABLE player_timeline_entries ALTER COLUMN visible_to_players SET DEFAULT false;
     `);
     // Migrate: DM player flag and NPCs
     await pool.query(`
@@ -3580,7 +4221,8 @@ async function initializeDatabase() {
     // a UNIQUE constraint or index (campaign_locations.campaign_id via
     // campaign_locations_campaign_name_unique, campaign_npcs.campaign_id,
     // journey_distances.map_id) and every column-level UNIQUE (pc_char_stats,
-    // campaign_meta, journey_map_shares, campaign_timeline_shares) — those are
+    // campaign_meta, journey_map_shares, campaign_timeline_shares,
+    // campaign_diary_shares) — those are
     // indexed already, and a duplicate only costs write throughput.
     const INDEXES = [
       // Campaign fan-out — every page starts from one of these.
@@ -3595,6 +4237,10 @@ async function initializeDatabase() {
       ['idx_player_timelines_campaign_player', 'player_timelines(campaign_id, player_id)'],
       ['idx_pte_timeline',                 'player_timeline_entries(timeline_id)'],
       ['idx_pte_campaign_player',          'player_timeline_entries(campaign_id, player_id)'],
+
+      // Diary.
+      ['idx_cde_campaign',                 'campaign_diary_entries(campaign_id)'],
+      ['idx_pde_campaign_player',          'player_diary_entries(campaign_id, player_id)'],
 
       // PC sheets — read on every sheet load.
       ['idx_pc_characters_player',         'pc_characters(player_id)'],
@@ -3655,7 +4301,8 @@ initializeDatabase().then(() => {
     console.log(`\n📋 Page routes:`);
     console.log(`  🔓 Public    : /npc-sheet, /item-cards, /split-view`);
     console.log(`  🔓 Public    : /timeline-public/:token, /journey-map-public/:token, /pc-public/:token`);
-    console.log(`  🎭 Player/DM : /timeline, /pc-sheet`);
+    console.log(`  🔓 Public    : /diary-public/:token`);
+    console.log(`  🎭 Player/DM : /timeline, /pc-sheet, /diary`);
     console.log(`  👑 DM        : /manage-campaigns, /journey-map, /pdf-viewer`);
     console.log(`  🛠️ Admin     : /user-panel`);
     console.log(`\n🔌 API groups:`);
@@ -3664,6 +4311,9 @@ initializeDatabase().then(() => {
     console.log(`  /api/campaigns/*                  Campaigns, players, locations, meta`);
     console.log(`  /api/player-timelines/*           Timeline CRUD`);
     console.log(`  /api/timeline-public/:token       Public read-only timeline`);
+    console.log(`  /api/campaign-diary/*             Campaign diary (DM): draft/published, share, export/import`);
+    console.log(`  /api/player-diary/*               Per-player private diaries`);
+    console.log(`  /api/diary-public/:token          Public read-only diary (published only)`);
     console.log(`  /api/pc/*                         PC sheets, relationships, DM notes`);
     console.log(`  /api/pc-public/:token             Public read-only PC sheet`);
     console.log(`  /api/journey-maps/*               Journey maps, locations, paths, routes`);

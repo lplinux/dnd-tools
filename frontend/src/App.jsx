@@ -16,12 +16,14 @@ const PcSheetPage = lazy(() => import('@/pages/PcSheet'));
 const NpcSheetPage = lazy(() => import('@/pages/NpcSheet'));
 const ItemCardsPage = lazy(() => import('@/pages/ItemCards'));
 const PdfViewerPage = lazy(() => import('@/pages/PdfViewer'));
+const DiaryPage = lazy(() => import('@/pages/Diary'));
 const SplitViewPage = lazy(() => import('@/pages/SplitView'));
 const UserPanelPage = lazy(() => import('@/pages/UserPanel'));
 
 // Public token pages
 const PcPublicPage = lazy(() => import('@/pages/PcPublic'));
 const JourneyMapPublicPage = lazy(() => import('@/pages/JourneyMapPublic'));
+const DiaryPublicPage = lazy(() => import('@/pages/DiaryPublic'));
 const TimelinePublicPage = lazy(() => import('@/pages/TimelinePublic'));
 
 /**
@@ -54,6 +56,7 @@ export default function App() {
         <Route path="pc-public/:token"           element={<PcPublicPage />} />
         <Route path="journey-map-public/:token"  element={<JourneyMapPublicPage />} />
         <Route path="timeline-public/:token"     element={<TimelinePublicPage />} />
+        <Route path="diary-public/:token"        element={<DiaryPublicPage />} />
 
         {/* ── Authenticated (DM + Player) ──────────────── */}
         <Route
@@ -61,6 +64,17 @@ export default function App() {
           element={
             <ProtectedRoute roles={['dm', 'player']}>
               <TimelinePage />
+            </ProtectedRoute>
+          }
+        />
+        {/* DM-only: a player's diary lives on their character sheet, so this
+            page would show a player nothing but a campaign diary they are not
+            allowed to see. */}
+        <Route
+          path="diary"
+          element={
+            <ProtectedRoute roles={['dm']}>
+              <DiaryPage />
             </ProtectedRoute>
           }
         />

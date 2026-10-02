@@ -14,9 +14,13 @@ import { timelineApi }    from '@/api/timeline';
 import { pcApi }          from '@/api/pc';
 import { compressImage }  from '@/components/map/compressImage';
 import { importJourneyMap } from '@/api/importJourneyMap';
+import { diaryApi }       from '@/api/diary';
+import { useConfirm }     from '@/contexts/ConfirmContext';
+import { downloadBundle } from '@/api/downloadBundle';
 
 export function useManageCampaigns() {
   const { toast } = useToast();
+  const confirm = useConfirm();
 
   // ── Users list (for player assignment) ───────────────────────────────────
   const { data: allUsers = [] } = useAsync(usersApi.list, { autoRun: true, deps: [] });
@@ -90,13 +94,7 @@ export function useManageCampaigns() {
   const exportCampaign = useCallback(async () => {
     if (!currentId) return;
     const data = await campaignsApi.exportCampaign(currentId);
-    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-    const url  = URL.createObjectURL(blob);
-    const a    = document.createElement('a');
-    a.href = url;
-    a.download = `${(currentCampaign?.name ?? 'campaign').replace(/\s+/g, '-').toLowerCase()}.json`;
-    a.click();
-    URL.revokeObjectURL(url);
+    downloadBundle(data, { module: 'campaign', name: currentCampaign?.name });
   }, [currentId, currentCampaign]);
 
   // Central importer: sniff `bundle.type` and route. `campaign` restores a NEW
@@ -120,11 +118,31 @@ export function useManageCampaigns() {
       catch (e) { toast(e.message, 'error'); }
       return { done: true };
     }
+    // The only DESTRUCTIVE type in the hub: a diary import replaces the target
+    // campaign's diary rather than merging into it, so unlike the others it asks
+    // first — and names real counts, because "are you sure?" with no numbers is
+    // not a decision anyone can actually make.
+    if (type === 'campaign-diary') {
+      try {
+        const existing = (await diaryApi.campaignList(currentId).catch(() => [])) || [];
+        const incoming = (data.entries || []).length;
+        const ok = await confirm(
+          existing.length
+            ? `Replace this campaign's diary with the ${incoming} ${incoming === 1 ? 'entry' : 'entries'} in this file? Its current ${existing.length} ${existing.length === 1 ? 'entry' : 'entries'} will be permanently deleted.`
+            : `Import ${incoming} diary ${incoming === 1 ? 'entry' : 'entries'} into this campaign?`,
+          { title: 'Import campaign diary', confirmLabel: existing.length ? 'Replace' : 'Import' },
+        );
+        if (!ok) return { done: true };
+        const r = await diaryApi.importCampaignDiary(currentId, data);
+        toast(`Diary imported — ${r.imported} ${r.imported === 1 ? 'entry' : 'entries'}${r.replaced ? `, replacing ${r.replaced}` : ''}.`);
+      } catch (e) { toast(e.message, 'error'); }
+      return { done: true };
+    }
     if (type === 'pc-sheet') return { need: 'pc-sheet', bundle: data };
     if (type === 'timeline') return { need: 'timeline', bundle: data };
-    toast('Unrecognized file — expected a campaign, journey-map, pc-sheet or timeline export.', 'error');
+    toast('Unrecognized file — expected a campaign, journey-map, pc-sheet, timeline or campaign-diary export.', 'error');
     return { done: true };
-  }, [currentId, reloadCampaigns, reload, toast]);
+  }, [currentId, reloadCampaigns, reload, toast, confirm]);
 
   const importPcSheetInto = useCallback(async (playerId, bundle) => {
     try { await pcApi.importSheet(playerId, bundle); await reload(); toast('PC sheet imported.'); }

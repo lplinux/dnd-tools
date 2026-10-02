@@ -18,14 +18,15 @@ import { useNavigate } from 'react-router-dom';
 import { Download, Printer } from 'lucide-react';
 
 import AppHeader    from '@/components/layout/AppHeader';
-import { Button, Spinner }   from '@/components/ui';
+import { Button, Spinner, Markdown } from '@/components/ui';
 import { usePcSheet }        from '@/hooks/usePcSheet';
 import { useToast }          from '@/hooks/useToast';
 import { pcApi }             from '@/api/pc';
+import { diaryApi }          from '@/api/diary';
 
 import {
   CharacterTab, StatsTab, RelationsTab,
-  PublicInfoTab, PrivateTab, DmNotesTab,
+  PublicInfoTab, PrivateTab, DmNotesTab, DiaryTab,
 } from './tabs';
 import './pc-print.css';
 
@@ -38,6 +39,10 @@ const TABS = [
   { id: 'relations',  label: '🌳 Relationships',  role: 'any' },
   { id: 'public',     label: '📢 Public Info',    role: 'any' },
   { id: 'private',    label: '🔒 Private Info',   role: 'any' },
+  // The player's diary lives on the character sheet, not in its own module —
+  // it is part of the character. The DM sees it here read-only, and in bulk
+  // from the Diary module.
+  { id: 'diary',      label: '📔 Diary',          role: 'any' },
   // 'shared' — the DM always sees this tab; a player sees it only when the DM
   // has actually shared a note with them (the API only ever returns the
   // dm_visible ones to a player, so a non-empty list means exactly that).
@@ -101,7 +106,7 @@ function PrintBlock({ title, children }) {
 }
 
 function PcPrintDoc({
-  charData, isDM, relationships, crossConnections, dmNotes,
+  charData, isDM, relationships, crossConnections, dmNotes, diary,
 }) {
   const portrait = charData?.picture_data || charData?.picture_url || null;
   const visibleRels = relationships ?? [];
@@ -162,6 +167,28 @@ function PcPrintDoc({
           </div>
         </section>
       )}
+
+      {/* The diary starts on a fresh page, so the sheet and the journal can be
+          printed, filed or handed over separately. Rendered only when there is
+          something in it — an empty section would force a blank page. */}
+      {(diary ?? []).length > 0 && (
+        <section className="pc-print-diary">
+          <h2 className="pc-print-diary-title">Diary</h2>
+          {diary.map((e) => (
+            <div key={e.id} className="pc-print-block">
+              <h3>{e.title}</h3>
+              <div className="pc-print-diary-meta">
+                {[e.category, e.session_no != null ? `Session ${e.session_no}` : null]
+                  .filter(Boolean).join(' · ')}
+              </div>
+              {/* Diary bodies are markdown, unlike the plain-text sheet fields.
+                  pc-print.css neutralises the renderer's colour classes, so the
+                  structure survives and the palette does not. */}
+              {e.body && <Markdown className="pc-print-text">{e.body}</Markdown>}
+            </div>
+          ))}
+        </section>
+      )}
     </div>
   );
 }
@@ -198,6 +225,7 @@ export default function PcSheet() {
   // Track active tab per-player so switching player resets to Character
   const [activeTab, setActiveTab] = useState('character');
   const [printing, setPrinting] = useState(false);
+  const [printDiary, setPrintDiary] = useState([]);
 
   function handlePlayerChange(pid) {
     setActiveTab('character');
@@ -212,6 +240,14 @@ export default function PcSheet() {
   // turn replaced a flat 800ms guess. Both are gone with the iframe.
   async function handlePrintAll() {
     if (!hasSheet) { toast('Open a character sheet first.', 'error'); return; }
+    // The diary is not loaded by the sheet itself (it lives in its own tab and
+    // fetches on open), so pull it now. Failing costs the diary section, not
+    // the printout — and it must land in state BEFORE the frames below, or the
+    // print document commits without it.
+    const entries = currentCampaignId && currentPlayerId
+      ? await diaryApi.playerList(currentCampaignId, currentPlayerId).catch(() => [])
+      : [];
+    setPrintDiary(entries || []);
     setPrinting(true);
     await new Promise((resolve) => {
       requestAnimationFrame(() => requestAnimationFrame(resolve));
@@ -342,6 +378,14 @@ export default function PcSheet() {
               {activeTab === 'private' && (
                 <PrivateTab charData={charData} actions={actions} />
               )}
+              {activeTab === 'diary' && (
+                <DiaryTab
+                  key={currentPlayerId}
+                  campaignId={currentCampaignId}
+                  playerId={currentPlayerId}
+                  isDM={isDM}
+                />
+              )}
               {activeTab === 'dmnotes' && (
                 <DmNotesTab notes={dmNotes} isDM={isDM} actions={actions} />
               )}
@@ -357,6 +401,7 @@ export default function PcSheet() {
           relationships={relationships}
           crossConnections={crossConnections}
           dmNotes={dmNotes}
+          diary={printDiary}
         />
       )}
     </>

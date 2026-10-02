@@ -47,6 +47,8 @@ function SaveRow({ onSave, saving }) {
 // ─────────────────────────────────────────────────────────────────────────────
 // CharacterTab
 // ─────────────────────────────────────────────────────────────────────────────
+export { default as DiaryTab } from './DiaryTab';
+
 export function CharacterTab({ charData, playerId, actions, publicLink }) {
   const [form, setForm] = useState({
     name: '', story: '', traits: '', flaws: '', goals: '',

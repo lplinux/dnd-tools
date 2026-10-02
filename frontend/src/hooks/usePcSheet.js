@@ -19,6 +19,7 @@ import { useToast }  from '@/hooks/useToast';
 import { useAuth }   from '@/hooks/useAuth';
 import { campaignsApi } from '@/api/campaigns';
 import { pcApi }        from '@/api/pc';
+import { downloadBundle } from '@/api/downloadBundle';
 
 export function usePcSheet() {
   const { user }  = useAuth();
@@ -187,7 +188,10 @@ export function usePcSheet() {
   // ── DM Notes ───────────────────────────────────────────────────────────────
   const addDmNote = useCallback(async (content, dmVisible) => {
     const note = await pcApi.addNote(currentPlayerId, { content, dm_visible: dmVisible });
-    setDmNotes(prev => [...prev, note]);
+    // Prepend: the API returns notes newest-first (ORDER BY created_at DESC), so
+    // appending put a new note at the bottom until the next load moved it to the
+    // top — the list silently reordered itself behind the user's back.
+    setDmNotes(prev => [note, ...prev]);
     toast('Note added.');
   }, [currentPlayerId, toast]);
 
@@ -206,13 +210,12 @@ export function usePcSheet() {
   const exportSheet = useCallback(async () => {
     if (!currentPlayerId) return;
     const data = await pcApi.exportSheet(currentPlayerId);
-    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-    const a    = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = `${(charData?.name || 'character').replace(/\s+/g,'-').toLowerCase()}.json`;
-    a.click();
-    URL.revokeObjectURL(a.href);
-  }, [currentPlayerId, charData]);
+    downloadBundle(data, {
+      module: 'character',
+      campaign: campaigns.find((c) => String(c.id) === String(currentCampaignId))?.name,
+      name: charData?.name,
+    });
+  }, [currentPlayerId, charData, campaigns, currentCampaignId]);
 
   // No import here on purpose: importing a PC sheet is DM-only and goes through
   // the single hub in Manage Campaigns (useManageCampaigns → importPcSheetInto).

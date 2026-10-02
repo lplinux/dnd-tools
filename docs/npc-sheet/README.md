@@ -7,7 +7,11 @@ A fillable, browser-based character sheet designed for **Non-Player Characters**
 - **Assisted entry from the SRD and Open5e** — see below; this is the fastest
   way to fill a sheet
 - Class selection with spell-slot tracking based on caster type (Full, Half, Third, Warlock, Innate)
-- Stats block (HP, AC, Speed, Proficiency)
+- Stats block (HP, AC, Speed, Proficiency). HP reads out as **current / max**, with **Temp HP**
+  and **Temp Max HP** beside it. The figures shown are the *effective* ones — current **+** temp
+  over max **+** temp max — and each half turns **green** while a temporary value is affecting it,
+  so the number is never quietly wrong. All four are edited together in the **✎ Manage HP** dialog,
+  which keeps a single place to change a value rather than two that can disagree
 - Ability scores (STR, DEX, CON, INT, WIS, CHA) with automatic modifier display
 - Tag pickers for damage resistances / immunities / vulnerabilities and condition immunities
 - Attacks, bonus actions, legendary and lair actions

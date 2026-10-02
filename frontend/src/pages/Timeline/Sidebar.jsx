@@ -140,10 +140,35 @@ export default function Sidebar({ tl, onOpenModal, onScrollToEvent, hideProfileB
   const [locQuery, setLocQuery] = useState('');
 
   const visPlayers = sortedPlayers.filter((p) => p.name.toLowerCase().includes(playerQuery.trim().toLowerCase()));
+
+  // Locations that still hold an event once EVERY other filter has been applied
+  // — the date range (already reflected in db.events here) plus the per-player
+  // eye toggles and solo. Listing a location whose events are all filtered out
+  // is just a dead row: it cannot be reordered meaningfully and hiding it
+  // changes nothing on screen.
+  const [showAllLocs, setShowAllLocs] = useState(false);
+  const effHiddenPlayers = tl.soloPlayerId != null
+    ? new Set(sortedPlayers.filter((p) => p.id !== tl.soloPlayerId).map((p) => p.id))
+    : tl.hiddenPlayers;
+  const locsWithEvents = new Set(
+    db.events
+      .filter((e) => {
+        const ids = e.playerIds || [];
+        // A party event belongs to everyone, so it keeps its location alive
+        // regardless of who is hidden.
+        if (!ids.length) return true;
+        return ids.some((id) => !effHiddenPlayers.has(id));
+      })
+      .map((e) => e.location),
+  );
+  const populatedLocs = displayedLocs.filter((l) => locsWithEvents.has(l));
+  const emptyLocCount = displayedLocs.length - populatedLocs.length;
+  const baseLocs = showAllLocs ? displayedLocs : populatedLocs;
+
   const locFiltering = locQuery.trim().length > 0;
   const visLocs = locFiltering
-    ? displayedLocs.filter((l) => l.toLowerCase().includes(locQuery.trim().toLowerCase()))
-    : displayedLocs;
+    ? baseLocs.filter((l) => l.toLowerCase().includes(locQuery.trim().toLowerCase()))
+    : baseLocs;
 
   const today = db.todayAbs != null ? fromAbsDay(db.todayAbs, calType) : null;
 
@@ -193,7 +218,10 @@ export default function Sidebar({ tl, onOpenModal, onScrollToEvent, hideProfileB
           : sortedEvents.map((ev) => {
             const pls = (ev.playerIds || []).map((id) => db.players.find((p) => p.id === id)).filter(Boolean);
             return (
-              <div key={ev.id} className="ev-li">
+              // Dimmed only where the flag means something. Personal-mode events
+              // carry no visibility field at all, and testing it there would grey
+              // out every row in a timeline that has no players to hide from.
+              <div key={ev.id} className={`ev-li${tl.toggleEventVisibility && !ev.visibleToPlayers ? ' item-hidden' : ''}`}>
                 <div className="ev-li-body" onClick={() => onScrollToEvent?.(ev.id)}>
                   <div className="ev-li-date">
                     {formatDate(ev.year, ev.dayOfYear, calType)}
@@ -205,6 +233,19 @@ export default function Sidebar({ tl, onOpenModal, onScrollToEvent, hideProfileB
                     <span>📍 {ev.location}</span>
                   </div>
                 </div>
+                {/* DM-only reveal control. New DM-authored events start hidden,
+                    so this is how the party learns anything happened. Absent in
+                    personal mode, which has no players to hide from. */}
+                {tl.isDM && tl.toggleEventVisibility && (
+                  <button
+                    className={`eye-btn${ev.visibleToPlayers ? '' : ' hidden-item'}`}
+                    style={{ flexShrink: 0, marginTop: 2 }}
+                    title={ev.visibleToPlayers ? 'Visible to players — click to hide' : 'Hidden from players — click to reveal'}
+                    onClick={() => tl.toggleEventVisibility(ev.id, !ev.visibleToPlayers)}
+                  >
+                    {ev.visibleToPlayers ? '👁' : '👁‍🗨'}
+                  </button>
+                )}
                 <button className="btn sm dn" style={{ flexShrink: 0, marginTop: 2 }} onClick={() => tl.deleteEvent(ev.id)}>✕</button>
               </div>
             );
@@ -245,18 +286,22 @@ export default function Sidebar({ tl, onOpenModal, onScrollToEvent, hideProfileB
       </Section>
 
       {/* Locations */}
-      <Section title="Locations" badge={db.locations.length} k="locs" collapsed={ui.collapsed.locs} onToggle={toggleSection}>
-        {displayedLocs.length > 3 && (
+      <Section title="Locations" badge={baseLocs.length} k="locs" collapsed={ui.collapsed.locs} onToggle={toggleSection}>
+        {baseLocs.length > 3 && (
           <input className="pl-search" style={{ marginBottom: 6 }} placeholder="Search locations…"
             value={locQuery} onChange={(e) => setLocQuery(e.target.value)} />
         )}
         {displayedLocs.length === 0
           ? <div className="empty-m">No locations yet.</div>
-          : visLocs.length === 0
-            ? <div className="empty-m">No matches.</div>
-            : visLocs.map((l, i) => {
+          : baseLocs.length === 0
+            ? <div className="empty-m">No locations have events in view.</div>
+            : visLocs.length === 0
+              ? <div className="empty-m">No matches.</div>
+              : visLocs.map((l, i) => {
             const hidden = tl.hiddenLocs.has(l);
-            const canDrag = !readOnlyActors && !locFiltering; // indices only valid unfiltered
+            // Drag reorder writes positions back into the full ordered list, so
+            // the rendered indices must be that list — any subset breaks them.
+            const canDrag = !readOnlyActors && !locFiltering && baseLocs.length === displayedLocs.length;
             return (
               <div
                 key={l}
@@ -274,6 +319,21 @@ export default function Sidebar({ tl, onOpenModal, onScrollToEvent, hideProfileB
               </div>
             );
           })}
+        {/* An escape hatch, so an empty location can still be reordered or
+            deleted — hiding it outright would strand it in the data with no way
+            to reach it from here. */}
+        {emptyLocCount > 0 && (
+          <button
+            className="btn sm"
+            style={{ width: '100%', marginTop: 4 }}
+            onClick={() => setShowAllLocs((v) => !v)}
+            title={showAllLocs ? 'List only locations with events in view' : 'Also list locations with no events in view'}
+          >
+            {showAllLocs
+              ? `Hide ${emptyLocCount} without events`
+              : `Show ${emptyLocCount} without events`}
+          </button>
+        )}
         {!readOnlyActors && <button className="btn sm" style={{ width: '100%', marginTop: 4 }} onClick={() => onOpenModal('add-location')}>＋ Add Location</button>}
       </Section>
     </div>

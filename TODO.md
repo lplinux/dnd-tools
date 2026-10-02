@@ -1,5 +1,40 @@
 # TODO
 
+## Planned features (not started)
+
+Captured for later — nothing here has been designed or scoped yet.
+
+### NPC Management — a new module, or a section of Manage Campaigns
+
+- [ ] **Manage NPCs and other characters properly**, the way LoreForge does — somewhere richer
+      than the current `campaign_npcs` table, which holds little more than a name.
+- [ ] **Public and private information per NPC**, so a DM can write everything down in one place
+      and reveal only part of it. The split should work the way it already does elsewhere in the
+      app: *withheld server-side*, not merely un-rendered — see the PC sheet's
+      `public_info` / `private_info` and the diary's draft/published handling for the pattern.
+- [ ] Decide **module vs. tab**: Manage Campaigns already has an NPCs tab, and the Journey Map,
+      Timeline and character tree all reference NPCs by id. A separate module means another
+      campaign selector; a tab means a very large tab. Worth settling before building.
+- [ ] Open question: what do players see, and *where*? A read-only NPC view would need its own
+      access rule (every campaign member? only NPCs they have met?) and probably a share link,
+      like the other public views.
+
+### PC Sheet — inventory management
+
+- [ ] **Track a character's items**, with quantities and equipped/carried state.
+- [ ] **Pull item information from the SRD** (and Open5e), reusing the lookup that already backs
+      Item Cards' *Load from SRD* — `api/srd.js` + `api/open5e.js` + `magicItemToCard` in
+      `data/srdMap.js` already fetch and flatten magic items; the inventory wants the same data
+      against a different shape.
+- [ ] **Cards for non-official items**, ideally linked to the Item Cards module rather than a
+      second parallel editor. Note the obstacle: Item Cards is currently **localStorage-only and
+      entirely client-side** — nothing it makes reaches the database. Linking inventory to it
+      means giving item cards server-side storage first, which is the real work in this item.
+- [ ] Open question: is an inventory item a free-text row with an optional link to an item card,
+      or always a card? The first is far cheaper and probably right to start with.
+
+---
+
 ## React Migration (v4.0.0)
 
 The React scaffold is in place (`frontend/`). Each item below is one module
@@ -83,7 +118,13 @@ and delete the `LegacyIframe` call from its page file.
 
 ### Timelines
 
-- [ ] Add a filter by date so timenline could show only a specific timeframe
+- [x] Add a filter by date so timeline could show only a specific timeframe ✅ v4.20.0
+      (⏳ in the zoom row opens a From/To picker; either bound may be left off for an
+      open end. An event is kept when its span **overlaps** the window, not merely when
+      it starts inside it, so a long journey already under way still shows. A chip in
+      the toolbar names the range and the kept/total count, with one click to clear —
+      a filtered timeline is otherwise indistinguishable from an empty one. Fit frames
+      the filtered set. View-only: it never touches stored data.)
 - [x] Add a button to "Go to Today" ✅
       (📅 beside Fit; `scrollToToday()` on the canvas handle, reusing the same
       centring as `scrollToEvent`. Disabled when no marker is set. Also added to
@@ -111,10 +152,20 @@ on a post-mutation refresh — following Timeline/JourneyMap, which already do t
 - [x] PC Sheet: `toggleRelVisibility` updates local state instead of re-listing ✅ v4.18.0
       (`addRelationship`/`editRelationship` still re-list on purpose — they need the
       server-assigned ids + recomputed `cross_connections`; neither causes a visible jump.)
-- [ ] UserPanel: role-change/delete/create refetch the table — acceptable (table-scoped
-      spinner, no page jump); could update the affected row locally. Left as-is.
-- [ ] General: give long scrollable panes a stable scroll container and avoid `loading`-gated
-      unmounts on refresh so scroll position is preserved app-wide.
+- [x] UserPanel: role-change and delete now patch their row locally ✅ v4.20.0
+      (`useAsync` already exposed `setData`. Both know the exact resulting value, so a
+      refetch bought nothing. **Create still refetches on purpose**: its response
+      returns only id/username/role while the table also shows Email and Created, so
+      appending locally would render two blank cells or force an invented timestamp.)
+- [x] General: scroll preservation audited app-wide ✅ v4.20.0
+      (Every remaining `loading`-gated unmount was checked and each is an *initial* load,
+      an explicit Refresh, or a deliberate context switch — player change, campaign
+      switch — where resetting scroll is the correct behaviour. Manage Campaigns already
+      keeps its scroll container outside the spinner swap; PC Sheet's relationship and
+      note mutations are all local or optimistic. No post-mutation refetch remains that
+      unmounts a pane. The audit did turn up one real defect: `addDmNote` appended while
+      the API returns notes newest-first, so the list silently reordered itself on the
+      next load — now prepends.)
 
 ---
 
@@ -132,7 +183,12 @@ on a post-mutation refresh — following Timeline/JourneyMap, which already do t
       an Eldritch Knight Fighter and an Arcane Trickster Rogue are third casters.
       The old code forced `none` for those, which blocked exactly that.)
 - [ ] Prepare for Multi-Class
-- [ ] Add Button to the HP to add temporary Hit Points and Temporary Max Hitpoints
+- [x] Add Button to the HP to add temporary Hit Points and Temporary Max Hitpoints ✅ v4.20.0
+      (a `+` on the HP label reveals TEMP HP and TEMP MAX HP; they auto-reveal for a
+      sheet that already carries either, so a loaded character never hides the value
+      behind a click. Stored in `stats_json` as `temp_hp` / `temp_max_hp`. Behind a
+      toggle because most characters never have either, and two permanently empty
+      boxes in the core stats bar is clutter on every sheet to serve a few.)
 - [x] Add Button to print the Character Sheet when inside a PC Sheet. ✅
       (🖨 Print in the **Stats Sheet toolbar**, beside 💾 Save Stats and 🗑 Clear.
       It prints the stat block ALONE, in its parchment design, by printing the

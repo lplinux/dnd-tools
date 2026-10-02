@@ -321,6 +321,7 @@ export default function UserPanel() {
     loading,
     error,
     run: reload,
+    setData: setUsers,
   } = useAsync(usersApi.list, { autoRun: true, deps: [] });
 
   // ── Modal state ───────────────────────────────────────────
@@ -342,13 +343,16 @@ export default function UserPanel() {
       await usersApi.updateRole(roleModal.id, nextRole);
       toast(`${roleModal.username} is now ${nextRole}.`);
       setRoleModal(null);
-      reload();
+      // Patch the one row instead of refetching: the new role is exactly what we
+      // just sent, so a round trip buys nothing and costs a table-wide spinner
+      // that resets scroll in a long user list.
+      setUsers((prev) => (prev ?? []).map((u) => (u.id === roleModal.id ? { ...u, role: nextRole } : u)));
     } catch (e) {
       toast(e.message, 'error');
     } finally {
       setActionLoading(false);
     }
-  }, [roleModal, reload, toast]);
+  }, [roleModal, setUsers, toast]);
 
   const handleResetPassword = useCallback(async () => {
     if (!passModal) return;
@@ -374,13 +378,15 @@ export default function UserPanel() {
       await usersApi.remove(deleteModal.id);
       toast(`User "${deleteModal.username}" deleted.`);
       setDeleteModal(null);
-      reload();
+      // Drop the row locally — the server has confirmed the delete, so refetching
+      // would only re-render the whole table to show one fewer row.
+      setUsers((prev) => (prev ?? []).filter((u) => u.id !== deleteModal.id));
     } catch (e) {
       toast(e.message, 'error');
     } finally {
       setActionLoading(false);
     }
-  }, [deleteModal, reload, toast]);
+  }, [deleteModal, setUsers, toast]);
 
   // ── Render ────────────────────────────────────────────────
   return (
@@ -391,6 +397,11 @@ export default function UserPanel() {
         <div className="max-w-5xl mx-auto flex flex-col gap-5">
 
           {/* Create user form */}
+          {/* Create still refetches on purpose: the create response returns only
+              id/username/role, while the table also shows Email and Created —
+              appending it locally would render a row with two blank cells, or
+              force us to invent a client-side timestamp. Role change and delete
+              patch their row instead, since both know the exact new value. */}
           <CreateUserForm onCreated={reload} />
 
           {/* Users table */}
