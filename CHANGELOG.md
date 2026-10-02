@@ -10,6 +10,27 @@ Only the 0.x entries correspond to GitHub releases.
 ## [4.20.0] – Unreleased — Linting, tests, and indexes on every foreign key we query
 
 
+### Docs: `TODO.md` split into open work and a QA queue
+
+`TODO.md` had grown to 350 lines of which **62 items were already done** — the five genuinely
+open bootstrap gaps and the unstarted NPC/inventory plans were buried under a changelog that
+duplicated this one. The completed items moved verbatim to a new **`TOQA.md`**, which is the
+queue of things built but not yet verified in a browser, rather than a second history.
+
+`TODO.md` now holds only open work, plus:
+
+- **One new open item**: `scripts/setup-db.js` reads `.env` itself with no dotenv-style guard,
+  so an exported `DB_PORT`/`DB_HOST` does *not* win over the file — the opposite of `app.js`.
+  Found when a scratch-stack command reached the live database during the campaign merge.
+- **An "Ideas worth considering" section** — eight suggestions grounded in what the repo
+  actually lacks (no `pg_dump` anywhere, no search endpoint at all, Item Cards still
+  localStorage-only, `campaign_locations.image_data` written but never set), each with the tool
+  that does the same thing well, and an explicit list of what is *not* being suggested: a VTT,
+  a dice roller, and — as a judgement call rather than a refusal — an initiative tracker.
+
+`README.md` points at both files.
+
+
 
 ### Node guard: finished the job
 

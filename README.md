@@ -269,7 +269,7 @@ dnd-tools/
 ├── Dockerfile
 ├── docker-compose.yml
 ├── run.sh                        # One-command bootstrap (see Quick start)
-├── README.md / ARCH.md / CHANGELOG.md / TODO.md / DISCLAIMER.md / LICENSE
+├── README.md / ARCH.md / CHANGELOG.md / TODO.md / TOQA.md / DISCLAIMER.md / LICENSE
 │
 ├── scripts/
 │   ├── setup-db.js               # Manual DB initialisation script
@@ -393,4 +393,5 @@ the element does not exist. Lookups degrade to plain text when offline.
 
 ---
 
-See [CHANGELOG.md](CHANGELOG.md) for the full change history and [TODO.md](TODO.md) for the migration roadmap.
+See [CHANGELOG.md](CHANGELOG.md) for the full change history, [TODO.md](TODO.md) for open work and
+feature ideas, and [TOQA.md](TOQA.md) for work that is built and awaiting QA.
