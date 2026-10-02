@@ -12,7 +12,7 @@ A self-hosted Node.js + React web application for tabletop RPG campaign manageme
 ```
 dnd-tools/
 ├── app.js            ← Express server, all REST API routes, PostgreSQL schema
-├── public/           ← Express static: Vite build output (app/) + shared assets + fallback index.html
+├── public/app/       ← Express static: Vite build output (gitignored; `npm run build` creates it)
 ├── frontend/         ← React 19 + Vite SPA (the entire UI)
 │   └── src/
 │       ├── api/      ← Typed fetch wrappers (one module per API group)
@@ -70,6 +70,12 @@ SKIP_TESTS=1 bash run.sh   # bypass the test gate
 
 It needs Docker (or Podman) with Compose. A failing test stops the run before anything is built
 or started. The manual steps below are the same thing by hand, without containers.
+
+> **A fresh clone is missing `public/`, `pdfs/`, `.env` and `node_modules/` — that is correct.**
+> All four are gitignored: `public/app/` is Vite build output (`npm run build` creates it),
+> `pdfs/` is your own rulebooks, `.env` is copied from `.env.example` on first run, and
+> `node_modules/` comes from `npm install`. `run.sh` creates or restores every one of them.
+> Deleting `public/` is always safe; deleting `pdfs/` loses whatever you put there.
 
 ### 1. Backend (Express)
 

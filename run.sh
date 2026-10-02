@@ -15,11 +15,13 @@
 #    8.  Start postgres container
 #    9.  Wait for postgres to be healthy
 #    10. node scripts/setup-db.js --db-only  (create DB if missing)
-#    11. Start dnd-tools container
-#    12. Wait for backend to return HTTP 200
-#    13. node scripts/setup-db.js            (create initial admin if missing)
-#    14. Print banner
-#    15. Keep running — Ctrl+C cleanly stops everything
+#    11. Start dnd-tools container, then:
+#          - wait for the backend to return HTTP 200
+#          - node scripts/setup-db.js        (create initial admin if missing)
+#          - print the banner and keep running; Ctrl+C stops everything cleanly
+#
+#  The numbers match the "N/11" banners the script prints. The last four actions
+#  share step 11 because they share one banner.
 # ─────────────────────────────────────────────────────────────────────────────
 
 set -euo pipefail
@@ -35,7 +37,11 @@ err()     { echo -e "${RED}  ✗ $*${RESET}"; }
 header()  { echo -e "\n${BOLD}$*${RESET}"; }
 
 # ── Guard: must run from repo root ────────────────────────────────────────────
-if [[ ! -f "app.js" || ! -d "public" || ! -d "frontend" ]]; then
+# Only TRACKED paths may be tested here. This used to require `public/` too,
+# which is gitignored Vite build output — so on a fresh clone (the very case
+# step 6 exists to handle, and the header advertises) the script aborted here
+# with a message blaming the working directory, which was not the problem.
+if [[ ! -f "app.js" || ! -d "frontend" ]]; then
   err "Please run this script from the dnd-tools repository root."
   exit 1
 fi

@@ -37,10 +37,9 @@ Captured for later — nothing here has been designed or scoped yet.
 
 ## React Migration (v4.0.0)
 
-The React scaffold is in place (`frontend/`). Each item below is one module
-to migrate from `public/<module>.html` to a proper React page.
-When a module is done: remove its stub entry here, add a CHANGELOG entry,
-and delete the `LegacyIframe` call from its page file.
+**This migration is complete** — every module below is ✅, the legacy
+`public/<module>.html` pages are deleted and `LegacyIframe` no longer exists.
+Kept as a record of what moved and when; nothing here is outstanding.
 
 ### Module migration order (suggested — most self-contained first)
 

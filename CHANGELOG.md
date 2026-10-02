@@ -9,6 +9,45 @@ Only the 0.x entries correspond to GitHub releases.
 
 ## [4.20.0] – Unreleased — Linting, tests, and indexes on every foreign key we query
 
+### Fresh clone was broken in two places
+
+Neither showed up locally, because both are masked by files that exist on a developer machine and
+not in the repository. Both were found by actually checking out the tree into an empty directory
+and running it, rather than by reading the scripts.
+
+- **`run.sh` refused to start from a clean clone.** Its repo-root guard required `public/` to
+  exist — but `public/` is gitignored Vite build output, so on a clone it does not, and the script
+  aborted with *"Please run this script from the dnd-tools repository root"*, which was false: it
+  *was* the root. The guard now tests only `app.js` and `frontend/`, both of which are tracked.
+  This is also why deleting `public/` locally appeared to break the script; the build step would
+  have recreated it perfectly well, but the guard never let execution get that far.
+- **`docker compose build` could not work from a clean clone either.** `.gitignore` ignored
+  `package-lock.json` (no leading slash, so it caught `frontend/package-lock.json` too) while the
+  Dockerfile ran `npm ci`, which fails hard without a lockfile. It only ever worked because the
+  untracked local lockfile sat in the build context. The lockfiles are now tracked, and the
+  frontend stage was tightened from `npm install --legacy-peer-deps` to `npm ci --legacy-peer-deps`
+  — it had been resolving fresh transitive versions on every image build, so the container was
+  never built from the dependency tree the tests passed against. Verified end to end: a full image
+  build from an empty checkout, both `npm ci` steps passing.
+
+Also corrected, all of them comments that contradicted the code a few lines away:
+
+- `frontend/vite.config.js` claimed the build "outputs to `dist/`"; it has written to
+  `../public/app/` since the output path was moved.
+- `README.md` described `public/` as holding shared assets and a fallback `index.html`, both
+  deleted during the React migration — while a later section in the same file described it
+  correctly.
+- `.dockerignore` carried a dead `ARCH` line, and now says explicitly that its `*.md` rule must
+  not be "tidied" into `**/*.md`: Docker matches `*.md` at the root only, so `docs/*/README.md`
+  survives into the image, and broadening it would silently break every in-app docs page.
+- `TODO.md` still instructed the reader to "delete the `LegacyIframe` call from its page file",
+  twenty lines above the entries recording that the migration finished.
+- `run.sh`'s header listed 15 steps while the script printed `N/11` banners.
+
+An audit of the working copy alongside this found **no stale files at all** — no orphaned frontend
+modules, no surviving legacy HTML, no duplicate configs, no stray caches or lockfiles. The only
+disposable thing on disk is `node_modules/`.
+
 ### New module — 📔 Diary
 
 - **Every export is named the same way**, and by one helper rather than five copies:

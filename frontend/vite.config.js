@@ -9,7 +9,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
  * Vite configuration for dnd-tools frontend.
  *
  * Dev mode  : runs on :5173, proxies /api/* and legacy page routes to Express (:3080)
- * Build mode: outputs to dist/ (Dockerfile copies this into public/app/ in the image)
+ * Build mode: outputs straight to ../public/app/ — see the `build` block below
  *
  * The `@/` alias maps to `src/` so you can write:
  *   import { Button } from '@/components/ui'

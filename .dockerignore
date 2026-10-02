@@ -2,5 +2,7 @@
 .gitignore
 node_modules
 pdfs
+# Root-level markdown only. Docker's matcher does NOT cross `/`, so docs/*/README.md
+# still reaches the image — which it must, because GET /api/docs/:module serves it.
+# Do not "tidy" this into **/*.md: that silently breaks every in-app docs page.
 *.md
-ARCH

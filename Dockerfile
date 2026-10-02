@@ -15,9 +15,14 @@ LABEL stage=frontend-build
 
 WORKDIR /build
 
-# Install frontend dependencies (cached layer when package.json unchanged)
-COPY frontend/package.json frontend/package-lock.json* ./
-RUN npm install --legacy-peer-deps
+# Install frontend dependencies (cached layer when package.json unchanged).
+# `ci` not `install`, so the image is built from the exact versions in the
+# lockfile rather than re-resolving transitive deps on every build. This is only
+# possible because the lockfiles are committed — see the note in .gitignore.
+# --legacy-peer-deps is still required: eslint-plugin-react does not yet declare
+# support for the ESLint version this project pins.
+COPY frontend/package.json frontend/package-lock.json ./
+RUN npm ci --legacy-peer-deps
 
 # Copy source and build.
 # WORKDIR is /build, and vite.config.js sets outDir '../public/app', so the
@@ -35,7 +40,10 @@ LABEL description="D&D Campaign Tools – NPC sheets, item cards, PDF viewer, ca
 WORKDIR /app
 
 # Install backend production dependencies only
-COPY package.json package-lock.json* ./
+# Not a glob: `npm ci` below fails hard without the lockfile, so a missing one
+# should break the COPY with a clear error rather than three lines later with
+# "npm ci can only install packages when your package-lock.json is in sync".
+COPY package.json package-lock.json ./
 RUN npm ci --omit=dev
 
 # Copy Express application
