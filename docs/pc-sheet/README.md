@@ -39,13 +39,43 @@ The sheet loads immediately. All changes are saved per-section with the **💾 S
 
 An embedded NPC Sheet form used as a D&D 5e stat block. Tracks ability scores, HP, AC, speed, skills, attacks, spell slots, and more. See [NPC Sheet documentation](../npc-sheet/README.md) for all fields.
 
+#### Spells and cantrips
+
+The spell table has **one text input per spell level**, so each `spell_names` entry is a single
+**comma-separated string** — not an array.
+
+| Key | Holds |
+|---|---|
+| `"0"` | **Cantrips.** This row is always shown, for every caster, at every level |
+| `"1"`–`"9"` | Spells for that level |
+
+A level is shown when it has spell slots **or** already has an entry. Levels with no slots show `∞`
+in the Slots column (cantrips, and spells a caster knows but has no matching slot for — a warlock's
+1st/2nd-level spells, since Pact Magic slots are all one level). Use **+ Add spell level…** beneath
+the table to bring back a level that has no slots.
+
+```json
+"spell_names": {
+  "0": "Guidance, Sacred Flame, Spare the Dying, Light, Toll the Dead",
+  "1": "Bless, Healing Word, Inflict Wounds, Guiding Bolt",
+  "2": "Aid, Spiritual Weapon, Lesser Restoration",
+  "3": "Spirit Guardians"
+},
+"used_slots": { "1": [0, 1], "3": [] }
+```
+
+Spell slots are computed from `caster_type` + `level` and are never stored. `used_slots` records
+only which boxes are ticked off, as zero-based indices into that level's slots.
+
 ---
 
 ### 🌳 Relationships
 
 A relationship tracker with two views:
 
-- **List view** — table of all relationships
+- **List view** — a single horizontal strip of relationship chips, grouped by type and scrolling
+  sideways, so it stays one line tall however many relations there are
+- **➕ Add Relation** — directly below the list, above the graph
 - **Graph view** — SVG diagram separating family (left) from social (right) connections. Re-renders automatically when the tab is opened or the panel is resized.
 
 #### Relationship types
@@ -69,14 +99,40 @@ Private notes for the player's eyes only. Never shown on the public share page.
 
 ---
 
-### 📜 DM Notes *(DM and admin only)*
+### 📔 Diary
 
-Per-note visibility toggle:
+Your own session diary, private to you. Your DM can read it; no other player can, and nobody but
+you can edit or delete an entry. Entries can be filed into **categories** of your choosing
+(*Session notes*, *Theories*, *People we met*…), and the list groups by them — click a group
+heading to collapse it.
+
+The DM sees this same tab on your sheet, read-only, and all players' diaries together in the
+Diary module.
+
+### Printing the sheet
+
+**PDF** in the header prints the whole character — story, traits, relationships, public and
+private info, the DM notes you are allowed to see — and then **your diary, starting on a fresh
+page**, so the sheet and the journal can be separated once printed. The diary section appears
+only when there is something in it.
+
+The **Stats Sheet** tab has its own 🖨 button, which prints the stat block alone in its parchment
+design.
+
+### 📜 DM Notes
+
+Notes the DM keeps against a character, each with a visibility toggle:
 
 | State | Player sees it |
 |---|---|
 | 👁 Visible | Yes |
 | 🙈 Hidden | No |
+
+**The DM** always has this tab, and can add notes, toggle each one's visibility, and delete them.
+
+**A player** sees the tab only once the DM has shared at least one note, and then sees just the
+shared ones, read-only — no compose box, no toggle, no delete. The API never sends a player a
+hidden note, so nothing is hidden in the browser only.
 
 ---
 
@@ -84,24 +140,54 @@ Per-note visibility toggle:
 
 ### Who can export
 
+The file is named `character-<campaign>-<character>-<date>.json`.
+
 | Role | What is included |
 |---|---|
-| DM / Admin | All fields including `private_info` and all DM notes (hidden + visible) |
-| Player | `private_info` omitted; only `dm_visible: true` notes included |
+| DM / Admin | `scope: 'full'` — everything: `private_info`, **all** DM notes (hidden + visible) and **all** relationships |
+| Player | `scope: 'player'` — their own `private_info` and the DM notes **shared with them** (`dm_visible`), so their copy matches what the sheet shows them. **Hidden DM notes and DM-only relationships are omitted entirely** |
 
 ### Who can import
 
-**DM and Admin only.**
+**DM only.** There are two routes, both in Manage Campaigns:
 
-**What happens on import:**
+- **Players tab → ⬆ Import** on a player's row — the direct route. Pick the `.json`, confirm, done;
+  the target player is the row you clicked, so there is no target prompt.
+- **Sidebar → ⬆ Import** (the general import hub) — accepts any of the five export types. For a
+  `pc-sheet` file it asks which player to assign it to.
 
-| Data | Behaviour |
-|---|---|
-| Character fields | Overwritten |
-| Relationships | Replaced entirely |
-| Stats sheet | Overwritten |
-| DM notes | Appended — existing notes preserved |
-| Portrait (base64) | Not restored — re-upload manually |
+The PC Sheet page keeps **Export** only (its Import button was removed).
+
+**What happens on import** depends on the bundle's `scope`, which the export
+stamps according to who produced it:
+
+| Data | `scope: 'full'` (DM export) | `scope: 'player'` (player export) |
+|---|---|---|
+| Character fields | Overwritten | Overwritten |
+| `private_info` | Overwritten | **Ignored** — the bundle carries it, but not authoritatively |
+| Relationships | **All** replaced, including hierarchy, DM-only flags and status labels | Only **non-DM-only** ones replaced — DM-only relationships are **left alone**, since the bundle does not carry them |
+| Stats sheet | Overwritten | Overwritten |
+| DM notes | **Replaced** — a full export contains all of them | **Ignored** — the bundle holds only the shared ones, so writing from it would delete the hidden ones |
+| Portrait (base64) | Not restored — re-upload manually | Same |
+
+This is what makes the round-trip safe. A player exporting their own sheet and
+handing it back can no longer wipe the DM's private notes or DM-only
+relationships, and re-importing a DM export no longer doubles the DM notes each
+time.
+
+> **Carrying a field and being authoritative for it are different things.** A
+> player's export *includes* `private_info` and the shared DM notes, so the file
+> they keep is a complete copy of their own sheet. The importer still ignores
+> both unless `scope` is `full`, because a player-scope bundle only ever holds
+> the subset a player may see — writing from it would silently drop the DM's
+> hidden material. Anything a player cannot see is neither exported to them nor
+> restorable from their file.
+
+> A DM-only relationship that was the *parent* of a visible one survives a
+> player-scope import, but re-parents to root — the bundle has no way to express
+> a link to a node it cannot see. Bundles written before this
+(`version: 1`, no `scope`) are read as player-scope — the non-destructive
+reading — so they will not clear anything.
 
 ---
 
@@ -109,9 +195,10 @@ Per-note visibility toggle:
 
 ```json
 {
-  "version": 1,
+  "version": 2,
   "exported_at": "ISO 8601 timestamp",
   "type": "pc-sheet",
+  "scope": "'full' (DM export) | 'player' (player export)",
 
   "player_name": "string — informational only, not used on import",
 
@@ -148,7 +235,10 @@ Per-note visibility toggle:
     "spell_ability": "int | wis | cha",
     "slot_reset":    "Long Rest | Short Rest",
 
-    "hp":     "string or number",
+    "hp":          "string or number — CURRENT hit points",
+    "max_hp":      "string or number — maximum hit points",
+    "temp_hp":     "string or number — temporary hit points, blank when unused",
+    "temp_max_hp": "string or number — change to the maximum, blank when unused",
     "ac":     "string or number",
     "speed":  "string",
     "senses": "string",
@@ -205,15 +295,21 @@ Per-note visibility toggle:
     "dm_notes":          "string — stat-block inline note, separate from the DM Notes tab",
 
     "spell_names": {
-      "1": ["string"],
-      "2": ["string"],
-      "3": ["string"],
-      "4": ["string"],
-      "5": ["string"],
-      "6": ["string"],
-      "7": ["string"],
-      "8": ["string"],
-      "9": ["string"]
+      "0": "string — CANTRIPS. Comma-separated, e.g. \"Fire Bolt, Mage Hand\"",
+      "1": "string — comma-separated spell names for this level",
+      "2": "string",
+      "3": "string",
+      "4": "string",
+      "5": "string",
+      "6": "string",
+      "7": "string",
+      "8": "string",
+      "9": "string"
+    },
+
+    "used_slots": {
+      "1": "[number] — indices of spent slots at this level, e.g. [0, 2]",
+      "9": "[number]"
     }
   },
 
@@ -232,9 +328,10 @@ Per-note visibility toggle:
 
 ```json
 {
-  "version": 1,
+  "version": 2,
   "exported_at": "2025-03-14T10:00:00.000Z",
   "type": "pc-sheet",
+  "scope": "full",
   "player_name": "Thorn Ashwick",
 
   "character": {
@@ -308,7 +405,8 @@ Per-note visibility toggle:
     "lair_actions":  "",
     "special_abilities": "Alert: +5 initiative; cannot be surprised while conscious.\nTough: +2 HP per level.",
     "dm_notes": "",
-    "spell_names": {}
+    "spell_names": {},
+    "used_slots": {}
   },
 
   "dm_notes": [
@@ -371,12 +469,16 @@ pc_char_stats
 pc_relationships
   id, character_id → pc_characters.id
   name, relation_type, link, is_family (bool), created_at
+  is_dm_only (bool)        -- hidden from the player-facing view
+  created_by_role          -- 'player' | 'dm'
+  parent_id → self         -- family-tree nesting
+  status_label             -- Alive / Dead / Deceased / Missing / Unknown
 
 pc_dm_notes
   id, character_id → pc_characters.id
   content, dm_visible (bool), created_at
 
-pc_public_tokens
-  player_id → campaign_players.id  (unique)
-  token, created_at
+-- NOTE: there is no pc_public_tokens table. Public share tokens are stateless:
+-- GET /api/pc/:playerId/public-token returns an HMAC of the id (hashId), and
+-- /api/pc-public/:token reverses it with unhashId. Nothing is persisted.
 ```
