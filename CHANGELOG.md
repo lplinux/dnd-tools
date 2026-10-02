@@ -9,6 +9,58 @@ Only the 0.x entries correspond to GitHub releases.
 
 ## [4.20.0] – Unreleased — Linting, tests, and indexes on every foreign key we query
 
+
+### `run.sh` now actually bootstraps a clean machine, and Node moves to 24 LTS
+
+The honest answer to "does run.sh handle a clean environment?" was **no** — it failed on *every*
+clean machine, and only worked here because `.env` carried a hand-fix that `.env.example` never
+received. Verified by running it, non-interactively, on a checkout with no `.env`, `public/`,
+`pdfs/` or `node_modules/`.
+
+Three hard stops:
+
+- **`DB_PORT` was wrong in `.env.example`** — `5432`, while compose publishes `15432:5432`.
+  `scripts/setup-db.js` runs on the *host*, so step 10 died with `ECONNREFUSED`. Worse on a
+  machine that *does* run postgres on 5432: it would quietly succeed against the wrong server and
+  surface much later as "users table not found". Fixed, with a comment explaining why the
+  container keeps 5432 (inside the compose network that is correct) and the host does not.
+- **A blocking `read` killed non-interactive runs.** Under `run.sh < /dev/null` or CI it hit EOF,
+  returned non-zero, and `set -e` aborted — *after* writing `.env`. Now guarded on `[[ -t 0 ]]`.
+- **Secrets were never generated.** `.env` was copied verbatim, so `SESSION_SECRET` and
+  `ID_SECRET` stayed at the placeholders published in this repository — meaning session cookies
+  and every public share token were forgeable by anyone who read the repo. `run.sh` now generates
+  both with `crypto.randomBytes(48)` when it creates `.env`, and never touches an existing one.
+
+Four robustness fixes:
+
+- **The container daemon is checked for liveness, not just presence.** `compose version` answers
+  without a running daemon, so the first real contact was the image build failing with a raw
+  socket error. Now names the fix (`podman machine start` / Docker Desktop).
+- **Ports 3080 and 15432 are preflighted.** A squatter on 3080 used to make the readiness poll go
+  **green against a foreign service**, after which the banner pointed you at it. Our own
+  containers are recognised and reused rather than reported as a clash.
+- **`cleanup` no longer exits 0 when handling a failure.** It was the error handler for both
+  "PostgreSQL did not become healthy" and "Backend did not respond", so both reported success to
+  anything wrapping the script. Both now exit 1; Ctrl+C still exits 0.
+- **A rebuilt image is actually deployed.** The start step short-circuited on "already running"
+  and skipped `compose up -d`, so a code change rebuilt the image and then **kept serving the old
+  container**. Caught by injecting a marker into `frontend/index.html`, rebuilding, and checking
+  what the running container served.
+
+**Node 20 → 24 LTS.** `node:20-alpine` reached end-of-life on 2026-04-30 and was receiving no
+security patches; 24 "Krypton" is the Active LTS until Apr 2028. The migration was as cheap as it
+looked: no native modules anywhere in the tree (it is `bcryptjs`, not `bcrypt` — no gyp, no
+compiling install scripts), Express already on 5.1.0, and nothing in the code newer than ES2022.
+The `run.sh` floor moves 18 → 20, which was *already* wrong: `vitest@4` and `react-router-dom@7`
+both require Node ≥20, so a developer on 18 passed the gate and then failed `npm test`. Added
+`.nvmrc` and `engines` to both manifests, since nothing pinned a version at install time and
+local (25), container (20) and docs (18) had drifted into three different answers.
+
+Docs corrected to match: the `.env` sample port, the Node requirement, "step 5 of 15" (there are
+11), a first-run instruction to run `create-admin.js` that `run.sh` has done automatically for
+some time, and `-e DB_HOST=host` in the manual container examples, which is not a resolvable
+hostname.
+
 ### Fresh clone was broken in two places
 
 Neither showed up locally, because both are masked by files that exist on a developer machine and

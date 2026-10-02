@@ -55,7 +55,8 @@ by Express's catch-all route (with `/api/*` reserved for the API).
 
 ## Quick start — local development
 
-**Requirements:** Node.js 18+, PostgreSQL 14+.
+**Requirements:** Node.js 20+ (the container runs 24 LTS; `.nvmrc` says 24). PostgreSQL is
+supplied by `run.sh` in a container — you only need your own if you skip Docker.
 
 ### The one-command option
 
@@ -91,7 +92,7 @@ cp .env.example .env
 `.env` example:
 ```env
 DB_HOST=localhost
-DB_PORT=5432
+DB_PORT=15432          # compose publishes postgres on 15432, not 5432
 DB_USER=dndtools
 DB_PASSWORD=yourpassword
 DB_NAME=dndtools
@@ -168,7 +169,7 @@ docker build -t dnd-tools .
 docker run -d \
   --name dnd-tools \
   -p 3080:3080 \
-  -e DB_HOST=host -e DB_PORT=5432 \
+  -e DB_HOST=host.docker.internal -e DB_PORT=5432 \
   -e DB_USER=dndtools -e DB_PASSWORD=yourpassword -e DB_NAME=dndtools \
   -e SESSION_SECRET=your-secret-here \
   -e ID_SECRET=your-id-secret-here \
@@ -180,7 +181,7 @@ With PDFs mounted:
 docker run -d \
   --name dnd-tools \
   -p 3080:3080 \
-  -e DB_HOST=host -e DB_PORT=5432 \
+  -e DB_HOST=host.docker.internal -e DB_PORT=5432 \
   -e DB_USER=dndtools -e DB_PASSWORD=yourpassword -e DB_NAME=dndtools \
   -e SESSION_SECRET=your-secret-here \
   -v /absolute/path/to/your/pdfs:/app/pdfs:ro \
@@ -208,7 +209,7 @@ podman build -t dnd-tools .
 podman run -d \
   --name dnd-tools \
   -p 3080:3080 \
-  -e DB_HOST=host -e DB_PORT=5432 \
+  -e DB_HOST=host.docker.internal -e DB_PORT=5432 \
   -e DB_USER=dndtools -e DB_PASSWORD=yourpassword -e DB_NAME=dndtools \
   -e SESSION_SECRET=your-secret-here \
   -v /absolute/path/to/your/pdfs:/app/pdfs:ro,z \
@@ -246,7 +247,10 @@ podman run -d \
 | `dm` | Campaigns, journey maps, timelines, PDF viewer, PC sheets (all players) |
 | `player` | Own PC sheet, timeline view |
 
-First run: use `node scripts/create-admin.js` to create the initial admin account.
+First run: **nothing to do** — `run.sh` creates an initial `admin` account with a random
+password and prints it once at the end (also written to `/tmp/dndtools-init-creds.txt`, mode
+0600, and deleted after it is shown). Use `node scripts/create-admin.js` to add *another* admin
+later, or to recover if you lost that password.
 
 ---
 

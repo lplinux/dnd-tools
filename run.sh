@@ -62,8 +62,8 @@ if ! command -v node &>/dev/null; then
   exit 1
 fi
 NODE_MAJOR=$(node -e 'process.stdout.write(process.versions.node.split(".")[0])')
-if [[ "$NODE_MAJOR" -lt 18 ]]; then
-  err "Node.js v$NODE_MAJOR found — v18 or later is required."
+if [[ "$NODE_MAJOR" -lt 20 ]]; then
+  err "Node.js v$NODE_MAJOR found — v20 or later is required."
   exit 1
 fi
 success "Node.js $(node -e 'process.stdout.write(process.versions.node)')"
@@ -94,6 +94,49 @@ else
 fi
 success "compose (${COMPOSE})"
 
+# The daemon must be RUNNING, not merely installed. `compose version` answers
+# without it, so without this check the first real contact is the image build,
+# which fails with a raw "Cannot connect to the Docker daemon" and no guidance.
+if ! $CONTAINER_CMD info &>/dev/null 2>&1; then
+  err "$CONTAINER_CMD is installed but its daemon is not responding."
+  if [[ "$CONTAINER_CMD" == "podman" ]]; then
+    echo "  Start it:  podman machine start"
+  else
+    echo "  Start Docker Desktop, or:  sudo systemctl start docker"
+  fi
+  exit 1
+fi
+success "$CONTAINER_CMD daemon responding"
+
+# Ports must be free before compose tries to bind them. Without this, 15432 in
+# use fails with an opaque bind error — and 3080 in use is worse: the readiness
+# poll later goes green against whatever else is answering, and the banner then
+# points you at a foreign service.
+# /dev/tcp is a bash builtin, which is why this script requires bash.
+port_busy() { (exec 3<>"/dev/tcp/127.0.0.1/$1") 2>/dev/null && return 0 || return 1; }
+# `--filter name=` deliberately, NOT `publish=`: the latter is Docker-only and
+# podman rejects it outright, which under `set -e` aborted the whole run with no
+# message at all.
+ours_running() { $CONTAINER_CMD ps --filter "name=$1" --format '{{.Names}}' 2>/dev/null | grep -qx "$1"; }
+
+PORTS_OK=true
+for spec in "3080:dnd-tools" "15432:dnd-tools-ref-db"; do
+  p="${spec%%:*}"; owner="${spec##*:}"
+  if port_busy "$p"; then
+    # Our own container holding the port is the normal re-run case, not a clash.
+    if ours_running "$owner"; then
+      info "port $p held by $owner (this project) — it will be reused"
+    else
+      err "Port $p is in use by something that is not this project."
+      echo "  Find it:  lsof -nP -iTCP:$p -sTCP:LISTEN"
+      echo "  Free that port, or change the mapping in docker-compose.yml."
+      PORTS_OK=false
+    fi
+  fi
+done
+[[ "$PORTS_OK" == "true" ]] || exit 1
+success "ports 3080 and 15432 are usable"
+
 # curl (optional — used for health check)
 HAS_CURL=true
 if ! command -v curl &>/dev/null; then
@@ -108,13 +151,30 @@ if [[ ! -f ".env" ]]; then
   if [[ -f ".env.example" ]]; then
     cp .env.example .env
     warn ".env not found — copied from .env.example."
+
+    # Replace the published placeholder secrets with real ones. Both are in the
+    # repository, so shipping them means anyone can forge a session cookie or a
+    # share-link token. Node is already a verified prerequisite by this point.
+    # Only ever applied to a .env we just created — an existing one is untouched.
+    gen_secret() { node -e "console.log(require('crypto').randomBytes(48).toString('base64url'))"; }
+    SESSION_GEN="$(gen_secret)"
+    ID_GEN="$(gen_secret)"
+    # -i '' is the BSD/macOS form; GNU sed wants -i with no argument.
+    if sed --version >/dev/null 2>&1; then SED_INPLACE=(-i); else SED_INPLACE=(-i ''); fi
+    sed "${SED_INPLACE[@]}" "s|^SESSION_SECRET=.*|SESSION_SECRET=${SESSION_GEN}|" .env
+    sed "${SED_INPLACE[@]}" "s|^ID_SECRET=.*|ID_SECRET=${ID_GEN}|" .env
+    success "Generated random SESSION_SECRET and ID_SECRET"
+
     echo ""
-    echo -e "  ${YELLOW}Edit .env before going to production:${RESET}"
-    echo "    SESSION_SECRET  — set to a long random string"
-    echo "    ID_SECRET       — set to a long random string"
+    echo -e "  ${YELLOW}Still worth reviewing in .env before production:${RESET}"
     echo "    DB_PASSWORD     — must match docker-compose.yml"
     echo ""
-    read -r -p "  Press Enter to continue with defaults, or Ctrl+C to edit .env first… "
+    # Only pause for a human. Under `run.sh < /dev/null` or CI, `read` hits EOF
+    # and returns non-zero, which `set -e` turns into an abort — after .env has
+    # already been written.
+    if [[ -t 0 ]]; then
+      read -r -p "  Press Enter to continue, or Ctrl+C to edit .env first… "
+    fi
   else
     warn ".env not found and no .env.example — using built-in defaults."
   fi
@@ -190,11 +250,16 @@ $COMPOSE build dnd-tools
 success "Docker image built"
 
 # ── Cleanup trap ──────────────────────────────────────────────────────────────
+# Takes an exit code. Ctrl+C is a successful stop (0); the failure paths below
+# pass 1, because this used to `exit 0` unconditionally — so "PostgreSQL did not
+# become healthy" and "Backend did not respond" both reported success to anything
+# wrapping this script.
 cleanup() {
+  local code="${1:-0}"
   echo ""
   header "Shutting down…"
   $COMPOSE down || true
-  exit 0
+  exit "$code"
 }
 trap cleanup SIGINT SIGTERM
 
@@ -235,7 +300,7 @@ for ((i=1; i<=MAX; i++)); do
   if [[ $i -eq $MAX ]]; then
     err "PostgreSQL did not become healthy after ${MAX}s."
     err "Run: $CONTAINER_CMD logs dnd-tools-ref-db"
-    cleanup
+    cleanup 1
   fi
   printf "\r  Waiting… (%d/%ds) status=%-10s" "$i" "$MAX" "$STATUS"
   sleep 1
@@ -256,11 +321,14 @@ if $CONTAINER_CMD inspect dnd-tools &>/dev/null 2>&1; then
   APP_RUNNING=$($CONTAINER_CMD inspect --format='{{.State.Running}}' dnd-tools 2>/dev/null || echo "false")
 fi
 
+# Unconditional: `up -d` is idempotent, and it RECREATES the container when the
+# image has changed. The previous "already running, skip" short-circuit meant a
+# code change rebuilt the image at step 7 and then kept serving the old one.
+info "Starting dnd-tools service…"
+$COMPOSE up -d dnd-tools
 if [[ "$APP_RUNNING" == "true" ]]; then
-  success "App container already running"
+  success "App container up to date with the built image"
 else
-  info "Starting dnd-tools service…"
-  $COMPOSE up -d dnd-tools
   success "App container started"
 fi
 
@@ -278,7 +346,7 @@ if $HAS_CURL; then
     if [[ $i -eq $MAX ]]; then
       err "Backend did not respond after ${MAX}s."
       err "Run: $CONTAINER_CMD logs dnd-tools"
-      cleanup
+      cleanup 1
     fi
     printf "\r  Waiting… (%d/%ds) HTTP=%-5s" "$i" "$MAX" "$HTTP"
     sleep 1

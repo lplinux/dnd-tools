@@ -1,5 +1,27 @@
 # TODO
 
+## Bootstrap / ops — known gaps
+
+Found while making `run.sh` work on a clean machine. None of these block a bootstrap.
+
+- [ ] **`DB_PASSWORD` is hardcoded `dndtools123`** in both `.env.example` and
+      `docker-compose.yml`. Generating it means keeping the two in sync — compose would have to
+      read it from `.env` for both the server and the app container. Worth doing before this is
+      exposed anywhere.
+- [ ] **`PORT` in `.env` is a trap.** `app.js` honours it, but `docker-compose.yml` hardcodes the
+      mapping `3080:3080`, so setting `PORT=4000` makes the container listen on 4000 while the
+      publish still points at 3080 — the app silently becomes unreachable.
+- [ ] **`/tmp/dndtools-init-creds.txt` can be left behind.** It holds the initial admin password
+      at mode 0600 and is normally deleted after the banner prints, but a crash between creating
+      the admin and printing leaves it until the next run cleans it.
+- [ ] **`chmod 755 pdfs` runs unconditionally** on every `run.sh`, silently reverting tightened
+      permissions.
+- [ ] **The build-staleness check watches only** `frontend/src`, `frontend/index.html` and
+      `frontend/tailwind.config.js`. Editing `vite.config.js`, `postcss.config.js` or
+      `frontend/package.json` will not trigger a rebuild.
+
+---
+
 ## Planned features (not started)
 
 Captured for later — nothing here has been designed or scoped yet.

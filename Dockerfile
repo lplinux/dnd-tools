@@ -9,7 +9,7 @@
 # ─────────────────────────────────────────────────────────────
 
 # ── Stage 1: build the React frontend ────────────────────────
-FROM node:20-alpine AS frontend-build
+FROM node:24-alpine AS frontend-build
 
 LABEL stage=frontend-build
 
@@ -32,7 +32,7 @@ RUN npm run build
 
 
 # ── Stage 2: production image ────────────────────────────────
-FROM node:20-alpine AS production
+FROM node:24-alpine AS production
 
 LABEL maintainer="furnaripablojavier@gmail.com"
 LABEL description="D&D Campaign Tools – NPC sheets, item cards, PDF viewer, campaign timeline"

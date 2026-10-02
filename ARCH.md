@@ -484,7 +484,7 @@ Absolute day indices (`absDay`) are computed from epoch (year 1, day 1) so event
 
 The Dockerfile uses a multi-step approach:
 
-1. `node:20-alpine` base (~50 MB compressed)
+1. `node:24-alpine` base (~50 MB compressed) — Node 24 "Krypton", Active LTS to Apr 2028
 2. `npm ci --omit=dev` installs only production dependencies
 3. The process runs as **root** — deliberately. A custom UID/GID conflicts
    with host ownership on the bind-mounted `pdfs/` volume; see the comment in
