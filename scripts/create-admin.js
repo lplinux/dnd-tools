@@ -11,19 +11,13 @@
 'use strict';
 
 const path = require('path');
-const fs = require('fs');
 const readline = require('readline');
 
-// Load .env if present (same logic as app.js so no extra dep needed)
-const envPath = path.join(__dirname, '..', '.env');
-if (fs.existsSync(envPath)) {
-  fs.readFileSync(envPath, 'utf8')
-    .split('\n')
-    .forEach(line => {
-      const m = line.match(/^\s*([^#=\s]+)\s*=\s*(.*)\s*$/);
-      if (m) process.env[m[1]] = m[2].replace(/^['"]|['"]$/g, '');
-    });
-}
+// Load .env if present — genuinely the same mechanism as app.js now. The old
+// comment here claimed parity while hand-rolling a parser that assigned
+// unconditionally, so .env beat an exported variable; dotenv does the reverse,
+// and it was already a direct dependency the whole time.
+require('dotenv').config({ path: path.join(__dirname, '..', '.env') });
 
 const { Pool } = require('pg');
 const bcrypt = require('bcryptjs');
@@ -40,21 +34,22 @@ const pool = new Pool({
 const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
 const ask = (q) => new Promise(resolve => rl.question(q, resolve));
 
-// Hide typed password — uses readline with suppressed output (like sudo/ssh)
+// Hide typed password (like sudo/ssh). Reuses the single `rl` interface above —
+// creating a second readline on the same stdin makes the original echo the
+// keystrokes unmuted, leaking the password. Here we mute `rl`'s own output for
+// the duration of the question and restore it afterwards.
 function askPassword(prompt) {
   return new Promise(resolve => {
-    const rl = readline.createInterface({
-      input: process.stdin,
-      output: process.stdout,
-    });
-    // Suppress all output while the question is active
+    const original = rl._writeToOutput.bind(rl);
+    let promptShown = false;
     rl._writeToOutput = function (str) {
-      // Allow the initial prompt through; silence everything typed after
-      if (str === prompt) process.stdout.write(str);
+      // Write the prompt exactly once; silence everything typed afterwards
+      // (characters and full-line refreshes alike).
+      if (!promptShown) { original(prompt); promptShown = true; }
     };
     rl.question(prompt, answer => {
+      rl._writeToOutput = original;
       process.stdout.write('\n');
-      rl.close();
       resolve(answer);
     });
   });

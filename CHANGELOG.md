@@ -1,111 +1,300 @@
 # Changelog
 
 All notable changes to **dnd-tools** are documented here.
-Versions correspond to GitHub releases; changes are derived from inspecting
-the actual diffs between tags.
+
+`1.0.0` is the full refactor: everything between the `0.1.0` tag and the first release of the
+React application, collapsed into one entry. The per-step detail that used to live here as
+twenty-six *Unreleased* sections is in the git history of this file; what follows is the summary
+worth keeping. The `0.x` entries below it are left exactly as they were.
 
 ---
 
-## [0.1.1] – 2026-05-21
+## [1.0.0] – 2026-10-12 — The React rewrite, and everything built on top of it
 
-### Timeline — DM Combined View fixes
+The app was a set of server-rendered pages with vanilla JavaScript. It is now a React 19 + Vite
+single-page application over the same Express + PostgreSQL backend — plus two new modules, an
+item library and an inventory that did not exist before, a security pass, and a test suite that
+did not exist either.
 
-- **Event dot labels show real names**: in the DM combined view, every event circle now displays the name of the actual actor (character, NPC, or relationship) rather than always showing `"DM"`. A new `_dmNpcNames` map is loaded in parallel with relationships on `loadDMCombinedView` (`GET /api/campaigns/:cid/npcs`), and `cp_<id>` tokens are resolved via a new `_dmCampaignPlayers` list (see below). The dot abbreviation also strips leading emoji (`🎭 `, `👤 `) and trailing `(username)` parentheticals before slicing to two characters.
-- **All campaign players resolved, not just those with timelines**: `_dmCampaignPlayers` is fetched from `GET /api/campaigns/:cid/players` (all players in the campaign), replacing the previous approach of building `cpIdToName` only from `_dmAllData` rows. Players who have no timeline entries yet are now correctly identified when referenced by `cp_<id>` tokens in other players' events.
-- **`cp_` and `npc_` tokens fully handled in export and import** (`app.js`): previously only `self_`, `p_`, and `rel_` prefixes were remapped during campaign export/import; `cp_<db_id>` (campaign players referenced in DM events) and `npc_<db_id>` tokens fell through as raw IDs and broke after re-import. All four export paths (player timelines + DM timelines) and both import paths now map `cp_<id>` ↔ `player_name` and `npc_<id>` ↔ `npc_name`. A `npcNameById` lookup is built from the already-fetched `npcsRes` rows before the per-player loop — no extra query needed on export.
+Nothing in the database was dropped or renamed to get here. Every schema change is additive
+(`ALTER TABLE … ADD COLUMN IF NOT EXISTS`), so an existing install upgrades by pulling and
+restarting — see **Upgrading** at the end.
 
-### Timeline — Player search
+---
 
-- **Search in "New Event" → Players** (sidebar): a live filter input above the player checkbox list narrows choices as you type. Clears automatically when `renderAll()` rebuilds the list.
-- **Search in Edit Event modal**: the same filter sits above the `.mpc` scrollable checkbox list in the event-edit modal.
-- **Search in Players sidebar section**: a live filter input above `#pl-list` hides player rows whose names don't match, useful when a campaign has many characters.
-- All three use the shared `.pl-search` style (dark surface, gold focus border, italic placeholder) and a `filterPcl()` / `filterPlayerList()` helper that operates without re-rendering.
+### The rewrite
 
-### PC Sheet — Cross-connections overhaul
+Migrated module by module, each one behind a `LegacyIframe` bridge that kept the original page
+working until its replacement landed: User Panel, NPC Sheet, Item Cards, Split View, PDF Viewer,
+Manage Campaigns, PC Sheet, the public PC sheet, the public Journey Map, the Journey Map editor,
+and finally the Timeline. The bridge and every legacy page are now deleted.
 
-- **All connection types now shown**: the API query previously only returned connections where one side was a `relationship` in `relIds`. Added two additional OR clauses so `player↔player`, `player↔npc`, and `relationship→player` (on the player side) are all returned. The query uses `DISTINCT ON (cr.id)` to prevent duplicates when a connection matches multiple conditions.
-- **One bubble per external entity**: the chip list now groups by the *external* entity (the side not owned by the current player) rather than by the DB storage direction. Two connections from the same NPC to two different of the player's relationships now produce a single bubble with both arrows (`NPC ⟶ label ⟶ Rel A · ⟶ label ⟶ Rel B`).
-- **Graph also fixed**: the graph renderer had the same directional blind spots. Rewrote `byLocalRel` grouping to use `isMyGraphEntity()` matching both `relationship` and `player` types. Connections anchored to the player directly (no relationship node) use a `'self'` sentinel key resolving to `{x:0, y:0}` with `SR` radius for edge start.
-- **One graph node per external entity**: graph now builds `extNodeMap` keyed by external entity, with all edges accumulated per node. One circle is drawn per external entity; multiple dashed lines fan out to each local anchor. Repulsion iterations increased 60→120 and min gap 6→10 px to reduce overlap.
-- **Cross-connections not shown when `relationships` is empty**: `renderRelList` returned early before reaching the cross-connections section. Now returns early only when both `relationships` and `crossConnections` are empty.
-- **Notes hidden from players**: the API strips the `notes` field from cross-connection rows before returning them to non-DM viewers. DMs still see notes in both chips and graph tooltips.
-- **DM-only connections shown to DMs**: the `WHERE cr.is_public = true` filter is now conditional — omitted for DM/admin viewers so they see hidden connections with a `🔒 DM only` badge.
+- **React 19, React Router 7, Tailwind 3 and Vite 6**, over Express 5 on Node 24. Routes are
+  lazy-loaded, so the first paint pulls the shell rather than the whole app.
+- **Theme tokens are shared**, not duplicated — the three themes (dark / light / slate) are CSS
+  variables that Tailwind utilities read, and `index.html` applies the saved one before React
+  mounts so there is no flash.
+- **One API layer** (`api/client.js`); every mutating call in the app funnels through a single
+  `fetch`. That turned out to matter later — see *Security*.
+- **Vite builds straight into `public/app/`**, which is what Express serves. It used to build to
+  `frontend/dist` while the server read `public/app`, so a fresh build outside Docker served a
+  dead page.
 
-### Manage Campaigns — Char-tree player show/hide
+---
 
-- **👁 / 🙈 toggle per player**: each player group header now has a button that hides or shows that player's entire tree column. State is held in a module-level `_hiddenPlayerIds` Set and survives tab switches within the session.
-- **Canvas redraws on toggle**: `_treeVP` is reset to `{scale:1, ox:0, oy:0}` and `initTreeCanvas` is called immediately so the tree re-layouts around the remaining visible players.
-- **No gaps for hidden centre players**: layout now uses `visiblePlayers = players.filter(...)` for column count and index, so hiding a middle player closes the gap rather than leaving empty space.
-- **NPC nodes and cross-connection lines respect visibility**: NPC nodes are only added when at least one of their connections touches a visible player. Cross-connection lines are skipped if either endpoint belongs to a hidden player. `isEntityHidden()` moved to module scope so `drawTree` (a separate top-level function) can access it.
+### New module — 📔 Diary
 
-### Export filenames include date
+Session write-ups, with a public share link.
 
-- Campaign exports now download as `campaign-<slug>-YYYY-MM-DD.json`
-- Journey Map exports now download as `journey-map-<slug>-YYYY-MM-DD.json`
+- **A campaign diary for the DM**, with a **draft → published** state. Only published entries
+  reach the share link, filtered in SQL rather than hidden in the UI.
+- **A private diary per player**, living on their character sheet rather than in a module of
+  their own — it is part of the character. The DM can read them and never edit them.
+- **Two tables, not one with a nullable `player_id`.** The public handler's SQL *names* the
+  campaign table and nothing else, so leaking a player's private diary would take naming the
+  other table, not forgetting a `WHERE` clause.
+- **Entries group** under a chapter (campaign) or category (player), free text with a datalist of
+  what you have already used. Groups collapse; unfiled entries collect at the end.
+- **It prints as a book** — title page, contents, one session per page, Cinzel over Crimson, and
+  an annex crediting the table.
+- **Standalone export/import**, and the campaign bundle carries both diaries with their draft
+  status and never the share token.
 
-### Unique location names per campaign
+### New module — 📖 Campaign Journal
 
-- **DB**: a case-insensitive unique index (`campaign_locations_campaign_name_unique`) on `(campaign_id, LOWER(name))` is created on startup via migration — prevents duplicates at the database level.
-- **API**: `POST` and `PUT` location endpoints now return HTTP 409 with a clear message (`A location named "X" already exists in this campaign`) on conflict rather than a raw DB error.
-- **Import**: campaign import uses `ON CONFLICT (campaign_id, LOWER(name)) DO UPDATE SET name=EXCLUDED.name` so re-importing a bundle never creates duplicate rows; the existing location is reused and its ID is mapped correctly.
+The shared notebook the per-player diary deliberately is not: everyone in a campaign writes, and
+everyone reads. On the PC Sheet for players, and as a Manage Campaigns tab for the DM — the same
+component mounted twice, not two copies.
 
-### Module info bubbles on the Index
+Each entry records who wrote it (user *and* character, kept separate because the DM has no
+character and a player may change theirs), where, an optional in-game date on the campaign's own
+calendar, a free-text category, and the note in Markdown.
 
-- Each module card on the index page now has an **ℹ** button in the header.
-- Clicking it opens a modal that fetches and renders the module's `docs/<module>/README.md` as formatted HTML (headings, tables, code blocks, lists, links).
-- New API endpoint: `GET /api/docs/:module` — serves the README as plain text. Only whitelisted slugs are accepted; no path traversal is possible.
-- The modal closes on backdrop click or `Escape`.
+**The withholding is in the SQL, not in the component** — a row that was never selected cannot
+leak through a later refactor:
 
-### Campaign Export / Import — DM timelines + bug fixes
+- A player's query carries `AND j.dm_only = false` and does not select the column at all.
+- A player cannot *post* a DM-only entry; `dm_only` is read as `isDM ? … : false`.
+- A location the DM later makes private stops showing to players — **both its name and its id**,
+  since the id alone would still reveal that two entries happened at the same secret place.
 
-- **World timeline & Private DM timeline exported**: the DM's special `is_dm_player` row and all its timelines (`player_timelines`) are now included in the bundle under `dm_timelines: [{ name, entries }]`. Entry `player_id_refs` are remapped to name-based refs exactly like player timeline entries. **The DM's identity (username, user assignment) is intentionally omitted** — it is irrelevant to portability.
-- **DM timelines restored on import**: if `dm_timelines` is present, a fresh DM player row is created and linked to the *importing* DM's user account. All timelines and entries are recreated under that row with `player_id_refs` remapped to the new DB IDs. Old bundles without `dm_timelines` import unchanged.
-- **Fix — `player_ids` array type**: the `player_timeline_entries.player_ids` column is `TEXT[]`; the import was incorrectly passing `JSON.stringify(array)` instead of the raw array, causing a Postgres `malformed array literal` error. Fixed by removing the `JSON.stringify` wrapper.
-- **Fix — body parser limit**: `express.json` limit raised from `5mb` to `50mb` to accommodate large campaign bundles containing base64 map images and PC portraits.
+**Edit and delete are deliberately asymmetric.** Only the author may edit; the author *or* the DM
+may delete. A DM tidying the campaign should be able to remove an entry, not rewrite a player's
+words without them knowing.
 
-### Campaign Export table (updated)
+Search and a **group by** selector (category, location, or who wrote it) sit above the list. The
+search is substring, case- **and accent**-folded — these are notes full of Buldamar and Théa, and
+half the time they get typed without the accents.
 
-| Section | Detail |
-|---|---|
-| Campaign meta | name, description, calendar type, today marker |
-| NPCs | name list |
-| Locations | name, description, `is_public`, `size_type`, parent hierarchy |
-| Players | player name, linked username, PC sheet, stats, DM notes, relationships, timelines |
-| **DM timelines** | **World timeline + Private DM timeline entries (no DM identity)** |
-| Cross-connections | DM character-tree connections, fully ref-encoded |
-| Journey maps | background image, pins, regions, distances, trackers, paths |
+### New module — Item Cards, and items that evolve
 
-### Campaign Export / Import — full snapshot (v3)
+The card creator never had a database table; it kept a print set in `localStorage` and lost it on
+a cache clear.
 
-Previous versions only exported the campaign skeleton (name, players, locations, NPCs). v3 exports and imports the complete campaign state.
+- **A real library**, `item_cards`, scoped to a **user** rather than a campaign — you take your
+  items between tables. Cards can be reopened and edited; export/import follows the existing
+  file-naming convention.
+- **Evolving items** are a chain of cards linked by `evolves_from`, bumped and un-bumped by a
+  button on the inventory row. **The tier is never shown to the player**, by construction: every
+  tier shares one name, and a player is served only the card their row points at. Reversing is
+  the same operation backwards, because the route takes a target rather than a direction — an
+  item can change hands and be reset.
+- **Printing**: two-sided cards 9-up on A4, rarity-coloured borders, a print set that belongs to
+  one sitting rather than outliving a logout, and batch PNG export as a lazily-loaded ZIP.
+- **Search, grouping by rarity, collapsible groups**, multi-select, and a clear-the-library
+  button. Deleting a card that is in play names its holders and asks before forcing.
 
-**What is now exported**
+### New — the PC inventory, as an equipment sheet
 
-| Section | Detail |
-|---|---|
-| Campaign meta | name, description, calendar type, today marker |
-| NPCs | name list |
-| Locations | name, description, `is_public`, `size_type`, parent hierarchy (via `parent_ref`) |
-| Players | player name, linked username |
-| → PC Sheet | name, story, traits, flaws, goals, public/private info, portrait (base64) |
-| → Stats JSON | full NPC-style stat block |
-| → DM Notes | content + `dm_visible` flag |
-| → Relationships | name, type, link, `is_family`, `is_dm_only`, nested parent (via `parent_ref`) |
-| → Timelines | all named timelines with every entry (title, description, location, date, duration, `player_id_refs`) |
-| Cross-connections | DM character-tree connections, fully ref-encoded |
-| Journey maps | name, description, background image, scope; locations (with polygon, `campaign_location_ref`, `linked_map_ref`); distances; trackers; paths with waypoints |
+Two kinds of row, with the difference enforced by `CHECK` constraints rather than convention:
 
-**No DB IDs in the bundle** — every cross-reference uses a symbolic `_ref` derived from the entity's name (e.g. `"Waterdeep"`, `"Aragorn:Gandalf"`). Duplicates are disambiguated with a `__N` suffix. This makes bundles human-readable and instance-independent.
+- **Granted items** — a magic item the DM assigned from their library. Unique per campaign.
+- **Carried gear** — free-text rope, rations and potions, the only kind a player creates.
 
-**Import behaviour**
-- Creates a brand-new campaign; never overwrites existing data
-- All entities created inside a single DB transaction — any failure rolls back completely
-- Two-pass inserts for locations and relationships to correctly restore parent/child hierarchies
-- Two-pass insert for journey maps so `linked_map_ref` between maps resolves correctly
-- `player_id_refs` in timeline entries are remapped to the new player/relationship DB IDs
-- Cross-connections are silently skipped if either end ref cannot be resolved
-- Username → user_id links are resolved against the live users table; unmatched usernames are skipped without error
-- v2 bundles (previous format, no `_ref` fields) remain importable — the import falls back to using `name` as the ref key
+Coins, drag between equipped and carried, card previews on hover, **attunement that follows
+equipping** with the 3-item limit enforced server-side, and a carrying capacity derived from
+Strength rather than hand-set — a second copy of a derived number is only a way for the two to
+disagree.
+
+---
+
+### Journey Map
+
+- **Movement is derived from the Timeline.** You no longer draw a party's path or keep it in
+  sync; it is read from where the timeline says people were.
+- **Paths and routes are different things.** A *path* is a group's movement; a *route* is a road
+  in a network, with three types (road, flight, maritime) that render differently. All distances
+  are computed through the road network, including through cities hidden from players.
+- **Roads are editable** — multi-point bending without adding anchors, points deletable with the
+  neighbouring sections merging, names defaulting to their endpoints, draggable name plates.
+- **Regions** are polygons rather than pins, locked by default so a click does not reshape them.
+- **Pins are type icons you can resize**; labels declutter on overlap, are formatted per location
+  type, and fall back to hover for the smaller ones.
+- **The public map is player-safe**: routes are never drawn, hidden locations take their routes
+  with them, and distances still compute correctly through the cities a player cannot see.
+
+### Timeline
+
+Party events the DM can flag, per-event player visibility, filter by date range, solo a single
+player, search in every actor list, a legible date axis, **Go to Today**, and a public share link
+that matches what you are actually sharing.
+
+The DM's combined view names the actual actor on every event dot rather than labelling them all
+`DM`, and resolves players who have no timeline of their own yet. `cp_<id>` and `npc_<id>`
+references are remapped on both export and import — only `self_`, `p_` and `rel_` were, so DM
+events pointing at campaign players or NPCs broke on re-import. *(This and the timeline search
+boxes were written up as an untagged `0.1.1`; it never became a release, so it is folded in
+here.)*
+
+### Character and stat sheets
+
+- **Relationships** condensed from a tall nested list into a compact matrix, with a graph that
+  reduces edge crossings, fills the space, prints on its own, and no longer crashes on a
+  conditional hook.
+- **DM notes** as a compact grid of cards with per-note visibility, and notes marked visible are
+  now actually visible to players.
+- **HP designed around play**: current HP typed straight into the stats bar and nowhere else,
+  temporary HP floating beside the label in blue only while there is some, a maximum and
+  temporary maximum behind one dialog, and **⟳** to drop every temporary value and heal to full.
+- **Stat boxes overwrite rather than edit.** Current HP, AC, Speed and the six ability scores
+  clear when you click into them, with the old value left as a grey hint behind what you type —
+  these numbers are replaced, not amended, and on a phone a caret landing inside `18` produced
+  `118`. Clicking in and leaving without typing changes nothing; typing and deleting back to
+  empty does clear it.
+- **Passive Investigation**, caster type that follows the class, collapsible Legendary & Lair,
+  and senses and languages that hold sentences and are rendered as such.
+
+### Assisted entry from the SRD and Open5e
+
+A whole stat block from one pick — 341 SRD monsters plus roughly 3,200 from Open5e — and the
+same for classes, species and subclasses, where the picker merges three sources because the SRD
+licenses only one subclass per class. Item Cards fill from the SRD too, with weapon and armour
+stats and the descriptions that used to be missing.
+
+### Printing
+
+Printing was broken nearly everywhere and is now a feature:
+
+- The PC Sheet PDF prints the **whole** sheet as a document, from plain markup rather than the
+  editable tabs — it used to print textareas scrolled to the top and dark surfaces as solid
+  blocks, and the stat block was clipped to about one screen because nothing consumed the
+  iframe's height message.
+- The stat block prints on its own, keeping its parchment design, sharp rather than blurry.
+- A box that crosses a page break prints as two complete boxes.
+- The player's diary prints with their sheet, starting on a fresh page.
+- Item cards, the diary book, and the relationship graph each print standalone.
+
+---
+
+### Security
+
+Four findings closed, each verified against a running server rather than by reading the source.
+
+- **Authorization means something.** Six helpers now carry the whole policy and every
+  id-bearing route calls one. Five hand-rolled inline checks became helper calls — three of them
+  were wrapped in conditions that could not fire. Child ids are scoped to their parent, so a DM
+  note or relationship addressed by a bare id can no longer be reached across campaigns.
+- **The stats blob is validated.** `pc_char_stats.stats_json` took `JSON.stringify(req.body)`
+  with no shape check. It now goes through a whitelist derived key-for-key from the sheet's own
+  `collectSheet`, applied at all three write sites — the PUT *and* both import routes, which take
+  the same blob out of an uploaded file. A test reads both files and fails, naming the field,
+  when they drift: a whitelist in front of a character sheet is itself a data-loss risk, and this
+  code has silently wiped saving-throw proficiencies that way before. A 209 KB hostile payload
+  now stores as 21 KB.
+- **Login is throttled** — 10 failures in 15 minutes, then 429 with `Retry-After`, keyed on IP
+  *and* username together: IP alone locks out a household behind one NAT, username alone hands an
+  attacker a way to lock an owner out of their own account. A **user-enumeration timing oracle**
+  went with it; an unknown username used to return before doing any bcrypt work. Measured after:
+  53.3 ms against 54.2 ms.
+- **CSRF tokens on every mutating route**, as a synchroniser token in the session rather than the
+  usual double-submit cookie — that needs a readable cookie, and the PDF viewer injects an
+  unpinned pdf.js from a CDN into page scope. **No route is exempt**: `saveUninitialized` means a
+  logged-out visitor already has a session, so login and logout are covered rather than carved
+  out. The honest framing is that `SameSite=Lax` already blocked cross-site writes in current
+  browsers; this is a second layer, not an open door being closed.
+
+**Deliberately not done, and written down**: `trust proxy` stays unset (there is no reverse
+proxy, and setting it makes `X-Forwarded-For` attacker-controlled and the limiter free to
+bypass), `cookie.secure` stays false (there is no TLS), and session fixation on login is real and
+still open.
+
+### Data you do not lose
+
+- **Campaign trash.** Deleting a campaign is reversible: a soft delete, hidden from every
+  selector at once because one endpoint feeds them all, with public share links ceasing to
+  resolve and a Trash section that restores or purges.
+- **The campaign backup actually contains the gear.** The export pulled 13 tables and neither
+  `inventory_items` nor `item_cards` — while the Danger Zone said *"export first if you want a
+  copy"* and the cascade really did delete them. Bundle v5 carries the cards in play and each
+  player's inventory, matched **by name rather than id** since a library belongs to a user, and
+  **chains match whole or not at all** — every tier shares a name by design, so card-by-card
+  matching was a one-in-three chance of handing a character the wrong version of their own sword.
+- **PC sheet export/import round-trips**, and import is DM-only.
+- **25 indexes** on the foreign keys the app actually filters by. The schema had one.
+
+---
+
+### Four bugs worth remembering
+
+- **The import that reported success and discarded everything.** Catching a duplicate-key error
+  inside a transaction without a `SAVEPOINT` poisons the whole transaction — Postgres then
+  rejects every later statement and turns `COMMIT` into `ROLLBACK`. The route returned
+  `success: true` with a campaign id for a campaign that no longer existed. Found by checking
+  `psql`, not the response body. `test/transactions.test.js` now fails any `BEGIN…COMMIT` region
+  that catches without a savepoint.
+- **A player with two characters saw their campaign twice.** The player's campaign list joined
+  through `campaign_players` — one row per character. Three characters, three identical entries,
+  in every selector in the app, and the `length === 1` auto-select stopped firing for them. Now
+  an `EXISTS` subquery, which asks the question actually being asked.
+- **`category` and `weight` never reached an existing database.** A column added inside
+  `CREATE TABLE IF NOT EXISTS` reaches only new installs. Every schema change since is a separate
+  additive `ALTER`.
+- **A build that broke while every test passed.** `StatInput.jsx` beside `statInput.js` is one
+  path on a case-insensitive filesystem; Rollup died, Vitest did not notice, and on Linux the two
+  files are genuinely distinct. `test/filenameCase.test.js` now looks for collisions directly.
+
+---
+
+### The app on a tablet and a phone
+
+Pinch-to-zoom through one shared helper replacing three hand-rolled wheel ratchets,
+`touch-action: none` where a drag surface needs it, four focus-preservation handlers converted
+off `mousedown` (which fires before focus moves on touch), a `useCoarsePointer()` seam, a Finish
+button for drawing paths and regions that could previously only be completed with a key, and
+↑/↓ buttons where reordering relied on HTML5 drag-and-drop, which does not exist on touch.
+Master/detail layouts below `lg` on the two pages that overflowed sideways.
+
+### Build, bootstrap and tests
+
+- **`run.sh` bootstraps a clean machine.** It used to refuse to start from a fresh clone, block
+  on a `read` under CI, copy `.env` verbatim so `SESSION_SECRET` was never generated, publish the
+  wrong `DB_PORT`, and skip deploying a rebuilt image. The container daemon is checked for
+  liveness rather than presence, ports are preflighted, and the credential file is always
+  removed.
+- **Node 24 LTS**, a multi-stage Dockerfile, and `DB_PASSWORD` out of the two places it was
+  hardcoded.
+- **The server no longer accepts requests before the schema exists** — `initializeDatabase()`
+  used to race the listener.
+- **A test suite.** 718 tests across 35 files, Vitest, no DOM — the rules worth testing are
+  lifted out of components as pure functions and the server suites read `app.js` as text. It
+  found real bugs on its first run. `run.sh` runs it before it builds.
+- **ESLint, actually installed and passing.** The repo declared a `lint` script and had no
+  eslint.
+- **Docs**: `TODO.md` split into open work and a QA queue (`TOQA.md`), `ARCH.md` corrected
+  against the code, and a README per module.
+
+---
+
+### Upgrading from 0.1.x
+
+1. `git pull && ./run.sh` — the schema migrates itself on boot; every change is additive and no
+   column or table is dropped or renamed.
+2. **Sessions are invalidated** on every restart (they live in memory), so everyone logs in
+   again. The CSRF token rotates with the login, and the frontend replays once on a stale token,
+   so this is invisible.
+3. **Re-export any campaign backups you are relying on.** Bundles taken before this release do
+   not contain item cards or inventory. Older bundles (v2–v4) still import.
+4. The page you bookmarked still works: every route kept its path.
 
 ---
 

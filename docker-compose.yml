@@ -1,44 +1,95 @@
+# ─────────────────────────────────────────────────────────────
+#  D&D Tools — docker-compose.yml
+#
+#  Services:
+#    dnd-tools   — Express + React SPA (port 3080, override with PORT in .env)
+#    postgres    — PostgreSQL 15 (port 15432, internal 5432)
+#
+#  Quick start:
+#    docker compose up -d
+#
+#  First-run setup (creates DB + initial admin):
+#    docker compose up -d
+#    docker compose exec dnd-tools node scripts/setup-db.js
+#
+#  Volumes:
+#    dnd_tools_data  — persistent PostgreSQL data
+#    ./pdfs          — drop your PDF files here (read-only inside container)
+# ─────────────────────────────────────────────────────────────
+
 services:
   dnd-tools:
-    build: .
+    build:
+      context: .
+      target: production          # uses the final stage of the multi-stage build
     image: dnd-tools:latest
     container_name: dnd-tools
     restart: unless-stopped
     ports:
-      - "3080:3080"
+      # Both sides follow PORT so the two can never drift. app.js honours PORT,
+      # but this used to be hardcoded "3080:3080" — so setting PORT=4000 made the
+      # container listen on 4000 while the publish still pointed at 3080, and the
+      # app silently became unreachable.
+      - "${PORT:-3080}:${PORT:-3080}"
     volumes:
-      # Mount your local pdfs/ folder into the container (read-only).
-      # Create the folder first: mkdir -p ./pdfs
-      - ./pdfs:/app/pdfs:ro
-    # Uncomment to override the port (also change app.js PORT constant):
+      # Mount your local pdfs/ folder into the container.
+      # The :z flag relabels the directory for SELinux so the container
+      # can read it on RHEL / Fedora / Rocky / AlmaLinux systems.
+      # Remove :z if you are on a non-SELinux system and it causes issues.
+      # :ro because nothing in the app writes here — app.js serves the directory
+      # statically and lists it, and there is no upload route. The header above
+      # already claimed read-only; now it actually is.
+      - ./pdfs:/app/pdfs:ro,z
     environment:
+      # ── Database ─────────────────────────────────────────
+      # app.js reads these DB_* vars only — it does not read DATABASE_URL.
       - DB_HOST=postgres
       - DB_PORT=5432
       - DB_USER=dndtools
-      - DB_PASSWORD=dndtools123
+      # Single source of truth: run.sh generates this into .env on a fresh
+      # install and compose interpolates it here AND into the postgres service
+      # below, so the two can no longer disagree. The default keeps existing
+      # deployments working untouched.
+      - DB_PASSWORD=${DB_PASSWORD:-dndtools123}
       - DB_NAME=dndtools
-    #   - PORT=8080
+
+      # ── App ──────────────────────────────────────────────
+      # REQUIRED in production — change both of these:
+      - SESSION_SECRET=${SESSION_SECRET:-change-me-to-something-long-and-random}
+      - ID_SECRET=${ID_SECRET:-dnd-id-secret-change-me}
+
+      # ── Port (optional) ──────────────────────────────────
+      # Set PORT in .env, not here — the publish mapping above reads the same
+      # variable, so both move together.
+      - PORT=${PORT:-3080}
     depends_on:
       postgres:
         condition: service_healthy
 
   postgres:
     image: postgres:15-alpine
-    container_name: dnd-tools-db
+    container_name: dnd-tools-ref-db
+    restart: unless-stopped
     environment:
-      POSTGRES_DB: dndtools
-      POSTGRES_USER: dndtools
-      POSTGRES_PASSWORD: dndtools123
+      POSTGRES_DB:       dndtools
+      POSTGRES_USER:     dndtools
+      # Must match DB_PASSWORD above — hence the same interpolation.
+      # Careful: postgres applies this only when initdb runs on an EMPTY data
+      # directory. Changing it against the existing dnd_tools_data volume changes
+      # only what the app sends, not what the server expects, and the healthcheck
+      # below (pg_isready, which does not authenticate) still reports healthy
+      # while the app fails to connect. To rotate deliberately: either
+      # `docker compose down -v` to wipe the volume, or ALTER ROLE by hand first.
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-dndtools123}
     ports:
-      - "15432:5432"
+      - "15432:5432"              # exposed for local psql / pgAdmin access
     volumes:
       - dnd_tools_data:/var/lib/postgresql/data
-      # - ./init.sql:/docker-entrypoint-initdb.d/init.sql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U dndtools"]
       interval: 5s
       timeout: 5s
-      retries: 5
+      retries: 10
 
 volumes:
   dnd_tools_data:

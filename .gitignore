@@ -3,4 +3,12 @@ pdfs/
 *.log
 .DS_Store
 .env
-package-lock.json
+
+# package-lock.json is deliberately NOT ignored: Dockerfile runs `npm ci`, which
+# fails hard without it, so ignoring it made `docker compose build` impossible
+# from a clean clone. Committing it also pins the frontend, whose Docker stage
+# would otherwise resolve fresh transitive versions on every build.
+
+# Vite build output (frontend/vite.config.js → outDir)
+public/app/
+frontend/dist/
