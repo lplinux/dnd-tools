@@ -7,18 +7,24 @@
  */
 
 import { ABILITIES, ABILITY_IDS, fmtMod } from '@/data/dnd';
+import StatInput from './StatInput';
 
 function AbilityCol({ id, label, score, stProf, mod, stBonus, onChange }) {
   return (
     <div className="ab-col">
       <div className="ab-name">{label}</div>
-      <input
+      {/* Replace-on-focus: a rolled or bought score overwrites the old one,
+          it is never edited digit by digit. StatInput withholds the empty
+          intermediate, so clearing the box on the way to a new number does not
+          snap the score to 10 and flash the modifier with it. */}
+      <StatInput
         className="ab-score"
         type="text"
         inputMode="numeric"
         maxLength={3}
-        value={score}
-        onChange={(e) => onChange(id, 'score', parseInt(e.target.value) || 10)}
+        value={String(score ?? '')}
+        placeholder="10"
+        onChange={(v) => onChange(id, 'score', parseInt(v, 10) || 10)}
         autoComplete="off"
         aria-label={`${label} score`}
       />

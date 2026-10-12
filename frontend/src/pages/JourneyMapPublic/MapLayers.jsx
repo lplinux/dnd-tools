@@ -13,6 +13,7 @@ import { useState } from 'react';
 import { pctToSvg, parseWaypoints, resolveWaypoints, isRegion, sameId, computePathDistance, roadDistance, buildRoadPath } from '@/components/map/geometry';
 import { PinIcon, pinSize, pinLabelStyle, effectivePinImage } from '@/components/map/pinIcons';
 import { MapLabel } from '@/components/map/MapLabel';
+import { useCoarsePointer } from '@/hooks/useCoarsePointer';
 
 const ROUTE_STYLE = {
   road:     { color: '#9a8c6a', dash: undefined },
@@ -42,13 +43,16 @@ export function Regions({ locations, iw, ih, selLoc, onSelect, onHover, onLeave 
 
 /** Point "pins" rendered as a type icon + label below. */
 export function Pins({ locations, typeImages, iw, ih, selLoc, onSelect, onHover, onLeave }) {
-  const [hoverId, setHoverId] = useState(null); // labels hidden except big/huge → show on hover
+  const [hoverId, setHoverId] = useState(null);
+  // No hover on a touchscreen — without this a tablet reader sees an
+  // unlabelled map, which is most of what the public map is for.
+  const coarse = useCoarsePointer(); // labels hidden except big/huge → show on hover
   return locations.filter((l) => !isRegion(l)).map((loc) => {
     const { x, y } = pctToSvg(loc.x, loc.y, iw, ih);
     const sel = sameId(loc.id, selLoc);
     const fmt = pinLabelStyle(loc.size_type);
     const labelY = y + pinSize(loc.icon_scale) / 2 + 6 + fmt.fontSize;
-    const showLabel = !!fmt.upper || sameId(hoverId, loc.id);
+    const showLabel = !!fmt.upper || coarse || sameId(hoverId, loc.id);
     return (
       <g
         key={loc.id}

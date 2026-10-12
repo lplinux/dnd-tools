@@ -21,16 +21,28 @@ export const RARITIES = [
 export const ARMOR_TYPES = ['Light', 'Medium', 'Heavy'];
 
 /**
- * Printable-card geometry. A standard "tarot"-ish item card; content flows across
- * one or more of these fixed-size cards (Front → Back → Continuation). Auto-fit
- * shrinks the font between MAX and MIN before spilling to another card.
+ * Printable-card geometry. A poker-sized item card with two faces: Front, then
+ * Back. Auto-fit measures each face and picks the largest whole pixel size
+ * between MAX and MIN at which it fits.
+ *
+ * There is no third card. The comment here used to say content "flows across
+ * one or more" cards and spills "to another card" when it will not fit, and
+ * the print help text said the same — neither was ever true. A face that still
+ * overflows at MIN is clipped, because the body is `overflow: hidden`. See
+ * TODO.md for the continuation cards that would actually carry the remainder.
  */
 export const CARD = {
   widthMM: 63,      // poker/MTG width
   heightMM: 88,     // poker/MTG height
   paddingMM: 4,
   maxFontPx: 14,
-  minFontPx: 8,
+  // 6px is about 1.5mm tall — readable held close, not across a table. It is
+  // this low because the alternative at the floor is silent truncation: the
+  // content simply stops, with nothing on the card to say so. Dropping 8 -> 6
+  // buys about 73% more room and rescues most, though not all, of the long
+  // homebrew items. See TODO.md for the continuation cards that would fix the
+  // rest properly.
+  minFontPx: 6,
 };
 export const MM_TO_PX = 96 / 25.4; // CSS px per mm at 96dpi
 
@@ -54,6 +66,10 @@ export function defaultForm() {
     rarity:     'rare',
     flavor:     '',
     attunement: false,
+    // Pounds. Optional — blank means "unweighed", which is not the same as
+    // weightless. Feeds the carry total on a character's Inventory tab when
+    // the card is granted to them.
+    weight:     '',
     // Weapon
     damage:     '',
     damageType: '',
@@ -65,5 +81,27 @@ export function defaultForm() {
     uses:       '',
     // Rich-text abilities (stored as HTML string)
     abilities:  '',
+    // The card this one grew out of, by id, or null for a base tier. DM-only:
+    // it never reaches the preview or the print card, and never reaches a
+    // player at all — see the INV_SELECT comment in app.js.
+    evolvesFrom: null,
   };
+}
+
+/**
+ * Has anything been typed into this form yet?
+ *
+ * `evolvesFrom` is excluded deliberately: choosing a parent is the action that
+ * asks this question, so counting it would make the answer always "yes".
+ *
+ * Used to decide whether picking a parent may copy that card over the form
+ * silently, or has to ask first. Getting it wrong in the lenient direction
+ * costs someone the abilities text they just wrote.
+ */
+export function isFormDirty(form) {
+  const blank = defaultForm();
+  return Object.keys(blank).some((k) => {
+    if (k === 'evolvesFrom') return false;
+    return (form?.[k] ?? '') !== blank[k];
+  });
 }

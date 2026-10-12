@@ -5,31 +5,78 @@ Only open work lives here. Everything that is built and waiting on your QA moved
 
 ---
 
-## Bootstrap / ops — known gaps
+## Security — noted, not fixed
 
-Found while making `run.sh` work on a clean machine. None of these block a bootstrap.
+Standing rule for this repo: findings get written down, not scheduled. The campaign-ownership
+and trash-sealing items are **done**, and so are the three that stood here — unvalidated stats
+JSON, no login throttling, no CSRF. All of it is in `TOQA.md`. What is left is what turned up
+*while* doing them, and none of it was in scope:
 
-- [ ] **`DB_PASSWORD` is hardcoded `dndtools123`** in both `.env.example` and
-      `docker-compose.yml`. Generating it means keeping the two in sync — compose would have to
-      read it from `.env` for both the server and the app container. Worth doing before this is
-      exposed anywhere.
-- [ ] **`PORT` in `.env` is a trap.** `app.js` honours it, but `docker-compose.yml` hardcodes the
-      mapping `3080:3080`, so setting `PORT=4000` makes the container listen on 4000 while the
-      publish still points at 3080 — the app silently becomes unreachable.
-- [ ] **`/tmp/dndtools-init-creds.txt` can be left behind.** It holds the initial admin password
-      at mode 0600 and is normally deleted after the banner prints, but a crash between creating
-      the admin and printing leaves it until the next run cleans it.
-- [ ] **`chmod 755 pdfs` runs unconditionally** on every `run.sh`, silently reverting tightened
-      permissions.
-- [ ] **The build-staleness check watches only** `frontend/src`, `frontend/index.html` and
-      `frontend/tailwind.config.js`. Editing `vite.config.js`, `postcss.config.js` or
-      `frontend/package.json` will not trigger a rebuild.
-- [ ] **`scripts/setup-db.js` lets `.env` override exported environment variables.** `app.js`
-      loads `.env` through dotenv, which never overwrites a variable already in the environment;
-      the setup script reads the file itself with no such guard, so `DB_PORT=15433 node
-      scripts/setup-db.js` still connects to whatever `.env` says. This bit during the campaign
-      merge: a scratch-stack command reached the **live** database instead. It was a read, so
-      nothing was damaged, but the next one might not be.
+- [ ] **Session fixation on login.** `POST /api/auth/login` assigns `userId` onto the existing
+      session rather than calling `req.session.regenerate()`, so a session id fixed before login
+      stays valid after it. Now a small change rather than a fiddly one: the CSRF token is
+      already rotated at exactly that point, so regenerating around it is a few lines and the
+      SPA already copes with being handed a new token there.
+- [ ] **The NPC-sheet `postMessage` bridge uses `'*'` as its target origin** on both sides —
+      `PcSheet/tabs/index.jsx:195` and `NpcSheet/index.jsx:350`. Same-origin in practice, since
+      the iframe is `/npc-sheet` on this server, so naming the origin costs nothing and closes
+      the case where it is not.
+- [ ] **`cookie.secure` and `trust proxy` are both deliberately off**, and must be turned on
+      together if this ever goes behind TLS or a reverse proxy. Neither is a defect today and
+      turning either on alone breaks things — see the deployment note in `ARCH.md`.
+- [ ] **Five build-time advisories remain, and only Tailwind 4 clears them.** `braces`,
+      `micromatch`, `chokidar` and `fast-glob` are all reached through `tailwindcss`, and there
+      is **no patched release** for them — `braces` is vulnerable at `<=3.0.3` and 3.0.3 is the
+      latest version there is. The remediation npm offers is `tailwindcss@4`, which is a rewrite
+      of the config model rather than a bump, so it is a migration to schedule rather than a fix
+      to apply. None of them ships to a browser: they are devDependencies that run at build time
+      against your own CSS, so an attacker would already need code in the repo to reach them.
+- [ ] **`frontend/package.json` overrides `postcss-selector-parser` to `^7.1.6`** while Tailwind 3
+      declares `^6.1.2`. It clears two advisories and the built CSS is byte-identical, so it
+      works — but it is a deliberate semver violation and the first thing to drop if a Tailwind
+      patch release ever builds oddly.
+- [ ] **`~/.npmrc` has two malformed keys** — `//registry=` and `//always-auth=` should be
+      `registry=` and `always-auth=`. They are what npm warns about on every install, and because
+      they are ignored, installs silently use the public registry rather than the Nexus mirror
+      they were meant to point at.
+- [ ] **Print: continuation cards were promised but never built.** `constants.js` and the print
+      help text both claimed content "flows across one or more cards" and spills "to another card"
+      when it overflows. No such logic exists in `ItemCardPrint.jsx` — a face that still does not
+      fit at the minimum font is clipped by `overflow: hidden`, silently. The false claims are now
+      corrected, and the floor dropped 8px → 6px, which takes the Leruhy set from 30 clipped cards
+      to 4. The remaining four (Crown of the Final Silence, Twin Swords, Spear of the Resonant
+      Soul, Boots of the Veiled Passage) are each ~1.0–1.2× over and still lose their tail.
+      Building it properly means paginating the abilities HTML across fixed boxes without
+      splitting mid-word or orphaning a heading, and numbering the faces "2/2".
+- [ ] **`POST /api/auth/change-password` accepts a 4-character password** (`app.js`). A policy
+      choice rather than a finding; noted because the limiter now makes guessing *remote*
+      passwords slow, which puts the floor on the password itself.
+
+---
+
+## General
+
+Touch input and the two overflowing layouts are **done** — see `TOQA.md`. What is left of
+"responsive" is a long tail of smaller fixes, listed here so they are not rediscovered:
+
+- [ ] **Timeline's own layout** — a 256px sidebar plus a 160px gutter is 416px of chrome before
+      any timeline is drawn. The sidebar already has a collapse path in CSS (`.sidebar.collapsed`
+      plus an 18px `.sb-toggle` rail); it just is not wired to a breakpoint.
+- [ ] **PdfViewer** defaults its 240px sidebar open (`sidebarOpen = true`), so it opens wrong on
+      a phone. One line — default it from a width check.
+- [ ] **Non-responsive two-column form grids** in six modals: `Diary/EntryModal.jsx:75`,
+      `ManageCampaigns/tabs/OtherTabs.jsx:229` (a 3-col date picker), `Timeline/Modals.jsx:23,280`
+      and `NpcSheet/index.jsx:741` (both **inline styles**, so unreachable by a Tailwind prefix —
+      they need a class), and `timeline.css:325` `.fg`.
+- [ ] **Viewport-unit jitter** — `85vh`/`88vh`/`92vh` on modals resize as the mobile address bar
+      hides and reappears. Nothing in the app uses `dvh`. (Timeline's `100vh`, the worst case,
+      is already fixed.)
+- [ ] **`PcPublic.jsx:32`** — a 120px portrait in a `flex` row with no `flex-wrap`.
+- [ ] **`CharTreeTab.jsx`** draws at a hard-coded `H = 560`.
+- [ ] **The distance matrix** is an N×N `white-space: nowrap` table — it scrolls on a phone but
+      is not usable. Probably wants a different presentation rather than a responsive fix.
+- [ ] **SplitView** — four iframes at ~195px each on a phone. Arguably should just say
+      "desktop only" rather than be fixed.
 
 ---
 
@@ -52,23 +99,16 @@ Captured for later — nothing here has been designed or scoped yet.
       access rule (every campaign member? only NPCs they have met?) and probably a share link,
       like the other public views.
 
-### PC Sheet — inventory management
+### PHB & DM Rules - A series of quicklinks for accessing the Official Rules of D&D
 
-- [ ] **Track a character's items**, with quantities and equipped/carried state.
-- [ ] **Pull item information from the SRD** (and Open5e), reusing the lookup that already backs
-      Item Cards' *Load from SRD* — `api/srd.js` + `api/open5e.js` + `magicItemToCard` in
-      `data/srdMap.js` already fetch and flatten magic items; the inventory wants the same data
-      against a different shape.
-- [ ] **Cards for non-official items**, ideally linked to the Item Cards module rather than a
-      second parallel editor. Note the obstacle: Item Cards is currently **localStorage-only and
-      entirely client-side** — nothing it makes reaches the database. Linking inventory to it
-      means giving item cards server-side storage first, which is the real work in this item.
-- [ ] Open question: is an inventory item a free-text row with an optional link to an item card,
-      or always a card? The first is far cheaper and probably right to start with.
+- [ ] Link for status, conditions, properties, etc (inside PC Sheets)
+- [ ] Accesss to Official books (Maybe upload the PDF into the PDF Viewer or by API calls to SRDs)
+
 
 ### PC Sheet — other
 
 - [ ] Prepare for Multi-Class
+- [ ] Expand to character creation and level up (automatical, based on D&D rules and not manual)
 
 ---
 
@@ -94,18 +134,7 @@ entry — which is the actual design work, not the indexing.
 *Compare:* LegendKeeper, Kanka and Obsidian Portal all live or die on this. It is the single
 feature that turns a pile of notes into a wiki.
 
-### 3. Give Item Cards server-side storage
-
-Already noted above as the blocker for inventory, but it deserves to be its own item: the module
-is **localStorage-only**. Clear your browser data, switch laptops, or open the app on the tablet
-you actually use at the table, and the cards are gone. There is no export for them either. Every
-other module in the app persists; this one quietly does not, which is a trap rather than a
-limitation.
-
-Moving it to a table behind `requireAuth`, with the same export convention as everything else,
-is small and unblocks the inventory work at the same time.
-
-### 4. Cross-links between modules in the text you already write
+### 3. Cross-links between modules in the text you already write
 
 You have a shared markdown renderer (`components/ui/renderMarkdown.js`) used by the diary, notes
 and descriptions. Teaching it a `[[Location Name]]` / `[[NPC Name]]` form that resolves to the
@@ -118,39 +147,23 @@ to an NPC they have never met.
 *Compare:* this is exactly Obsidian's and Kanka's mention syntax, and it is the reason both feel
 cohesive rather than like a set of forms.
 
-### 5. A trash can for campaigns
-
-When you deleted a campaign you had to ask me for SQL to prove nothing was orphaned. That is the
-right instinct and the wrong workflow. A `deleted_at` column, a filter on the list, and a purge
-after N days would mean a misclick is survivable and the cascade behaviour gets exercised once,
-deliberately, instead of being audited by hand each time.
-
-*Compare:* Roll20 and D&D Beyond both keep deleted campaigns recoverable for a window.
-
-### 6. A player-facing campaign page
+### 4. A player-facing campaign page
 
 You already generate share links for timelines, the campaign diary, PC sheets and journey maps —
 four separate URLs a player has to keep track of. One per-campaign player page that gathers
 whatever that player is allowed to see (their sheet, the shared timelines, the published diary,
-the public map, the NPCs they have met once idea 1 above exists) would replace all four.
+the public map, and the NPCs they have met once NPC Management exists) would replace all four.
 
 The access rules all exist; this is mostly assembly.
 
 *Compare:* Obsidian Portal's campaign homepage, World Anvil's player-facing world.
 
-### 7. Finish or remove `campaign_locations.image_data`
-
-The column exists and `app.js` reads and writes it, but in your export every value is
-null — nothing in the UI ever sets it. Either wire it up (a handout image on the location popup
-and the public map, which is a genuinely nice table moment) or drop it. A half-built column is
-worse than neither, because the next person to touch locations has to work out which it is.
-
-### 8. Session prep, in the app
+### 5. Session prep, in the app
 
 The diary records what *happened*. Nothing records what you intend to happen. A "next session" note per
 campaign, with a one-click promote-to-diary-entry after the session, would close that loop and
 reuse the diary's editor and markdown wholesale.
 
 Lower down the list because your Obsidian workflow already works, and a worse copy inside the app
-is a step backwards. Only worth it if the cross-links from idea 4 exist, so prep can point at
+is a step backwards. Only worth it if the cross-links from idea 3 exist, so prep can point at
 real NPCs and locations.

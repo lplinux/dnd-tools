@@ -172,14 +172,20 @@ export default function Sidebar({ tl, onOpenModal, onScrollToEvent, hideProfileB
 
   const today = db.todayAbs != null ? fromAbsDay(db.todayAbs, calType) : null;
 
+  /** Move the location at `from` to `to`. The one place the reorder happens. */
+  function moveLoc(from, to) {
+    if (from == null || to == null || from === to) return;
+    const order = [...displayedLocs];
+    if (to < 0 || to >= order.length) return;
+    const [moved] = order.splice(from, 1);
+    order.splice(to, 0, moved);
+    tl.reorderLocations(order);
+  }
+
   function onDrop(targetIdx) {
     const from = dragIdx.current;
     dragIdx.current = null;
-    if (from == null || from === targetIdx) return;
-    const order = [...displayedLocs];
-    const [moved] = order.splice(from, 1);
-    order.splice(targetIdx, 0, moved);
-    tl.reorderLocations(order);
+    moveLoc(from, targetIdx);
   }
 
   return (
@@ -314,6 +320,21 @@ export default function Sidebar({ tl, onOpenModal, onScrollToEvent, hideProfileB
               >
                 {canDrag && <span className="drag-handle" title="Drag to reorder">⠿</span>}
                 <span style={{ flex: 1 }}>{l}</span>
+                {/* HTML5 drag-and-drop above does not work on iOS Safari or
+                    Android Chrome at all — not a Pointer Events problem, and
+                    not fixable by one. These buttons are the reorder that works
+                    everywhere; the drag handle stays for mouse users who prefer
+                    it. Hidden at the ends, where the move would be a no-op. */}
+                {canDrag && (
+                  <>
+                    <button className="eye-btn" title="Move up" disabled={i === 0}
+                      style={i === 0 ? { visibility: 'hidden' } : undefined}
+                      onClick={() => moveLoc(i, i - 1)}>↑</button>
+                    <button className="eye-btn" title="Move down" disabled={i === visLocs.length - 1}
+                      style={i === visLocs.length - 1 ? { visibility: 'hidden' } : undefined}
+                      onClick={() => moveLoc(i, i + 1)}>↓</button>
+                  </>
+                )}
                 <button className={`eye-btn${hidden ? ' hidden-item' : ''}`} title={hidden ? 'Show' : 'Hide'} onClick={() => tl.toggleLocVis(l)}>{hidden ? '👁‍🗨' : '👁'}</button>
                 {!readOnlyActors && <button className="btn sm dn" onClick={() => { const n = db.events.filter((e) => e.location === l).length; if (!n || window.confirm(`"${l}" has ${n} event${n === 1 ? '' : 's'}. Delete them all?`)) tl.removeLocation(l); }}>✕</button>}
               </div>

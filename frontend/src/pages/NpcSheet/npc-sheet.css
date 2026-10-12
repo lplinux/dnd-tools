@@ -119,7 +119,10 @@
   display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px;
   background: var(--parch2); border: 1px solid var(--rule); padding: 8px 10px; margin-bottom: 10px;
 }
-.npc-sheet .cs { text-align: center; min-width: 0; }
+/* position:relative so the temp-HP badge can float in the cell's corner
+   without taking part in layout — the stats bar must be exactly as tall with
+   temporary HP as without. */
+.npc-sheet .cs { text-align: center; min-width: 0; position: relative; }
 .npc-sheet .cs-lbl { font-family: var(--fd); font-size: 8px; letter-spacing: .07em; color: var(--muted); font-weight: 600; display: block; margin-bottom: 2px; }
 .npc-sheet .cs input {
   border: none; border-bottom: 2px solid var(--rule); outline: none; background: none; text-align: center;
@@ -127,29 +130,78 @@
 }
 .npc-sheet .cs input.derived { color: var(--red2); font-weight: 700; }
 
-/* HP / Temp HP / Temp Max HP are readouts, not inputs — editing happens in the
-   Manage HP dialog — so they are buttons styled to sit flush with the real
-   fields beside them. Green marks a value a temporary effect is changing. */
-.npc-sheet .cs .hp-readout {
-  display: block; width: 100%; padding: 0;
-  border: none; border-bottom: 2px solid var(--rule); background: none;
-  font-family: var(--fd); font-size: 1rem; font-weight: 600; text-align: center;
-  color: var(--ink); cursor: pointer;
+/* Grey hints on every stat box you can type in — the stats bar and the ability
+   scores. Two jobs, one rule:
+     - an unset box reads as a form waiting for a number, not as a zero;
+     - while you are typing a replacement, the value being replaced sits there
+       in grey so you can still see what it was.
+   Faded well below the ink so it can never be mistaken for a set value, which
+   is the one way a hint like this does harm. */
+.npc-sheet .cs input::placeholder,
+.npc-sheet .cs .hp-cur::placeholder,
+.npc-sheet .ab-score::placeholder {
+  color: var(--muted); opacity: .55; font-weight: 400;
 }
-.npc-sheet .cs .hp-readout:hover { border-bottom-color: var(--ink2); }
-.npc-sheet .cs .hp-readout .hp-sep { color: var(--muted); margin: 0 1px; font-weight: 400; }
-/* On the combined box only the affected half turns green, so a character with
-   temp HP but an untouched maximum does not read as though both changed. */
-.npc-sheet .cs .hp-readout .hp-temp,
-.npc-sheet .cs .hp-readout.hp-temp { color: #1d6b32; }
-.npc-sheet .cs .hp-readout.hp-temp { border-bottom-color: #1d6b32; }
-
-/* Print: a button renders with no affordance on paper, but keep it legible. */
+/* Print: a hint is not content. */
 @media print {
-  .npc-sheet .cs .hp-readout { border-bottom-width: 1px; cursor: default; }
+  .npc-sheet .cs input::placeholder,
+  .npc-sheet .cs .hp-cur::placeholder,
+  .npc-sheet .ab-score::placeholder { color: transparent; }
 }
-/* The +/− that reveals TEMP HP / TEMP MAX HP beside the HP box. Sits inside the
-   label, so it must not inherit the label's block display or push the box down. */
+
+/* The HP box is "current / max" sharing one underline: current HP is a real
+   input (it changes every round), the maximum is a button into the dialog (it is
+   derived from max + temp max). One rule for both halves so the typography stays
+   identical and the pair reads as a single field rather than two controls. */
+.npc-sheet .cs .hp-pair {
+  display: flex; align-items: baseline; justify-content: center; gap: 1px;
+  border-bottom: 2px solid var(--rule);
+}
+.npc-sheet .cs .hp-pair:focus-within { border-bottom-color: var(--ink2); }
+.npc-sheet .cs .hp-cur,
+.npc-sheet .cs .hp-max {
+  padding: 0; border: none; background: none;
+  font-family: var(--fd); font-size: 1rem; font-weight: 600; text-align: center;
+  color: var(--ink);
+}
+/* Share the width so a 3-digit current does not shove the maximum out of the
+   box; min-width:0 lets the input actually shrink inside the flex row. */
+.npc-sheet .cs .hp-cur { width: 50%; min-width: 0; outline: none; }
+.npc-sheet .cs .hp-max { width: 50%; min-width: 0; cursor: pointer; }
+.npc-sheet .cs .hp-max:hover { color: var(--red2); }
+.npc-sheet .cs .hp-pair .hp-sep { color: var(--muted); font-weight: 400; }
+
+/* Temporary HP: a small blue number floating beside the HP label.
+   ABSOLUTE, so the stats bar is exactly as tall with temporary HP as without —
+   the whole point of moving it off the number it used to sit above. The label
+   row is centred text, so the cell's left edge is free space to float into.
+   Blue because it is neither the sheet's red nor the green a temporary MAXIMUM
+   tints: three different things should not share a colour. It is a button, not
+   a label — it opens the dialog on the field it is showing. */
+.npc-sheet .cs .hp-temp-badge {
+  position: absolute; top: -2px; left: 0; z-index: 1;
+  padding: 0 2px; border: none; background: none;
+  font-family: var(--fd); font-size: 10px; font-weight: 700;
+  line-height: 1.1; color: #1d4ed8; letter-spacing: .02em; cursor: pointer;
+}
+.npc-sheet .cs .hp-temp-badge:hover { text-decoration: underline; }
+/* A temporary MAXIMUM still tints the half it affects, so a character with one
+   but no temp HP does not read as though nothing changed. */
+.npc-sheet .cs .hp-max.hp-temp { color: #1d6b32; }
+
+/* Print: an input renders with no affordance on paper, but keep it legible. */
+@media print {
+  .npc-sheet .cs .hp-pair { border-bottom-width: 1px; }
+  .npc-sheet .cs .hp-cur,
+  .npc-sheet .cs .hp-max { cursor: default; }
+  /* It is a button, but the number on it is real information — print it. */
+  .npc-sheet .cs .hp-temp-badge {
+    color: #1d4ed8; cursor: default; text-decoration: none;
+    -webkit-print-color-adjust: exact; print-color-adjust: exact;
+  }
+}
+/* The ✎ that opens the Manage HP dialog. Sits inside the label, so it must not
+   inherit the label's block display or push the box down. */
 .npc-sheet .cs-add {
   display: inline-block; margin-left: 3px; padding: 0 3px;
   border: 1px solid var(--rule); border-radius: 2px; background: none;
@@ -306,10 +358,41 @@
 .npc-sheet .spell-add-lvl { background: none; border: none; outline: none; font-family: var(--fd); font-size: 9px; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); cursor: pointer; padding: 2px 0; }
 .npc-sheet .spell-add-lvl:hover { color: var(--gold); }
 
-/* SRD 2024 lookup — read-only mirror of each spell input, plus the ⓘ affordance */
+/* SRD 2024 lookup — the chips are the RESTING VIEW of a spell row, with the ⓘ
+   affordance per name; clicking the row swaps in the text input. They used to be
+   rendered alongside the input, which showed every spell twice. */
 .npc-sheet .spell-chips { display: flex; flex-wrap: wrap; gap: 3px 6px; padding: 3px 0 1px; }
 .npc-sheet .spell-chip { display: inline-flex; align-items: center; gap: 2px; font-family: var(--fi); font-size: 10.5px; color: var(--muted); }
 .npc-sheet .spell-chip:not(:last-child)::after { content: '·'; margin-left: 4px; color: var(--parch3); }
+
+/* The SRD lookup strip under a free-text field (Special Traits). Labelled, so a
+   filtered subset of the field above does not read as the field repeated. */
+.npc-sheet .srd-strip { display: flex; align-items: baseline; gap: 5px; }
+.npc-sheet .srd-strip-lbl {
+  font-family: var(--fd); font-size: 7.5px; letter-spacing: .08em; font-weight: 600;
+  color: var(--parch3); flex-shrink: 0; padding-top: 4px;
+}
+.npc-sheet .srd-strip .spell-chips { flex: 1; min-width: 0; }
+
+/* The click target. Matches .spell-name-inp's box so swapping to the editor does
+   not shift the row; the dotted underline only appears on hover so the resting
+   sheet reads as a list rather than a form. */
+.npc-sheet .spell-chips-btn {
+  display: block; width: 100%; text-align: left;
+  background: none; border: none; border-bottom: 1px dotted transparent;
+  padding: 2px 0; cursor: text; color: inherit; font: inherit;
+}
+.npc-sheet .spell-chips-btn:hover,
+.npc-sheet .spell-chips-btn:focus-visible { border-bottom-color: var(--parch3); outline: none; }
+.npc-sheet .spell-chips-btn.is-empty { min-height: 19px; }
+.npc-sheet .spell-chips-ph { font-family: var(--fi); font-size: 12px; color: var(--parch3); }
+
+/* Print: no affordance, and an empty level should not leave a dotted gap or a
+   placeholder reading like real content. */
+@media print {
+  .npc-sheet .spell-chips-btn { cursor: default; border-bottom-color: transparent; }
+  .npc-sheet .spell-chips-ph { display: none; }
+}
 /* The ⓘ button and the SRD combobox are styled in styles/globals.css — they are
    used outside `.npc-sheet` too (Item Cards). Only the parchment palette override
    lives here. */

@@ -72,9 +72,21 @@ export default function ItemCardPrint({ cards, cols = 1, perPage = 1 }) {
     const contentH = (CARD.heightMM - CARD.paddingMM * 2) * MM_TO_PX - 5 * MM_TO_PX; // minus footer
     m.style.width = `${contentW}px`;
 
+    /**
+     * The largest whole pixel size at which this face fits the card.
+     *
+     * `>=` rather than `>`: the old loop stopped one step above the floor and
+     * returned it untested, so the smallest size was never actually measured —
+     * a face that fit exactly at the minimum was indistinguishable from one
+     * that overflowed it.
+     *
+     * Returning the floor still means "it did not fit": the card body is
+     * `overflow: hidden`, so the remainder is cut. TODO.md tracks the
+     * continuation cards that would carry it instead.
+     */
     const fitFont = (html) => {
       if (!html) return CARD.maxFontPx;
-      for (let f = CARD.maxFontPx; f > CARD.minFontPx; f--) {
+      for (let f = CARD.maxFontPx; f >= CARD.minFontPx; f--) {
         m.style.fontSize = `${f}px`;
         m.innerHTML = html;
         if (m.offsetHeight <= contentH) return f;

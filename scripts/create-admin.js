@@ -11,19 +11,13 @@
 'use strict';
 
 const path = require('path');
-const fs = require('fs');
 const readline = require('readline');
 
-// Load .env if present (same logic as app.js so no extra dep needed)
-const envPath = path.join(__dirname, '..', '.env');
-if (fs.existsSync(envPath)) {
-  fs.readFileSync(envPath, 'utf8')
-    .split('\n')
-    .forEach(line => {
-      const m = line.match(/^\s*([^#=\s]+)\s*=\s*(.*)\s*$/);
-      if (m) process.env[m[1]] = m[2].replace(/^['"]|['"]$/g, '');
-    });
-}
+// Load .env if present — genuinely the same mechanism as app.js now. The old
+// comment here claimed parity while hand-rolling a parser that assigned
+// unconditionally, so .env beat an exported variable; dotenv does the reverse,
+// and it was already a direct dependency the whole time.
+require('dotenv').config({ path: path.join(__dirname, '..', '.env') });
 
 const { Pool } = require('pg');
 const bcrypt = require('bcryptjs');

@@ -38,18 +38,29 @@ function today() {
  * Build the filename without downloading — exported so it can be tested, and
  * so callers can show the name before saving if they ever want to.
  */
-export function bundleFilename({ module: mod, campaign, name }) {
+export function bundleFilename({ module: mod, campaign, name, ext = 'json' }) {
   const parts = [slugify(mod), slugify(campaign), slugify(name), today()].filter(Boolean);
-  return `${parts.join('-')}.json`;
+  return `${parts.join('-')}.${ext}`;
 }
 
-/** Serialise, name and save. */
-export function downloadBundle(bundle, meta) {
-  const blob = new Blob([JSON.stringify(bundle, null, 2)], { type: 'application/json' });
+/**
+ * Name and save any blob, sharing the module-campaign-name-date convention.
+ *
+ * Split out of downloadBundle so a ZIP of card images lands next to a JSON
+ * bundle in the Downloads folder rather than under some second naming scheme
+ * invented at the call site.
+ */
+export function saveBlob(blob, meta) {
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
   a.download = bundleFilename(meta);
   a.click();
   URL.revokeObjectURL(a.href);
   return a.download;
+}
+
+/** Serialise, name and save. */
+export function downloadBundle(bundle, meta) {
+  const blob = new Blob([JSON.stringify(bundle, null, 2)], { type: 'application/json' });
+  return saveBlob(blob, meta);
 }

@@ -61,7 +61,14 @@ export default function PlayerDiaryPanel({ isDM, entries, myPlayerId, onNew, onE
         <p className="text-[0.7rem] text-text-muted italic">
           {active}&apos;s diary, read-only — you can read it, but only they can edit or delete their own entries.
         </p>
-        <GroupedEntries entries={list} field="category" ungroupedLabel="Uncategorised" readOnly />
+        <GroupedEntries
+          entries={list}
+          field="category"
+          ungroupedLabel="Uncategorised"
+          searchable
+          searchPlaceholder={`Search ${active}'s diary…`}
+          readOnly
+        />
       </div>
     );
   }
@@ -86,6 +93,8 @@ export default function PlayerDiaryPanel({ isDM, entries, myPlayerId, onNew, onE
         entries={entries}
         field="category"
         ungroupedLabel="Uncategorised"
+        searchable
+        searchPlaceholder="Search your diary…"
         onEdit={onEdit}
         onDelete={onDelete}
         emptyText="Your diary is empty. Write up a session and it stays yours."

@@ -36,6 +36,10 @@ export const TABS = [
   { id: 'npcs',      label: '🧟 NPCs',      count: true  },
   { id: 'timelines', label: '📜 Timelines', count: true  },
   { id: 'chartree',  label: '🌳 Char Tree', count: false },
+  // The shared journal, from the DM's side — the DM-only entries included.
+  // No count: it loads its own data, and a badge that is always blank until
+  // you open the tab is worse than no badge.
+  { id: 'journal',   label: '📖 Journal',   count: false },
   { id: 'settings',  label: '⚙️ Settings',  count: false },
 ];
 

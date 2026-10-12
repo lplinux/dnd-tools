@@ -66,7 +66,7 @@ export default function TagInput({
             <button
               type="button"
               className="tag-x"
-              onMouseDown={(e) => { e.preventDefault(); onRemove(v); }}
+              onPointerDown={(e) => { e.preventDefault(); onRemove(v); }}
               aria-label={`Remove ${v}`}
             >
               ×
@@ -93,7 +93,7 @@ export default function TagInput({
             <div
               key={o}
               className={`tag-opt${i === focusIdx ? ' focused' : ''}`}
-              onMouseDown={(e) => { e.preventDefault(); handleAdd(o); }}
+              onPointerDown={(e) => { e.preventDefault(); handleAdd(o); }}
             >
               {o}
             </div>

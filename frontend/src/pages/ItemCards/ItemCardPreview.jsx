@@ -17,11 +17,32 @@ import { RARITIES } from './constants';
 function UseCircle() {
   return (
     <span style={{
-      display: 'inline-block', width: 14, height: 14,
-      border: '2px solid var(--gold-dim)', borderRadius: '50%',
+      display: 'inline-block', width: '1em', height: '1em',
+      border: '0.143em solid var(--gold-dim)', borderRadius: '50%',
     }} />
   );
 }
+
+/**
+ * The true printed card width. The preview is drawn WIDER than this so it fills
+ * the panel, but the PNG and the print sheet are both this size, so it is the
+ * width the download has to capture at — see handleDownload in index.jsx.
+ */
+export const CARD_WIDTH = '63mm';
+
+/**
+ * How wide the on-screen preview is allowed to get.
+ *
+ * The card used to be drawn at `CARD_WIDTH` — about 238 CSS pixels — which is
+ * true to the print but unreadably small in a half-width panel. It now fills
+ * the panel instead, with the TYPE UNCHANGED: the card gets wider, not louder,
+ * so the same text simply takes fewer lines.
+ *
+ * Capped rather than unbounded because line length is a readability limit of
+ * its own: at 14px, 34rem is roughly 70 characters a line, about the most that
+ * still scans comfortably.
+ */
+const PREVIEW_MAX_WIDTH = '34rem';
 
 const ItemCardPreview = forwardRef(function ItemCardPreview({ form }, ref) {
   const {
@@ -57,15 +78,15 @@ const ItemCardPreview = forwardRef(function ItemCardPreview({ form }, ref) {
     <>
       {/* Scoped card styles — kept as CSS strings so html2canvas can read them */}
       <style>{`
-        .ic-card { background: var(--surface2); padding: 12px; font-size: 14px; line-height: 1.5; }
-        .ic-name { font-family: var(--fd); font-size: 2rem; color: var(--gold); margin-bottom: 4px; font-weight: 600; }
-        .ic-type { font-size: 13px; color: var(--text-dim); margin-bottom: 6px; }
-        .ic-stat { font-size: 13px; color: var(--text-dim); margin-bottom: 4px; }
-        .ic-flavor { font-style: italic; color: var(--text-dim); margin-bottom: 8px; padding: 8px; background: var(--surface3); border-left: 2px solid var(--gold-dim); }
-        .ic-abilities { font-size: 13px; color: var(--text); white-space: normal; line-height: 1.6; }
-        .ic-abilities ul { padding-left: 1.3em; margin: 2px 0; list-style: disc; }
-        .ic-abilities ol { padding-left: 1.3em; margin: 2px 0; list-style: decimal; }
-        .ic-abilities li { margin: 1px 0; }
+        .ic-card { background: var(--surface2); padding: 0.857em; font-size: 14px; line-height: 1.5; }
+        .ic-name { font-family: var(--fd); font-size: 2.286em; color: var(--gold); margin-bottom: 0.286em; font-weight: 600; }
+        .ic-type { font-size: 0.929em; color: var(--text-dim); margin-bottom: 0.429em; }
+        .ic-stat { font-size: 0.929em; color: var(--text-dim); margin-bottom: 0.286em; }
+        .ic-flavor { font-style: italic; color: var(--text-dim); margin-bottom: 0.571em; padding: 0.571em; background: var(--surface3); border-left: 0.143em solid var(--gold-dim); }
+        .ic-abilities { font-size: 0.929em; color: var(--text); white-space: normal; line-height: 1.6; }
+        .ic-abilities ul { padding-left: 1.3em; margin: 0.143em 0; list-style: disc; }
+        .ic-abilities ol { padding-left: 1.3em; margin: 0.143em 0; list-style: decimal; }
+        .ic-abilities li { margin: 0.071em 0; }
         .ic-abilities u { text-decoration: underline; }
         .ic-abilities b, .ic-abilities strong { color: var(--gold); }
         .ic-abilities i, .ic-abilities em { color: var(--text-dim); }
@@ -74,15 +95,20 @@ const ItemCardPreview = forwardRef(function ItemCardPreview({ form }, ref) {
       <div
         ref={ref}
         className="ic-card rounded-sm"
-        // Match the printed card width (63 mm) so the preview reads at true card size
-        // instead of stretching the whole panel.
-        style={{ border: `1px solid ${rarityColor}`, width: '63mm', maxWidth: '100%', marginInline: 'auto' }}
+        style={{
+          border: `1px solid ${rarityColor}`,
+          // Fills the panel. The download temporarily pins the element back to
+          // CARD_WIDTH before capturing, so this width never reaches the PNG.
+          width: '100%',
+          maxWidth: PREVIEW_MAX_WIDTH,
+          marginInline: 'auto',
+        }}
       >
         <div className="ic-name">{displayName}</div>
         <div className="ic-type">{typeLabel}</div>
 
         {hasStats && (
-          <div style={{ marginBottom: 8 }}>
+          <div style={{ marginBottom: '0.571em' }}>
             {showWeapon && (
               <>
                 {damage     && <div className="ic-stat">Damage: {damage}</div>}
@@ -97,7 +123,7 @@ const ItemCardPreview = forwardRef(function ItemCardPreview({ form }, ref) {
               </>
             )}
             {showUses && (
-              <div style={{ marginTop: 6, display: 'flex', alignItems: 'center', gap: 4 }}>
+              <div style={{ marginTop: '0.429em', display: 'flex', alignItems: 'center', gap: '0.286em' }}>
                 <span className="ic-stat" style={{ marginBottom: 0 }}>Uses:</span>
                 {Array.from({ length: usesCount }, (_, i) => <UseCircle key={i} />)}
               </div>

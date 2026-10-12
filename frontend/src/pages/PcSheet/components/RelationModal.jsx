@@ -53,7 +53,7 @@ export default function RelationModal({ open, onClose, onSave, editData, allRela
             placeholder="e.g., Elara Moonwhisper" className={inputCls} autoFocus />
         </FormField>
 
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <FormField label="Relation Type">
             <select value={form.relationType} onChange={ff('relationType')} className={inputCls}>
               {RELATION_TYPES.map(t => <option key={t} value={t}>{t}</option>)}

@@ -17,6 +17,7 @@ import {
 } from '@/components/map/geometry';
 import { PinIcon, pinSize, pinLabelStyle, effectivePinImage } from '@/components/map/pinIcons';
 import { MapLabel } from '@/components/map/MapLabel';
+import { useCoarsePointer } from '@/hooks/useCoarsePointer';
 
 // Road-network styling by type (solid road, dashed flight/sea).
 const ROUTE_STYLE = {
@@ -33,7 +34,24 @@ const ROUTE_INK = {
   maritime: '#1f5e5e',
 };
 
+/**
+ * Radius of the INVISIBLE hit circle behind a small handle.
+ *
+ * The visible handles are 5-8 px, which a mouse hits precisely and a fingertip
+ * (~44 px of contact) cannot. Rather than making the map uglier for everyone,
+ * a transparent circle gives the handle a finger-sized target only where the
+ * primary pointer is coarse. The roads already work this way — see the
+ * strokeWidth={14} transparent hit-line below.
+ *
+ * These are SVG user units in image space, so the on-screen size still varies
+ * with zoom; the multiplier is chosen to be generous at typical working scales
+ * rather than to hit an exact pixel count, which the SVG cannot know.
+ */
+const hitRadius = (r, coarse) => (coarse ? Math.max(r * 3, 18) : r + 2);
+
 export function EditorPaths({ paths, iw, ih, selPath, selectedSection, distances, placedLocs, showRoutes = true, hiddenPaths, activeTool, onPathDown, onWaypointDown, onSectionClick, onCurveDown, onSectionAddCurve, onRemoveCurvePoint, onLabelDown }) {
+  const coarse = useCoarsePointer();
+  const hitR = (r) => hitRadius(r, coarse);
   const editing = activeTool === 'select'; // section/bend handles only with Select/Move
   return paths.map((p) => {
     const isRoute = p.kind === 'route';
@@ -60,7 +78,7 @@ export function EditorPaths({ paths, iw, ih, selPath, selectedSection, distances
     return (
       <g key={p.id} style={{ color }}>
         {/* Fat transparent hit-line for easier clicking */}
-        <path d={road.d} fill="none" stroke="transparent" strokeWidth={14} style={{ cursor: 'pointer' }} onMouseDown={down} />
+        <path d={road.d} fill="none" stroke="transparent" strokeWidth={14} style={{ cursor: 'pointer' }} onPointerDown={down} />
         <path
           d={road.d}
           fill="none"
@@ -72,7 +90,7 @@ export function EditorPaths({ paths, iw, ih, selPath, selectedSection, distances
           opacity={isRoute ? (sel ? 1 : 0.85) : (sel ? 1 : 0.72)}
           markerEnd={isRoute ? undefined : 'url(#jm-arrowhead)'}
           style={{ cursor: 'pointer' }}
-          onMouseDown={down}
+          onPointerDown={down}
         />
         {p.name && (
           <MapLabel
@@ -83,7 +101,7 @@ export function EditorPaths({ paths, iw, ih, selPath, selectedSection, distances
             letterSpacing={isRoute ? '0.08em' : undefined}
             uppercase={isRoute}
             ink={isRoute ? (ROUTE_INK[p.route_type] || ROUTE_INK.road) : undefined}
-            onMouseDown={labelDraggable ? (e) => onLabelDown(p, e) : undefined}
+            onPointerDown={labelDraggable ? (e) => onLabelDown(p, e) : undefined}
           />
         )}
         {dist.complete ? (
@@ -102,7 +120,7 @@ export function EditorPaths({ paths, iw, ih, selPath, selectedSection, distances
           const active = !!selectedSection && sameId(selectedSection.pathId, p.id) && sameId(seg.index, selectedSection.index);
           return (
             <g key={`sec-${seg.index}`} style={{ cursor: 'pointer' }}
-              onMouseDown={(e) => e.stopPropagation()}
+              onPointerDown={(e) => e.stopPropagation()}
               onClick={(e) => { e.stopPropagation(); onSectionClick(p.id, seg.index); }}
               onDoubleClick={(e) => { e.stopPropagation(); onSectionAddCurve?.(p, seg.index, e); }}
             >
@@ -120,20 +138,33 @@ export function EditorPaths({ paths, iw, ih, selPath, selectedSection, distances
             to remove. Double-click the section line (above) to add a new one. */}
         {isRoute && sel && editing && onCurveDown && road.segs.flatMap((seg) =>
           seg.controls.map((c) => (
-            <rect
-              key={`bend-${seg.index}-${c.ptIdx}`}
-              x={c.x - 4}
-              y={c.y - 4}
-              width={8}
-              height={8}
-              transform={`rotate(45 ${c.x} ${c.y})`}
-              fill="#fff"
-              stroke={color}
-              strokeWidth={1.5}
-              style={{ cursor: 'grab' }}
-              onMouseDown={(e) => onCurveDown(p, seg.index, c.ptIdx, e)}
-              onDoubleClick={(e) => { e.stopPropagation(); onRemoveCurvePoint?.(p, seg.index, c.ptIdx); }}
-            />
+            <g key={`bend-${seg.index}-${c.ptIdx}`}>
+              {/* Invisible hit target. The visible handle is 8x8 — fine for a
+                  mouse, hopeless for a finger — so on a coarse pointer a
+                  transparent circle gives it a usable area without changing
+                  how the map looks. Same trick the road already uses with its
+                  strokeWidth={14} hit-line. */}
+              <circle
+                cx={c.x}
+                cy={c.y}
+                r={hitR(7)}
+                fill="transparent"
+                style={{ cursor: 'grab' }}
+                onPointerDown={(e) => onCurveDown(p, seg.index, c.ptIdx, e)}
+                onDoubleClick={(e) => { e.stopPropagation(); onRemoveCurvePoint?.(p, seg.index, c.ptIdx); }}
+              />
+              <rect
+                x={c.x - 4}
+                y={c.y - 4}
+                width={8}
+                height={8}
+                transform={`rotate(45 ${c.x} ${c.y})`}
+                fill="#fff"
+                stroke={color}
+                strokeWidth={1.5}
+                pointerEvents="none"
+              />
+            </g>
           )),
         )}
 
@@ -143,17 +174,13 @@ export function EditorPaths({ paths, iw, ih, selPath, selectedSection, distances
           if (w.locId != null) return null;
           const s = pctToSvg(w.x, w.y, iw, ih);
           return (
-            <circle
-              key={i}
-              cx={s.x}
-              cy={s.y}
-              r={6}
-              fill={color}
-              stroke="#fff"
-              strokeWidth={2}
-              style={{ cursor: 'move' }}
-              onMouseDown={(e) => onWaypointDown(p, i, e)}
-            />
+            <g key={i}>
+              <circle cx={s.x} cy={s.y} r={hitR(6)} fill="transparent"
+                style={{ cursor: 'move' }}
+                onPointerDown={(e) => onWaypointDown(p, i, e)} />
+              <circle cx={s.x} cy={s.y} r={6} fill={color} stroke="#fff" strokeWidth={2}
+                pointerEvents="none" />
+            </g>
           );
         })}
       </g>
@@ -181,13 +208,15 @@ export function DrawPreview({ draw, cursor, iw, ih }) {
 }
 
 export function EditorRegions({ locations, iw, ih, selLoc, editId, onRegionDown, onVertexDown }) {
+  const coarse = useCoarsePointer();
+  const hitR = (r) => hitRadius(r, coarse);
   return locations.filter(isRegion).map((loc) => {
     const sel = sameId(loc.id, selLoc);
     const editing = sel && sameId(editId, loc.id); // locked unless explicitly editing
     const points = loc.polygon.map((p) => { const s = pctToSvg(p.x, p.y, iw, ih); return `${s.x},${s.y}`; }).join(' ');
     const c = pctToSvg(loc.x, loc.y, iw, ih);
     return (
-      <g key={loc.id} className={`jm-region${sel ? ' sel' : ''}`} style={editing ? { cursor: 'move' } : undefined} onMouseDown={(e) => onRegionDown(loc, e)}>
+      <g key={loc.id} className={`jm-region${sel ? ' sel' : ''}`} style={editing ? { cursor: 'move' } : undefined} onPointerDown={(e) => onRegionDown(loc, e)}>
         <polygon className="jm-region-poly" points={points} />
         <MapLabel x={c.x} y={c.y} text={loc.name} fontSize={11} />
         {loc.linked_map_id && <text className="jm-label" x={c.x} y={c.y - 16} style={{ fontSize: 10, fill: '#e8c96a' }}>🗺</text>}
@@ -195,18 +224,13 @@ export function EditorRegions({ locations, iw, ih, selLoc, editId, onRegionDown,
         {editing && loc.polygon.map((p, i) => {
           const s = pctToSvg(p.x, p.y, iw, ih);
           return (
-            <circle
-              key={i}
-              cx={s.x}
-              cy={s.y}
-              r={5}
-              fill="#c9a84c"
-              stroke="#fff"
-              strokeWidth={1.5}
-              opacity={0.85}
-              style={{ cursor: 'move' }}
-              onMouseDown={(e) => onVertexDown(loc, i, e)}
-            />
+            <g key={i}>
+              <circle cx={s.x} cy={s.y} r={hitR(5)} fill="transparent"
+                style={{ cursor: 'move' }}
+                onPointerDown={(e) => onVertexDown(loc, i, e)} />
+              <circle cx={s.x} cy={s.y} r={5} fill="#c9a84c" stroke="#fff" strokeWidth={1.5}
+                opacity={0.85} pointerEvents="none" />
+            </g>
           );
         })}
       </g>
@@ -257,6 +281,9 @@ export function RegionPreview({ region, cursor, iw, ih }) {
 
 export function EditorPins({ locations, iw, ih, selLoc, onPinDown, typeImages }) {
   const [hoverId, setHoverId] = useState(null); // labels hidden except big/huge → show on hover
+  // There is no hover on a touchscreen, so without this every pin except
+  // big/huge is permanently unlabelled on a tablet — an unreadable map.
+  const coarse = useCoarsePointer();
   // Lay the labels out once per data/size change: each keeps its pin's x, but we
   // nudge y so labels that share horizontal space don't overlap (auto-declutter).
   const pins = useMemo(() => {
@@ -295,12 +322,12 @@ export function EditorPins({ locations, iw, ih, selLoc, onPinDown, typeImages })
     const sel = sameId(loc.id, selLoc);
     const shifted = Math.abs(labelY - labelBase) > 6; // pulled away → draw a leader line
     // Only big/huge names stay on the map; the rest reveal on hover.
-    const showLabel = !!fmt.upper || sameId(hoverId, loc.id);
+    const showLabel = !!fmt.upper || coarse || sameId(hoverId, loc.id);
     return (
       <g
         key={loc.id}
         className={`jm-pin${sel ? ' sel' : ''}`}
-        onMouseDown={(e) => onPinDown(loc, e)}
+        onPointerDown={(e) => onPinDown(loc, e)}
         onMouseEnter={() => setHoverId(loc.id)}
         onMouseLeave={() => setHoverId((h) => (sameId(h, loc.id) ? null : h))}
       >

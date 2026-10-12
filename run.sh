@@ -48,6 +48,31 @@ fi
 
 CREDS_FILE="/tmp/dndtools-init-creds.txt"
 rm -f "$CREDS_FILE"
+# Also clear it on the way out, however we leave. setup-db.js writes the initial
+# admin password here at 0600 and the banner below reads it back — but with
+# `set -euo pipefail`, anything failing between those two points aborted the
+# script and left the password sitting in /tmp until the next run.
+#
+# A file-only EXIT trap, kept separate from cleanup() further down: cleanup()
+# handles SIGINT/SIGTERM and owns the "Ctrl+C is exit 0, failures are exit 1"
+# contract, and folding this into it would either change that or stop the file
+# being cleared on the plain-`exit 1` paths that bypass it entirely.
+trap 'rm -f "$CREDS_FILE"' EXIT
+
+# The app's HTTP port. docker-compose.yml interpolates the same PORT from .env
+# for both the publish mapping and the container env, so the two cannot drift;
+# this reads it too, for the preflight, the readiness poll and the banner, which
+# all used to hardcode 3080 and would otherwise have pointed at the wrong place.
+# Read before step 2, because the port preflight below runs before .env is made
+# — on a fresh install there is nothing to read yet and 3080 is what step 2 writes.
+# A commented "# PORT=3080" deliberately does not match.
+read_env_var() {
+  [[ -f .env ]] || return 0
+  grep -E "^[[:space:]]*$1=" .env 2>/dev/null | tail -n1 | cut -d= -f2- \
+    | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' -e "s/^['\"]//" -e "s/['\"]$//"
+}
+APP_PORT="$(read_env_var PORT)"
+APP_PORT="${APP_PORT:-3080}"
 
 header "═══════════════════════════════════════════"
 header " 🎲  D&D Campaign Tools"
@@ -139,7 +164,7 @@ port_busy() { (exec 3<>"/dev/tcp/127.0.0.1/$1") 2>/dev/null && return 0 || retur
 ours_running() { $CONTAINER_CMD ps --filter "name=$1" --format '{{.Names}}' 2>/dev/null | grep -qx "$1"; }
 
 PORTS_OK=true
-for spec in "3080:dnd-tools" "15432:dnd-tools-ref-db"; do
+for spec in "$APP_PORT:dnd-tools" "15432:dnd-tools-ref-db"; do
   p="${spec%%:*}"; owner="${spec##*:}"
   if port_busy "$p"; then
     # Our own container holding the port is the normal re-run case, not a clash.
@@ -154,7 +179,7 @@ for spec in "3080:dnd-tools" "15432:dnd-tools-ref-db"; do
   fi
 done
 [[ "$PORTS_OK" == "true" ]] || exit 1
-success "ports 3080 and 15432 are usable"
+success "ports $APP_PORT and 15432 are usable"
 
 # curl (optional — used for health check)
 HAS_CURL=true
@@ -184,9 +209,31 @@ if [[ ! -f ".env" ]]; then
     sed "${SED_INPLACE[@]}" "s|^ID_SECRET=.*|ID_SECRET=${ID_GEN}|" .env
     success "Generated random SESSION_SECRET and ID_SECRET"
 
+    # DB_PASSWORD too — docker-compose.yml now interpolates ${DB_PASSWORD} into
+    # BOTH the app service and POSTGRES_PASSWORD, so generating it here keeps the
+    # two in sync instead of shipping the published default.
+    #
+    # Only when there is no existing database volume. postgres applies
+    # POSTGRES_PASSWORD at initdb time only, so against an already-initialised
+    # volume a new password changes what the app sends but not what the server
+    # expects — and pg_isready, the healthcheck, does not authenticate, so the
+    # container reports healthy while every connection fails. That is a much
+    # worse failure than a weak default, and it is almost impossible to diagnose.
+    # (A .env this branch is writing means a fresh install; a leftover volume
+    # from a previous `down` without `-v` is the case being guarded against.)
+    if $CONTAINER_CMD volume ls --format '{{.Name}}' 2>/dev/null | grep -q 'dnd_tools_data'; then
+      warn "Existing database volume found — keeping the default DB_PASSWORD."
+      echo "    Rotating it would break auth against the initialised volume."
+      echo "    To start clean:  $COMPOSE down -v"
+    else
+      DB_GEN="$(node -e "console.log(require('crypto').randomBytes(24).toString('base64url'))")"
+      sed "${SED_INPLACE[@]}" "s|^DB_PASSWORD=.*|DB_PASSWORD=${DB_GEN}|" .env
+      success "Generated random DB_PASSWORD"
+    fi
+
     echo ""
-    echo -e "  ${YELLOW}Still worth reviewing in .env before production:${RESET}"
-    echo "    DB_PASSWORD     — must match docker-compose.yml"
+    echo -e "  ${YELLOW}All three secrets are now generated. Optional in .env:${RESET}"
+    echo "    PORT            — app port; compose follows it on both sides"
     echo ""
     # Only pause for a human. Under `run.sh < /dev/null` or CI, `read` hits EOF
     # and returns non-zero, which `set -e` turns into an abort — after .env has
@@ -244,11 +291,21 @@ header "6/11  Building React frontend…"
 
 # Vite writes straight into public/app/ (see frontend/vite.config.js), which is
 # what Express serves. Rebuild if that is missing, or if any source is newer.
+#
+# The watch list includes the three build-config files, not just sources: editing
+# vite.config.js, postcss.config.js or package.json changes the output but used to
+# leave the staleness check happy, so run.sh served a stale bundle. `2>/dev/null`
+# keeps a missing path harmless — it just degrades to "not newer".
+#
+# Deliberately mtime-against-the-artefact rather than a hash marker: vite.config.js
+# sets `emptyOutDir: true`, so any marker stored under public/app/ is wiped by the
+# very build that would write it.
 NEEDS_BUILD=false
 if [[ ! -f "public/app/index.html" ]]; then
   NEEDS_BUILD=true
   info "public/app not built yet — building…"
 elif find frontend/src frontend/index.html frontend/tailwind.config.js \
+     frontend/vite.config.js frontend/postcss.config.js frontend/package.json \
      -newer public/app/index.html 2>/dev/null | grep -q .; then
   NEEDS_BUILD=true
   info "Source files changed — rebuilding…"
@@ -302,9 +359,16 @@ else
   success "postgres container started"
 fi
 
-# Ensure pdfs/ folder exists and is readable by the container
-mkdir -p pdfs
-chmod 755 pdfs
+# pdfs/ is already created above, before `compose up -d postgres`, because it is
+# the bind-mount source. It used to be created a second time here and then
+# `chmod 755`'d on every single run, which silently reverted any permissions the
+# operator had tightened.
+#
+# The chmod was never doing anything useful: the container runs as root (no USER
+# in the Dockerfile, a deliberate choice documented there), so mode bits are
+# bypassed anyway — and nothing writes to pdfs/ in any case. app.js only serves
+# it statically and lists it; there is no upload route. Whatever mkdir produces
+# under the operator's umask is already sufficient.
 
 # ── 8. Wait for postgres healthy ──────────────────────────────────────────────
 header "9/11  Waiting for PostgreSQL to be healthy…"
@@ -357,7 +421,7 @@ info "Waiting for backend to accept requests…"
 if $HAS_CURL; then
   MAX=60
   for ((i=1; i<=MAX; i++)); do
-    HTTP=$(curl -s -o /dev/null -w "%{http_code}" --max-time 2 http://localhost:3080/ 2>/dev/null || true)
+    HTTP=$(curl -s -o /dev/null -w "%{http_code}" --max-time 2 http://localhost:$APP_PORT/ 2>/dev/null || true)
     if [[ "$HTTP" == "200" || "$HTTP" == "302" || "$HTTP" == "301" ]]; then
       success "Backend is up (HTTP $HTTP)"
       break
@@ -387,7 +451,7 @@ echo -e "${GREEN}${BOLD}══════════════════�
 echo -e "${GREEN}${BOLD} ✅  D&D Tools is running!${RESET}"
 echo -e "${GREEN}${BOLD}═══════════════════════════════════════════════════${RESET}"
 echo ""
-echo -e "  🌐  ${CYAN}http://localhost:3080${RESET}   ← use this one (React SPA + API)"
+echo -e "  🌐  ${CYAN}http://localhost:${APP_PORT}${RESET}   ← use this one (React SPA + API)"
 echo -e "  ℹ️   Port 5173 is only for local dev (${BOLD}npm run dev${RESET} inside frontend/)"
 echo ""
 

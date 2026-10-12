@@ -71,6 +71,8 @@ export default function DiaryTab({ campaignId, playerId, isDM }) {
         entries={entries}
         field="category"
         ungroupedLabel="Uncategorised"
+        searchable
+        searchPlaceholder={isDM ? 'Search this diary…' : 'Search your diary…'}
         readOnly={isDM}
         onEdit={(entry) => setModal({ entry })}
         onDelete={remove}

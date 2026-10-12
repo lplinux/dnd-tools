@@ -45,6 +45,8 @@ D&D Campaign Tools is a full-stack application backed by PostgreSQL. The server 
 | PDF serving | `express.static('pdfs')` on `/pdfs` |
 | Schema init | `initializeDatabase()` runs on startup |
 | Role enforcement | `requireAuth`, `requireRole([...])`, `requireRolePage([...])` middleware |
+| CSRF | Session-held synchroniser token; `X-CSRF-Token` required on POST/PUT/PATCH/DELETE |
+| Login throttling | 10 failures / 15 min, keyed on IP + username, in memory |
 
 ### Roles
 
@@ -88,6 +90,9 @@ campaign_players
 
 campaign_user_assignments        -- which user plays which player in a campaign
   id, player_id (FK campaign_players), user_id (FK users), created_at
+  -- One user may hold SEVERAL characters in one campaign. `GET /api/campaigns`
+  -- therefore tests membership with EXISTS rather than joining through this
+  -- table, or the campaign comes back once per character.
 
 campaign_locations
   id, campaign_id (FK), name, description,
@@ -116,11 +121,145 @@ campaign_diary_shares
   id, campaign_id (FK campaigns, UNIQUE), token (UNIQUE), created_at
 ```
 
+### Campaign Journal
+
+Shared notes on the PC Sheet. Every member of a campaign writes; the whole table reads. The DM
+can additionally mark an entry `dm_only`, which a player's listing never selects at all.
+
+```
+campaign_journal_entries
+  id, campaign_id (FK campaigns, CASCADE), created_by (FK users, CASCADE),
+  player_id (FK campaign_players, SET NULL),      -- the character, if the author plays one
+  location_id (FK campaign_locations, SET NULL),  -- where it happened
+  title, body, category (free text, nullable),
+  in_game_day (absolute day number, nullable),
+  dm_only (bool, default false), created_at, updated_at
+  INDEX (campaign_id, created_at DESC)
+```
+
+`category` is free text with a datalist of what the campaign already uses, exactly like the
+diary's — a table invents its own filing ("Documents", "Rumours", "People we met") rather than
+picking from a list somebody else wrote. Entries group under it in the UI.
+
+Listed in **in-game date order, ascending**, with undated entries last: the journal reads forward
+like the diary rather than like a feed. `in_game_day` is the same absolute-day integer the
+timelines and `campaign_meta.today_marker` use, so a date set in the journal formats identically
+everywhere else — including day **zero**, which is year 1 day 1 of that epoch and which the
+server's bound therefore has to accept.
+
+`created_by` (the user) and `player_id` (the character) are stored separately on purpose: the DM
+has no character, and a player's note stays theirs if they later swap characters. Both location
+and player are `SET NULL` rather than `CASCADE` — deleting a place must not delete what was
+written about it.
+
+Two withholding rules are enforced in SQL rather than in the component, so a refactor of the UI
+cannot leak them:
+
+- A player's query carries `AND j.dm_only = false` and does not select the column at all.
+- A location the DM has since made private stops showing to players — **both its name and its
+  id** — even on an entry written while it was still public. Withholding only the name would
+  still let a player tell that two entries happened at the same secret place.
+
+Editing and deleting are deliberately asymmetric: only the author may edit, while the author
+**or** the DM may delete. A DM tidying the campaign should be able to remove an entry, but not
+to rewrite a player's words without them knowing.
+
+**Two mount points, one component.** `pages/Journal/JournalPanel` fetches its own data and is
+rendered both as a PC Sheet tab and as a Manage Campaigns tab, so neither page threads journal
+state through its hook and the player's view and the DM's cannot drift. Presentation is the
+Diary's — `pages/Diary/GroupedEntries` and `EntryList`, with `meta`, `can` and `accent` supplied
+— because a journal and a diary are the same act of writing something down; only who may read it
+differs.
+
+**Grouping and search** live in `GroupedEntries`, shared with all four diary lists. Filtering
+runs before grouping so the group counts and the collapse state keep meaning something.
+`groupEntries` accepts a field name or a function — the journal's "who wrote it" is a character
+name falling back to a username and is not a column — and `sortGroups` orders the headings
+alphabetically for the groupings where first-appearance order is noise. `searchEntries` is
+substring, case- and accent-folded, AND across terms, OR across fields.
+
+### Item Cards
+
+```
+item_cards                       -- the card creator's saved library
+  id, user_id (FK users), name, type, rarity (CHECK: common|uncommon|rare|
+  veryrare|legendary|artifact), flavor, abilities, attunement,
+  damage, damage_type, properties, ac_bonus, armor_type, uses, weight,
+  evolves_from (FK item_cards, NULLABLE, ON DELETE SET NULL),
+  created_at, updated_at
+  -- Scoped to a USER, not a campaign: the module has no campaign selector and
+  -- is reachable without logging in. Guests keep a localStorage-only print set;
+  -- this table is what a signed-in user gets on top.
+  -- `abilities` is HTML from a contenteditable editor, rendered with
+  -- dangerouslySetInnerHTML, so it is sanitised on write (sanitizeAbilities).
+  -- `evolves_from` makes a CHAIN of tiers for an item that grows over a
+  --   campaign. NULL is a base tier. Which tier a character currently holds is
+  --   NOT stored here — it is which card their inventory row points at, so
+  --   advancing an item and reverting it are the same UPDATE in opposite
+  --   directions, and a player is never sent anything about the chain.
+  --   Cycles are rejected on write (chainLinkError): the chain is walked in the
+  --   browser, so a loop would hang the tab rather than erroring.
+  --   SET NULL rather than RESTRICT because the DELETE route already reports
+  --   23503 as "this card is held by …"; the route re-links the children to the
+  --   deleted card's parent first, so removing a middle tier closes the gap.
+```
+
+**The chain is deliberately absent from `INV_SELECT`.** A player reads their own inventory
+through that query, whose card half is an explicit column list — leaving `evolves_from` out of it
+is what makes an evolving item impossible to anticipate. `test/itemChain.test.js` fails if it is
+ever added.
+
+### Inventory
+
+```
+inventory_items                  -- a character's gear
+  id, campaign_id (FK campaigns), player_id (FK campaign_players),
+  item_card_id (FK item_cards, NULLABLE, ON DELETE RESTRICT),
+  name, quantity, category ('inventory'|'treasure'|'potions'|'misc'),
+  weight, equipped, attuned, requires_attunement, notes,
+  granted_by (FK users), prev_player_id (FK campaign_players), transferred_at,
+  created_at, updated_at
+  -- A row is one of two kinds, enforced by CHECK rather than convention:
+  --   card-linked (item_card_id set) — a magic item the DM granted. The card is
+  --     a reusable template; this row is its ONE instance in the campaign.
+  --     Unique per campaign via a PARTIAL index, always quantity 1.
+  --   free-text (name set) — the player's own gear and consumables. The only
+  --     kind that carries a quantity.
+  -- CHECK inventory_items_kind       : card_id IS NOT NULL OR name IS NOT NULL
+  -- CHECK inventory_items_card_qty   : card_id IS NULL OR quantity = 1
+  -- CHECK inventory_items_qty_positive
+  -- UNIQUE INDEX idx_inventory_card_once_per_campaign
+  --        ON (campaign_id, item_card_id) WHERE item_card_id IS NOT NULL
+  -- ON DELETE RESTRICT on the card: deleting a card that is in someone's
+  -- inventory fails with a 409 naming the holder, rather than silently
+  -- removing a player's magic item.
+  -- player_id, not user_id: an inventory belongs to a CHARACTER, so reassigning
+  -- the character to another user carries the gear with it.
+  -- `category` is ORTHOGONAL to card-linked/free-text: it only says which panel
+  -- of the equipment sheet a row appears in. A granted potion is still granted.
+  -- `weight` is NULL on a card-linked row — the card owns the weight, so there
+  -- is one place to set it. NUMERIC because a vial is 0.5 lb.
+  -- `attuned` vs `requires_attunement` are two different questions: the second
+  -- is a property of the ITEM (and for a card-linked row comes from the card,
+  -- so the column stays false there), the first is this character's state.
+  -- `attuned` is written by the server, which drives it from `equipped` when
+  -- that CHANGES and otherwise honours the incoming value — that transition
+  -- rule is what lets the automatic behaviour and the manual override coexist.
+  -- The 5e cap of three is enforced in both writers (ATTUNEMENT_LIMIT).
+  -- `equipped` is forced false for category 'potions' — consumables are used,
+  -- not worn — and that is applied against the NEW category, so moving an
+  -- equipped item into Potions unequips it.
+  -- Related: item_cards.weight. Maximum Carry Weight is derived as STR x 15
+  -- and is NOT stored — pc_characters.carry_capacity is a leftover and unused.
+```
+
 ### Player Characters
 
 ```
 pc_characters
   id, player_id (FK campaign_players), name, picture_url, picture_data,
+  coins_pp, coins_gp, coins_sp, coins_cp,   -- the purse; 50 coins = 1 lb in 5e,
+                                            -- counted in the carry total
   story, traits, flaws, goals, public_info, private_info, created_at, updated_at
 
 pc_char_stats
@@ -212,10 +351,10 @@ When a waypoint is drawn on or snapped to an existing map pin, `locId` is set au
 
 | Method | Path | Role | Description |
 |---|---|---|---|
-| POST | `/api/auth/login` | — | Login |
+| POST | `/api/auth/login` | — | Login. Throttled; returns a **rotated** CSRF token |
 | POST | `/api/auth/logout` | auth | Logout |
 | POST | `/api/auth/change-password` | auth | Change own password |
-| GET | `/api/auth/user` | — | Current session user |
+| GET | `/api/auth/user` | — | Current session user, **and the CSRF token** (both logged in and out) |
 | POST | `/api/hash-ids` | auth | Utility: HMAC id → share token |
 
 ### Users
@@ -357,6 +496,22 @@ it is bound to the campaign it was minted for. The route validates `bundle.type`
 its own token namespace. Unlike journey maps it is *stable* on re-request (the DM presses Share to
 re-copy a link, not to rotate it); revocation is a separate, deliberate `DELETE`.
 
+### Campaign Journal
+
+| Method | Path | Role | Description |
+|---|---|---|---|
+| GET | `/api/campaigns/:campaignId/journal` | member | Entries in in-game date order. A player's query filters `dm_only` in SQL |
+| POST | `/api/campaigns/:campaignId/journal` | member | Write one. `dm_only` is accepted only from the DM |
+| PUT | `/api/campaigns/:campaignId/journal/:entryId` | author | Edit. The DM cannot edit somebody else's entry |
+| DELETE | `/api/campaigns/:campaignId/journal/:entryId` | author or DM | Remove one |
+
+`member` means `canAccessCampaign` — the DM, an assigned player, or an admin. Who the DM *is* is
+decided from the campaign row (`isCampaignDm`), never from anything the client sent.
+
+A player naming a location they cannot see is refused with a 400 rather than accepted and
+silently blanked: accepting it would confirm that the guessed id exists. The check is the same
+`is_public` filter the locations list uses.
+
 ### Player Characters
 
 | Method | Path | Role | Description |
@@ -477,6 +632,38 @@ re-checked on every API request server-side.
 | Gregorian | 365/366 days | Standard 12 months | Standard leap years |
 
 Absolute day indices (`absDay`) are computed from epoch (year 1, day 1) so events across any era share the same axis.
+
+---
+
+## Security posture and its deployment dependencies
+
+Two settings are **off on purpose**, and both must change together with the deployment, not
+on their own. Turning either on against the current setup breaks the app or weakens it.
+
+| Setting | State | Why, and what has to be true first |
+|---|---|---|
+| `cookie.secure` | `false` | The app is served over plain HTTP on a published port with no TLS. Setting it alone makes the browser withhold the session cookie, so nobody can log in. Needs TLS terminating in front of the app first. |
+| `app.set('trust proxy')` | never called | There is no reverse proxy. Setting it **without** one is worse than leaving it off: `X-Forwarded-For` becomes attacker-controlled, so `req.ip` does too, and the login limiter can be bypassed by varying one header. Needs a proxy that strips and sets that header. |
+
+So, if a reverse proxy with TLS is ever put in front of this: set `trust proxy` to the number of
+proxy hops, set `NODE_ENV=production` (never set today), and make `cookie.secure` conditional on
+it — all three, in that order. The login limiter's IP keying silently degrades to one shared
+bucket for every client if the first is missed, which locks everybody out at once.
+
+What is in place:
+
+- **Sessions** — `express-session`, `httpOnly`, `sameSite: 'lax'` set explicitly, default
+  `MemoryStore`. Sessions and CSRF tokens therefore do not survive a restart; the frontend
+  re-fetches a token and replays the request rather than surfacing that.
+- **CSRF** — a token minted per session and compared with `crypto.timingSafeEqual` on every
+  mutating request. No route is exempt: `saveUninitialized: true` means a logged-out visitor
+  already has a session, so login and logout are covered like everything else. Rotated on login.
+- **Login** — bcrypt, throttled, and both failure paths pay a bcrypt round so the response time
+  does not reveal which usernames exist.
+- **Stats blobs** — `validateStats` whitelists `pc_char_stats.stats_json` at all three sites that
+  write it, including both import routes.
+- **Share links** — HMAC of the row id (`hashId`), and the public routes select explicit columns
+  so a DM-only column added later cannot start leaking merely by existing.
 
 ---
 

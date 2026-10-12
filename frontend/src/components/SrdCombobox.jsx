@@ -174,7 +174,13 @@ export default function SrdCombobox({
               <div
                 key={o.key ?? o.name}
                 className={`srd-combo-opt${i === focusIdx ? ' focused' : ''}`}
-                onMouseDown={(e) => { e.preventDefault(); commit(o.name, true, o); }}
+                /* onPointerDown, not onMouseDown. preventDefault() stops the
+                   input losing focus so onBlur cannot commit the raw typed text
+                   first — but on touch `mousedown` is a COMPATIBILITY event
+                   fired after touchend, by which point blur has already run and
+                   the wrong value has won. This was a live bug: tapping a
+                   suggestion kept whatever you had typed instead. */
+                onPointerDown={(e) => { e.preventDefault(); commit(o.name, true, o); }}
               >
                 <span>{o.name}</span>
                 {badge && <span className="srd-combo-badge">{badge}</span>}

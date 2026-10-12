@@ -5,30 +5,36 @@
  * DM only (access guard in App.jsx).
  *
  * Layout:
- *   Sidebar (campaign list + create form)  |  Detail panel (tabbed)
+ *   Sidebar (campaign list + trash + create form)  |  Detail panel (tabbed)
  *
  * Tabs:
- *   Players · Locations · NPCs · Timelines · Char Tree · Settings
+ *   Players · Locations · NPCs · Timelines · Char Tree · Journal · Settings
  */
 
 import { useRef, useState } from 'react';
-import { Upload } from 'lucide-react';
+import { Upload, Download, Trash2, Undo2, ChevronRight, ChevronDown } from 'lucide-react';
 
 import AppHeader               from '@/components/layout/AppHeader';
 import { Button, Spinner, Modal, FormField } from '@/components/ui';
 import { useManageCampaigns } from '@/hooks/useManageCampaigns';
+import { useConfirm }          from '@/contexts/ConfirmContext';
 import { TABS }                from './constants';
 
 import PlayersTab              from './tabs/PlayersTab';
 import LocationsTab            from './tabs/LocationsTab';
 import { NpcsTab, TimelinesTab, SettingsTab } from './tabs/OtherTabs';
 import { CharTreeTab }         from './tabs/CharTreeTab';
+import JournalTab              from './tabs/JournalTab';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Campaign sidebar
 // ─────────────────────────────────────────────────────────────────────────────
-function CampaignSidebar({ campaigns, currentId, onSelect, onCreate, onImport }) {
+function CampaignSidebar({ campaigns, trashed, currentId, onSelect, onCreate, onImport, onRestore, onPurge, onExportTrashed }) {
+  const selected = currentId != null;
   const fileRef   = useRef(null);
+  const confirm   = useConfirm();
+  // Collapsed by default: an empty or long-settled trash should cost no space.
+  const [trashOpen, setTrashOpen] = useState(false);
   const inputCls  = 'w-full bg-surface3 border border-border2 text-text px-2 py-1.5 rounded-sm text-sm focus:outline-none focus:border-[var(--gold-dim)]';
 
   function handleSubmit(e) {
@@ -43,7 +49,17 @@ function CampaignSidebar({ campaigns, currentId, onSelect, onCreate, onImport })
   }
 
   return (
-    <aside className="w-56 flex-shrink-0 flex flex-col bg-surface border-r border-border overflow-hidden min-h-0">
+    <aside
+      /* Master/detail below lg: the list takes the whole screen until a
+         campaign is picked, then the detail pane replaces it. 224px of sidebar
+         beside a detail pane left 166px of content on a 390px phone. Above lg
+         both are always visible, exactly as before. */
+      className={[
+        'flex flex-col bg-surface border-r border-border overflow-hidden min-h-0',
+        'lg:w-56 lg:flex-shrink-0 lg:flex',
+        selected ? 'max-lg:hidden' : 'max-lg:flex max-lg:w-full',
+      ].join(' ')}
+    >
 
       {/* Campaign list */}
       <div className="flex-1 overflow-y-auto">
@@ -68,6 +84,61 @@ function CampaignSidebar({ campaigns, currentId, onSelect, onCreate, onImport })
           </div>
         ))}
       </div>
+
+      {/* Trash — hidden entirely when empty, so it is not a permanent fixture */}
+      {trashed.length > 0 && (
+        <div className="border-t border-border flex-shrink-0 max-h-48 overflow-y-auto">
+          <button
+            onClick={() => setTrashOpen(o => !o)}
+            className="w-full px-3 py-2 flex items-center gap-1 font-display text-text-dim text-[0.6rem] uppercase tracking-widest hover:text-gold transition-colors"
+          >
+            {trashOpen ? <ChevronDown size={11} /> : <ChevronRight size={11} />}
+            Trash ({trashed.length})
+          </button>
+          {trashOpen && trashed.map(c => (
+            <div key={c.id} className="px-3 py-2 border-t border-border text-sm">
+              <div className="text-text-dim truncate italic">{c.name}</div>
+              <div className="flex flex-wrap gap-1 mt-1">
+                <Button
+                  variant="default"
+                  className="text-[0.6rem] px-1.5 py-0.5"
+                  onClick={() => onRestore(c.id, c.name)}
+                >
+                  <Undo2 size={10} className="inline mr-1" />Restore
+                </Button>
+                {/* Export stays available on a trashed campaign on purpose —
+                    it is the last chance to take a copy before Delete. */}
+                <Button
+                  variant="default"
+                  className="text-[0.6rem] px-1.5 py-0.5"
+                  onClick={() => onExportTrashed(c.id, c.name)}
+                  title="Download a JSON copy before deleting"
+                >
+                  <Download size={10} className="inline mr-1" />Export
+                </Button>
+                <Button
+                  variant="danger"
+                  className="text-[0.6rem] px-1.5 py-0.5"
+                  onClick={async () => {
+                    if (!await confirm(
+                      `Permanently delete "${c.name}" and ALL its data? This cannot be undone.`,
+                      { title: 'Delete forever', confirmLabel: 'Delete forever' })) return;
+                    onPurge(c.id, c.name);
+                  }}
+                >
+                  <Trash2 size={10} className="inline mr-1" />Delete
+                </Button>
+              </div>
+            </div>
+          ))}
+          {trashOpen && (
+            <p className="px-3 pb-2 pt-1 text-[0.6rem] text-text-muted leading-snug">
+              Trashed campaigns are hidden from every module and their share links stop working.
+              Nothing is deleted until you choose Delete here.
+            </p>
+          )}
+        </div>
+      )}
 
       {/* Create form */}
       <div className="border-t border-border p-3 flex-shrink-0 bg-surface2">
@@ -147,7 +218,7 @@ export default function ManageCampaigns() {
   const [targetName, setTargetName]     = useState('');
 
   const {
-    campaigns, currentCampaign, currentId,
+    campaigns, trashedCampaigns, currentCampaign, currentId,
     players, locations, npcs, timelines, meta,
     allUsers, loading,
     activeTab, setActiveTab,
@@ -156,7 +227,7 @@ export default function ManageCampaigns() {
     addPlayer, deletePlayer, reassignPlayer, createTimeline,
     addLocation, editLocation, deleteLocation, toggleLocVisibility,
     addNpcs, deleteNpc,
-    saveTodayMarker, deleteCampaign,
+    saveTodayMarker, deleteCampaign, restoreCampaign, purgeCampaign, exportTrashed,
   } = mc;
 
   // Tab content switcher
@@ -209,6 +280,13 @@ export default function ManageCampaigns() {
         return <TimelinesTab timelines={timelines} campaignId={currentId} />;
       case 'chartree':
         return <CharTreeTab campaignId={currentId} />;
+      case 'journal':
+        return (
+          <JournalTab
+            campaignId={currentId}
+            calendarType={currentCampaign.calendar_type ?? 'harptos'}
+          />
+        );
       case 'settings':
         return (
           <SettingsTab
@@ -231,14 +309,21 @@ export default function ManageCampaigns() {
         {/* Sidebar */}
         <CampaignSidebar
           campaigns={campaigns}
+          trashed={trashedCampaigns}
           currentId={currentId}
           onSelect={loadCampaign}
           onCreate={createCampaign}
           onImport={handleImport}
+          onRestore={restoreCampaign}
+          onPurge={purgeCampaign}
+          onExportTrashed={exportTrashed}
         />
 
-        {/* Detail panel */}
-        <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
+        <div className={[
+          'flex-1 flex-col min-w-0 overflow-hidden',
+          // Hidden below lg until something is selected — see CampaignSidebar.
+          currentId == null ? 'max-lg:hidden lg:flex' : 'flex',
+        ].join(' ')}>
           {!currentCampaign ? (
             <div className="flex-1 flex items-center justify-center text-text-dim italic text-sm">
               Select or create a campaign to get started.
@@ -246,8 +331,19 @@ export default function ManageCampaigns() {
           ) : (
             <>
               {/* Campaign title */}
-              <div className="flex items-center justify-between px-4 py-2.5 bg-surface2 border-b border-border flex-shrink-0">
-                <h2 className="font-display text-gold uppercase tracking-widest text-sm">
+              <div className="flex items-center gap-2 px-4 py-2.5 bg-surface2 border-b border-border flex-shrink-0">
+                {/* Back to the list. Only below lg, where the sidebar is hidden
+                    while a campaign is open — above lg the list is always
+                    there and a back button would be meaningless. */}
+                <button
+                  type="button"
+                  className="lg:hidden text-text-muted hover:text-gold text-sm leading-none"
+                  title="Back to campaigns"
+                  onClick={() => loadCampaign(null)}
+                >
+                  ‹ All
+                </button>
+                <h2 className="font-display text-gold uppercase tracking-widest text-sm flex-1 truncate">
                   🏰 {currentCampaign.name}
                 </h2>
               </div>

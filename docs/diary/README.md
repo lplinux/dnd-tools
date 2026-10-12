@@ -64,6 +64,18 @@ keystroke away. Groups appear in the order their first entry does — your sessi
 the arc, not an alphabetical sort. Entries with no group collect at the end under *No chapter* /
 *Uncategorised* rather than being hidden.
 
+### Searching
+
+Every diary list has a search box above it — the campaign diary, each player's diary as the DM
+sees it, your own diary in this module, and the Diary tab on the PC Sheet.
+
+It looks through the title, the body and the group name. Several words all have to appear, in
+any order and in any field, so `goblin rift` finds the entry that mentions both. Accents are
+ignored in both directions: `thea` finds *Théa*, and so does `théa`.
+
+Filtering happens before grouping, so the count beside each heading tracks what you are looking
+at rather than what is filed there in total. A search with no matches says so.
+
 ### Markdown
 
 Write in a small subset of markdown:

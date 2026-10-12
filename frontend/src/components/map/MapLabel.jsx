@@ -17,11 +17,11 @@ const EDGE = '#6f5a34';      // border
 export function MapLabel({
   x, y, text,
   fontSize = 11, fontWeight, fontStyle, letterSpacing,
-  uppercase = false, anchor = 'middle', ink = INK, onMouseDown,
+  uppercase = false, anchor = 'middle', ink = INK, onPointerDown,
 }) {
   if (!text) return null;
   const label = uppercase ? String(text).toUpperCase() : String(text);
-  const interactive = typeof onMouseDown === 'function';
+  const interactive = typeof onPointerDown === 'function';
 
   // Glyph advance is wider for spaced caps; pad generously so text never clips.
   const factor = uppercase ? 0.82 : 0.62;
@@ -40,7 +40,7 @@ export function MapLabel({
     <g style={{ pointerEvents: interactive ? undefined : 'none' }}>
       <rect x={rectX} y={rectY} width={w} height={h} rx={rx} ry={rx}
         fill={PAPER} stroke={EDGE} strokeWidth={1} opacity={0.94}
-        onMouseDown={onMouseDown}
+        onPointerDown={onPointerDown}
         style={interactive ? { cursor: 'move' } : undefined} />
       <rect x={rectX + 1.5} y={rectY + 1.5} width={w - 3} height={h - 3} rx={Math.max(0, rx - 1.5)} ry={Math.max(0, rx - 1.5)}
         fill="none" stroke={EDGE} strokeWidth={0.5} opacity={0.4} style={{ pointerEvents: 'none' }} />

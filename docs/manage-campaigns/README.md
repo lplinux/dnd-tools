@@ -8,7 +8,7 @@ The campaign manager is the control centre for everything in the app. Before usi
 
 ## Overview
 
-The page has a two-panel layout. The left panel lists all campaigns and contains the **Create Campaign** form. The right panel shows the full detail for whichever campaign is selected.
+The page has a two-panel layout. The left panel lists all campaigns and contains the **Create Campaign** form. The right panel shows the full detail for whichever campaign is selected, under the tabs **Players · Locations · NPCs · Timelines · Char Tree · Journal · Settings**.
 
 ---
 
@@ -90,6 +90,54 @@ Click the **✕** next to an NPC name. Deletion is blocked if the NPC is current
 
 ---
 
+## Journal
+
+The campaign's shared notebook — the same journal the players see on their character sheets, with
+the DM-only entries included. It is here as well as there because this is the module you run a
+campaign from: the locations an entry points at are managed two tabs away, and staging a document
+for the party to find later is prep rather than character work.
+
+Entries are listed in **in-game date order**, oldest first, grouped under whatever category their
+author filed them under, with undated entries and unfiled ones last. Click a card to read it in
+full.
+
+The **search box** filters on any word from a title, a note, a category, a location or an
+author's name — accents optional, so `thea` finds Théa — and several words narrow it further.
+Filtering happens before grouping, so the counts beside each heading track what you are looking
+at. **Group by** switches the headings between **Category** (the default), **Location** and
+**Who wrote it**; the last two are listed alphabetically.
+
+### Writing one
+
+**＋ New entry** takes a title, an optional category (free text — the ones already in use are
+offered as you type), an optional location, an optional in-game date, and the note itself in
+Markdown.
+
+The date control is a picker, not three boxes to type in: the day list is built from the chosen
+month, so a day that month does not have cannot be selected, and the five Harptos festivals hide
+the day control entirely because the festival *is* the day. Leave the year blank for no date at
+all.
+
+### DM only
+
+Tick **DM only** and the entry never reaches a player — it is filtered out of their request on
+the server rather than hidden on their screen. Those cards are outlined in gold here so you can
+see at a glance what the table cannot. Untick it when the party finds the thing.
+
+### What you can and cannot do to a player's entry
+
+You can **delete** any entry. You cannot **edit** one you did not write: a DM should be able to
+tidy the campaign without a player's own words changing behind their back. The ✎ button simply
+does not appear on entries that are not yours, and the server refuses it regardless.
+
+### Hiding a location afterwards
+
+If you make a location private on the **Locations** tab, entries written there keep their text
+but stop naming the place for players — both the name and the id go, so nobody can tell two
+entries happened at the same secret place. You still see both.
+
+---
+
 ## Today Marker
 
 The Today Marker places a highlighted line across the full Timeline at a specific in-game date. It is the DM's way of telling the group "the party is currently here in time."
@@ -118,9 +166,24 @@ Click **📜 Open Combined Timeline →** to open the DM's combined view showing
 
 ---
 
-## Deleting a campaign
+## Deleting a campaign — the Trash
 
-The **Delete Campaign** button at the bottom of the detail panel permanently removes the campaign and **all its data**: players, locations, timeline entries, journey maps, PC sheets, and all DM notes. There is a confirmation prompt, but the action cannot be undone.
+The **Move to Trash** button at the bottom of the detail panel does *not* destroy anything. It marks the campaign as trashed, which means:
+
+- It disappears from the campaign selector in **every** module — Manage Campaigns, PC Sheet, Diary, Journey Map and Timeline.
+- Its **public share links stop working**: the shared diary, the diary roster, shared timelines, the public journey map and public PC sheets all return "not found" while the campaign is in the trash. Restoring the campaign brings them back — the tokens themselves are not revoked.
+
+Trashed campaigns appear in a **Trash** section at the bottom of the sidebar (it is hidden when the trash is empty), each with two buttons:
+
+| Button | Effect |
+|---|---|
+| **Restore** | Puts the campaign back. Everything returns, including the share links. |
+| **Export** | Downloads a JSON copy. Deliberately still available while trashed — this is the last chance to take a backup before deleting for good. |
+| **Delete** | **Permanent.** Removes the campaign and all its data — players, locations, timeline entries, journey maps, PC sheets, DM notes and diary entries. There is no undo. |
+
+Nothing is ever purged automatically; there is no retention timer. A campaign stays in the trash until you empty it. **Export the campaign first** if you want a copy before deleting it for good — and note the DM export still works while a campaign is in the trash, precisely so you can.
+
+A trashed campaign is genuinely unreachable, not merely hidden: every campaign-scoped endpoint refuses it, including for the owning DM and for an admin. The only exceptions are the two exports above and the restore/delete actions themselves.
 
 ---
 
@@ -128,11 +191,18 @@ The **Delete Campaign** button at the bottom of the detail panel permanently rem
 
 All endpoints require the `dm` or `admin` role unless noted.
 
+**Every endpoint below also verifies that you own the campaign** (or, for the few a player may
+call, that you play in it) and that the campaign is not in the trash. Holding the `dm` role is
+not sufficient on its own — a request for a campaign belonging to another DM returns `403`.
+
 | Method | Endpoint | Description |
 |---|---|---|
-| `GET` | `/api/campaigns` | List all campaigns (auth required) |
+| `GET` | `/api/campaigns` | List campaigns, excluding trashed ones (auth required) |
 | `POST` | `/api/campaigns` | Create a new campaign |
-| `DELETE` | `/api/campaigns/:id` | Delete a campaign and all its data |
+| `DELETE` | `/api/campaigns/:id` | **Move a campaign to the trash** (soft delete — reversible) |
+| `GET` | `/api/campaigns/trash` | List the caller's trashed campaigns |
+| `POST` | `/api/campaigns/:id/restore` | Restore a trashed campaign |
+| `DELETE` | `/api/campaigns/:id/purge` | **Permanently** delete a trashed campaign and all its data |
 | `GET` | `/api/campaigns/:id/players` | List players in a campaign |
 | `POST` | `/api/campaigns/:id/players` | Add a player |
 | `PUT` | `/api/campaigns/:id/players/:pid/reassign` | Reassign or unassign a player's user account |
@@ -144,6 +214,10 @@ All endpoints require the `dm` or `admin` role unless noted.
 | `GET` | `/api/campaigns/:id/npcs` | List NPCs |
 | `POST` | `/api/campaigns/:id/npcs` | Add one or more NPCs (comma-separated `names`) |
 | `DELETE` | `/api/campaigns/:id/npcs/:nid` | Delete an NPC (blocked if used in timeline events) |
+| `GET` | `/api/campaigns/:id/journal` | List journal entries (any campaign member; players never receive DM-only ones) |
+| `POST` | `/api/campaigns/:id/journal` | Write an entry (any member; `dm_only` honoured only from the DM) |
+| `PUT` | `/api/campaigns/:id/journal/:eid` | Edit — **the author only**, the DM included |
+| `DELETE` | `/api/campaigns/:id/journal/:eid` | Delete — the author, or the campaign's DM |
 | `GET` | `/api/campaigns/:id/meta` | Get campaign metadata (today marker, public token) |
 | `PUT` | `/api/campaigns/:id/meta` | Update campaign metadata |
 | `GET` | `/api/campaigns/:id/timelines` | Get player timeline summary |

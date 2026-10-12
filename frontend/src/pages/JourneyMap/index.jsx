@@ -57,6 +57,16 @@ export default function JourneyMap() {
   const [naming, setNaming] = useState(null);     // { path, newLocs } | null
   const [distEdit, setDistEdit] = useState(null);  // { fromId, toId, ... } | null
   const [matrixOpen, setMatrixOpen] = useState(false);
+  /**
+   * Which side panel is showing on a narrow screen.
+   *
+   * Above `lg` both are always visible and this is ignored. Below it they
+   * become overlay drawers, because the two of them are 520px of fixed chrome
+   * — on a 390px phone the map column collapsed to nothing and the page
+   * overflowed sideways. One at a time: they would otherwise cover the map
+   * entirely, which is the thing you came to look at.
+   */
+  const [drawer, setDrawer] = useState(null);   // 'tools' | 'details' | null
   const [wpEventCtx, setWpEventCtx] = useState(null); // { pathId, wpIdx } | null
   const [selectedSection, setSelectedSection] = useState(null); // { pathId, index } | null
   const [drawMode, setDrawMode] = useState('route'); // Draw is routes-only now (movement paths are derived)
@@ -146,7 +156,32 @@ export default function JourneyMap() {
         )}
       </AppHeader>
 
-      <div className="flex-1 grid overflow-hidden min-h-0" style={{ gridTemplateColumns: '248px 1fr 272px' }}>
+      {/* Drawer toggles — only rendered below lg, where the panels are overlays. */}
+      <div className="lg:hidden flex gap-2 px-2 py-1 border-b border-border bg-surface2 flex-shrink-0">
+        <Button variant={drawer === 'tools' ? 'accent' : 'default'} className="text-[0.65rem] px-2 py-0.5"
+          onClick={() => setDrawer((d) => (d === 'tools' ? null : 'tools'))}>🧰 Tools</Button>
+        <Button variant={drawer === 'details' ? 'accent' : 'default'} className="text-[0.65rem] px-2 py-0.5"
+          onClick={() => setDrawer((d) => (d === 'details' ? null : 'details'))}>ℹ️ Details</Button>
+        {drawer && (
+          <button type="button" className="ml-auto text-[0.7rem] text-text-muted hover:text-gold"
+            onClick={() => setDrawer(null)}>Close ✕</button>
+        )}
+      </div>
+
+      {/*
+        Three fixed columns above lg, a single map column below it with the two
+        panels as overlays. `[grid-template-columns:…]` rather than the old
+        inline style, because an inline style cannot carry a breakpoint.
+      */}
+      <div className="flex-1 grid overflow-hidden min-h-0 relative grid-cols-1 lg:[grid-template-columns:248px_1fr_272px]">
+        <div className={[
+          // Below lg: an absolutely-positioned drawer over the map, so opening
+          // it does not resize the stage (which would trigger a re-fit and
+          // move the map under the user's finger).
+          'min-h-0 overflow-hidden',
+          'max-lg:absolute max-lg:inset-y-0 max-lg:left-0 max-lg:z-20 max-lg:w-[min(18rem,85vw)] max-lg:shadow-card',
+          drawer === 'tools' ? 'max-lg:block' : 'max-lg:hidden',
+        ].join(' ')}>
         <Sidebar
           activeTool={jm.activeTool}
           onSetTool={jm.setActiveTool}
@@ -177,6 +212,7 @@ export default function JourneyMap() {
           onToggleHidePath={toggleHidePath}
           onOpenMatrix={() => setMatrixOpen(true)}
         />
+        </div>
 
         <MapStage
           viewport={viewport}
@@ -184,9 +220,31 @@ export default function JourneyMap() {
           cursorClass={TOOL_CURSORS[jm.activeTool]}
           imageSrc={jm.mapImage || null}
           emptyMessage={jm.mapId ? 'Upload a map image to begin' : 'Select or create a journey map'}
-          overlay={jm.activeTool === 'measure'
-            ? <MeasurePanel measurePts={interaction.measurePts} placedLocs={jm.placedLocs} distances={jm.routeDistances} onClear={interaction.clearMeasure} />
-            : null}
+          overlay={
+            jm.activeTool === 'measure'
+              ? <MeasurePanel measurePts={interaction.measurePts} placedLocs={jm.placedLocs} distances={jm.routeDistances} onClear={interaction.clearMeasure} />
+              /* A Finish button while a path or region is in progress. Without
+                 it the only ways to complete one are Enter and double-click —
+                 neither of which a tablet has: no keyboard, and double-tap
+                 collides with the browser's own zoom. Shown on every device,
+                 because it is clearer than the double-click it replaces. */
+              : (interaction.draw || interaction.region)
+                ? (
+                  <div className="absolute bottom-14 left-1/2 -translate-x-1/2 flex gap-2 bg-surface border border-[var(--gold-dim)] rounded-sm shadow-card px-2 py-1.5">
+                    <span className="text-[0.7rem] text-text-dim self-center">
+                      {interaction.draw ? 'Drawing a route' : 'Drawing a region'}
+                    </span>
+                    <Button variant="accent" className="text-[0.65rem] px-2 py-0.5"
+                      onClick={() => (interaction.draw ? interaction.finishPath() : interaction.finishRegion())}>
+                      ✓ Finish
+                    </Button>
+                    <Button variant="default" className="text-[0.65rem] px-2 py-0.5"
+                      onClick={() => jm.setActiveTool('select')}>
+                      Cancel
+                    </Button>
+                  </div>
+                )
+                : null}
         >
           {({ iw, ih }) => (
             <>
@@ -202,6 +260,11 @@ export default function JourneyMap() {
           )}
         </MapStage>
 
+        <div className={[
+          'min-h-0 overflow-hidden',
+          'max-lg:absolute max-lg:inset-y-0 max-lg:right-0 max-lg:z-20 max-lg:w-[min(20rem,85vw)] max-lg:shadow-card',
+          drawer === 'details' ? 'max-lg:block' : 'max-lg:hidden',
+        ].join(' ')}>
         <DetailsPanel
           selectedLoc={jm.selectedLoc}
           selectedPath={jm.selectedPath}
@@ -222,6 +285,7 @@ export default function JourneyMap() {
           onLinkEvent={(pathId, wpIdx) => setWpEventCtx({ pathId, wpIdx })}
           onUnlinkEvent={jm.unlinkWaypointEvent}
         />
+        </div>
       </div>
 
       <NewMapModal

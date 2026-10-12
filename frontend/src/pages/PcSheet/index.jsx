@@ -26,27 +26,35 @@ import { diaryApi }          from '@/api/diary';
 
 import {
   CharacterTab, StatsTab, RelationsTab,
-  PublicInfoTab, PrivateTab, DmNotesTab, DiaryTab,
+  PublicInfoTab, PrivateTab, DmNotesTab, DiaryTab, InventoryTab, JournalTab,
 } from './tabs';
 import './pc-print.css';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Tab definitions
 // ─────────────────────────────────────────────────────────────────────────────
+// Narrative first, then the two reference sheets. Stats and Inventory sit at
+// the end because they are the ones you open mid-session and scroll inside,
+// not the ones you read through when getting to know a character.
 const TABS = [
   { id: 'character',  label: '⚔️ Character',     role: 'any' },
-  { id: 'stats',      label: '🎲 Stats Sheet',    role: 'any' },
-  { id: 'relations',  label: '🌳 Relationships',  role: 'any' },
   { id: 'public',     label: '📢 Public Info',    role: 'any' },
   { id: 'private',    label: '🔒 Private Info',   role: 'any' },
+  { id: 'relations',  label: '🌳 Relationships',  role: 'any' },
   // The player's diary lives on the character sheet, not in its own module —
   // it is part of the character. The DM sees it here read-only, and in bulk
   // from the Diary module.
   { id: 'diary',      label: '📔 Diary',          role: 'any' },
+  // The Campaign Journal is the one shared surface: every player writes, the
+  // whole table reads. Distinct from the Diary above (one player's own) and
+  // from the DM's campaign Diary module (the session record).
+  { id: 'journal',    label: '📖 Journal',        role: 'any' },
   // 'shared' — the DM always sees this tab; a player sees it only when the DM
   // has actually shared a note with them (the API only ever returns the
   // dm_visible ones to a player, so a non-empty list means exactly that).
   { id: 'dmnotes',    label: '📜 DM Notes',       role: 'shared' },
+  { id: 'stats',      label: '🎲 Stats Sheet',    role: 'any' },
+  { id: 'inventory',  label: '🎒 Inventory',     role: 'any' },
 ];
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -212,13 +220,14 @@ export default function PcSheet() {
 
   const {
     isDM,
-    campaigns, currentCampaignId, onCampaignChange,
+    campaigns, currentCampaign, currentCampaignId, onCampaignChange,
     players, playersLoading, currentPlayerId, onPlayerChange,
-    charData, setCharData, relationships, crossConnections, dmNotes,
+    charData, setCharData, relationships, crossConnections, dmNotes, inventory, myCards,
     sheetLoading, hasSheet,
     saveCharacter, uploadPortrait,
     addRelationship, editRelationship, deleteRelationship, toggleRelVisibility,
     addDmNote, toggleNoteVisibility, deleteDmNote,
+    addItem, editItem, removeItem, assignCard, giveItem, setItemCard, setCoins,
     exportSheet, getPublicLink,
   } = usePcSheet();
 
@@ -273,6 +282,7 @@ export default function PcSheet() {
     addDmNote,
     toggleNoteVisibility,
     deleteDmNote,
+    addItem, editItem, removeItem, assignCard, giveItem, setItemCard, setCoins,
     getPublicLink,
   };
 
@@ -281,26 +291,35 @@ export default function PcSheet() {
   return (
     <>
       <AppHeader icon="🧝" name="PC Character Sheet">
-        {/* Campaign selector */}
-        <select
-          className={selectorCls}
-          value={currentCampaignId ?? ''}
-          onChange={e => onCampaignChange(e.target.value || null)}
-        >
-          <option value="">— Select Campaign —</option>
-          {[...campaigns].sort((a, b) => (a.name || '').localeCompare(b.name || '')).map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-        </select>
+        {/*
+          A selector with one option is a control that cannot do anything. For
+          a player with a single character — the common case, and the one this
+          page is for on a phone — both of these are noise, and on a narrow
+          header they wrap onto their own line and cost real vertical space.
+          Shown whenever there is an actual choice, and always for a DM.
+        */}
+        {(isDM || campaigns.length > 1) && (
+          <select
+            className={selectorCls}
+            value={currentCampaignId ?? ''}
+            onChange={e => onCampaignChange(e.target.value || null)}
+          >
+            <option value="">— Select Campaign —</option>
+            {[...campaigns].sort((a, b) => (a.name || '').localeCompare(b.name || '')).map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+          </select>
+        )}
 
-        {/* Player selector */}
-        <select
-          className={selectorCls}
-          value={currentPlayerId ?? ''}
-          onChange={e => handlePlayerChange(e.target.value || null)}
-          disabled={!currentCampaignId || playersLoading}
-        >
-          <option value="">— Select Player —</option>
-          {[...players].sort((a, b) => (a.player_name || '').localeCompare(b.player_name || '')).map(p => <option key={p.id} value={p.id}>{p.player_name}</option>)}
-        </select>
+        {(isDM || players.length > 1) && (
+          <select
+            className={selectorCls}
+            value={currentPlayerId ?? ''}
+            onChange={e => handlePlayerChange(e.target.value || null)}
+            disabled={!currentCampaignId || playersLoading}
+          >
+            <option value="">— Select Player —</option>
+            {[...players].sort((a, b) => (a.player_name || '').localeCompare(b.player_name || '')).map(p => <option key={p.id} value={p.id}>{p.player_name}</option>)}
+          </select>
+        )}
 
         {/* Action buttons — only when a sheet is loaded */}
         {hasSheet && (
@@ -372,6 +391,18 @@ export default function PcSheet() {
                   actions={actions}
                 />
               )}
+              {activeTab === 'inventory' && (
+                <InventoryTab
+                  key={currentPlayerId}
+                  inventory={inventory}
+                  players={players}
+                  isDM={isDM}
+                  loading={sheetLoading}
+                  myCards={myCards}
+                  charData={charData}
+                  actions={actions}
+                />
+              )}
               {activeTab === 'public' && (
                 <PublicInfoTab charData={charData} actions={actions} />
               )}
@@ -384,6 +415,13 @@ export default function PcSheet() {
                   campaignId={currentCampaignId}
                   playerId={currentPlayerId}
                   isDM={isDM}
+                />
+              )}
+              {activeTab === 'journal' && (
+                <JournalTab
+                  campaignId={currentCampaignId}
+                  isDM={isDM}
+                  calendarType={currentCampaign?.calendar_type ?? 'harptos'}
                 />
               )}
               {activeTab === 'dmnotes' && (

@@ -105,8 +105,11 @@ export default function JourneyMapPublic() {
 
       {!loading && !error && data && (
         <div
-          className="flex-1 grid overflow-hidden min-h-0"
-          style={{ gridTemplateColumns: '1fr 260px' }}
+          /* One column below lg, map above details. Only 260px of fixed chrome
+             here (against JourneyMap's 520), and this is a read-only view with
+             no tools, so the panel stacks underneath rather than needing a
+             drawer; DetailsPanel caps its own height so the map survives. */
+          className="flex-1 grid overflow-hidden min-h-0 grid-rows-[1fr_auto] lg:grid-rows-1 lg:[grid-template-columns:1fr_260px]"
         >
           <MapStage viewport={viewport} imageSrc={data.map.map_image || null}>
             {({ iw, ih }) => (

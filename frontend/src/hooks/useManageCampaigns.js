@@ -31,6 +31,15 @@ export function useManageCampaigns() {
     run:  reloadCampaigns,
   } = useAsync(campaignsApi.list, { autoRun: true, deps: [] });
 
+  // ── Trash ─────────────────────────────────────────────────────────────────
+  // Loaded up front alongside the live list so the sidebar can show its count
+  // without a second round-trip when the section is opened. It is a short list
+  // by nature, and it only changes when one of the three actions below runs.
+  const {
+    data: trashedCampaigns = [],
+    run:  reloadTrash,
+  } = useAsync(campaignsApi.listTrashed, { autoRun: true, deps: [] });
+
   // ── Active campaign ───────────────────────────────────────────────────────
   const [currentId,  setCurrentId]  = useState(null);
   const [activeTab,  setActiveTab]  = useState('players');
@@ -51,6 +60,12 @@ export function useManageCampaigns() {
   // The spinner is only shown when first selecting / switching campaigns.
   const loadCampaign = useCallback(async (id, { silent = false } = {}) => {
     setCurrentId(id);
+    // Deselecting. The mobile layout uses this as its "back to the list"
+    // action; without the guard it would fire five requests with a null id.
+    if (id == null) {
+      setPlayers([]); setLocations([]); setNpcs([]); setTimelines([]); setMeta(null);
+      return;
+    }
     if (!silent) setLoading(true);
     try {
       const [p, l, n, t, m] = await Promise.all([
@@ -83,19 +98,45 @@ export function useManageCampaigns() {
     toast(`Campaign "${name}" created.`);
   }, [reloadCampaigns, toast]);
 
+  // Soft delete. Both lists have to be refreshed: the campaign leaves one and
+  // joins the other.
   const deleteCampaign = useCallback(async () => {
     if (!currentCampaign) return;
+    const name = currentCampaign.name;
     await campaignsApi.remove(currentId);
     setCurrentId(null);
-    await reloadCampaigns();
-    toast('Campaign deleted.');
-  }, [currentId, currentCampaign, reloadCampaigns, toast]);
+    await Promise.all([reloadCampaigns(), reloadTrash()]);
+    toast(`"${name}" moved to Trash.`);
+  }, [currentId, currentCampaign, reloadCampaigns, reloadTrash, toast]);
+
+  const restoreCampaign = useCallback(async (id, name) => {
+    await campaignsApi.restore(id);
+    await Promise.all([reloadCampaigns(), reloadTrash()]);
+    toast(`"${name}" restored.`);
+  }, [reloadCampaigns, reloadTrash, toast]);
+
+  // The irreversible one. Only the trash list needs reloading — a purged
+  // campaign was never in the live list to begin with.
+  const purgeCampaign = useCallback(async (id, name) => {
+    await campaignsApi.purge(id);
+    await reloadTrash();
+    toast(`"${name}" permanently deleted.`);
+  }, [reloadTrash, toast]);
 
   const exportCampaign = useCallback(async () => {
     if (!currentId) return;
     const data = await campaignsApi.exportCampaign(currentId);
     downloadBundle(data, { module: 'campaign', name: currentCampaign?.name });
   }, [currentId, currentCampaign]);
+
+  // Same export, by explicit id, for a campaign in the trash. `exportCampaign`
+  // above can only ever reach `currentId`, which comes from the live list — so
+  // without this there was no way to take a copy before purging, even though
+  // the server deliberately keeps the export route open on trashed campaigns.
+  const exportTrashed = useCallback(async (id, name) => {
+    const data = await campaignsApi.exportCampaign(id);
+    downloadBundle(data, { module: 'campaign', name });
+  }, []);
 
   // Central importer: sniff `bundle.type` and route. `campaign` restores a NEW
   // campaign (unchanged path); the others merge into the SELECTED campaign — and
@@ -279,7 +320,7 @@ export function useManageCampaigns() {
 
   return {
     // Data
-    allUsers, campaigns, currentCampaign, currentId,
+    allUsers, campaigns, trashedCampaigns, currentCampaign, currentId,
     players, locations, npcs, timelines, meta,
     loading,
 
@@ -289,6 +330,7 @@ export function useManageCampaigns() {
 
     // Campaign actions
     createCampaign, deleteCampaign, exportCampaign,
+    restoreCampaign, purgeCampaign, exportTrashed,
     importFile, importPcSheetInto, importTimelineInto,
 
     // Player actions

@@ -48,6 +48,8 @@ function SaveRow({ onSave, saving }) {
 // CharacterTab
 // ─────────────────────────────────────────────────────────────────────────────
 export { default as DiaryTab } from './DiaryTab';
+export { default as InventoryTab } from './InventoryTab';
+export { default as JournalTab } from './JournalTab';
 
 export function CharacterTab({ charData, playerId, actions, publicLink }) {
   const [form, setForm] = useState({
@@ -253,7 +255,7 @@ export function StatsTab({ playerId, charData, onSaveStats }) {
   return (
     <div className="flex flex-col h-full min-h-0">
       {/* Toolbar */}
-      <div className="flex items-center gap-3 px-3 py-2 bg-surface2 border-b border-border flex-shrink-0">
+      <div className="flex items-center flex-wrap gap-2 px-3 py-2 bg-surface2 border-b border-border flex-shrink-0">
         <span className="text-text-dim text-xs flex-1">{msg}</span>
         <Button variant="accent"  loading={saving} onClick={handleSave} disabled={!ready}>
           💾 Save Stats

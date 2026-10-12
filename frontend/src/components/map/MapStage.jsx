@@ -12,13 +12,16 @@
  *
  * @param {object}  viewport     A useMapViewport() instance (required).
  * @param {string|null} imageSrc Background image (data URL or URL).
- * @param {object}  [interaction] { onMouseDown, onMouseMove, onMouseUp, onDoubleClick }.
+ * @param {object}  [interaction] { onPointerDown, onPointerMove, onPointerUp,
+ *   onPointerCancel, onDoubleClick }. onPointerCancel is NOT optional for a
+ *   surface that persists on release — see useMapInteraction.
  * @param {string}  [cursorClass] Tailwind cursor class for the map area.
  * @param {string}  [emptyMessage]
  * @param {(size:{iw,ih}) => React.ReactNode} children  Render-prop for SVG layers.
  */
 
 import { useEffect, useRef } from 'react';
+import { usePinch } from '@/hooks/usePinch';
 
 function ZoomBtn({ onClick, children, className = '' }) {
   return (
@@ -72,30 +75,72 @@ export default function MapStage({
   // Built-in pan for read-only callers (no interaction supplied).
   const panRef = useRef(null);
   const builtin = {
-    onMouseDown: (e) => {
+    onPointerDown: (e) => {
       if (e.button !== 0) return;
       panRef.current = { px: e.clientX, py: e.clientY, ox: offsetRef.current.x, oy: offsetRef.current.y };
     },
-    onMouseMove: (e) => {
+    onPointerMove: (e) => {
       if (!panRef.current) return;
       const { px, py, ox, oy } = panRef.current;
       panTo(ox + (e.clientX - px), oy + (e.clientY - py));
     },
-    onMouseUp: () => { panRef.current = null; },
+    onPointerUp: () => { panRef.current = null; },
+    onPointerCancel: () => { panRef.current = null; },
     onDoubleClick: undefined,
   };
   const h = interaction ?? builtin;
   const drawLayers = loaded || !imageSrc;
+
+  // Two-finger zoom. Shares zoomAt with the wheel handler above, which already
+  // took an arbitrary factor, so there is nothing to generalise.
+  const pinch = usePinch(zoomAt);
+
+  /**
+   * Pointer capture, rather than the old `onMouseLeave={onMouseUp}`.
+   *
+   * That line meant dragging off the stage CANCELLED the gesture — and in the
+   * editor (useMapInteraction) a cancel also committed the half-finished drag
+   * to the database. Capture routes every subsequent event back here until the
+   * pointer is released, so a drag that wanders outside simply keeps working.
+   */
+  function handleDown(e) {
+    pinch.down(e);
+    try { e.currentTarget.setPointerCapture(e.pointerId); } catch { /* not supported — degrade */ }
+    // A second finger turns an in-progress pan into a pinch; tell the surface
+    // to drop whatever drag it started so the map does not lurch.
+    if (pinch.isPinching()) { h.onPointerCancel?.(e); return; }
+    h.onPointerDown?.(e);
+  }
+  function handleMove(e) {
+    // Pinch wins: while two fingers are down there is no pan and no drag.
+    if (pinch.move(e)) return;
+    if (pinch.isPinching()) return;
+    h.onPointerMove?.(e);
+  }
+  function handleUp(e) {
+    const wasPinching = pinch.isPinching();
+    pinch.up(e);
+    try { e.currentTarget.releasePointerCapture(e.pointerId); } catch { /* ignore */ }
+    if (wasPinching) return;              // lifting a pinch finger is not a drop
+    h.onPointerUp?.(e);
+  }
+  function handleCancel(e) {
+    pinch.up(e);
+    h.onPointerCancel?.(e);
+  }
 
   return (
     <div
       ref={areaRef}
       className={`relative overflow-hidden bg-[#0a0807] outline-none ${cursorClass}`}
       tabIndex={0}
-      onMouseDown={h.onMouseDown}
-      onMouseMove={h.onMouseMove}
-      onMouseUp={h.onMouseUp}
-      onMouseLeave={h.onMouseUp}
+      // Without this the browser claims every gesture for native pan/zoom
+      // before a handler ever runs. It is the single most important line here.
+      style={{ touchAction: 'none' }}
+      onPointerDown={handleDown}
+      onPointerMove={handleMove}
+      onPointerUp={handleUp}
+      onPointerCancel={handleCancel}
       onDoubleClick={h.onDoubleClick}
       onContextMenu={(e) => e.preventDefault()}
     >

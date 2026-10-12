@@ -32,6 +32,7 @@ import { campaignsApi } from '@/api/campaigns';
 import { useToast } from '@/hooks/useToast';
 import { useConfirm } from '@/contexts/ConfirmContext';
 import { minCrossingOrder, median } from '@/components/graph/ordering';
+import { usePinch } from '@/hooks/usePinch';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Layout constants (world units, identical to the vanilla version)
@@ -600,11 +601,16 @@ function TreeCanvas({ players, relationships, npcs, crossConnections, hiddenPlay
     const r = canvasRef.current.getBoundingClientRect();
     return { x: e.clientX - r.left, y: e.clientY - r.top };
   }
-  function onMouseDown(e) {
+  function onPointerDown(e) {
+    pinch.down(e);
+    try { e.currentTarget.setPointerCapture(e.pointerId); } catch { /* degrade */ }
+    if (pinch.isPinching()) { dragRef.current = null; return; }
     const p = localPt(e);
     dragRef.current = { sx: p.x - vpRef.current.ox, sy: p.y - vpRef.current.oy };
   }
-  function onMouseMove(e) {
+  function onPointerMove(e) {
+    if (pinch.move(e)) return;               // two fingers: zoom, never pan
+    if (pinch.isPinching()) return;
     const p = localPt(e);
     if (dragRef.current) {
       vpRef.current.ox = p.x - dragRef.current.sx;
@@ -627,11 +633,43 @@ function TreeCanvas({ players, relationships, npcs, crossConnections, hiddenPlay
       }
     }
   }
-  function onMouseUp()   { dragRef.current = null; }
+  function onPointerUp(e)  {
+    pinch.up(e);
+    try { e.currentTarget.releasePointerCapture(e.pointerId); } catch { /* ignore */ }
+    dragRef.current = null;
+  }
+  function onPointerCancel(e) {
+    pinch.up(e);
+    dragRef.current = null;
+    if (tooltipRef.current) tooltipRef.current.style.display = 'none';
+  }
+  // Still a mouse event: there is no pointerleave equivalent worth wiring, and
+  // on touch the tooltip is dismissed by tapping elsewhere instead.
   function onMouseLeave() {
     dragRef.current = null;
     if (tooltipRef.current) tooltipRef.current.style.display = 'none';
   }
+
+  /**
+   * One zoom implementation for wheel and pinch, in canvas-local coordinates.
+   * useCallback because the wheel listener below depends on it — a fresh
+   * function each render would tear down and re-add that listener constantly.
+   */
+  const zoomAtLocal = useCallback((px, py, zf) => {
+    vpRef.current.ox    = px - (px - vpRef.current.ox) * zf;
+    vpRef.current.oy    = py - (py - vpRef.current.oy) * zf;
+    vpRef.current.scale = Math.max(0.15, Math.min(3, vpRef.current.scale * zf));
+    redraw();
+  }, [redraw]);
+
+  // Pinch feeds the same zoom, converting the client-space midpoint itself —
+  // offsetX/Y is meaningless for a point between two fingers.
+  const pinch = usePinch((cx, cy, f) => {
+    const c = canvasRef.current;
+    if (!c) return;
+    const r = c.getBoundingClientRect();
+    zoomAtLocal(cx - r.left, cy - r.top, f);
+  });
 
   // Wheel-zoom via a native, non-passive listener so preventDefault() actually
   // stops the page from scrolling (React's onWheel is passive and warns).
@@ -641,23 +679,21 @@ function TreeCanvas({ players, relationships, npcs, crossConnections, hiddenPlay
     const onWheel = (e) => {
       e.preventDefault();
       const zf = e.deltaY < 0 ? 1.12 : 0.9;
-      vpRef.current.ox    = e.offsetX - (e.offsetX - vpRef.current.ox) * zf;
-      vpRef.current.oy    = e.offsetY - (e.offsetY - vpRef.current.oy) * zf;
-      vpRef.current.scale = Math.max(0.15, Math.min(3, vpRef.current.scale * zf));
-      redraw();
+      zoomAtLocal(e.offsetX, e.offsetY, zf);
     };
     c.addEventListener('wheel', onWheel, { passive: false });
     return () => c.removeEventListener('wheel', onWheel);
-  }, [redraw]);
+  }, [zoomAtLocal]);
 
   return (
     <div ref={wrapRef} className="relative" style={{ height: 560 }}>
       <canvas
         ref={canvasRef}
         className="block w-full cursor-grab active:cursor-grabbing"
-        style={{ background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 2 }}
-        onMouseDown={onMouseDown} onMouseMove={onMouseMove}
-        onMouseUp={onMouseUp}     onMouseLeave={onMouseLeave}
+        style={{ background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 2, touchAction: 'none' }}
+        onPointerDown={onPointerDown}   onPointerMove={onPointerMove}
+        onPointerUp={onPointerUp}       onPointerCancel={onPointerCancel}
+        onMouseLeave={onMouseLeave}
       />
       {/* Tooltip */}
       <div

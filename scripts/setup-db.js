@@ -25,13 +25,15 @@ const crypto = require('crypto');
 const DB_ONLY = process.argv.includes('--db-only');
 
 // ── .env loader ───────────────────────────────────────────────────────────────
-const envPath = path.join(__dirname, '..', '.env');
-if (fs.existsSync(envPath)) {
-  fs.readFileSync(envPath, 'utf8').split('\n').forEach(line => {
-    const m = line.match(/^\s*([^#=\s]+)\s*=\s*(.*)\s*$/);
-    if (m) process.env[m[1]] = m[2].replace(/^['"]|['"]$/g, '');
-  });
-}
+// dotenv, not a hand-rolled parser, for one reason that matters: dotenv never
+// overwrites a key already present in process.env, so an exported variable wins
+// over the file. The parser this replaced assigned unconditionally, which meant
+//   DB_PORT=15433 node scripts/setup-db.js
+// silently used whatever .env said — the opposite of app.js, which has always
+// used dotenv. That divergence once pointed a scratch command at a live database.
+// (It also fixes `export FOO=bar` lines, inline comments, CRLF and trailing
+// whitespace, none of which the old regex handled.)
+require('dotenv').config({ path: path.join(__dirname, '..', '.env') });
 
 const { Client, Pool } = require('pg');
 const bcrypt = require('bcryptjs');
@@ -127,8 +129,19 @@ async function ensureAdminUser() {
   );
   console.log('  \u2705  Initial admin user created');
 
-  // Write to tmpfile so run.sh can show it in the final banner
+  // Write to tmpfile so run.sh can show it in the final banner. run.sh reads it,
+  // deletes it, and also clears it from an EXIT trap so a crash in between cannot
+  // leave the password lying around.
+  //
+  // Unlink first: `mode` is applied by open(2) only when the file is CREATED, so
+  // writing over a pre-existing path would silently inherit its permissions —
+  // 0600 is the whole point of this file.
+  //
+  // Known limitation: run as `docker compose exec dnd-tools node scripts/setup-db.js`
+  // this lands in the CONTAINER's /tmp, where run.sh never looks and nothing
+  // cleans it. The password is printed below either way, so nothing is lost.
   const credsPath = '/tmp/dndtools-init-creds.txt';
+  try { fs.rmSync(credsPath, { force: true }); } catch { /* best effort */ }
   fs.writeFileSync(credsPath, `${adminUser}\n${adminPass}\n`, { mode: 0o600 });
 
   box([

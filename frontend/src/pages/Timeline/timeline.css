@@ -15,8 +15,15 @@
 .tl-app body {
       transition: background .2s, color .2s
     }
+/* No height here. `.tl-app` above is already `flex: 1; min-height: 0` inside
+   AppLayout's column, so this element simply fills it — and the 100vh that used
+   to be here was actively harmful on a phone: 100vh is the LARGE viewport, so
+   the bottom of the timeline sat underneath the browser's address bar and
+   jumped as it hid and reappeared. A leftover from the standalone legacy page,
+   where it was the right answer. */
 .tl-app .app {
-      height: 100vh;
+      flex: 1;
+      min-height: 0;
       display: flex;
       flex-direction: column
     }

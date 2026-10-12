@@ -169,6 +169,8 @@ export default function Diary() {
                     entries={d.campaignEntries}
                     field="chapter"
                     ungroupedLabel="No chapter"
+                    searchable
+                    searchPlaceholder="Search session summaries…"
                     showStatus
                     onEdit={(entry) => setModal({ scope: 'campaign', entry })}
                     onDelete={d.deleteCampaignEntry}

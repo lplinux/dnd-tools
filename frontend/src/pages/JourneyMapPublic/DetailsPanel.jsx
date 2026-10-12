@@ -217,7 +217,9 @@ export default function DetailsPanel({ data, selection, onSelectPath, eventHandl
   }
 
   return (
-    <aside className="bg-surface border-l border-border flex flex-col overflow-hidden">
+    // Stacked under the map below lg (see index.jsx), so its height is capped
+    // there — otherwise a long path description pushes the map off the screen.
+    <aside className="bg-surface border-t lg:border-t-0 lg:border-l border-border flex flex-col overflow-hidden max-lg:max-h-[40vh]">
       <div className="bg-surface2 border-b border-border px-3.5 py-2.5 font-display text-[0.75rem] text-gold tracking-wider uppercase flex-shrink-0">
         {head}
       </div>

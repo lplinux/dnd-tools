@@ -76,6 +76,16 @@ describe('express route registration order', () => {
     expect(shadowed).toEqual([]);
   });
 
+  it('registers /api/campaigns/trash before /api/campaigns/:id', () => {
+    // The trash list is a literal where the campaign routes take an id, so it is
+    // the same trap as the public-token bug below. Named explicitly because the
+    // sweep above only fails once it is already broken, and this says why.
+    const trash = all.find(r => r.method === 'GET' && r.path === '/api/campaigns/trash');
+    expect(trash, 'GET /api/campaigns/trash is missing').toBeDefined();
+    const swallowers = all.filter(r => shadows(r, trash) && r.index < trash.index);
+    expect(swallowers.map(r => `${r.method} ${r.path}`)).toEqual([]);
+  });
+
   it('detects the real bug it was written for', () => {
     // The exact pair that shipped broken, in the order it shipped in.
     const generic  = { method: 'GET', path: '/api/player-timelines/:campaignId/:playerId' };

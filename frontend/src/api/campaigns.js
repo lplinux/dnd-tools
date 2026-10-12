@@ -8,7 +8,13 @@ export const campaignsApi = {
   // ── Campaigns ─────────────────────────────────────────
   list:   ()             => client.get('/campaigns'),
   create: (data)         => client.post('/campaigns', data),
+  // `remove` is a soft delete — the campaign moves to the trash and can be
+  // restored. `purge` is the irreversible one, and the server only accepts it
+  // for a campaign already in the trash.
   remove: (id)           => client.del(`/campaigns/${id}`),
+  listTrashed: ()        => client.get('/campaigns/trash'),
+  restore: (id)          => client.post(`/campaigns/${id}/restore`),
+  purge:   (id)          => client.del(`/campaigns/${id}/purge`),
   exportCampaign: (id)   => client.get(`/campaigns/${id}/export`),
   importCampaign: (data) => client.post('/campaigns/import', data),
 
@@ -24,6 +30,13 @@ export const campaignsApi = {
   updateLocation:     (cid, lid, d)  => client.put(`/campaigns/${cid}/locations/${lid}`, d),
   removeLocation:     (cid, lid)     => client.del(`/campaigns/${cid}/locations/${lid}`),
   toggleLocationVis:  (cid, lid)     => client.patch(`/campaigns/${cid}/locations/${lid}/visibility`),
+
+  // Campaign Journal — shared notes. The server withholds dm_only entries from
+  // players in SQL, so a player's list simply does not contain them.
+  listJournal:   (cid)          => client.get(`/campaigns/${cid}/journal`),
+  addJournal:    (cid, d)       => client.post(`/campaigns/${cid}/journal`, d),
+  editJournal:   (cid, eid, d)  => client.put(`/campaigns/${cid}/journal/${eid}`, d),
+  removeJournal: (cid, eid)     => client.del(`/campaigns/${cid}/journal/${eid}`),
   setLocationImage:   (cid, lid, image_data) => client.put(`/campaigns/${cid}/locations/${lid}/image`, { image_data }),
 
   // ── NPCs ──────────────────────────────────────────────

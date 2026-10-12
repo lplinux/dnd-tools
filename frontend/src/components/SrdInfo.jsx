@@ -61,7 +61,7 @@ export default function SrdInfo({ resource, name, className = '' }) {
         className={`srd-info-btn ${className}`.trim()}
         title={`${name} — 2024 SRD`}
         aria-label={`Look up ${name} in the 2024 SRD`}
-        onMouseDown={(e) => e.preventDefault()}
+        onPointerDown={(e) => e.preventDefault()}
         onClick={(e) => { e.stopPropagation(); setOpen(true); }}
       >
         ⓘ

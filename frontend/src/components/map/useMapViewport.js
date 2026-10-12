@@ -10,7 +10,7 @@
  * and `screenToPct` read current values without stale closures.
  */
 
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 const MIN_SCALE = 0.1;
@@ -29,6 +29,7 @@ export function useMapViewport() {
   const scaleRef = useRef(scale); scaleRef.current = scale;
   const offsetRef = useRef(offset); offsetRef.current = offset;
   const sizeRef = useRef(imgSize); sizeRef.current = imgSize;
+  const loadedRef = useRef(loaded); loadedRef.current = loaded;
 
   const fit = useCallback((iw, ih) => {
     const a = areaRef.current;
@@ -37,6 +38,34 @@ export function useMapViewport() {
     setScale(s);
     setOffset({ x: (a.clientWidth - iw * s) / 2, y: (a.clientHeight - ih * s) / 2 });
   }, []);
+
+  /**
+   * Re-fit when the stage changes size.
+   *
+   * `fit` used to run exactly once, on image load, with no resize handling at
+   * all — so rotating a tablet left the map at the old scale and parked
+   * off-centre, and that was true before any of the responsive work. It also
+   * blocks the drawer layout: collapsing a 248px panel widens the stage by a
+   * fifth of a screen with nothing to react to it.
+   *
+   * Guarded on `loaded` so it cannot fire against the placeholder size, and
+   * rAF-debounced because ResizeObserver fires per frame during a drag-resize.
+   */
+  useEffect(() => {
+    const a = areaRef.current;
+    if (!a || typeof ResizeObserver === 'undefined') return undefined;
+    let frame = 0;
+    const ro = new ResizeObserver(() => {
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(() => {
+        if (!loadedRef.current) return;
+        const { iw, ih } = sizeRef.current;
+        fit(iw, ih);
+      });
+    });
+    ro.observe(a);
+    return () => { cancelAnimationFrame(frame); ro.disconnect(); };
+  }, [fit]);
 
   const onImageLoad = useCallback((e) => {
     const { naturalWidth: iw, naturalHeight: ih } = e.currentTarget;

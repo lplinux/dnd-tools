@@ -4,7 +4,7 @@
  * Three tab components that share one file to keep the directory tidy:
  *   NpcsTab       — bulk-add NPCs, chip delete
  *   TimelinesTab  — summary cards + navigate to timeline
- *   SettingsTab   — calendar info, today-marker date picker, danger-zone delete
+ *   SettingsTab   — calendar info, today-marker date picker, move-to-trash
  */
 
 import { useState } from 'react';
@@ -162,7 +162,12 @@ export function SettingsTab({ campaign, meta, actions }) {
   }
 
   async function handleDelete() {
-    if (!await confirm('Permanently delete this campaign and ALL its data?', { title: 'Delete campaign', confirmLabel: 'Delete' })) return;
+    // No longer "permanently": this moves the campaign to the Trash in the
+    // sidebar, where it can be restored or deleted for good. Saying otherwise
+    // would make a reversible action read as a final one.
+    if (!await confirm(
+      'Move this campaign to the Trash? It will be hidden from every module and its share links will stop working, but nothing is deleted until you empty the Trash.',
+      { title: 'Move to Trash', confirmLabel: 'Move to Trash' })) return;
     setDeleting(true);
     try { await actions.deleteCampaign(); }
     finally { setDeleting(false); }
@@ -198,7 +203,9 @@ export function SettingsTab({ campaign, meta, actions }) {
       <section className="bg-surface2 border border-border rounded-sm p-4">
         <h3 className="font-display text-gold uppercase tracking-wider text-xs mb-3">💾 Export / Backup</h3>
         <p className="text-text-dim text-xs mb-3">
-          Download the full campaign (players, locations, timelines, PC sheets, journey maps) as a JSON file.
+          Download the full campaign (players, locations, timelines, PC sheets, journey maps, and the
+          granted items in play) as a JSON file. Item cards travel with it: importing matches them into the
+          destination library by name, adding what is missing and reusing what is already there.
         </p>
         <Button variant="default" onClick={() => actions.exportCampaign?.()} title="Export campaign as JSON">
           <Download size={12} className="inline mr-1" /> Export Campaign
@@ -209,10 +216,12 @@ export function SettingsTab({ campaign, meta, actions }) {
       <section className="bg-surface2 border border-danger/30 rounded-sm p-4">
         <h3 className="font-display text-danger uppercase tracking-wider text-xs mb-3">⚠️ Danger Zone</h3>
         <p className="text-text-dim text-xs mb-3">
-          Deleting a campaign permanently removes all players, locations, timelines, paths and maps.
+          Moves the campaign to the Trash in the sidebar. It disappears from every module and its
+          public share links stop working, but nothing is destroyed — restore it from there, or
+          delete it for good once you are sure. Export first if you want a copy.
         </p>
         <Button variant="danger" loading={deleting} onClick={handleDelete}>
-          🗑 Delete Campaign
+          🗑 Move to Trash
         </Button>
       </section>
 

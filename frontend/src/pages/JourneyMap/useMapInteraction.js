@@ -3,7 +3,7 @@
  *
  * Tool-driven mouse + keyboard interaction for the journey-map editor.
  *
- * Returns area handlers (onMouseDown/Move/Up/DoubleClick) for <MapStage>, the
+ * Returns area handlers (onPointerDown/Move/Up/Cancel/DoubleClick) for <MapStage>, the
  * element handlers (onPinDown/onPathDown/onRegionDown/onWaypointDown/
  * onVertexDown) for the SVG layers, and live drawing state (`draw`, `region`,
  * `cursor`) for the preview overlays.
@@ -71,7 +71,7 @@ export function useMapInteraction(viewport, jm, { placeLocId, onOpenNaming, draw
   }, [activeTool]);
 
   // ── Area-level handlers (empty map space) ──────────────────
-  function onMouseDown(e) {
+  function onPointerDown(e) {
     if (e.button !== 0) return;
     const pct = viewport.screenToPct(e.clientX, e.clientY);
 
@@ -125,7 +125,7 @@ export function useMapInteraction(viewport, jm, { placeLocId, onOpenNaming, draw
     }
   }
 
-  function onMouseMove(e) {
+  function onPointerMove(e) {
     if (pan.current) {
       const { px, py, ox, oy } = pan.current;
       viewport.panTo(ox + (e.clientX - px), oy + (e.clientY - py));
@@ -206,7 +206,7 @@ export function useMapInteraction(viewport, jm, { placeLocId, onOpenNaming, draw
     if (draw || region) setCursor(viewport.screenToPct(e.clientX, e.clientY));
   }
 
-  function onMouseUp() {
+  function onPointerUp() {
     if (pan.current) { pan.current = null; return; }
     if (pinDrag.current) {
       const loc = placedLocs.find((l) => sameId(l.id, pinDrag.current.locId));
@@ -248,6 +248,30 @@ export function useMapInteraction(viewport, jm, { placeLocId, onOpenNaming, draw
       vertexDrag.current = null;
       regionDrag.current = null;
     }
+  }
+
+  /**
+   * A gesture the OS took away: a system swipe, a phone call, a second finger
+   * starting a pinch. Touch cancels FAR more readily than a mouse ever did.
+   *
+   * It clears every drag WITHOUT saving, and that distinction is the whole
+   * point. onPointerUp above persists on release — saveLocGeometry,
+   * saveWaypoints, saveLabelPos. Routing a cancel through it would write a
+   * half-finished drag to the database; omitting it entirely would be worse
+   * still, leaving a ref non-null so the next finger-move teleports the pin
+   * the user thought they had let go of.
+   *
+   * In-flight geometry lives in component state and is refetched, so dropping
+   * it is the correct outcome: the item snaps back to where it was.
+   */
+  function onPointerCancel() {
+    pan.current = null;
+    pinDrag.current = null;
+    wpDrag.current = null;
+    curveDrag.current = null;
+    labelDrag.current = null;
+    regionDrag.current = null;
+    vertexDrag.current = null;
   }
 
   async function finishPath() {
@@ -456,9 +480,13 @@ export function useMapInteraction(viewport, jm, { placeLocId, onOpenNaming, draw
   }, [setActiveTool, deletePlacedLoc, deletePath]);
 
   return {
-    onMouseDown, onMouseMove, onMouseUp, onDoubleClick,
+    onPointerDown, onPointerMove, onPointerUp, onPointerCancel, onDoubleClick,
     onPinDown, onPathDown, onRegionDown, onWaypointDown, onVertexDown, onCurveDown, onSectionAddCurve, onLabelDown,
     draw, region, cursor,
+    // Exposed so the map can offer a Finish button. Completing a path or
+    // region used to be Enter-or-double-click only, and on a tablet there is
+    // no Enter and double-tap fights the browser's own zoom gesture.
+    finishPath, finishRegion,
     measurePts, clearMeasure: () => setMeasurePts([]),
   };
 }

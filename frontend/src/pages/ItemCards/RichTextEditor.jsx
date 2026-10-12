@@ -85,28 +85,28 @@ export default function RichTextEditor({ value, onChange, placeholder = 'List sp
     <div className="border border-border2 rounded-sm overflow-hidden">
       {/* Toolbar */}
       <div className="flex gap-px bg-surface3 border-b border-border px-1 py-0.5">
-        <button type="button" title="Bold (Ctrl+B)"   className={isBold()   ? BTN_ACTIVE : BTN} onMouseDown={e => { e.preventDefault(); cmd('bold'); }}>
+        <button type="button" title="Bold (Ctrl+B)"   className={isBold()   ? BTN_ACTIVE : BTN} onPointerDown={e => { e.preventDefault(); cmd('bold'); }}>
           <b>B</b>
         </button>
-        <button type="button" title="Italic (Ctrl+I)" className={isItalic() ? BTN_ACTIVE : BTN} onMouseDown={e => { e.preventDefault(); cmd('italic'); }}>
+        <button type="button" title="Italic (Ctrl+I)" className={isItalic() ? BTN_ACTIVE : BTN} onPointerDown={e => { e.preventDefault(); cmd('italic'); }}>
           <i>I</i>
         </button>
-        <button type="button" title="Underline (Ctrl+U)" className={isUnderline() ? BTN_ACTIVE : BTN} onMouseDown={e => { e.preventDefault(); cmd('underline'); }}>
+        <button type="button" title="Underline (Ctrl+U)" className={isUnderline() ? BTN_ACTIVE : BTN} onPointerDown={e => { e.preventDefault(); cmd('underline'); }}>
           <u>U</u>
         </button>
         <div className="w-px bg-border mx-1 my-0.5" />
-        <button type="button" title="Bullet list"       className={BTN} onMouseDown={e => { e.preventDefault(); handleList('bullet'); }}>
+        <button type="button" title="Bullet list"       className={BTN} onPointerDown={e => { e.preventDefault(); handleList('bullet'); }}>
           •≡
         </button>
-        <button type="button" title="Numbered list"      className={BTN} onMouseDown={e => { e.preventDefault(); handleList('ordered'); }}>
+        <button type="button" title="Numbered list"      className={BTN} onPointerDown={e => { e.preventDefault(); handleList('ordered'); }}>
           1.
         </button>
         <div className="w-px bg-border mx-1 my-0.5" />
-        <button type="button" title="Highlight"          className={BTN} onMouseDown={e => { e.preventDefault(); handleHighlight(); }}>
+        <button type="button" title="Highlight"          className={BTN} onPointerDown={e => { e.preventDefault(); handleHighlight(); }}>
           🖍
         </button>
         <div className="w-px bg-border mx-1 my-0.5" />
-        <button type="button" title="Clear formatting"  className={BTN} onMouseDown={e => { e.preventDefault(); handleClear(); }}>
+        <button type="button" title="Clear formatting"  className={BTN} onPointerDown={e => { e.preventDefault(); handleClear(); }}>
           ✕
         </button>
       </div>
@@ -130,7 +130,9 @@ export default function RichTextEditor({ value, onChange, placeholder = 'List sp
         ].join(' ')}
         onInput={emit}
         onKeyUp={emit}
-        onMouseUp={emit}
+        // onPointerUp, so a touch selection syncs too. emit() is idempotent
+        // and already runs on input and keyup, so firing once more is free.
+        onPointerUp={emit}
       />
     </div>
   );

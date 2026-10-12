@@ -34,6 +34,8 @@ import {
 } from '@/data/srdMap';
 import { officialSubclassesFor } from '@/data/officialSubclasses';
 import { useNpcSheet }   from '@/hooks/useNpcSheet';
+import { num, clampedHp, hasTemp, canClearHp, clearedHp } from './hp';
+import StatInput from './StatInput';
 import { useConfirm }    from '@/contexts/ConfirmContext';
 import { CLASSES, ALIGNMENTS, DAMAGE_TYPES, CONDITIONS, FULL_CASTERS, HALF_CASTERS, WARLOCKS, SPELL_ABILITY_DEFAULT, fmtMod } from '@/data/dnd';
 
@@ -102,14 +104,22 @@ function SrdChips({ resource, value }) {
   const names = String(value ?? '').split(/[,\n]/).map((n) => n.trim()).filter(Boolean);
   const known = names.filter((n) => slugs && slugs.has(toSlug(n)));
   if (!known.length) return null;
+  // Labelled "SRD", unlike the spell chips, and that difference is deliberate.
+  // This list is FILTERED to names the SRD knows, so it is a subset of the
+  // textarea above rather than a copy of it — hiding a multi-line field behind
+  // two chips would lose far more than the repetition costs. The label is what
+  // stops it reading as the same content twice.
   return (
-    <div className="spell-chips">
-      {known.map((n, i) => (
-        <span className="spell-chip" key={`${n}-${i}`}>
-          {n}
-          <SrdInfo resource={resource} name={n} />
-        </span>
-      ))}
+    <div className="srd-strip">
+      <span className="srd-strip-lbl">SRD</span>
+      <div className="spell-chips">
+        {known.map((n, i) => (
+          <span className="spell-chip" key={`${n}-${i}`}>
+            {n}
+            <SrdInfo resource={resource} name={n} />
+          </span>
+        ))}
+      </div>
     </div>
   );
 }
@@ -125,17 +135,49 @@ export default function NpcSheet() {
           spellNames, setSpellName, usedSlots, toggleSlot,
           legRes, toggleLegRes, clearSheet, applySrd, collectSheet, populateSheet } = sheet;
 
-  // HP is edited in a dialog rather than inline, so the stats bar can show the
-  // effective totals without any box being both a derived readout and an input.
+  // Max, temp HP and temp max are edited in a dialog; Current HP is inline and
+  // ONLY inline, so a hit can be recorded mid-combat without opening anything
+  // and there is exactly one place it can be changed. Two boxes for the same
+  // number is how a sheet ends up disagreeing with itself.
   const [hpModal, setHpModal] = useState(false);
-  // Parsed leniently: these are free-text boxes, so "12", "+12" and "-4" all have
-  // to read sensibly, and anything unparseable counts as 0 rather than colouring
-  // the readout on nonsense.
-  const num = (v) => { const n = parseInt(String(v ?? '').trim(), 10); return Number.isFinite(n) ? n : 0; };
+  // The arithmetic lives in ./hp so it can be tested without mounting this.
   const curNum = num(fields.hp);
   const maxNum = num(fields.maxHp);
   const tempHpNum = num(fields.tempHp);
   const tempMaxNum = num(fields.tempMaxHp);
+
+  /**
+   * Pull Current HP down to the effective maximum, so lowering Max HP or applying
+   * a negative Temp Max does not leave the sheet reading "38 / 20".
+   *
+   * On blur, never on change. `bind()` writes state on every keystroke, so
+   * clamping as you type would see Max HP pass through "4" on the way to "40"
+   * and destroy Current HP before you finished the number. There is no commit
+   * step anywhere else in this sheet — the dialog's Done button only closes it —
+   * so blur is the commit.
+   */
+  const clampHp = () => {
+    const next = clampedHp(fields);
+    if (next !== null) setField('hp', next);
+  };
+
+  /**
+   * Back to full: drop every temporary value and set current to the maximum.
+   *
+   * Lives on the stat rather than in the dialog because it is the end of a long
+   * rest — the most routine HP change there is, and the one you would otherwise
+   * open a dialog, clear two boxes and retype a number to perform.
+   *
+   * Max, not max + temp max: the temporary maximum is one of the things being
+   * cleared, so honouring it on the way out would be setting HP from a value
+   * that no longer exists a line later.
+   */
+  const tempShown = hasTemp(fields);
+  const clearable = canClearHp(fields);
+  const clearHp = () => {
+    const next = clearedHp(fields);
+    for (const [k, v] of Object.entries(next)) setField(k, v);
+  };
 
   // The spell table shows when a caster type is chosen; the caster controls in
   // the header show whenever the class is a spellcaster (mirrors the original).
@@ -359,6 +401,9 @@ export default function NpcSheet() {
   }
 
   const bind = (key) => ({ value: fields[key], onChange: (e) => setField(key, e.target.value) });
+  // StatInput hands back the value rather than the event — it owns a draft, so
+  // there is no event to read by the time it commits.
+  const bindStat = (key) => ({ value: fields[key], onChange: (v) => setField(key, v) });
 
   // ─────────────────────────────────────────────────────────────────────────
   // Render
@@ -497,50 +542,90 @@ export default function NpcSheet() {
 
           {/* ── CORE STATS ── */}
           <div className="stats-bar">
-            {/* HP reads out as Current/Max, where "current" is the EFFECTIVE
-                total (current + temporary) and "max" the effective maximum.
-                Both are derived and read-only: editing happens in the Manage HP
-                dialog, so there is one place to change a value rather than two
-                that can disagree. Green means a temporary value is in play. */}
+            {/* Current HP is a real input — it changes every round, and making it
+                the one inline field means recording a hit costs no clicks. The
+                right half is the EFFECTIVE maximum (max + temp max) and stays
+                read-only, since it is derived from two values that both live in
+                the dialog.
+
+                Current HP holds the RAW value, not current + temp: this box is
+                now typed into, and "25" has to mean 25. Temp HP floats beside
+                the label in blue, only while there is some. TEMP HP and TEMP
+                MAX HP no longer have boxes of their own — they were two usually
+                empty columns on every sheet to serve the few that use them. */}
             <div className="cs">
               <span className="cs-lbl">
                 HP
                 <button
                   type="button"
                   className="cs-add no-print"
-                  title="Manage HP — current, max and temporary"
+                  title="Manage HP — max and temporary values"
                   onClick={() => setHpModal(true)}
                 >
                   ✎
                 </button>
+                {/* Back to full. On the stat, not in the dialog: it is the end
+                    of a long rest, the most routine HP change there is. Hidden
+                    when it would do nothing, so it never reads as armed when
+                    the character is already untouched. */}
+                {clearable && (
+                  <button
+                    type="button"
+                    className="cs-add no-print"
+                    title={tempShown
+                      ? 'Clear HP — drop all temporary HP and heal to full'
+                      : 'Clear HP — heal to full'}
+                    aria-label="Clear HP — drop all temporary values and heal to full"
+                    onClick={clearHp}
+                  >
+                    ⟳
+                  </button>
+                )}
+                {/* Temporary HP reads as its own pool because that is what it
+                    is — it absorbs damage first and does not heal. Blue, so it
+                    cannot be mistaken for the red of the sheet or the green a
+                    temporary MAXIMUM tints.
+
+                    Floated beside the label rather than stacked above the
+                    number: absolutely positioned, so it costs no layout and the
+                    stats bar is exactly as tall with it as without. It is also
+                    the control for the value it shows — clicking it opens the
+                    dialog on the field it came from. */}
+                {tempHpNum !== 0 && (
+                  <button
+                    type="button"
+                    className="hp-temp-badge"
+                    onClick={() => setHpModal(true)}
+                    title={`${tempHpNum} temporary HP — click to change`}
+                    aria-label={`${tempHpNum} temporary HP — click to change`}
+                  >
+                    {tempHpNum > 0 ? `+${tempHpNum}` : tempHpNum}
+                  </button>
+                )}
               </span>
-              <button type="button" className="hp-readout" onClick={() => setHpModal(true)}
-                title="Manage HP — current, max and temporary">
-                <span className={tempHpNum > 0 ? 'hp-temp' : undefined}>
-                  {fields.hp === '' ? '—' : curNum + tempHpNum}
-                </span>
+              <div className="hp-pair">
+                <StatInput
+                  type="text"
+                  className="hp-cur"
+                  placeholder="—"
+                  title={tempHpNum !== 0 ? `${curNum} + ${tempHpNum} temp` : 'Current HP'}
+                  aria-label="Current HP"
+                  value={fields.hp}
+                  onChange={(v) => setField('hp', v)}
+                  onBlur={clampHp}
+                />
                 <span className="hp-sep">/</span>
-                <span className={tempMaxNum !== 0 ? 'hp-temp' : undefined}>
+                <button type="button" className={`hp-max${tempMaxNum !== 0 ? ' hp-temp' : ''}`}
+                  onClick={() => setHpModal(true)}
+                  title="Max HP and Temp Max HP — click to edit">
                   {fields.maxHp === '' ? '—' : maxNum + tempMaxNum}
-                </span>
-              </button>
+                </button>
+              </div>
             </div>
-            <div className="cs">
-              <span className="cs-lbl">TEMP HP</span>
-              <button type="button" className={`hp-readout${tempHpNum > 0 ? ' hp-temp' : ''}`}
-                onClick={() => setHpModal(true)} title="Manage HP">
-                {fields.tempHp === '' ? '—' : fields.tempHp}
-              </button>
-            </div>
-            <div className="cs">
-              <span className="cs-lbl">TEMP MAX HP</span>
-              <button type="button" className={`hp-readout${tempMaxNum !== 0 ? ' hp-temp' : ''}`}
-                onClick={() => setHpModal(true)} title="Manage HP">
-                {fields.tempMaxHp === '' ? '—' : fields.tempMaxHp}
-              </button>
-            </div>
-            <div className="cs"><span className="cs-lbl">AC</span><input type="text" placeholder="0" {...bind('ac')} /></div>
-            <div className="cs"><span className="cs-lbl">SPEED</span><input type="text" placeholder="30 ft" {...bind('speed')} /></div>
+            {/* Replace-on-focus, like current HP: these are overwritten, never
+                amended, and a caret landing inside "18" produces "118". */}
+            <div className="cs"><span className="cs-lbl">AC</span><StatInput type="text" placeholder="0" {...bindStat('ac')} /></div>
+            <div className="cs"><span className="cs-lbl">SPEED</span><StatInput type="text" placeholder="30 ft" {...bindStat('speed')} /></div>
             <div className="cs"><span className="cs-lbl">PROF BONUS</span><input className="derived" type="text" readOnly value={derived.profBonus} /></div>
             <div className="cs"><span className="cs-lbl">INITIATIVE</span><input className="derived" type="text" readOnly value={derived.initiative} /></div>
             <div className="cs"><span className="cs-lbl">PASS PERC</span><input className="derived" type="text" readOnly value={derived.passPerc} /></div>
@@ -702,18 +787,17 @@ export default function NpcSheet() {
         </div>
       </main>
 
-      {/* Manage HP — one place to set all four values. A dialog rather than the
-          old inline expansion: the stats bar can then show effective totals
-          without a box having to be both a derived readout and an input. */}
-      <Modal open={hpModal} onClose={() => setHpModal(false)} onSubmit={() => setHpModal(false)} title="❤️ Manage HP">
+      {/* Manage HP — max, temp HP and temp max. Current HP is deliberately NOT
+          here: it is the one value editable directly on the sheet, and a second
+          box for it was a way for the two to disagree. Closing the dialog
+          clamps, so lowering the maximum and hitting Done cannot leave current
+          HP above it. */}
+      <Modal open={hpModal} onClose={() => { clampHp(); setHpModal(false); }}
+             onSubmit={() => { clampHp(); setHpModal(false); }} title="❤️ Manage HP">
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
           <div>
-            <label className={FIELD_LABEL}>Current HP</label>
-            <input className={FIELD_INPUT} type="text" placeholder="0" autoFocus {...bind('hp')} />
-          </div>
-          <div>
             <label className={FIELD_LABEL}>Max HP</label>
-            <input className={FIELD_INPUT} type="text" placeholder="0" {...bind('maxHp')} />
+            <input className={FIELD_INPUT} type="text" placeholder="0" autoFocus {...bind('maxHp')} onBlur={clampHp} />
           </div>
           <div>
             <label className={FIELD_LABEL}>Temp HP</label>
@@ -721,12 +805,15 @@ export default function NpcSheet() {
           </div>
           <div>
             <label className={FIELD_LABEL}>Temp Max HP</label>
-            <input className={FIELD_INPUT} type="text" placeholder="e.g. -4" {...bind('tempMaxHp')} />
+            <input className={FIELD_INPUT} type="text" placeholder="e.g. -4" {...bind('tempMaxHp')} onBlur={clampHp} />
           </div>
         </div>
         <p className="text-[0.7rem] text-text-muted mt-3">
-          The sheet shows <strong>current + temp</strong> over <strong>max + temp max</strong>, in
-          green while either temporary value is set.
+          The sheet shows <strong>current HP</strong> over <strong>max + temp max</strong>.
+          Current HP is edited straight on the sheet — that is the only place it can be changed.
+          Temporary HP appears above it in blue; a temporary maximum turns the right half green.
+          Lowering the maximum pulls current HP down to match, and <strong>⟳</strong> on the sheet
+          clears every temporary value and heals to full.
         </p>
         <div className="flex justify-end gap-2 mt-4">
           <Button variant="ghost" onClick={() => { setField('tempHp', ''); setField('tempMaxHp', ''); }}>

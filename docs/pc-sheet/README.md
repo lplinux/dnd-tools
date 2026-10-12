@@ -39,6 +39,16 @@ The sheet loads immediately. All changes are saved per-section with the **💾 S
 
 An embedded NPC Sheet form used as a D&D 5e stat block. Tracks ability scores, HP, AC, speed, skills, attacks, spell slots, and more. See [NPC Sheet documentation](../npc-sheet/README.md) for all fields.
 
+**HP in play.** Current HP is typed straight into the stats bar — that is the only place it can
+be changed, so a hit costs no clicks and the number cannot be set in two places. Temporary HP
+floats beside the HP label in blue, only while there is some; click it to change it. **⟳**
+clears every temporary value and heals to full; **✎** opens the dialog for max and temporary
+values.
+
+**The stat boxes overwrite.** Click into current HP, AC, Speed or an ability score and the box
+empties, with the old value left as a grey hint behind what you type. Leaving without typing
+puts it back.
+
 #### Spells and cantrips
 
 The spell table has **one text input per spell level**, so each `spell_names` entry is a single
@@ -87,6 +97,87 @@ A relationship tracker with two views:
 
 ---
 
+### 🎒 Inventory
+
+Two lists, and the split is the whole design.
+
+**Granted items** are magic items the DM assigned from their **Item Cards** library. The card is a
+reusable *template*; the row in an inventory is its one *instance*. An item card can be used in
+any number of campaigns but **only once within a campaign** — grant the Sword of Kas in Leruhy and
+it cannot be granted again there until it is removed, though the same card is still free to appear
+in a different campaign. There is no quantity: these are artifacts, not stock.
+
+| | Player | DM |
+|---|---|---|
+| Grant a card | — | ✅ (from their own library) |
+| Equip / annotate | ✅ | ✅ |
+| Rename or restack | — (the name belongs to the card) | via the Item Cards module |
+| Give to another character | ✅ | ✅ |
+| Remove from the inventory | — | ✅ |
+
+**Carried gear** is everything else: rope, rations, coin, potions. Free-text rows the player owns
+and manages, and the only kind with a **quantity**. Consumables live here deliberately — authoring
+an item card for a flask of oil is busywork, and stacks would break the one-per-campaign rule that
+makes a granted artifact meaningful. **＋ Add** offers a **Load from SRD** search that fills the
+name, weight and a cost/description line from the published equipment list.
+
+**Four panels.** Every row sits in one of **Treasure**, **Potions & Poisons**, **Inventory** or
+**Miscellaneous**, chosen when you add it and changeable at any time — either from the *Panel*
+selector in the edit dialog, or by **dragging the ⠿ handle** onto another panel. The drag is
+pointer-based, so it works with a finger as well as a mouse.
+
+**Treasure opens with a coin purse** — platinum, gold, silver and copper, saved when you click
+away from the field. Coins weigh something: 5e puts fifty to the pound, so a thousand gold pieces
+is twenty pounds and shows up in your carry total.
+
+**Consumables cannot be equipped.** Anything in Potions & Poisons has no equip checkbox — a
+potion is used, not worn. Moving an equipped item into that panel unequips it. This is *orthogonal* to
+where the item came from: a granted potion is still granted (◆, DM-removable only) but lives
+under Potions. Each panel totals its own weight.
+
+**Carry weight.** Each row can carry a weight in pounds, and the header totals `weight × quantity`
+across **everything in the inventory** — not just what is equipped. The maximum is **STR × 15**
+(the 5e rule, read from the Stats Sheet) and is not editable: a second, hand-set copy of a derived
+number is only a way for the two to disagree. Going over turns the total red. Items with no weight
+set are counted separately rather than treated as weightless, so the total never quietly
+understates what the character is carrying.
+
+**Attunement follows equipping.** Equip an item that requires attunement and it becomes attuned;
+unequip it and it stops being attuned. The ◇/◈ badge remains clickable as an **override**, because
+5e lets you attune something you are not currently wielding — a rod in your pack, say. The
+automatic rule fires only when the equipped state actually *changes*, so setting attunement by
+hand is not undone by the next unrelated edit.
+
+For a granted item the requirement comes from its item card; for your own gear there is a
+*Requires attunement* checkbox in the add/edit dialog.
+
+**Seeing an item.** Every row carries a marker — **◆** for an item the DM granted, **ⓘ** for your
+own gear. Hover it for a preview, or tap it on a touchscreen to pin the panel open until you
+dismiss it. A granted item shows the actual item card, identical to the one the Item Cards module
+prints; anything else shows its quantity, weight and full description, which the one-line summary
+in the list truncates. The names in the **Equipped** strip work the same way.
+
+**The 5e limit of three is enforced**, not merely displayed. At three attuned items the equip
+checkbox and the badge are disabled on any *other* item that needs attunement, and the server
+refuses the change with a conflict if it is attempted anyway. The limit is about attunement
+only — with three rings attuned you can still equip a sword, armour or a torch.
+
+> The printed sheet's named slots (Head, Back, Neck, …) are **not** modelled. Equipping is a
+> single flag, and the Equipped strip lists what is worn or wielded rather than pinning each item
+> to a slot.
+
+**Giving.** The ↪ button hands an item to another character **in the same campaign**. It moves
+immediately with no DM approval, arrives unequipped, and the row records who held it before and
+when — so the DM can see what changed hands without having to police every trade. Transfers across
+campaigns are refused: that would be both a continuity break and a way around the one-per-campaign
+rule.
+
+**Deleting a card that is in play.** The Item Cards module will refuse, naming the characters
+holding it. Remove it from their inventories first. This is deliberate: the alternative is a
+player's magic item silently disappearing because the DM tidied their library.
+
+---
+
 ### 📢 Public Info
 
 Shown on the character's public share page (`/pc-public/:token`) — accessible without login.
@@ -101,13 +192,56 @@ Private notes for the player's eyes only. Never shown on the public share page.
 
 ### 📔 Diary
 
-Your own session diary, private to you. Your DM can read it; no other player can, and nobody but
+Your own session diary, private to you. A search box filters it the same way the Journal's does. Your DM can read it; no other player can, and nobody but
 you can edit or delete an entry. Entries can be filed into **categories** of your choosing
 (*Session notes*, *Theories*, *People we met*…), and the list groups by them — click a group
 heading to collapse it.
 
 The DM sees this same tab on your sheet, read-only, and all players' diaries together in the
 Diary module.
+
+### 📖 Journal
+
+The campaign's shared notebook, and the opposite of the Diary above: everyone in the campaign
+writes in it and everyone reads it. Useful for the things the party collectively knows — a
+document found, a name overheard, what the innkeeper said.
+
+It reads like the Diary on purpose: compact cards grouped under headings you can collapse, click
+one to read it in full. Entries are listed in **in-game date order**, oldest first, with undated
+ones at the end.
+
+A **search box** filters what you can see — any word from a title, a note, a category, a location
+or an author's name, accents optional, and several words narrow it further. A **Group by**
+selector beside it switches the headings between **Category**, **Location** and **Who wrote it**.
+
+Each entry records:
+
+- **Who wrote it** — the username, and the character they play when they play one. The DM shows
+  as themselves, since they have no character.
+- **Where** — picked from the campaign's locations, listed alphabetically. You are only offered
+  the places you can see; if your DM later hides one, entries written there keep their text but
+  stop naming the place.
+- **When** — the real date it was written, and optionally an **in-game date** on the campaign's
+  own calendar. The date control is a picker rather than three boxes to type in, so a day the
+  month does not have is not offered: pick Midwinter and the day control disappears, because the
+  festival is the whole day.
+- **A category**, optional and your own words — *Documents*, *Rumours*, *People we met*. Entries
+  file under it, and whatever the campaign already uses is one keystroke away.
+- **The note**, written in Markdown, so lists and emphasis work.
+
+Only the person who wrote an entry can edit it — including your DM, who cannot rewrite your
+words. Your DM *can* delete an entry, so the campaign can be tidied.
+
+**For DMs:** you also get a **DM only** checkbox. An entry marked that way is invisible to
+players — it is filtered out of their request on the server, not merely hidden on their screen —
+so you can stage a document in the journal before the party has found it, then untick the box
+when they do. Those entries are outlined in gold so you can tell at a glance what the table
+cannot see.
+
+The same journal is also a tab in **Manage Campaigns**, which is usually the better place to run
+it from: the locations an entry points at are managed two tabs away, and staging a document for
+the party to find later is campaign prep rather than character work. It is the same journal, not
+a copy.
 
 ### Printing the sheet
 
@@ -444,10 +578,20 @@ reading — so they will not clear anything.
 | `POST` | `/api/pc/:playerId/dm-notes` | dm | Add a DM note |
 | `PUT` | `/api/pc/:playerId/dm-notes/:nid` | dm | Toggle visibility or edit |
 | `DELETE` | `/api/pc/:playerId/dm-notes/:nid` | dm | Delete a DM note |
+| `GET` | `/api/pc/:playerId/inventory` | auth | List the inventory; card-linked rows carry the card's fields inline as `card_*` |
+| `POST` | `/api/pc/:playerId/inventory` | auth | Add a free-text row. Never creates a card-linked one |
+| `PUT` | `/api/pc/:playerId/inventory/:iid` | auth | Edit. Name and quantity are ignored for a card-linked row |
+| `DELETE` | `/api/pc/:playerId/inventory/:iid` | auth | Delete. Card-linked rows are DM-only |
+| `POST` | `/api/pc/:playerId/inventory/assign` | dm | Grant one of your item cards. `409` if already in this campaign |
+| `POST` | `/api/pc/:playerId/inventory/:iid/give` | auth | Hand the item to another character in the same campaign |
 | `GET` | `/api/pc/:playerId/export` | auth | Export sheet (visibility rules apply per role) |
 | `POST` | `/api/pc/:playerId/import` | dm | Import sheet from JSON |
 | `GET` | `/api/pc/:playerId/public-token` | auth | Get or create the public share token |
 | `GET` | `/api/pc-public/:token` | public | Load public-facing sheet data |
+| `GET` | `/api/campaigns/:campaignId/journal` | member | Journal entries (DM-only ones filtered out for players) |
+| `POST` | `/api/campaigns/:campaignId/journal` | member | Write an entry (`dm_only` honoured only from the DM) |
+| `PUT` | `/api/campaigns/:campaignId/journal/:entryId` | author | Edit — the author only, never the DM |
+| `DELETE` | `/api/campaigns/:campaignId/journal/:entryId` | author or DM | Delete an entry |
 
 ---
 

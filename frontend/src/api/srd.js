@@ -153,6 +153,10 @@ export const getSubspecies = (name) => lookupRaw('subspecies', name);
 export const getSubclass   = (name) => lookupRaw('subclasses', name);
 export const getClass      = (name) => lookupRaw('classes', name);
 export const getMagicItem  = (name) => lookupRaw('magic-items', name);
+// Mundane gear — rope, rations, a crowbar. A different resource from
+// magic-items, and the one the inventory's "carried gear" picker wants: it is
+// where weight and cost actually live.
+export const getEquipment  = (name) => lookupRaw('equipment', name);
 
 /**
  * What a resource contains, fetched once per resource per session.

@@ -17,6 +17,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { arrangeAtExtremes } from '@/components/graph/ordering';
+import { usePinch } from '@/hooks/usePinch';
 
 // ── Constants (match the vanilla version exactly) ─────────────────────────
 const TH      = 88;
@@ -173,6 +174,24 @@ export default function RelGraph({ relationships, crossConnections = [], playerI
     surface3:get('--surface3','#30281a'),
     bg:      get('--bg',      '#13100b'),
   };
+
+  // Declared BEFORE the early return below — hooks must run in the same order
+  // on every render, and this component bails out when there are no relations.
+  // Shares the wheel handler's zoom maths; see the offsetX note inside.
+  const pinch = usePinch((cx, cy, f) => {
+    const el = boxRef.current;
+    if (!el) return;
+    const r = el.getBoundingClientRect();
+    // clientX - rect.left, not offsetX: offsetX is relative to the event's
+    // TARGET, which for a pinch midpoint over an SVG child is not this box.
+    const px = cx - r.left;
+    const py = cy - r.top;
+    setVp((v) => ({
+      scale: Math.max(0.3, Math.min(3, v.scale * f)),
+      ox: px - (px - v.ox) * f,
+      oy: py - (py - v.oy) * f,
+    }));
+  });
 
   if (!relationships.length) {
     return (
@@ -339,14 +358,23 @@ export default function RelGraph({ relationships, crossConnections = [], playerI
   const selfName = (charName || 'You').split(' ')[0].substring(0, 13);
 
   // ── Pan/zoom ───────────────────────────────────────────────────────────────
-  function onMouseDown(e) {
+  function onPointerDown(e) {
+    if (e.button !== 0) return;              // was unguarded: right-click panned
+    pinch.down(e);
+    try { e.currentTarget.setPointerCapture(e.pointerId); } catch { /* degrade */ }
+    if (pinch.isPinching()) { dragRef.current = null; return; }
     dragRef.current = { sx: e.clientX - vp.ox, sy: e.clientY - vp.oy };
   }
-  function onMouseMove(e) {
-    if (!dragRef.current) return;
+  function onPointerMove(e) {
+    if (pinch.move(e)) return;               // two fingers: zoom, never pan
+    if (pinch.isPinching() || !dragRef.current) return;
     setVp(v => ({ ...v, ox: e.clientX - dragRef.current.sx, oy: e.clientY - dragRef.current.sy }));
   }
-  function onMouseUp() { dragRef.current = null; }
+  function onPointerUp(e) {
+    pinch.up(e);
+    try { e.currentTarget.releasePointerCapture(e.pointerId); } catch { /* ignore */ }
+    dragRef.current = null;
+  }
 
   // Print just the graph: clone the SVG, frame it to the content bounds (drop
   // pan/zoom), and open a print window. Colours are inline so it renders standalone.
@@ -389,11 +417,11 @@ export default function RelGraph({ relationships, crossConnections = [], playerI
       <div
         ref={boxRef}
         className="rel-graph-box relative overflow-hidden rounded-sm"
-        style={{ background: C.bg, border: `1px solid ${C.border}`, height: '70vh', minHeight: 360, cursor: 'grab' }}
-        onMouseDown={onMouseDown}
-        onMouseMove={onMouseMove}
-        onMouseUp={onMouseUp}
-        onMouseLeave={onMouseUp}
+        style={{ background: C.bg, border: `1px solid ${C.border}`, height: '70vh', minHeight: 240, cursor: 'grab', touchAction: 'none' }}
+        onPointerDown={onPointerDown}
+        onPointerMove={onPointerMove}
+        onPointerUp={onPointerUp}
+        onPointerCancel={onPointerUp}
       >
         <svg
           ref={svgRef}

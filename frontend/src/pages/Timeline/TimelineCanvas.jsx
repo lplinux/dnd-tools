@@ -19,6 +19,7 @@ import {
   buildSegments, segTotalH, dayY, yToAbsDay, buildDateMarks, SIDE_W, HEADER_H, R, GSPC, MAX_PPD,
 } from './layout';
 import { darken, WrappedText, PieSlices } from './svgUtils';
+import { useCoarsePointer } from '@/hooks/useCoarsePointer';
 
 const CVARS = ['--surface', '--border', '--border2', '--gold', '--gold-dim', '--special-bg', '--special-fg', '--text', '--text-dim', '--text-muted', '--bg', '--today', '--today-bg'];
 const FALLBACK = {
@@ -29,6 +30,10 @@ const FALLBACK = {
 const pidKey = (ev) => (ev.playerIds || []).slice().sort().join(',');
 
 const TimelineCanvas = forwardRef(function TimelineCanvas({ tl, onEventClick, readOnly = false }, ref) {
+  // Drives three touch adjustments: a wider drag threshold (fingers wobble),
+  // tap-to-open tooltips (there is no hover), and keeping the tooltip anchored
+  // where the finger lifted rather than following a cursor that does not exist.
+  const coarse = useCoarsePointer();
   const { db, calType, ppd, visibleLocs, displayedLocs, hiddenPlayers, soloPlayerId } = tl;
   const { theme } = useTheme();
   const events = db.events;
@@ -167,11 +172,20 @@ const TimelineCanvas = forwardRef(function TimelineCanvas({ tl, onEventClick, re
   // ── Drag-to-reschedule ──
   function onCircleDown(ev, e) {
     if (readOnly || e.button !== 0) return;
+    // Pointer capture instead of window listeners. The window pair existed only
+    // to keep tracking once the cursor left the circle; capture does that
+    // natively, releases on unmount, and — the reason it matters here — delivers
+    // `pointercancel` when the OS takes the gesture away, which touch does
+    // routinely and a mouse essentially never did.
+    try { e.currentTarget.setPointerCapture(e.pointerId); } catch { /* degrade */ }
     dragRef.current = { evId: ev.id, startX: e.clientX, startY: e.clientY, hasMoved: false };
     const onMove = (me) => {
       const d = dragRef.current;
       if (!d) return;
-      if (Math.abs(me.clientX - d.startX) > 5 || Math.abs(me.clientY - d.startY) > 5) d.hasMoved = true;
+      // 5px is below normal finger jitter, so on a touchscreen every tap
+      // became a drag and onClick never fired. Coarse pointers get more slack.
+      const slop = coarse ? 12 : 5;
+      if (Math.abs(me.clientX - d.startX) > slop || Math.abs(me.clientY - d.startY) > slop) d.hasMoved = true;
       if (!d.hasMoved) return;
       setHover(null);
       const body = bodyRef.current;
@@ -182,8 +196,9 @@ const TimelineCanvas = forwardRef(function TimelineCanvas({ tl, onEventClick, re
       setGhost({ x: svgX, y: svgY, colX: locIdx * dynCOL, colW: dynCOL });
     };
     const onUp = (ue) => {
-      window.removeEventListener('mousemove', onMove);
-      window.removeEventListener('mouseup', onUp);
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
+      window.removeEventListener('pointercancel', onCancel);
       const d = dragRef.current;
       dragRef.current = null;
       setGhost(null);
@@ -206,12 +221,29 @@ const TimelineCanvas = forwardRef(function TimelineCanvas({ tl, onEventClick, re
       const safeDoY = Math.max(1, Math.min(calType === 'harptos' ? 365 : gregDaysInYear(year), dayOfYear));
       if (newLocation) tl.updateEvent(d.evId, { year, dayOfYear: safeDoY, location: newLocation });
     };
-    window.addEventListener('mousemove', onMove);
-    window.addEventListener('mouseup', onUp);
+    // A cancelled gesture drops the drag WITHOUT rescheduling — otherwise a
+    // swipe the OS stole would silently move an event to a different date.
+    const onCancel = () => {
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
+      window.removeEventListener('pointercancel', onCancel);
+      dragRef.current = null;
+      setGhost(null);
+    };
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onUp);
+    window.addEventListener('pointercancel', onCancel);
   }
 
-  function onCircleClick(ev) {
-    if (readOnly || dragRef.current?.hasMoved) return;
+  function onCircleClick(ev, e) {
+    if (dragRef.current?.hasMoved) return;
+    // On touch the hover tooltip is unreachable, so a tap shows it instead —
+    // and a second tap on the same event falls through to the normal action.
+    if (coarse && (!hover || hover.ev.id !== ev.id)) {
+      setHover({ ev, x: e?.clientX ?? 0, y: e?.clientY ?? 0 });
+      return;
+    }
+    if (readOnly) return;
     onEventClick?.(ev.id);
   }
 
@@ -453,7 +485,7 @@ const TimelineCanvas = forwardRef(function TimelineCanvas({ tl, onEventClick, re
         const ey = geo.evEndY(ev);
         const Re = Math.round(R * 0.7);
         endCircles.push(
-          <g key={key} className="ev-g" style={{ cursor: 'pointer', opacity: gOpacity }} onMouseDown={(e) => onCircleDown(ev, e)} onMouseEnter={(e) => onEnter(ev, e)} onMouseLeave={onLeave} onClick={() => onCircleClick(ev)}>
+          <g key={key} className="ev-g" style={{ cursor: 'pointer', opacity: gOpacity, touchAction: 'none' }} onPointerDown={(e) => onCircleDown(ev, e)} onMouseEnter={(e) => onEnter(ev, e)} onMouseLeave={onLeave} onClick={(e) => onCircleClick(ev, e)}>
             <circle cx={cx} cy={ey} r={Re + 5} fill="transparent" />
             <PieSlices cx={cx} cy={ey} r={Re} colors={colors} strokeC={strokeC} />
             <circle cx={cx} cy={ey} r={Re} fill="none" stroke={strokeC} strokeWidth={1.5} />
@@ -470,7 +502,7 @@ const TimelineCanvas = forwardRef(function TimelineCanvas({ tl, onEventClick, re
         ? (pls[0].name.replace(/^\p{Emoji}\s*/u, '').replace(/\s*\(.*\)$/, '').trim().slice(0, 2).toUpperCase() || '?')
         : `${pls.length}`;
       startCircles.push(
-        <g key={key} className="ev-g" style={{ cursor: 'pointer', opacity: gOpacity }} onMouseDown={(e) => onCircleDown(ev, e)} onMouseEnter={(e) => onEnter(ev, e)} onMouseLeave={onLeave} onClick={() => onCircleClick(ev)}>
+        <g key={key} className="ev-g" style={{ cursor: 'pointer', opacity: gOpacity, touchAction: 'none' }} onPointerDown={(e) => onCircleDown(ev, e)} onMouseEnter={(e) => onEnter(ev, e)} onMouseLeave={onLeave} onClick={(e) => onCircleClick(ev, e)}>
           <circle cx={cx} cy={cy} r={R + 6} fill="transparent" />
           <PieSlices cx={cx} cy={cy} r={R} colors={colors} strokeC={strokeC} />
           <circle className={`ev-ring${flashId === ev.id ? ' evfl' : ''}`} cx={cx} cy={cy} r={R} fill="none" stroke={flashId === ev.id ? 'white' : 'transparent'} strokeWidth={flashId === ev.id ? 3 : 2} />
@@ -501,7 +533,10 @@ const TimelineCanvas = forwardRef(function TimelineCanvas({ tl, onEventClick, re
           </svg>
         </div>
       </div>
-      <div className="tl-body" id="tl-body" ref={bodyRef} onScroll={syncScroll} onMouseMove={hover ? onMoveTip : undefined} onDoubleClick={onBodyDblClick}>
+      <div className="tl-body" id="tl-body" ref={bodyRef} onScroll={syncScroll} /* Deliberately onMouseMove, not onPointerMove: this makes the tooltip
+            follow the CURSOR, and there is no cursor on a touchscreen. Touch
+            opens the tooltip on tap instead (onCircleClick) and leaves it put. */
+          onMouseMove={hover ? onMoveTip : undefined} onDoubleClick={onBodyDblClick}>
         <svg className="svg-body" width={totalW} height={totalH}>
           <rect width={totalW} height={totalH} fill={col('--bg')} />
           {bars}

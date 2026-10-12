@@ -236,6 +236,128 @@ function escapeHtml(s) {
  * `/subclasses/<slug>` embeds `features:[{name, level, description}]`, so this
  * needs no further requests.
  */
+/**
+ * A piece of SRD equipment -> the fields an inventory row wants.
+ *
+ * Deliberately NOT magicItemToCard: that one targets a printable *card* and
+ * fills rarity, attunement and a block of HTML abilities. A gear row wants a
+ * name, a weight and at most a line of notes, so reusing it would mean
+ * throwing most of the result away and mapping the rest by hand.
+ *
+ * Weight arrives in pounds as a bare number. Cost is folded into the notes
+ * rather than given a column — it is reference information, not something the
+ * sheet totals.
+ *
+ * The prose is under `description` on the 2024 endpoint, as an array of
+ * paragraphs. `desc` is the 2014 spelling and is read as a fallback only —
+ * nothing on /api/2024 sends it. Reading `desc` alone is why a Potion of
+ * Healing used to arrive carrying its price and nothing about what it does.
+ *
+ * Likewise `equipment_categories` is a plural ARRAY here; the singular
+ * `equipment_category` never appears, so a check against it alone silently
+ * matched nothing and the name fallback was doing all the work.
+ *
+ * Weapons and armour have an EMPTY description — their information lives in
+ * structured fields instead, which is why a longsword arrived with nothing but
+ * a price even after the description fix. `gearStats` renders those fields, so
+ * the summary leads and the cost goes last: at the table you want the damage
+ * die, not the shopping price.
+ */
+/**
+ * The reference lines for a weapon, armour or shield, in the order you would
+ * read them off a character sheet.
+ *
+ * Needed because the SRD gives weapons and armour an empty `description`: a
+ * longsword's actual information is `damage`, `properties` and `mastery`, and
+ * a breastplate's is `armor_class`. Dropping those left the sheet showing a
+ * price for the things whose numbers matter most in a fight.
+ *
+ * Returns lines, not a blob, so the caller decides the separator — and so an
+ * item with none of these fields (a potion, a rope) produces an empty array
+ * rather than a stray newline.
+ */
+function gearStats(e) {
+  const lines = [];
+  const cats = (Array.isArray(e.equipment_categories) ? e.equipment_categories : [])
+    .map((c) => c?.name ?? '').join(' ');
+
+  // ── Weapon ──
+  if (e.damage?.damage_dice) {
+    const type = e.damage.damage_type?.name?.toLowerCase() ?? '';
+    const base = `${e.damage.damage_dice} ${type}`.trim();
+    const two = e.two_handed_damage?.damage_dice;
+    // Versatile: the second die is the whole point of the property, and the
+    // property list only says "Versatile" without it.
+    lines.push(two && two !== e.damage.damage_dice ? `${base} (${two} two-handed)` : base);
+  }
+  if (e.range?.normal != null) {
+    lines.push(e.range.long != null
+      ? `Range ${e.range.normal}/${e.range.long} ft.`
+      : `Reach ${e.range.normal} ft.`);
+  }
+
+  // ── Armour ──
+  // A shield's `base` is a BONUS, not a base AC — the only way to tell is the
+  // category, so "AC 2" would be wrong by eleven.
+  const ac = e.armor_class;
+  if (ac?.base != null) {
+    if (/shield/i.test(cats)) {
+      lines.push(`AC +${ac.base}`);
+    } else {
+      let s = `AC ${ac.base}`;
+      if (ac.dex_bonus) s += ac.max_bonus != null ? ` + Dex (max ${ac.max_bonus})` : ' + Dex';
+      lines.push(s);
+    }
+  }
+  // 0 means "no requirement" rather than "Strength 0".
+  if (e.str_minimum) lines.push(`Requires Strength ${e.str_minimum}`);
+  if (e.stealth_disadvantage) lines.push('Disadvantage on Stealth');
+
+  // The ammunition TYPE folds into the "Ammunition" property rather than
+  // sitting beside it, or a longbow reads "Ammunition · … · Ammunition: Arrows".
+  const ammo = e.ammunition?.name;
+  const props = (Array.isArray(e.properties) ? e.properties : [])
+    .map((p) => p?.name).filter(Boolean)
+    .map((n) => (ammo && /^ammunition$/i.test(n) ? `${n} (${ammo})` : n));
+  if (ammo && !props.some((n) => /^ammunition/i.test(n))) props.push(`Ammunition (${ammo})`);
+  if (e.mastery?.name) props.push(`Mastery: ${e.mastery.name}`);
+  if (props.length) lines.push(props.join(' \u00b7 '));
+
+  const wear = [e.don_time && `Don ${e.don_time}`, e.doff_time && `Doff ${e.doff_time}`]
+    .filter(Boolean);
+  if (wear.length) lines.push(wear.join(' \u00b7 '));
+
+  return lines;
+}
+
+export function equipmentToItem(e) {
+  if (!e) return null;
+  const cost = e.cost?.quantity != null && e.cost?.unit
+    ? `${e.cost.quantity} ${e.cost.unit}`
+    : null;
+  const raw = e.description ?? e.desc ?? '';
+  const desc = (Array.isArray(raw) ? raw.filter(Boolean).join('\n\n') : String(raw)).trim();
+  const stats = gearStats(e).join('\n');
+  const notes = [stats, desc, cost && `Cost: ${cost}`].filter(Boolean).join('\n\n');
+
+  // Potions and poisons have their own panel on the sheet; everything else
+  // starts in Inventory and the player can move it. Potions sit under
+  // "Adventuring Gear" in the 2024 SRD, so the name is what actually decides —
+  // the categories are checked as well in case that ever stops being true.
+  const cats = [
+    ...(Array.isArray(e.equipment_categories) ? e.equipment_categories.map((c) => c?.name) : []),
+    e.equipment_category?.name,
+    e.name,
+  ].filter(Boolean).join(' ');
+
+  return {
+    name:   e.name ?? '',
+    weight: typeof e.weight === 'number' ? e.weight : null,
+    notes:  notes || null,
+    category: /potion|poison/i.test(cats) ? 'potions' : 'inventory',
+  };
+}
+
 export function subclassFeaturesText(sc, maxLevel = 20) {
   if (!sc?.features?.length) return '';
   return sc.features

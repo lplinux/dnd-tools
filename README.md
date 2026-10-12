@@ -290,7 +290,7 @@ dnd-tools/
 ├── public/
 │   └── app/                      # Vite build output (gitignored) — the only thing here
 │   # NOTE: all legacy *.html module pages were removed as each module
-│   #       was migrated to React (v4.1.0–v4.10.0), along with the no-build
+│   #       was migrated to React in 1.0.0, along with the no-build
 │   #       fallback page and its theme.css / app.css.
 │
 └── frontend/                     # React 19 + Vite SPA
