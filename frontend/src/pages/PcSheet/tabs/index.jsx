@@ -50,6 +50,7 @@ function SaveRow({ onSave, saving }) {
 export { default as DiaryTab } from './DiaryTab';
 export { default as InventoryTab } from './InventoryTab';
 export { default as JournalTab } from './JournalTab';
+export { default as CampaignLinksTab } from './CampaignLinksTab';
 
 export function CharacterTab({ charData, playerId, actions, publicLink }) {
   const [form, setForm] = useState({

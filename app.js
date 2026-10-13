@@ -3737,6 +3737,81 @@ async function journalEntry(entryId, campaignId) {
   return r.rows[0] ?? null;
 }
 
+// ── Campaign links ──────────────────────────────────────────────────────────
+//
+// Everything in this campaign that has been shared, in one list, for the
+// Campaign Links tab on the PC Sheet.
+//
+// The rule that makes it safe to show a player: **a row appears only because a
+// share token exists for it**. Every list below is an INNER JOIN onto its
+// shares table, never a left join with the token nulled out — so an unshared
+// map cannot leak its name, and a player cannot learn that it exists at all.
+// That is also why the DM sees exactly the same list: this tab answers "what
+// has the table been given", not "what is there".
+//
+// Links are the PUBLIC token URLs rather than in-app routes, because the
+// in-app journey map and timeline editors are DM-only. A player following one
+// of these is a reader, logged in or not — the public handlers are already
+// viewer-aware and show them their own paths.
+app.get('/api/campaigns/:campaignId/links', requireAuth, async (req, res) => {
+  const { campaignId } = req.params;
+  try {
+    if (!await canAccessCampaign(campaignId, req.session.userId, req.session.role))
+      return res.status(403).json({ error: 'Access denied' });
+
+    const [maps, campaignTl, playerTl] = await Promise.all([
+      pool.query(
+        `SELECT jm.id, jm.name, jms.token, jms.created_at
+           FROM journey_maps jm
+           JOIN journey_map_shares jms ON jms.map_id = jm.id
+          WHERE jm.campaign_id = $1
+          ORDER BY jm.name ASC`,
+        [campaignId],
+      ),
+      // The whole-campaign combined timeline. At most one.
+      pool.query(
+        'SELECT token, created_at FROM campaign_timeline_shares WHERE campaign_id = $1',
+        [campaignId],
+      ),
+      // One shared timeline belongs to one character, so it is worth naming
+      // whose it is — several campaigns here run a timeline per player.
+      pool.query(
+        `SELECT pt.id, pt.name, cp.player_name, pts.token, pts.created_at
+           FROM player_timelines pt
+           JOIN player_timeline_shares pts ON pts.timeline_id = pt.id
+           LEFT JOIN campaign_players cp ON cp.id = pt.player_id
+          WHERE pt.campaign_id = $1
+          ORDER BY cp.player_name ASC NULLS LAST, pt.name ASC`,
+        [campaignId],
+      ),
+    ]);
+
+    res.json({
+      maps: maps.rows.map((m) => ({
+        id: m.id, name: m.name, token: m.token,
+        path: `/journey-map-public/${m.token}`, shared_at: m.created_at,
+      })),
+      timelines: [
+        ...campaignTl.rows.map((t) => ({
+          id: null, name: 'The whole campaign', player_name: null, scope: 'campaign',
+          token: t.token, path: `/timeline-public/${t.token}`, shared_at: t.created_at,
+        })),
+        ...playerTl.rows.map((t) => ({
+          id: t.id, name: t.name, player_name: t.player_name, scope: 'timeline',
+          token: t.token, path: `/timeline-public/${t.token}`, shared_at: t.created_at,
+        })),
+      ],
+      // Prepared, deliberately empty. NPCs are campaign-scoped and DM-only
+      // today (`campaign_npcs` has no visibility flag at all), so shipping the
+      // list now would mean either showing players every NPC the DM has ever
+      // named, or inventing a visibility model in passing. The tab renders the
+      // section only when this is non-empty, so filling it later is a server
+      // change and nothing else.
+      npcs: [],
+    });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 app.get('/api/campaigns/:campaignId/journal', requireAuth, async (req, res) => {
   const { campaignId } = req.params;
   try {
