@@ -1255,6 +1255,49 @@ async function canAccessCampaign(campaignId, userId, role) {
   return playerInCampaign(userId, campaignId);
 }
 
+/**
+ * A shared link is for the table, not for the world.
+ *
+ * The five token-gated surfaces — journey map, timeline, PC sheet, diary and
+ * its roster — used to take a token and nothing else, so anyone holding the
+ * URL could read the content. They now additionally require a logged-in member
+ * of that campaign. The token still decides WHICH thing you are asking for,
+ * and revoking it still works; it just stopped being the only thing standing
+ * between a campaign and a stranger.
+ *
+ * Not middleware: in four of the five the campaign id is only known after a
+ * query, and `requireAuth` answers with a bare `Unauthorized` and no `code` —
+ * the pages need to tell "log in" from "wrong account" to know which of the
+ * two things to offer.
+ *
+ * Call it AFTER the token has been resolved, never before. A dead link must
+ * keep reading as a dead link: answering 401 for a revoked token would send
+ * someone to log in for something that no longer exists.
+ *
+ * Returns null when the viewer may read, or the response body to send.
+ */
+async function shareGate(req, campaignId) {
+  if (!req.session.userId) {
+    return {
+      status: 401,
+      code: 'LOGIN_REQUIRED',
+      error: 'Log in to see this \u2014 it is shared with the campaign\u2019s players.',
+    };
+  }
+  if (!await canAccessCampaign(campaignId, req.session.userId, req.session.role)) {
+    return {
+      status: 403,
+      code: 'NOT_YOUR_CAMPAIGN',
+      error: 'This belongs to a campaign you are not in.',
+    };
+  }
+  return null;
+}
+
+/** Send a refusal from `shareGate`. Keeps the five call sites to two lines. */
+const denyShare = (res, gate) =>
+  res.status(gate.status).json({ error: gate.error, code: gate.code });
+
 const DIARY_ORDER = 'ORDER BY session_no ASC NULLS LAST, session_date ASC NULLS LAST, created_at ASC';
 
 // ── Campaign diary (DM only) ──
@@ -1507,6 +1550,8 @@ app.get('/api/diary-public/:token/roster', async (req, res) => {
       [req.params.token]
     );
     if (!share.rows.length) return res.status(404).json({ error: 'Not found' });
+    const gate = await shareGate(req, share.rows[0].campaign_id);
+    if (gate) return denyShare(res, gate);
     res.json(await diaryRoster(share.rows[0].campaign_id));
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -1623,6 +1668,8 @@ app.get('/api/diary-public/:token', async (req, res) => {
     // revoked" would confirm the campaign exists to anyone guessing.
     if (!share.rows.length) return res.status(404).json({ error: 'Not found' });
     const campaignId = share.rows[0].campaign_id;
+    const gate = await shareGate(req, campaignId);
+    if (gate) return denyShare(res, gate);
 
     const [campR, entriesR] = await Promise.all([
       pool.query('SELECT name FROM campaigns WHERE id=$1 AND deleted_at IS NULL', [campaignId]),
@@ -1859,6 +1906,9 @@ app.get('/api/timeline-public/:token', async (req, res) => {
       onlyTimelineId = tShare.rows[0].timeline_id;
       campaignId = tShare.rows[0].campaign_id;
     }
+
+    const gate = await shareGate(req, campaignId);
+    if (gate) return denyShare(res, gate);
 
     const [metaR, entriesR] = await Promise.all([
       pool.query(
@@ -2319,8 +2369,12 @@ app.get('/api/pc-public/:playerToken', async (req, res) => {
     // Joined up to the campaign only for the deleted_at guard: pc_characters
     // reaches it via campaign_players, and without the join a trashed campaign's
     // character sheets stayed publicly readable.
+    // cp.campaign_id comes back so the gate below has something to check. This
+    // token is `hashId(playerId)` — a pure function of the row id, with no
+    // share table behind it — so it has never been revocable and the gate is
+    // the only thing that has ever actually restricted this route.
     const result = await pool.query(
-      `SELECT pc.name, pc.picture_url, pc.picture_data, pc.public_info
+      `SELECT pc.name, pc.picture_url, pc.picture_data, pc.public_info, cp.campaign_id
          FROM pc_characters pc
          JOIN campaign_players cp ON cp.id = pc.player_id
          JOIN campaigns c ON c.id = cp.campaign_id
@@ -2328,7 +2382,10 @@ app.get('/api/pc-public/:playerToken', async (req, res) => {
       [playerId]
     );
     if (!result.rows.length) return res.status(404).json({ error: 'Character not found' });
-    res.json(result.rows[0]);
+    const gate = await shareGate(req, result.rows[0].campaign_id);
+    if (gate) return denyShare(res, gate);
+    const { campaign_id: _omit, ...sheet } = result.rows[0];
+    res.json(sheet);
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -4575,6 +4632,12 @@ app.get('/api/journey-map-public/:token', async (req, res) => {
     const visibleLocIds = new Set(locsR.rows.map(l => String(l.id)));
     const campaignId = mapR.rows[0].campaign_id;
 
+    // After the token and the trash guard, before the second (larger) batch of
+    // queries below, so a refused viewer costs one round trip rather than all
+    // of them.
+    const gate = await shareGate(req, campaignId);
+    if (gate) return denyShare(res, gate);
+
     const wptsOf = (p) => (Array.isArray(p.waypoints) ? p.waypoints : JSON.parse(p.waypoints || '[]'));
 
     // Movement paths are DERIVED from timeline events (Party + per-player + per-NPC),
@@ -4609,7 +4672,7 @@ app.get('/api/journey-map-public/:token', async (req, res) => {
     const viewerPlayerIds = new Set(viewerPlR.rows.map(r => String(r.player_id)));
     const movement = derived.filter(p => {
       if (isDmOwner) return true;
-      if (p.id === 'party') return !!userId;                                   // any logged-in player
+      if (p.id === 'party') return !!userId;                                   // any member of the campaign
       if (String(p.id).startsWith('player_')) return viewerPlayerIds.has(String(p.playerId)); // own path only
       return false;                                                            // NPC paths: DM-only, never public
     });

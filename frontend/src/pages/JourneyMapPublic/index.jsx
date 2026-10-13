@@ -18,6 +18,7 @@ import { useParams } from 'react-router-dom';
 
 import { journeyMapsApi } from '@/api/journeyMaps';
 import { useAsync } from '@/hooks/useAsync';
+import ShareGateMessage from '@/components/ShareGateMessage';
 import { linkedEventsForLoc, effectiveDistances } from '@/components/map/geometry';
 import { useMapViewport } from '@/components/map/useMapViewport';
 import AppHeader from '@/components/layout/AppHeader';
@@ -40,7 +41,7 @@ function CenterMessage({ icon, children }) {
 export default function JourneyMapPublic() {
   const { token } = useParams();
   const viewport = useMapViewport();
-  const { data, loading, error } = useAsync(
+  const { data, loading, error, errorInfo } = useAsync(
     () => journeyMapsApi.publicData(token),
     { autoRun: true, deps: [token] },
   );
@@ -101,7 +102,10 @@ export default function JourneyMapPublic() {
 
       {loading && <CenterMessage icon={<Spinner className="w-8 h-8" />}>Loading map…</CenterMessage>}
 
-      {!loading && error && <CenterMessage icon="🗺️">{error}</CenterMessage>}
+      {!loading && error && (
+        <ShareGateMessage icon="🗺️" message={error}
+          status={errorInfo?.status} code={errorInfo?.code} />
+      )}
 
       {!loading && !error && data && (
         <div

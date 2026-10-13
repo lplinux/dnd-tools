@@ -33,6 +33,10 @@ const HELPERS = [
   'dmOwnsCampaign', 'canAccessCampaign', 'playerInCampaign',
   'ownsPlayer', 'canAccessTimeline', 'dmOwnsMap', 'canAccessPC', 'ownsCampaignRow',
   'ownsItemCard',
+  // A share token names a resource exactly as an id does, and used to be the
+  // ONLY thing guarding it. `shareGate` adds "…and you are logged in, and you
+  // play in this campaign" on top of the token.
+  'shareGate',
 ];
 
 /** Strip comments so prose about a guard cannot satisfy a test looking for one. */
@@ -50,15 +54,33 @@ function routes() {
     const m = rx.exec(l);
     if (m) regs.push({ i, method: m[1].toUpperCase(), path: m[2] });
   });
-  return regs.map((r, n) => ({
-    ...r,
-    body: strip(lines.slice(r.i, n + 1 < regs.length ? regs[n + 1].i : lines.length).join('\n')),
-  }));
+  return regs.map((r, n) => {
+    // Stop at the handler's own closing `});` at column 0, not at the next
+    // registration. Running to the next one swept up any helper DEFINED
+    // between two routes and credited it to the earlier route — which is how
+    // removing the guard from /api/timeline-public/:token left this suite
+    // green, satisfied by an `ownsPlayer` that belonged to the code after it.
+    const hardEnd = n + 1 < regs.length ? regs[n + 1].i : lines.length;
+    let end = hardEnd;
+    for (let j = r.i + 1; j < hardEnd; j++) {
+      if (lines[j] === '});') { end = j + 1; break; }
+    }
+    return { ...r, body: strip(lines.slice(r.i, end).join('\n')) };
+  });
 }
 
-/** Carries a resource id whose owner must be checked. */
+/**
+ * Carries a resource id whose owner must be checked.
+ *
+ * `:token` and `:playerToken` count. They were excluded from this walk, which
+ * is exactly how the five share routes drifted into being the only ones in the
+ * app that anybody on the internet could read: the walk that exists to catch an
+ * unguarded route was not looking at them.
+ */
+const tokenBearing = (p) => /:(token|playerToken)\b/.test(p);
+
 const idBearing = (p) =>
-  /:(campaignId|playerId|timelineId|locationId|mapId|npcId|id)\b/.test(p)
+  /:(campaignId|playerId|timelineId|locationId|mapId|npcId|id|token|playerToken)\b/.test(p)
   && !p.startsWith('/api/users/');          // user admin, gated by requireRole(['admin'])
 
 /**
@@ -73,7 +95,7 @@ const EXEMPT = new Map([
 ]);
 
 describe('every id-bearing route checks ownership', () => {
-  const candidates = routes().filter((r) => idBearing(r.path) && !r.path.includes('-public/'));
+  const candidates = routes().filter((r) => idBearing(r.path));
 
   it('found the route table', () => {
     expect(candidates.length).toBeGreaterThan(60);
@@ -85,8 +107,28 @@ describe('every id-bearing route checks ownership', () => {
       expect(r.body, `${label} is exempt but no longer has its inline check`).toMatch(exemption);
       return;
     }
+    // A token route must call shareGate SPECIFICALLY. "Some helper is
+    // mentioned" is too weak here: these are the routes an anonymous stranger
+    // can reach, and the gate is the only thing that stops them.
+    if (tokenBearing(r.path)) {
+      expect(r.body, `${label} does not call shareGate`).toMatch(/await shareGate\(req,/);
+      return;
+    }
     const used = HELPERS.filter((h) => r.body.includes(`${h}(`));
     expect(used, `${label} has no ownership check`).not.toEqual([]);
+  });
+
+  it('is actually looking at the five share routes', () => {
+    // If the path patterns ever stop matching, every assertion above silently
+    // stops covering them — the exact failure this suite just had.
+    const tokens = candidates.filter((r) => tokenBearing(r.path)).map((r) => r.path).sort();
+    expect(tokens).toEqual([
+      '/api/diary-public/:token',
+      '/api/diary-public/:token/roster',
+      '/api/journey-map-public/:token',
+      '/api/pc-public/:playerToken',
+      '/api/timeline-public/:token',
+    ]);
   });
 });
 

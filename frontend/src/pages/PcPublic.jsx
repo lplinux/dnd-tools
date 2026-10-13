@@ -19,6 +19,7 @@ import { useParams, useSearchParams } from 'react-router-dom';
 
 import { pcApi } from '@/api/pc';
 import { useAsync } from '@/hooks/useAsync';
+import ShareGateMessage from '@/components/ShareGateMessage';
 import AppHeader from '@/components/layout/AppHeader';
 import { Badge } from '@/components/ui';
 
@@ -59,7 +60,7 @@ export default function PcPublic() {
   const [searchParams] = useSearchParams();
   const printMode = searchParams.get('print') === '1';
   const printedRef = useRef(false);
-  const { data, loading, error } = useAsync(
+  const { data, loading, error, errorInfo } = useAsync(
     () => pcApi.publicData(token),
     { autoRun: true, deps: [token] }
   );
@@ -94,11 +95,11 @@ export default function PcPublic() {
           )}
 
           {!loading && error && (
-            // A 404 from the API surfaces here too — the link is invalid or the
-            // character has no public information yet.
-            <StatusPanel icon="🎲">
-              <p>Character not found or has no public information yet.</p>
-            </StatusPanel>
+            // A 404 means the link is invalid or the character has no public
+            // information yet; 401 and 403 mean the sheet is fine and the
+            // viewer is not, which is a different thing to tell them.
+            <ShareGateMessage icon="🎲" status={errorInfo?.status} code={errorInfo?.code}
+              message="Character not found or has no public information yet." />
           )}
 
           {!loading && !error && data && (
