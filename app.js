@@ -3794,6 +3794,49 @@ async function journalEntry(entryId, campaignId) {
   return r.rows[0] ?? null;
 }
 
+// ── Cross-link targets ──────────────────────────────────────────────────────
+//
+// The index behind `[[Name]]` links in prose: every location and NPC in this
+// campaign that THIS viewer is allowed to resolve.
+//
+// Role-filtered in SQL, reusing the rule the locations route already applies —
+// a player gets public locations only, and no NPCs at all, because
+// `campaign_npcs` is DM-only and has no visibility column. A name the viewer
+// cannot resolve renders as plain text rather than a link, which leaks
+// nothing: the name is sitting in the prose either way, so the only difference
+// is whether clicking it does anything.
+//
+// An explicit column list, never SELECT *: `campaign_locations.image_data`
+// holds a base64 pin image, and pulling every one of them into an autocomplete
+// index would be a megabyte to offer six suggestions. The popover fetches the
+// image separately, only for the location actually opened.
+app.get('/api/campaigns/:campaignId/link-targets', requireAuth, async (req, res) => {
+  const { campaignId } = req.params;
+  try {
+    if (!await canAccessCampaign(campaignId, req.session.userId, req.session.role))
+      return res.status(403).json({ error: 'Access denied' });
+    const isDM = await isCampaignDm(campaignId, req.session.userId, req.session.role);
+
+    const [locs, npcs] = await Promise.all([
+      pool.query(
+        `SELECT id, name, description, size_type, parent_id
+           FROM campaign_locations
+          WHERE campaign_id = $1 ${isDM ? '' : 'AND is_public = true'}
+          ORDER BY name ASC`,
+        [campaignId],
+      ),
+      isDM
+        ? pool.query(
+          'SELECT id, name FROM campaign_npcs WHERE campaign_id = $1 ORDER BY name ASC',
+          [campaignId],
+        )
+        : Promise.resolve({ rows: [] }),
+    ]);
+
+    res.json({ locations: locs.rows, npcs: npcs.rows });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 // ── Campaign links ──────────────────────────────────────────────────────────
 //
 // Everything in this campaign that has been shared, in one list, for the

@@ -15,6 +15,8 @@ import { useToast } from '@/hooks/useToast';
 import { diaryApi } from '@/api/diary';
 import GroupedEntries from '@/pages/Diary/GroupedEntries';
 import EntryModal from '@/pages/Diary/EntryModal';
+import CrossLinkPopover from '@/components/CrossLinkPopover';
+import { useCrossLinks } from '@/hooks/useCrossLinks';
 
 export default function DiaryTab({ campaignId, playerId, isDM }) {
   const { toast } = useToast();
@@ -22,6 +24,15 @@ export default function DiaryTab({ campaignId, playerId, isDM }) {
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [modal, setModal] = useState(null);   // { entry } | null
+  const { targets, index } = useCrossLinks(campaignId);
+  const [popover, setPopover] = useState(null);
+
+  const openLink = useCallback(({ kind, id }, e) => {
+    const rows = kind === 'npc' ? targets.npcs : targets.locations;
+    const hit = (rows ?? []).find((r) => String(r.id) === String(id));
+    if (!hit) return;
+    setPopover({ target: { ...hit, kind }, at: { x: e.clientX, y: e.clientY } });
+  }, [targets]);
 
   const fail = useCallback((e) => toast(e?.message || String(e), 'error'), [toast]);
 
@@ -73,6 +84,8 @@ export default function DiaryTab({ campaignId, playerId, isDM }) {
         ungroupedLabel="Uncategorised"
         searchable
         searchPlaceholder={isDM ? 'Search this diary…' : 'Search your diary…'}
+        links={index}
+        onLinkClick={openLink}
         readOnly={isDM}
         onEdit={(entry) => setModal({ entry })}
         onDelete={remove}
@@ -89,6 +102,14 @@ export default function DiaryTab({ campaignId, playerId, isDM }) {
         groupField="category"
         groupLabel="Category"
         groupOptions={[...new Set(entries.map((e) => e.category).filter(Boolean))]}
+        targets={targets}
+      />
+
+      <CrossLinkPopover
+        target={popover?.target ?? null}
+        at={popover?.at}
+        campaignId={campaignId}
+        onClose={() => setPopover(null)}
       />
     </div>
   );

@@ -37,6 +37,7 @@ function excerpt(md, max = 160) {
     .replace(/\*(.+?)\*/g, '$1')          // italic
     .replace(/`(.+?)`/g, '$1')            // code
     .replace(/^[>\-\d.]+\s+/gm, '')       // quote / list markers
+    .replace(/\[\[([^\]\n|]+)(?:\|([^\]\n]+))?\]\]/g, (_w, name, label) => label || name)
     .replace(/\[([^\]]+)\]\([^)]*\)/g, '$1')
     .replace(/\s+/g, ' ')
     .trim();
@@ -47,6 +48,10 @@ export default function EntryList({
   entries, readOnly = false, showStatus = false,
   onEdit, onDelete, onSetStatus, emptyText = 'No entries yet.',
   meta = metaLine, can, accent,
+  // Cross-links. Absent everywhere except the Journal and the Diary, where
+  // the body is read rather than skimmed — a [[Name]] in the card teaser
+  // would just be noise, so `excerpt` strips it below.
+  links = null, onLinkClick,
 }) {
   const confirm = useConfirm();
   const [reading, setReading] = useState(null);
@@ -159,7 +164,10 @@ export default function EntryList({
                 <span>{meta(reading)}</span>
               </div>
             )}
-            <Markdown className="diary-read text-text-dim font-body">{reading.body || '*No text.*'}</Markdown>
+            <Markdown className="diary-read text-text-dim font-body"
+              links={links} onLinkClick={onLinkClick}>
+              {reading.body || '*No text.*'}
+            </Markdown>
             <div className="flex justify-end gap-2 mt-4">
               {rights(reading).edit && (
                 <Button variant="default" onClick={() => { const e = reading; setReading(null); onEdit(e); }}>

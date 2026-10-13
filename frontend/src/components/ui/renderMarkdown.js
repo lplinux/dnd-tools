@@ -18,7 +18,14 @@
  * Do not add syntax that puts user text into any other attribute (images,
  * titles, ids) without revisiting both points. The three-character escape
  * below is not a sanitiser and was never meant to be one.
+ *
+ * `[[Name]]` cross-links honour that rule rather than widening it: the name
+ * stays in element content and the ATTRIBUTE carries a resolved id, which is
+ * a number this code produced and never anything the author typed. A name
+ * that does not resolve emits no attribute at all.
  */
+
+import { parseToken, resolve } from '@/data/crossLinks';
 
 /** `&` first — see note 1 above. */
 function escapeText(s) {
@@ -50,8 +57,37 @@ function safeHref(raw) {
   return url.replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 }
 
-export function renderMd(text) {
-  const escaped = escapeText(text);
+/**
+ * `[[Name]]`, `[[npc:Name]]`, `[[Name|display text]]`.
+ *
+ * `links` is the Map from `data/crossLinks.js` — folded name to `{kind, id}` —
+ * and is absent almost everywhere, in which case every token renders as plain
+ * text. That is the right default: it is also what a reader sees for a name
+ * they are not allowed to resolve.
+ *
+ * Runs before every other rule, on the already-escaped string, so a name
+ * cannot contain markup and the label cannot be chewed by the bold or link
+ * rules on its way past.
+ */
+function renderCrossLinks(escaped, links) {
+  return escaped.replace(/\[\[([^\]\n]+)\]\]/g, (whole, inner) => {
+    const token = parseToken(inner);
+    const label = token.label;
+    if (!label) return whole;
+    const hit = links ? resolve(token, links) : null;
+    // The id is ours; the label is theirs and stays in element content.
+    return hit
+      ? `<a class="xlink" data-xlink="${hit.kind}:${hit.id}" role="button" tabindex="0">${label}</a>`
+      : `<span class="xlink-dead">${label}</span>`;
+  });
+}
+
+/**
+ * @param {string} text
+ * @param {Map|null} links  cross-link index; without it `[[…]]` is plain text
+ */
+export function renderMd(text, links = null) {
+  const escaped = renderCrossLinks(escapeText(text), links);
 
   return escaped
     .replace(/^### (.+)$/gm, '<h3 class="font-display text-gold text-sm uppercase tracking-wider mt-4 mb-1">$1</h3>')

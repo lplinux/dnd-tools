@@ -13,7 +13,9 @@ import { useEffect, useState } from 'react';
 import { Button } from '@/components/ui';
 import GroupedEntries from './GroupedEntries';
 
-export default function PlayerDiaryPanel({ isDM, entries, myPlayerId, onNew, onEdit, onDelete }) {
+export default function PlayerDiaryPanel({
+  isDM, entries, myPlayerId, onNew, onEdit, onDelete, links, onLinkClick,
+}) {
   const byPlayer = new Map();
   if (isDM) {
     for (const e of entries) {
@@ -67,6 +69,8 @@ export default function PlayerDiaryPanel({ isDM, entries, myPlayerId, onNew, onE
           ungroupedLabel="Uncategorised"
           searchable
           searchPlaceholder={`Search ${active}'s diary…`}
+          links={links}
+          onLinkClick={onLinkClick}
           readOnly
         />
       </div>
@@ -95,6 +99,8 @@ export default function PlayerDiaryPanel({ isDM, entries, myPlayerId, onNew, onE
         ungroupedLabel="Uncategorised"
         searchable
         searchPlaceholder="Search your diary…"
+        links={links}
+        onLinkClick={onLinkClick}
         onEdit={onEdit}
         onDelete={onDelete}
         emptyText="Your diary is empty. Write up a session and it stays yours."

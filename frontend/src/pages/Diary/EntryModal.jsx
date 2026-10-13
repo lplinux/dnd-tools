@@ -6,6 +6,7 @@
  */
 import { useEffect, useState } from 'react';
 import { Button, Modal, FormField, Markdown, FIELD_INPUT } from '@/components/ui';
+import LinkingTextarea from '@/components/LinkingTextarea';
 
 const BLANK = { title: '', body: '', session_no: '', session_date: '', group: '' };
 
@@ -18,6 +19,9 @@ const BLANK = { title: '', body: '', session_no: '', session_date: '', group: ''
 export default function EntryModal({
   open, entry, saving, onClose, onSave,
   groupField = 'chapter', groupLabel = 'Chapter', groupOptions = [],
+  // Locations and NPCs for the `[[` autocomplete. Absent is fine: the field
+  // then behaves as the plain textarea it used to be.
+  targets = null,
 }) {
   const [form, setForm] = useState(BLANK);
   const [preview, setPreview] = useState(false);
@@ -87,11 +91,12 @@ export default function EntryModal({
               <Markdown className="text-text-dim text-sm leading-relaxed font-body">{form.body}</Markdown>
             </div>
           ) : (
-            <textarea
+            <LinkingTextarea
               className={`${FIELD_INPUT} resize-y font-body`}
               rows={12}
               value={form.body}
-              onChange={set('body')}
+              targets={targets}
+              onChange={(v) => setForm((f) => ({ ...f, body: v }))}
               placeholder={'## What happened\n\nThe party **finally** reached the rift.\n\n- Thorn fell to the goblin ambush\n- Mira recovered the *Gulthias staff*\n\n> "We should not have opened it."\n\nSee the [tavern map](/journey-map).'}
             />
           )}
@@ -103,6 +108,7 @@ export default function EntryModal({
           </Button>
           <span className="text-[0.65rem] text-text-muted">
             Markdown: # heading, **bold**, *italic*, `code`, &gt; quote, - list, [text](link)
+            {targets && <> · <strong>[[</strong> links a location or NPC</>}
           </span>
           <div className="ml-auto flex gap-2">
             <Button variant="ghost" onClick={onClose}>Cancel</Button>

@@ -12,7 +12,7 @@
  * getBoundingClientRect in a layout effect and is not covered here.
  */
 import { describe, it, expect } from 'vitest';
-import { placeCard, CARD_GAP } from './InventoryTab';
+import { placeCard, CARD_GAP } from '@/data/placeCard';
 
 /** A roomy desktop window and a typical PlainDetails box. */
 const VIEW = { vw: 1440, vh: 900 };
