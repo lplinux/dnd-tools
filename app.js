@@ -309,6 +309,29 @@ app.post('/api/auth/login', async (req, res) => {
     // password is not made to wait out an attacker's failures from the same IP.
     loginFailures.delete(key);
 
+    /*
+     * SESSION FIXATION — a new session id, not a new identity on the old one.
+     *
+     * `saveUninitialized: true` means every visitor gets a session cookie
+     * before they log in, which is what lets a CSRF token exist on the login
+     * form itself. The cost is that an attacker who can set a cookie on this
+     * origin — a neighbouring app on the same host, an XSS anywhere in it, or
+     * simply handing someone a link that sets one — can plant a session id,
+     * wait for the victim to log in, and then hold a cookie that is now
+     * authenticated as them. Assigning `userId` onto the existing session is
+     * exactly the promotion that makes that work.
+     *
+     * `regenerate` issues a brand new id and drops everything on the old one,
+     * so the planted cookie stays anonymous for ever.
+     *
+     * It must happen BEFORE the identity is written, or the fields land on the
+     * session about to be discarded — and the `maxAge` below has to be set
+     * after it, because regeneration resets the cookie to the store's default.
+     */
+    await new Promise((resolve, reject) => {
+      req.session.regenerate((err) => (err ? reject(err) : resolve()));
+    });
+
     req.session.userId = user.id;
     req.session.username = user.username;
     req.session.role = user.role;
@@ -317,10 +340,10 @@ app.post('/api/auth/login', async (req, res) => {
       ? 30 * 24 * 60 * 60 * 1000
       : 24 * 60 * 60 * 1000;
 
-    // Rotate on a privilege change and return the new value. Correct on its
-    // own, and it means the session-fixation fix (regenerating the session
-    // here instead of assigning onto it) can land later without the SPA
-    // holding a token for a session that no longer exists.
+    // The regeneration above already left this undefined, so `csrfToken(req)`
+    // below mints a fresh one. Kept explicit: it states the invariant the SPA
+    // depends on — the token it holds after logging in belongs to the session
+    // it is now in, not to the anonymous one it arrived with.
     delete req.session.csrfToken;
 
     res.json({
