@@ -12,19 +12,10 @@ and trash-sealing items are **done**, and so are the three that stood here — u
 JSON, no login throttling, no CSRF. All of it is in `TOQA.md`. What is left is what turned up
 *while* doing them, and none of it was in scope:
 
-- [ ] **Session fixation on login.** `POST /api/auth/login` assigns `userId` onto the existing
-      session rather than calling `req.session.regenerate()`, so a session id fixed before login
-      stays valid after it. Now a small change rather than a fiddly one: the CSRF token is
-      already rotated at exactly that point, so regenerating around it is a few lines and the
-      SPA already copes with being handed a new token there.
-- [ ] **The NPC-sheet `postMessage` bridge uses `'*'` as its target origin** on both sides —
-      `PcSheet/tabs/index.jsx:195` and `NpcSheet/index.jsx:350`. Same-origin in practice, since
-      the iframe is `/npc-sheet` on this server, so naming the origin costs nothing and closes
-      the case where it is not.
 - [ ] **`cookie.secure` and `trust proxy` are both deliberately off**, and must be turned on
       together if this ever goes behind TLS or a reverse proxy. Neither is a defect today and
       turning either on alone breaks things — see the deployment note in `ARCH.md`.
-- [ ] **Five build-time advisories remain, and only Tailwind 4 clears them.** `braces`,
+- [ ] **Tailwind 4 migration — five build-time advisories, no patched release.** `braces`,
       `micromatch`, `chokidar` and `fast-glob` are all reached through `tailwindcss`, and there
       is **no patched release** for them — `braces` is vulnerable at `<=3.0.3` and 3.0.3 is the
       latest version there is. The remediation npm offers is `tailwindcss@4`, which is a rewrite
@@ -35,10 +26,6 @@ JSON, no login throttling, no CSRF. All of it is in `TOQA.md`. What is left is w
       declares `^6.1.2`. It clears two advisories and the built CSS is byte-identical, so it
       works — but it is a deliberate semver violation and the first thing to drop if a Tailwind
       patch release ever builds oddly.
-- [ ] **`~/.npmrc` has two malformed keys** — `//registry=` and `//always-auth=` should be
-      `registry=` and `always-auth=`. They are what npm warns about on every install, and because
-      they are ignored, installs silently use the public registry rather than the Nexus mirror
-      they were meant to point at.
 - [ ] **Print: continuation cards were promised but never built.** `constants.js` and the print
       help text both claimed content "flows across one or more cards" and spills "to another card"
       when it overflows. No such logic exists in `ItemCardPrint.jsx` — a face that still does not
@@ -48,9 +35,6 @@ JSON, no login throttling, no CSRF. All of it is in `TOQA.md`. What is left is w
       Soul, Boots of the Veiled Passage) are each ~1.0–1.2× over and still lose their tail.
       Building it properly means paginating the abilities HTML across fixed boxes without
       splitting mid-word or orphaning a heading, and numbering the faces "2/2".
-- [ ] **`POST /api/auth/change-password` accepts a 4-character password** (`app.js`). A policy
-      choice rather than a finding; noted because the limiter now makes guessing *remote*
-      passwords slow, which puts the floor on the password itself.
 
 ---
 

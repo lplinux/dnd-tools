@@ -13,6 +13,63 @@ The newest tag is `1.0.0`. Anything above it is marked *Unreleased* until it is 
 
 ## [1.0.1] – Unreleased
 
+### Security — session fixation, a wildcard postMessage, and one password floor
+
+**Logging in now issues a new session id.** `POST /api/auth/login` assigned `userId` onto
+whatever session the visitor arrived with. Since `saveUninitialized: true` hands every anonymous
+visitor a cookie, anyone able to set one on this origin could plant a session id, wait for the
+victim to log in, and then hold a cookie authenticated as them. `req.session.regenerate()` now
+runs after the password check and before the identity is written.
+
+Run against the old code first, to watch it work: attacker plants a cookie, victim logs in
+carrying it, attacker replays it — **`LOGGED IN AS dm1`**. Against the new code, `anonymous`.
+
+Two orderings matter and both are pinned by tests. The identity must be written *after*
+regeneration, or it lands on the session being discarded. And `cookie.maxAge` must be set after
+it too, because regeneration resets the cookie to the store default — otherwise "remember me"
+silently becomes 24 hours. Verified live at 30.0 days.
+
+**The stat-sheet bridge names its origin.** The PC Sheet embeds the NPC Sheet in an iframe and
+the two talked with `postMessage(…, '*')` on every send, with no `e.origin` check on either
+receiver. A whole character's stat block crosses that bridge in both directions, and `'*'` means
+"give it to whatever document is in that frame". Both sides now name `window.location.origin`
+and ignore anything else. The iframe's reply to `COLLECT_STATS` names our own origin rather than
+echoing `e.origin`, so weakening the guard cannot quietly turn it into a send to whoever asked.
+
+Pinning costs nothing here precisely because the iframe's `src` is a route of this same app —
+which is what made leaving it as `'*'` indefensible rather than a trade-off.
+
+**One password floor, and it was worse than recorded.** `TODO.md` noted that
+`change-password` accepts 4 characters. It did — but `POST /api/users` and
+`PUT /api/users/:id/password`, both admin, accepted **any non-empty string**, so a
+one-character password was reachable by the person most likely to be setting them for other
+people. Meanwhile `scripts/create-admin.js` has demanded 8 all along: the project was
+contradicting itself rather than choosing a low bar.
+
+`PASSWORD_MIN = 8` and a single `passwordError()` now cover all three, and the three UI forms
+mirror it so nobody spends a round trip to be told. **Existing passwords are untouched** —
+nothing re-checks a stored hash, so a user whose password is two characters still logs in
+(verified) and meets the floor the next time they change it.
+
+The new test walks the route table for anything calling `bcrypt.hash` on request data without
+the check, rather than naming today's three — a fourth route shipping unguarded is the failure
+that matters, and a fixed list would pass forever while it happened.
+
+### Still open, deliberately
+
+- **Tailwind 4.** The five build-time advisories have no patched release and `npm audit
+  --omit=dev` reports **0** — they are devDependencies that never reach a browser. A migration
+  to schedule, not a fix to apply.
+- **The `postcss-selector-parser` override.** Still a deliberate semver violation, still
+  working, still the first thing to drop if a Tailwind patch builds oddly.
+
+### Verified
+
+**25 new tests**, 892 in all. Every guard proved able to fail: the regeneration moved after the
+identity write, `'*'` restored on one send, an origin check deleted, and the floor removed from
+the admin reset route.
+
+
 ### Changed — a share link now needs a logged-in member of the campaign
 
 All five token-gated surfaces — journey map, timeline, PC sheet, diary and its roster — took a

@@ -685,8 +685,38 @@ Absolute day indices (`absDay`) are computed from epoch (year 1, day 1) so event
 
 ## Security posture and its deployment dependencies
 
-Two settings are **off on purpose**, and both must change together with the deployment, not
-on their own. Turning either on against the current setup breaks the app or weakens it.
+### Sessions
+
+`saveUninitialized: true`, so an anonymous visitor already has a session — which is what lets a
+CSRF token exist on the login form, and is why no route needs a CSRF exemption.
+
+The cost of that is session fixation, and the defence is one line: **login calls
+`req.session.regenerate()` before adopting the identity**. Anyone able to set a cookie on this
+origin can plant a session id; without regeneration, logging in promotes that planted id to an
+authenticated one. Order matters twice over — the identity must be written *after* regeneration
+or it lands on the session being discarded, and `cookie.maxAge` must be set after it too, since
+regeneration resets the cookie to the store default and "remember me" would silently become 24
+hours. `test/sessionFixation.test.js` pins both orderings.
+
+### Passwords
+
+One floor, `PASSWORD_MIN = 8`, applied by `passwordError()` at every route that hashes a
+password: `change-password`, `POST /api/users` and `PUT /api/users/:id/password`. The last two
+used to accept any non-empty string. It is checked only when a password is **set** — nothing
+re-checks a stored hash, so an existing short password keeps working until its owner changes it.
+`test/passwordPolicy.test.js` walks the route table for anything that calls `bcrypt.hash` on
+request data without the check, rather than naming the three.
+
+### The stat-sheet postMessage bridge
+
+The PC Sheet embeds the NPC Sheet in an iframe whose `src` is a route of this same app, so both
+sides name `window.location.origin` on every send and ignore any message whose `e.origin` is not
+it. A whole stat block crosses that bridge in both directions; `'*'` would hand it to whatever
+document happened to be in the frame.
+
+### Two settings off on purpose
+
+Both must change together with the deployment, not on their own. Turning either on against the current setup breaks the app or weakens it.
 
 | Setting | State | Why, and what has to be true first |
 |---|---|---|
