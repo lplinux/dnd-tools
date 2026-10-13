@@ -13,6 +13,69 @@ PC Sheet / Journey Map / Manage Campaign fix batch that went with it.
 
 ---
 
+## Share links need a login, and [[cross-links]]
+
+### Already proved live
+
+- [x] **All five share links**: 401 anonymous, 403 non-member, 200 member and DM ✅.
+- [x] **A revoked map token still answers 404 to a member**, not 403 ✅ — gating before the token
+      lookup would have sent people to log in for a link that no longer exists.
+- [x] **`pc-public` no longer leaks the `campaign_id`** it fetches for the gate ✅.
+- [x] **`next=` refuses** `//evil`, `http://evil`, `/\evil` and control characters ✅.
+- [x] **A player's link index** omits a hidden location entirely and contains no NPCs ✅.
+- [x] **The index never carries `image_data`** ✅ — 270 bytes for a campaign with a 4 KB pin image.
+- [x] **A name never reaches an HTML attribute** ✅, including through display text.
+
+### Wants your eyes in the browser
+
+- [ ] **The whole login round trip**: open a map link logged out → "Log in to see this" → log in
+      → land back on the map. Then the same for a timeline and the diary book.
+- [ ] **Signed in as the wrong user** — should say it is not your campaign, not "not found".
+- [ ] **Type `[[` in a journal entry.** The list should appear under the field, filter as you
+      type, and accept ↑ ↓ Enter and Escape. Escape must close the list without closing the
+      modal.
+- [ ] **On a phone**, tapping a suggestion must insert it — the list uses `onPointerDown` for
+      exactly this reason, and it is the part most likely to be wrong.
+- [ ] **Pick a suggestion mid-sentence** and check the caret lands after the `]]`.
+- [ ] **Click a finished link** in a saved entry: popover with the description, correctly placed
+      near the edges of the window, Escape closes it.
+- [ ] **As a player**, a `[[hidden location]]` the DM wrote should read as ordinary text —
+      not gold, not clickable, not visibly broken.
+- [ ] **The "Show on the map" button** appears only where it should.
+- [ ] **The Diary is unchanged otherwise** — this touched `EntryList`, `EntryModal`,
+      `GroupedEntries` and `Markdown`, which the whole module shares.
+
+---
+
+## Campaign Links tab, and the share link that kept dying
+
+### Already proved live
+
+- [x] **A second Share returns the same token** ✅ — and the old code was re-run first to watch it
+      return a different one and 404 the first link.
+- [x] **Revoking works, and the next Share mints a fresh token** ✅.
+- [x] **A dead link says it is a dead link**, not "Map not found" ✅.
+- [x] **An unshared map is invisible to players** ✅ — named nowhere in the response, not merely
+      hidden in the UI.
+- [x] **A non-member gets 403** on the links endpoint ✅.
+- [x] **Every link handed to a player resolves 200** ✅ — one map, the campaign timeline, and one
+      player timeline.
+
+### Wants your eyes in the browser
+
+- [ ] **The tab itself** — maps in a column, then timelines. Check it reads well with one map and
+      with several.
+- [ ] **A campaign with nothing shared** should show the "nothing yet" line, not an empty frame.
+- [ ] **The links open in a new tab**, and middle-click / copy-link-address behave.
+- [ ] **As a player**, confirm you can now reach the map that was 404ing. You may need to press
+      Share once more in the Journey Map first — the token that broke is gone, and the new one
+      is stable from here on.
+- [ ] **As the DM**, confirm the tab shows the same list you expect, and that your unshared maps
+      are absent.
+- [ ] **On a phone.**
+
+---
+
 ## Stat boxes that overwrite, and the floating temp-HP badge
 
 All on screen, so none of it is proved — the tests cover the rules and where each control sits,

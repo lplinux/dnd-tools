@@ -10,7 +10,7 @@
  *            rendered and, more importantly, never requested.
  */
 
-import { useRef, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import AppHeader from '@/components/layout/AppHeader';
 import { Button, Select, Spinner } from '@/components/ui';
 import { useConfirm } from '@/contexts/ConfirmContext';
@@ -20,6 +20,8 @@ import EntryModal from './EntryModal';
 import PlayerDiaryPanel from './PlayerDiaryPanel';
 import { openDiaryBook } from './printBook';
 import { diaryApi } from '@/api/diary';
+import CrossLinkPopover from '@/components/CrossLinkPopover';
+import { useCrossLinks } from '@/hooks/useCrossLinks';
 
 export default function Diary() {
   const d = useDiary();
@@ -27,6 +29,16 @@ export default function Diary() {
   const [tab, setTab] = useState('campaign');
   const [modal, setModal] = useState(null); // { scope: 'campaign'|'player', entry } | null
   const fileRef = useRef(null);
+  const { targets, index } = useCrossLinks(d.campaignId);
+  const [popover, setPopover] = useState(null);   // { target, at } | null
+
+  /** Turn a clicked [[link]] back into the thing it names. */
+  const openLink = useCallback(({ kind, id }, e) => {
+    const rows = kind === 'npc' ? targets.npcs : targets.locations;
+    const hit = (rows ?? []).find((r) => String(r.id) === String(id));
+    if (!hit) return;
+    setPopover({ target: { ...hit, kind }, at: { x: e.clientX, y: e.clientY } });
+  }, [targets]);
 
   const activeTab = tab;   // DM-only page; the role branch moved to the PC Sheet
 
@@ -171,6 +183,8 @@ export default function Diary() {
                     ungroupedLabel="No chapter"
                     searchable
                     searchPlaceholder="Search session summaries…"
+                    links={index}
+                    onLinkClick={openLink}
                     showStatus
                     onEdit={(entry) => setModal({ scope: 'campaign', entry })}
                     onDelete={d.deleteCampaignEntry}
@@ -186,6 +200,8 @@ export default function Diary() {
                   onNew={() => setModal({ scope: 'player', entry: null })}
                   onEdit={(entry) => setModal({ scope: 'player', entry })}
                   onDelete={d.deletePlayerEntry}
+                  links={index}
+                  onLinkClick={openLink}
                 />
               )}
             </div>
@@ -206,6 +222,14 @@ export default function Diary() {
         groupOptions={modal?.scope === 'player'
           ? [...new Set(d.playerEntries.map((e) => e.category).filter(Boolean))]
           : [...new Set(d.campaignEntries.map((e) => e.chapter).filter(Boolean))]}
+        targets={targets}
+      />
+
+      <CrossLinkPopover
+        target={popover?.target ?? null}
+        at={popover?.at}
+        campaignId={d.campaignId}
+        onClose={() => setPopover(null)}
       />
     </>
   );

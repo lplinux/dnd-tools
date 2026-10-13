@@ -37,6 +37,15 @@ export const campaignsApi = {
   addJournal:    (cid, d)       => client.post(`/campaigns/${cid}/journal`, d),
   editJournal:   (cid, eid, d)  => client.put(`/campaigns/${cid}/journal/${eid}`, d),
   removeJournal: (cid, eid)     => client.del(`/campaigns/${cid}/journal/${eid}`),
+
+  // Everything in the campaign that has been shared — maps, timelines, and
+  // (prepared, still empty) NPCs. Only rows with a share token come back, so
+  // this is safe to show a player.
+  listLinks:     (cid)          => client.get(`/campaigns/${cid}/links`),
+
+  // Locations and NPCs this viewer may resolve in a [[Name]] cross-link.
+  // Role-filtered server-side: a player gets public locations and no NPCs.
+  listLinkTargets: (cid)        => client.get(`/campaigns/${cid}/link-targets`),
   setLocationImage:   (cid, lid, image_data) => client.put(`/campaigns/${cid}/locations/${lid}/image`, { image_data }),
 
   // ── NPCs ──────────────────────────────────────────────

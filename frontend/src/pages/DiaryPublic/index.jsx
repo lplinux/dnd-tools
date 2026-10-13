@@ -16,6 +16,7 @@ import { useParams, useSearchParams } from 'react-router-dom';
 
 import { diaryApi } from '@/api/diary';
 import { useAsync } from '@/hooks/useAsync';
+import ShareGateMessage from '@/components/ShareGateMessage';
 import AppHeader from '@/components/layout/AppHeader';
 import { Badge, Button, Spinner, Markdown } from '@/components/ui';
 import { openDiaryBook } from '../Diary/printBook';
@@ -38,7 +39,7 @@ function entryMeta(e) {
 
 export default function DiaryPublic() {
   const { token } = useParams();
-  const { data, loading, error } = useAsync(
+  const { data, loading, error, errorInfo } = useAsync(
     () => diaryApi.publicData(token),
     { autoRun: true, deps: [token] },
   );
@@ -88,10 +89,13 @@ export default function DiaryPublic() {
       <main className="flex-1 overflow-y-auto min-h-0">
         {loading && <div className="flex justify-center py-20"><Spinner /></div>}
 
-        {/* A revoked link and a wrong one give the same message, matching the
-            server's deliberately generic 404. */}
+        {/* A revoked link and a wrong one still give the same message, matching
+            the server's deliberately generic 404 — but being logged out, or
+            logged in as somebody not at this table, are different problems
+            with different next steps. */}
         {!loading && error && (
-          <CenterMessage icon="📔">This diary link is not valid, or has been revoked.</CenterMessage>
+          <ShareGateMessage icon="📔" status={errorInfo?.status} code={errorInfo?.code}
+            message="This diary link is not valid, or has been revoked." />
         )}
 
         {!loading && !error && entries.length === 0 && (

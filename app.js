@@ -1255,6 +1255,49 @@ async function canAccessCampaign(campaignId, userId, role) {
   return playerInCampaign(userId, campaignId);
 }
 
+/**
+ * A shared link is for the table, not for the world.
+ *
+ * The five token-gated surfaces — journey map, timeline, PC sheet, diary and
+ * its roster — used to take a token and nothing else, so anyone holding the
+ * URL could read the content. They now additionally require a logged-in member
+ * of that campaign. The token still decides WHICH thing you are asking for,
+ * and revoking it still works; it just stopped being the only thing standing
+ * between a campaign and a stranger.
+ *
+ * Not middleware: in four of the five the campaign id is only known after a
+ * query, and `requireAuth` answers with a bare `Unauthorized` and no `code` —
+ * the pages need to tell "log in" from "wrong account" to know which of the
+ * two things to offer.
+ *
+ * Call it AFTER the token has been resolved, never before. A dead link must
+ * keep reading as a dead link: answering 401 for a revoked token would send
+ * someone to log in for something that no longer exists.
+ *
+ * Returns null when the viewer may read, or the response body to send.
+ */
+async function shareGate(req, campaignId) {
+  if (!req.session.userId) {
+    return {
+      status: 401,
+      code: 'LOGIN_REQUIRED',
+      error: 'Log in to see this \u2014 it is shared with the campaign\u2019s players.',
+    };
+  }
+  if (!await canAccessCampaign(campaignId, req.session.userId, req.session.role)) {
+    return {
+      status: 403,
+      code: 'NOT_YOUR_CAMPAIGN',
+      error: 'This belongs to a campaign you are not in.',
+    };
+  }
+  return null;
+}
+
+/** Send a refusal from `shareGate`. Keeps the five call sites to two lines. */
+const denyShare = (res, gate) =>
+  res.status(gate.status).json({ error: gate.error, code: gate.code });
+
 const DIARY_ORDER = 'ORDER BY session_no ASC NULLS LAST, session_date ASC NULLS LAST, created_at ASC';
 
 // ── Campaign diary (DM only) ──
@@ -1507,6 +1550,8 @@ app.get('/api/diary-public/:token/roster', async (req, res) => {
       [req.params.token]
     );
     if (!share.rows.length) return res.status(404).json({ error: 'Not found' });
+    const gate = await shareGate(req, share.rows[0].campaign_id);
+    if (gate) return denyShare(res, gate);
     res.json(await diaryRoster(share.rows[0].campaign_id));
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -1623,6 +1668,8 @@ app.get('/api/diary-public/:token', async (req, res) => {
     // revoked" would confirm the campaign exists to anyone guessing.
     if (!share.rows.length) return res.status(404).json({ error: 'Not found' });
     const campaignId = share.rows[0].campaign_id;
+    const gate = await shareGate(req, campaignId);
+    if (gate) return denyShare(res, gate);
 
     const [campR, entriesR] = await Promise.all([
       pool.query('SELECT name FROM campaigns WHERE id=$1 AND deleted_at IS NULL', [campaignId]),
@@ -1859,6 +1906,9 @@ app.get('/api/timeline-public/:token', async (req, res) => {
       onlyTimelineId = tShare.rows[0].timeline_id;
       campaignId = tShare.rows[0].campaign_id;
     }
+
+    const gate = await shareGate(req, campaignId);
+    if (gate) return denyShare(res, gate);
 
     const [metaR, entriesR] = await Promise.all([
       pool.query(
@@ -2319,8 +2369,12 @@ app.get('/api/pc-public/:playerToken', async (req, res) => {
     // Joined up to the campaign only for the deleted_at guard: pc_characters
     // reaches it via campaign_players, and without the join a trashed campaign's
     // character sheets stayed publicly readable.
+    // cp.campaign_id comes back so the gate below has something to check. This
+    // token is `hashId(playerId)` — a pure function of the row id, with no
+    // share table behind it — so it has never been revocable and the gate is
+    // the only thing that has ever actually restricted this route.
     const result = await pool.query(
-      `SELECT pc.name, pc.picture_url, pc.picture_data, pc.public_info
+      `SELECT pc.name, pc.picture_url, pc.picture_data, pc.public_info, cp.campaign_id
          FROM pc_characters pc
          JOIN campaign_players cp ON cp.id = pc.player_id
          JOIN campaigns c ON c.id = cp.campaign_id
@@ -2328,7 +2382,10 @@ app.get('/api/pc-public/:playerToken', async (req, res) => {
       [playerId]
     );
     if (!result.rows.length) return res.status(404).json({ error: 'Character not found' });
-    res.json(result.rows[0]);
+    const gate = await shareGate(req, result.rows[0].campaign_id);
+    if (gate) return denyShare(res, gate);
+    const { campaign_id: _omit, ...sheet } = result.rows[0];
+    res.json(sheet);
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -3737,6 +3794,124 @@ async function journalEntry(entryId, campaignId) {
   return r.rows[0] ?? null;
 }
 
+// ── Cross-link targets ──────────────────────────────────────────────────────
+//
+// The index behind `[[Name]]` links in prose: every location and NPC in this
+// campaign that THIS viewer is allowed to resolve.
+//
+// Role-filtered in SQL, reusing the rule the locations route already applies —
+// a player gets public locations only, and no NPCs at all, because
+// `campaign_npcs` is DM-only and has no visibility column. A name the viewer
+// cannot resolve renders as plain text rather than a link, which leaks
+// nothing: the name is sitting in the prose either way, so the only difference
+// is whether clicking it does anything.
+//
+// An explicit column list, never SELECT *: `campaign_locations.image_data`
+// holds a base64 pin image, and pulling every one of them into an autocomplete
+// index would be a megabyte to offer six suggestions. The popover fetches the
+// image separately, only for the location actually opened.
+app.get('/api/campaigns/:campaignId/link-targets', requireAuth, async (req, res) => {
+  const { campaignId } = req.params;
+  try {
+    if (!await canAccessCampaign(campaignId, req.session.userId, req.session.role))
+      return res.status(403).json({ error: 'Access denied' });
+    const isDM = await isCampaignDm(campaignId, req.session.userId, req.session.role);
+
+    const [locs, npcs] = await Promise.all([
+      pool.query(
+        `SELECT id, name, description, size_type, parent_id
+           FROM campaign_locations
+          WHERE campaign_id = $1 ${isDM ? '' : 'AND is_public = true'}
+          ORDER BY name ASC`,
+        [campaignId],
+      ),
+      isDM
+        ? pool.query(
+          'SELECT id, name FROM campaign_npcs WHERE campaign_id = $1 ORDER BY name ASC',
+          [campaignId],
+        )
+        : Promise.resolve({ rows: [] }),
+    ]);
+
+    res.json({ locations: locs.rows, npcs: npcs.rows });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ── Campaign links ──────────────────────────────────────────────────────────
+//
+// Everything in this campaign that has been shared, in one list, for the
+// Campaign Links tab on the PC Sheet.
+//
+// The rule that makes it safe to show a player: **a row appears only because a
+// share token exists for it**. Every list below is an INNER JOIN onto its
+// shares table, never a left join with the token nulled out — so an unshared
+// map cannot leak its name, and a player cannot learn that it exists at all.
+// That is also why the DM sees exactly the same list: this tab answers "what
+// has the table been given", not "what is there".
+//
+// Links are the PUBLIC token URLs rather than in-app routes, because the
+// in-app journey map and timeline editors are DM-only. A player following one
+// of these is a reader, logged in or not — the public handlers are already
+// viewer-aware and show them their own paths.
+app.get('/api/campaigns/:campaignId/links', requireAuth, async (req, res) => {
+  const { campaignId } = req.params;
+  try {
+    if (!await canAccessCampaign(campaignId, req.session.userId, req.session.role))
+      return res.status(403).json({ error: 'Access denied' });
+
+    const [maps, campaignTl, playerTl] = await Promise.all([
+      pool.query(
+        `SELECT jm.id, jm.name, jms.token, jms.created_at
+           FROM journey_maps jm
+           JOIN journey_map_shares jms ON jms.map_id = jm.id
+          WHERE jm.campaign_id = $1
+          ORDER BY jm.name ASC`,
+        [campaignId],
+      ),
+      // The whole-campaign combined timeline. At most one.
+      pool.query(
+        'SELECT token, created_at FROM campaign_timeline_shares WHERE campaign_id = $1',
+        [campaignId],
+      ),
+      // One shared timeline belongs to one character, so it is worth naming
+      // whose it is — several campaigns here run a timeline per player.
+      pool.query(
+        `SELECT pt.id, pt.name, cp.player_name, pts.token, pts.created_at
+           FROM player_timelines pt
+           JOIN player_timeline_shares pts ON pts.timeline_id = pt.id
+           LEFT JOIN campaign_players cp ON cp.id = pt.player_id
+          WHERE pt.campaign_id = $1
+          ORDER BY cp.player_name ASC NULLS LAST, pt.name ASC`,
+        [campaignId],
+      ),
+    ]);
+
+    res.json({
+      maps: maps.rows.map((m) => ({
+        id: m.id, name: m.name, token: m.token,
+        path: `/journey-map-public/${m.token}`, shared_at: m.created_at,
+      })),
+      timelines: [
+        ...campaignTl.rows.map((t) => ({
+          id: null, name: 'The whole campaign', player_name: null, scope: 'campaign',
+          token: t.token, path: `/timeline-public/${t.token}`, shared_at: t.created_at,
+        })),
+        ...playerTl.rows.map((t) => ({
+          id: t.id, name: t.name, player_name: t.player_name, scope: 'timeline',
+          token: t.token, path: `/timeline-public/${t.token}`, shared_at: t.created_at,
+        })),
+      ],
+      // Prepared, deliberately empty. NPCs are campaign-scoped and DM-only
+      // today (`campaign_npcs` has no visibility flag at all), so shipping the
+      // list now would mean either showing players every NPC the DM has ever
+      // named, or inventing a visibility model in passing. The tab renders the
+      // section only when this is non-empty, so filling it later is a server
+      // change and nothing else.
+      npcs: [],
+    });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 app.get('/api/campaigns/:campaignId/journal', requireAuth, async (req, res) => {
   const { campaignId } = req.params;
   try {
@@ -4357,11 +4532,23 @@ app.delete('/api/journey-maps/:id/paths/:pid', requireRole(['dm']), async (req, 
 });
 
 // ── Share (public token) ──
+//
+// STABLE, not rotating. This used to mint a fresh token on every call and
+// upsert over the old one, so a DM pressing Share a second time — which is
+// mostly what Share is FOR, re-copying the URL — silently killed every link
+// already pasted into Discord. The players' next click got a 404 reading
+// "Map not found", which points at the map rather than at the link.
+//
+// Every other share token in the app (the diary's, a timeline's, a campaign
+// timeline's, a PC sheet's) was already stable; this one was the exception.
+// Revocation is the separate DELETE below, so losing a link stays a deliberate
+// act rather than a side effect of looking at it.
 app.post('/api/journey-maps/:id/share', requireRole(['dm']), async (req, res) => {
   try {
     if (!await dmOwnsMap(req.params.id, req.session.userId))
       return res.status(403).json({ error: 'Access denied' });
-    // Upsert share token
+    const existing = await pool.query('SELECT token FROM journey_map_shares WHERE map_id=$1', [req.params.id]);
+    if (existing.rows.length) return res.json({ token: existing.rows[0].token });
     const token = hashId(parseInt(req.params.id)) + crypto.randomBytes(4).toString('hex');
     await pool.query(
       `INSERT INTO journey_map_shares (map_id, token) VALUES ($1,$2)
@@ -4369,6 +4556,16 @@ app.post('/api/journey-maps/:id/share', requireRole(['dm']), async (req, res) =>
       [req.params.id, token]
     );
     res.json({ token });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+/** Revoke — the deliberate act. The next Share mints a new token. */
+app.delete('/api/journey-maps/:id/share', requireRole(['dm']), async (req, res) => {
+  try {
+    if (!await dmOwnsMap(req.params.id, req.session.userId))
+      return res.status(403).json({ error: 'Access denied' });
+    await pool.query('DELETE FROM journey_map_shares WHERE map_id=$1', [req.params.id]);
+    res.json({ success: true });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -4429,13 +4626,22 @@ function deriveMovementPaths({ events, pins, players, npcs }) {
 app.get('/api/journey-map-public/:token', async (req, res) => {
   try {
     const share = await pool.query('SELECT map_id FROM journey_map_shares WHERE token=$1', [req.params.token]);
-    if (!share.rows.length) return res.status(404).json({ error: 'Map not found' });
+    // Distinguish the two 404s. A link that no longer resolves is almost always
+    // a revoked or superseded one, and "Map not found" sent a player looking for
+    // a map that is sitting there fine.
+    if (!share.rows.length) {
+      return res.status(404).json({
+        error: 'This share link is no longer valid — ask your DM for a new one',
+        code: 'SHARE_REVOKED',
+      });
+    }
     const mapId = share.rows[0].map_id;
 
-    // The public map is viewer-aware. It's token-gated (no requireAuth), but a
-    // logged-in user still sends their session cookie, so we can tailor what's
-    // shown: hidden locations/roads are dropped for everyone; tracker paths are
-    // shown per role (DM owner → all; player → own + party; anonymous → none).
+    // The shared map is viewer-aware. Every reader is now a logged-in member
+    // of the campaign (see the shareGate call below), so this tailors what is
+    // shown rather than deciding whether to show anything: hidden
+    // locations/roads are dropped for everyone, and movement paths go by role
+    // — DM owner → all; player → their own, plus the party's.
     const userId = req.session.userId || null;
     const role   = req.session.role   || null;
     const isDmOwner = !!userId && role === 'dm' && await dmOwnsMap(mapId, userId);
@@ -4468,6 +4674,12 @@ app.get('/api/journey-map-public/:token', async (req, res) => {
 
     const visibleLocIds = new Set(locsR.rows.map(l => String(l.id)));
     const campaignId = mapR.rows[0].campaign_id;
+
+    // After the token and the trash guard, before the second (larger) batch of
+    // queries below, so a refused viewer costs one round trip rather than all
+    // of them.
+    const gate = await shareGate(req, campaignId);
+    if (gate) return denyShare(res, gate);
 
     const wptsOf = (p) => (Array.isArray(p.waypoints) ? p.waypoints : JSON.parse(p.waypoints || '[]'));
 
@@ -4503,7 +4715,7 @@ app.get('/api/journey-map-public/:token', async (req, res) => {
     const viewerPlayerIds = new Set(viewerPlR.rows.map(r => String(r.player_id)));
     const movement = derived.filter(p => {
       if (isDmOwner) return true;
-      if (p.id === 'party') return !!userId;                                   // any logged-in player
+      if (p.id === 'party') return !!userId;                                   // any member of the campaign
       if (String(p.id).startsWith('player_')) return viewerPlayerIds.has(String(p.playerId)); // own path only
       return false;                                                            // NPC paths: DM-only, never public
     });

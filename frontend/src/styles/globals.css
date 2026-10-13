@@ -290,3 +290,24 @@ body {
 .diary-read blockquote { margin: 1em 0; }
 .diary-read li         { margin-bottom: .3em; }
 .diary-read strong     { color: var(--text); font-weight: 600; }
+
+/* ── [[Cross-links]] ────────────────────────────────────────── */
+/* renderMd emits these as bare class names, so they are styled here rather
+   than by a prop. A resolved link is a control; an unresolved one must stay
+   visually ordinary, because that is what a reader sees for a name they are
+   not allowed to resolve and it should not look broken to them. */
+.xlink {
+  color: var(--gold);
+  border-bottom: 1px dotted var(--gold-dim);
+  cursor: pointer;
+}
+.xlink:hover,
+.xlink:focus-visible { border-bottom-style: solid; outline: none; }
+
+/* Deliberately the same colour as the surrounding prose: a player reading a
+   name their DM has kept private should see a word, not a dead link. */
+.xlink-dead { color: inherit; }
+
+@media print {
+  .xlink { color: inherit; border-bottom: none; }
+}

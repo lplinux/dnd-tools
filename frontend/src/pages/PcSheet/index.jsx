@@ -27,6 +27,7 @@ import { diaryApi }          from '@/api/diary';
 import {
   CharacterTab, StatsTab, RelationsTab,
   PublicInfoTab, PrivateTab, DmNotesTab, DiaryTab, InventoryTab, JournalTab,
+  CampaignLinksTab,
 } from './tabs';
 import './pc-print.css';
 
@@ -55,6 +56,11 @@ const TABS = [
   { id: 'dmnotes',    label: '📜 DM Notes',       role: 'shared' },
   { id: 'stats',      label: '🎲 Stats Sheet',    role: 'any' },
   { id: 'inventory',  label: '🎒 Inventory',     role: 'any' },
+  // Everything the DM has shared with the table — public maps and timelines.
+  // Last, because it points away from this sheet rather than describing it.
+  // The server lists only what carries a share token, so there is nothing
+  // role-dependent about it: the DM sees the same list a player does.
+  { id: 'links',      label: '🔗 Campaign Links', role: 'any' },
 ];
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -423,6 +429,9 @@ export default function PcSheet() {
                   isDM={isDM}
                   calendarType={currentCampaign?.calendar_type ?? 'harptos'}
                 />
+              )}
+              {activeTab === 'links' && (
+                <CampaignLinksTab campaignId={currentCampaignId} />
               )}
               {activeTab === 'dmnotes' && (
                 <DmNotesTab notes={dmNotes} isDM={isDM} actions={actions} />

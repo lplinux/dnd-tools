@@ -11,6 +11,7 @@ import { useParams } from 'react-router-dom';
 
 import { timelineApi } from '@/api/timeline';
 import { useAsync } from '@/hooks/useAsync';
+import ShareGateMessage from '@/components/ShareGateMessage';
 import { useCombinedTimeline } from '@/hooks/useCombinedTimeline';
 import { Badge, Spinner } from '@/components/ui';
 import {
@@ -23,7 +24,7 @@ import '@/pages/Timeline/timeline.css';
 
 export default function TimelinePublic() {
   const { token } = useParams();
-  const { data, loading, error } = useAsync(() => timelineApi.publicData(token), { autoRun: true, deps: [token] });
+  const { data, loading, error, errorInfo } = useAsync(() => timelineApi.publicData(token), { autoRun: true, deps: [token] });
 
   const rows = data?.rows || [];
   const calType = data?.calendar_type || 'harptos';
@@ -62,7 +63,10 @@ export default function TimelinePublic() {
         {loading ? (
           <div className="tl-area" id="tl-area"><div className="es" style={{ display: 'flex' }}><Spinner className="w-8 h-8" /><p>Loading…</p></div></div>
         ) : error ? (
-          <div className="tl-area" id="tl-area"><div className="es" style={{ display: 'flex' }}><div className="g">🔒</div><p>{error}</p></div></div>
+          <div className="tl-area" id="tl-area">
+            <ShareGateMessage icon="📜" message={error}
+              status={errorInfo?.status} code={errorInfo?.code} />
+          </div>
         ) : tl.ui.view === 'table' ? (
           <TableView tl={tl} readOnly />
         ) : (

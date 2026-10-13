@@ -27,6 +27,9 @@ import { campaignsApi } from '@/api/campaigns';
 import { useToast } from '@/hooks/useToast';
 import { formatDate, fromAbsDay } from '@/data/calendar';
 import GroupedEntries from '@/pages/Diary/GroupedEntries';
+import LinkingTextarea from '@/components/LinkingTextarea';
+import CrossLinkPopover from '@/components/CrossLinkPopover';
+import { useCrossLinks } from '@/hooks/useCrossLinks';
 
 /**
  * What a journal can usefully be grouped by.
@@ -91,6 +94,18 @@ export default function JournalPanel({ campaignId, isDM, calendarType = 'harptos
   const [busy, setBusy] = useState(false);
   const [form, setForm] = useState(null);       // null = not editing
   const [groupBy, setGroupBy] = useState('category');
+  // [[Name]] targets: the index resolves what is written, the raw lists feed
+  // the autocomplete in the editor below.
+  const { targets, index } = useCrossLinks(campaignId);
+  const [popover, setPopover] = useState(null);   // { target, at } | null
+
+  /** Turn a clicked link back into the thing it names. */
+  const openLink = useCallback(({ kind, id }, e) => {
+    const rows = kind === 'npc' ? targets.npcs : targets.locations;
+    const hit = (rows ?? []).find((r) => String(r.id) === String(id));
+    if (!hit) return;
+    setPopover({ target: { ...hit, kind }, at: { x: e.clientX, y: e.clientY } });
+  }, [targets]);
 
   const fail = useCallback((e) => toast(e?.message || String(e), 'error'), [toast]);
 
@@ -222,6 +237,8 @@ export default function JournalPanel({ campaignId, isDM, calendarType = 'harptos
         searchable
         searchFields={SEARCH_FIELDS}
         searchPlaceholder="Search the journal…"
+        links={index}
+        onLinkClick={openLink}
         toolbar={(
           <label className="flex items-center gap-1.5 text-[0.6rem] font-display uppercase
                             tracking-wider text-text-muted">
@@ -288,9 +305,11 @@ export default function JournalPanel({ campaignId, isDM, calendarType = 'harptos
             />
 
             <FormField label="Entry">
-              <textarea rows={10} value={form.body} className={`${INPUT_CLS} resize-y`}
-                placeholder={'Markdown works here — **bold**, *italic*, - list, [text](link).'}
-                onChange={(ev) => setForm({ ...form, body: ev.target.value })} />
+              <LinkingTextarea rows={10} value={form.body} className={`${INPUT_CLS} resize-y`}
+                targets={targets}
+                placeholder={'Markdown works here — **bold**, *italic*, - list.\n'
+                  + 'Type [[ to link a location or NPC.'}
+                onChange={(v) => setForm({ ...form, body: v })} />
             </FormField>
 
             {isDM && (
@@ -312,6 +331,13 @@ export default function JournalPanel({ campaignId, isDM, calendarType = 'harptos
           </div>
         )}
       </Modal>
+
+      <CrossLinkPopover
+        target={popover?.target ?? null}
+        at={popover?.at}
+        campaignId={campaignId}
+        onClose={() => setPopover(null)}
+      />
     </div>
   );
 }

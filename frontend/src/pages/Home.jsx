@@ -18,6 +18,7 @@ import { Button, Modal, Spinner, FormField, Markdown } from '@/components/ui';
 import { useAuth } from '@/hooks/useAuth';
 import { useToast } from '@/hooks/useToast';
 import { docsApi } from '@/api/docs';
+import { safeNext } from '@/api/returnTo';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Module definitions
@@ -153,7 +154,7 @@ function DocsModal({ mod, onClose }) {
 // ─────────────────────────────────────────────────────────────────────────────
 // LoginModal
 // ─────────────────────────────────────────────────────────────────────────────
-function LoginModal({ onClose }) {
+function LoginModal({ onClose, onLoggedIn }) {
   const { login } = useAuth();
   const { toast } = useToast();
   const [username, setUsername] = useState('');
@@ -179,7 +180,7 @@ function LoginModal({ onClose }) {
         }
       } catch { /* unsupported or user declined — ignore */ }
       toast('Logged in!');
-      onClose();
+      onLoggedIn ? onLoggedIn() : onClose();
     } catch (err) {
       setError(err.message);
     } finally {
@@ -289,19 +290,40 @@ function ModuleCard({ mod, onInfo }) {
 // ─────────────────────────────────────────────────────────────────────────────
 export default function Home() {
   const { user } = useAuth();
+  const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const [loginOpen, setLoginOpen] = useState(false);
   const [docsModule, setDocsModule] = useState(null);
+  // Where to go once they are in. Held in state rather than read back from the
+  // URL at login time, because the effect below strips the params immediately.
+  const [afterLogin, setAfterLogin] = useState(null);
 
   // Auto-open login modal when navigated here with ?login=1
-  // (triggered by the Login button in AppHeader on other pages)
+  // (triggered by the Login button in AppHeader, and by a share page that
+  // needs the visitor logged in before it can show them anything).
   useEffect(() => {
     if (searchParams.get('login') === '1') {
       setLoginOpen(true);
-      // Clean the param from the URL without a page reload
+      // Validated, never trusted: `next` arrives in a URL anyone can write,
+      // and an unchecked one turns this page into an open redirect.
+      setAfterLogin(safeNext(searchParams.get('next')));
+      // Clean the params from the URL without a page reload
       setSearchParams({}, { replace: true });
     }
   }, [searchParams, setSearchParams]);
+
+  /**
+   * Back to whatever sent them here. `replace`, so Back does not bounce them
+   * through the login screen again.
+   */
+  function handleLoggedIn() {
+    setLoginOpen(false);
+    if (afterLogin) {
+      const to = afterLogin;
+      setAfterLogin(null);
+      navigate(to, { replace: true });
+    }
+  }
 
   const visibleModules = MODULES.filter((m) => canAccess(m, user));
 
@@ -320,7 +342,7 @@ export default function Home() {
       </main>
 
       {/* Modals */}
-      {loginOpen && <LoginModal onClose={() => setLoginOpen(false)} />}
+      {loginOpen && <LoginModal onClose={() => setLoginOpen(false)} onLoggedIn={handleLoggedIn} />}
       {docsModule && <DocsModal mod={docsModule} onClose={() => setDocsModule(null)} />}
     </>
   );

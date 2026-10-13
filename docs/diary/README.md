@@ -76,6 +76,23 @@ ignored in both directions: `thea` finds *Théa*, and so does `théa`.
 Filtering happens before grouping, so the count beside each heading tracks what you are looking
 at rather than what is filed there in total. A search with no matches says so.
 
+### Linking to places and people
+
+Type `[[` in an entry and pick a location or an NPC from the list — the same `[[Name]]` syntax
+Obsidian uses, so notes paste between the two.
+
+- `[[Buldamar]]` — a location, or an NPC when no location has that name
+- `[[npc:Grathul]]` — forced, for when a place and a person share a name
+- `[[Buldamar|the festival town]]` — different display text
+
+Clicking one opens a small panel with its description, and a **Show on the map** button when
+that location has a pin on a shared map. Names are matched ignoring case and accents, so
+`[[thea]]` finds *Théa*.
+
+A name that does not resolve stays plain text rather than showing as broken — which is also what
+a player sees for a location you have hidden, and for any NPC, since NPCs are yours alone. The
+name itself is in the sentence either way; only the link is withheld.
+
 ### Markdown
 
 Write in a small subset of markdown:
