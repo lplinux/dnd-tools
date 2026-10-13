@@ -4357,11 +4357,23 @@ app.delete('/api/journey-maps/:id/paths/:pid', requireRole(['dm']), async (req, 
 });
 
 // ── Share (public token) ──
+//
+// STABLE, not rotating. This used to mint a fresh token on every call and
+// upsert over the old one, so a DM pressing Share a second time — which is
+// mostly what Share is FOR, re-copying the URL — silently killed every link
+// already pasted into Discord. The players' next click got a 404 reading
+// "Map not found", which points at the map rather than at the link.
+//
+// Every other share token in the app (the diary's, a timeline's, a campaign
+// timeline's, a PC sheet's) was already stable; this one was the exception.
+// Revocation is the separate DELETE below, so losing a link stays a deliberate
+// act rather than a side effect of looking at it.
 app.post('/api/journey-maps/:id/share', requireRole(['dm']), async (req, res) => {
   try {
     if (!await dmOwnsMap(req.params.id, req.session.userId))
       return res.status(403).json({ error: 'Access denied' });
-    // Upsert share token
+    const existing = await pool.query('SELECT token FROM journey_map_shares WHERE map_id=$1', [req.params.id]);
+    if (existing.rows.length) return res.json({ token: existing.rows[0].token });
     const token = hashId(parseInt(req.params.id)) + crypto.randomBytes(4).toString('hex');
     await pool.query(
       `INSERT INTO journey_map_shares (map_id, token) VALUES ($1,$2)
@@ -4369,6 +4381,16 @@ app.post('/api/journey-maps/:id/share', requireRole(['dm']), async (req, res) =>
       [req.params.id, token]
     );
     res.json({ token });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+/** Revoke — the deliberate act. The next Share mints a new token. */
+app.delete('/api/journey-maps/:id/share', requireRole(['dm']), async (req, res) => {
+  try {
+    if (!await dmOwnsMap(req.params.id, req.session.userId))
+      return res.status(403).json({ error: 'Access denied' });
+    await pool.query('DELETE FROM journey_map_shares WHERE map_id=$1', [req.params.id]);
+    res.json({ success: true });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -4429,13 +4451,22 @@ function deriveMovementPaths({ events, pins, players, npcs }) {
 app.get('/api/journey-map-public/:token', async (req, res) => {
   try {
     const share = await pool.query('SELECT map_id FROM journey_map_shares WHERE token=$1', [req.params.token]);
-    if (!share.rows.length) return res.status(404).json({ error: 'Map not found' });
+    // Distinguish the two 404s. A link that no longer resolves is almost always
+    // a revoked or superseded one, and "Map not found" sent a player looking for
+    // a map that is sitting there fine.
+    if (!share.rows.length) {
+      return res.status(404).json({
+        error: 'This share link is no longer valid — ask your DM for a new one',
+        code: 'SHARE_REVOKED',
+      });
+    }
     const mapId = share.rows[0].map_id;
 
-    // The public map is viewer-aware. It's token-gated (no requireAuth), but a
-    // logged-in user still sends their session cookie, so we can tailor what's
-    // shown: hidden locations/roads are dropped for everyone; tracker paths are
-    // shown per role (DM owner → all; player → own + party; anonymous → none).
+    // The shared map is viewer-aware. Every reader is now a logged-in member
+    // of the campaign (see the shareGate call below), so this tailors what is
+    // shown rather than deciding whether to show anything: hidden
+    // locations/roads are dropped for everyone, and movement paths go by role
+    // — DM owner → all; player → their own, plus the party's.
     const userId = req.session.userId || null;
     const role   = req.session.role   || null;
     const isDmOwner = !!userId && role === 'dm' && await dmOwnsMap(mapId, userId);
