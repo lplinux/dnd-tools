@@ -13,6 +13,47 @@ PC Sheet / Journey Map / Manage Campaign fix batch that went with it.
 
 ---
 
+## Security: session fixation, the postMessage bridge, and one password floor
+
+### Already proved live
+
+- [x] **The session-fixation attack is dead** ✅ — and it was run against the OLD code first to
+      watch it succeed. An attacker plants a session cookie, the victim logs in carrying it, the
+      attacker replays it: before, `LOGGED IN AS dm1`; after, `anonymous`.
+- [x] **The victim is still logged in** after the regeneration, with a different session id ✅.
+- [x] **Remember-me survives** ✅ — the cookie still expires in 30.0 days, so setting `maxAge`
+      *after* `regenerate()` (it resets the cookie to the store default) is the right order.
+- [x] **The CSRF token rotates with the session** ✅.
+- [x] **All three password routes enforce 8** ✅ — change-password, admin-creates-a-user and
+      admin-resets-a-password. The last two accepted *any* non-empty string before, so a
+      one-character password was reachable.
+- [x] **An existing short password still logs in** ✅ — a user whose password is two characters
+      was not locked out. The floor applies only when a password is set.
+
+### Wants your eyes in the browser
+
+- [ ] **Log in normally** and confirm nothing feels different — this is the change most likely to
+      break the session silently, so use the app for a minute afterwards.
+- [ ] **Tick Remember me**, log in, close the browser, reopen — you should still be logged in.
+- [ ] **The Stats Sheet tab still loads and saves.** The postMessage bridge now names its origin
+      on every send and ignores anything from elsewhere; if the handshake were wrong the sheet
+      would sit empty or refuse to save.
+- [ ] **Print the stat block** from that tab, which goes through the same bridge.
+- [ ] **Change your own password** to something shorter than 8 — the form should refuse before
+      it sends.
+- [ ] **As admin, create a user** and **reset someone's password** with a short one; both should
+      refuse. The create form now also has `minLength`, so the browser may stop you first.
+
+### Not done, deliberately
+
+- **Tailwind 4** — the five advisories are devDependencies with no patched release. `npm audit
+  --omit=dev` reports **0**, so nothing reaches a browser. It is a migration to schedule, not a
+  fix to apply, and it stays in `TODO.md`.
+- **The `postcss-selector-parser` override** — still a deliberate semver violation, still
+  working, still the first thing to drop if a Tailwind patch builds oddly. Unchanged.
+
+---
+
 ## Share links need a login, and [[cross-links]]
 
 ### Already proved live
