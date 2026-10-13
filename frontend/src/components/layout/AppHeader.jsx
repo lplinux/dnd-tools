@@ -77,6 +77,9 @@ function AccountMenu({ user, onClose }) {
     setPwErr('');
     setPwOk(false);
     if (!pw1) { setPwErr('Enter a new password.'); return; }
+    // Mirrors PASSWORD_MIN in app.js, which does the enforcing — this only
+    // saves a round trip to be told the same thing.
+    if (pw1.length < 8) { setPwErr('Password must be at least 8 characters.'); return; }
     if (pw1 !== pw2) { setPwErr('Passwords do not match.'); return; }
     setSaving(true);
     try {
@@ -123,7 +126,7 @@ function AccountMenu({ user, onClose }) {
             type="password"
             value={pw1}
             onChange={e => setPw1(e.target.value)}
-            placeholder="New password…"
+            placeholder="New password — 8 characters or more…"
             autoComplete="new-password"
             className="w-full bg-surface2 border border-border2 text-text px-2 py-1 rounded-sm text-sm focus:outline-none focus:border-[var(--gold-dim)]"
           />

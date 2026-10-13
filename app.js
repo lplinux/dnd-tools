@@ -367,11 +367,40 @@ app.post('/api/auth/logout', (req, res) => {
   });
 });
 
+/**
+ * The floor for a NEW password. One number, three routes.
+ *
+ * They used to disagree completely: change-password asked for 4, while both
+ * admin routes — create a user, reset someone's password — accepted any
+ * non-empty string, so a one-character password was reachable by the person
+ * most likely to be setting them for other people. `scripts/create-admin.js`
+ * has asked for 8 all along, which is where this number comes from; the
+ * project was contradicting itself rather than choosing a low bar.
+ *
+ * It applies only when a password is SET. Nothing re-checks a stored hash, so
+ * nobody is locked out of an account they already have — the floor arrives the
+ * next time they change it.
+ *
+ * Length only, deliberately. Composition rules ("one capital, one digit")
+ * push people towards `Password1!` and are worse than a longer minimum; the
+ * login limiter already makes remote guessing slow, and bcrypt makes an
+ * offline attack expensive.
+ */
+const PASSWORD_MIN = 8;
+
+/** The complaint about a candidate password, or null if it will do. */
+function passwordError(password) {
+  if (typeof password !== 'string' || !password) return 'Password required';
+  if (password.length < PASSWORD_MIN) {
+    return `Password must be at least ${PASSWORD_MIN} characters`;
+  }
+  return null;
+}
+
 app.post('/api/auth/change-password', requireAuth, async (req, res) => {
   const { password } = req.body;
-  if (!password || password.length < 4) {
-    return res.status(400).json({ error: 'Password must be at least 4 characters' });
-  }
+  const bad = passwordError(password);
+  if (bad) return res.status(400).json({ error: bad });
   try {
     const hash = await bcrypt.hash(password, 10);
     await pool.query('UPDATE users SET password_hash=$1 WHERE id=$2', [hash, req.session.userId]);
@@ -428,6 +457,9 @@ app.post('/api/users', requireRole(['admin']), async (req, res) => {
     return res.status(400).json({ error: 'Username, role, and password required' });
   }
 
+  const badPassword = passwordError(password);
+  if (badPassword) return res.status(400).json({ error: badPassword });
+
   if (!['admin', 'dm', 'player'].includes(role)) {
     return res.status(400).json({ error: 'Invalid role' });
   }
@@ -481,9 +513,8 @@ app.put('/api/users/:id/password', requireRole(['admin']), async (req, res) => {
   const { id } = req.params;
   const { password } = req.body;
 
-  if (!password) {
-    return res.status(400).json({ error: 'Password required' });
-  }
+  const bad = passwordError(password);
+  if (bad) return res.status(400).json({ error: bad });
 
   try {
     const passwordHash = await bcrypt.hash(password, 10);

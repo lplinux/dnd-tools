@@ -113,6 +113,8 @@ function CreateUserForm({ onCreated }) {
               onChange={set('password')}
               autoComplete="new-password"
               className={inputCls}
+              minLength={8}
+              placeholder="8 characters or more"
               required
             />
           </FormField>
@@ -358,6 +360,10 @@ export default function UserPanel() {
     if (!passModal) return;
     setPassError('');
     if (!newPassword) { setPassError('Enter a new password.'); return; }
+    // Mirrors PASSWORD_MIN in app.js, which does the enforcing.
+    if (newPassword.length < 8) {
+      setPassError('Password must be at least 8 characters.'); return;
+    }
     setActionLoading(true);
     try {
       await usersApi.updatePassword(passModal.id, newPassword);
