@@ -7,6 +7,140 @@ React application, collapsed into one entry. The per-step detail that used to li
 twenty-six *Unreleased* sections is in the git history of this file; what follows is the summary
 worth keeping. The `0.x` entries below it are left exactly as they were.
 
+The newest tag is `1.0.0`. Anything above it is marked *Unreleased* until it is tagged.
+
+---
+
+## [1.0.1] – Unreleased
+
+### Changed — a share link now needs a logged-in member of the campaign
+
+All five token-gated surfaces — journey map, timeline, PC sheet, diary and its roster — took a
+token and nothing else, so anyone holding the URL could read the content. They now also require
+a logged-in member of that campaign: **401 `LOGIN_REQUIRED`** anonymous, **403
+`NOT_YOUR_CAMPAIGN`** for someone signed in elsewhere. The token still names the thing and
+revocation still works; it stopped being the only thing between a campaign and a stranger.
+
+One helper, `shareGate`, called from all five, over the `canAccessCampaign` that already carries
+the DM/admin arm and the trash guard. It runs **after** the token lookup, never before, so a
+revoked link still answers 404 rather than sending someone to log in for something that no
+longer exists.
+
+**`campaignAuth.test.js` was excluded from looking at these routes**, which is how the only five
+anyone on the internet could read ended up being the five the ownership walk skipped. `:token`
+now counts as an id, and a token route must call `shareGate` by name.
+
+That walk also had a quieter fault: it sliced each handler's body up to the *next* route
+registration, so any helper defined between two routes was credited to the earlier one. Deleting
+the guard from `/api/timeline-public/:token` left the suite green, satisfied by an `ownsPlayer`
+that belonged to the code after it. It now stops at the handler's own closing brace, and
+removing any of the five gates fails it.
+
+`pc-public` is worth knowing about: its token is `hashId(playerId)`, a pure function of the row
+id with no share table behind it, so it has never been revocable. This gate is the only
+restriction it has ever actually had.
+
+**Logging in brings you back.** There was no login route at all — the modal lives on the home
+page and `/?login=1` discarded wherever you were. A share page now sends `?login=1&next=<path>`
+and lands you on the page you asked for. `next` is validated as a same-origin relative path
+before use: `//evil.example`, `http://evil.example`, `/\evil` and anything carrying a control
+character are refused, because an unchecked `next` turns our own login screen into a redirect to
+someone else's.
+
+**Three failures, told apart.** `useAsync` discarded the HTTP status (`setError(e.message)`), so
+no page could tell a 401 from a 404 — which is why the map page rendered every failure as one
+line of text. It now also returns `errorInfo` with `{ status, code }`, as a second value rather
+than by changing `error`'s type, since every caller renders `error` straight into JSX.
+
+### Added — `[[Name]]` cross-links
+
+Prose in the Diary and the Campaign Journal takes Obsidian's syntax, so notes paste between the
+two: `[[Buldamar]]`, `[[npc:Grathul]]` when a place and a person share a name, and
+`[[Buldamar|the festival town]]` for different display text. Matching ignores case and accents,
+so `[[thea]]` finds *Théa* — which is how these names actually get typed.
+
+**Type `[[` and the campaign's locations and NPCs are offered.** The dropdown is anchored to the
+bottom of the field rather than to the caret: caret-anchoring inside a textarea needs a hidden
+mirror div cloning its computed styles, which is a hundred fiddly lines that must survive three
+themes and a scrolled field, for a difference the field is rarely tall enough to show. It can be
+upgraded later without touching anything else.
+
+**A link opens a popover**, not a page — there is no location page, and the in-app Journey Map
+is DM-only. Name, description, pin image, and a *Show on the map* button when that location has
+a pin on a shared map. An NPC popover is a name and little else, because `campaign_npcs` is a
+name and nothing else; the branch is wired for the day that changes.
+
+**An unresolved name renders as plain text, not a broken link** — which is also what a player
+sees for a location the DM has hidden and for any NPC at all. That leaks nothing: the name is in
+the sentence either way, so the only thing withheld is whether clicking does something.
+
+**The safety argument.** `renderMarkdown.js` states that every rule puts user text in element
+content, with the single exception of a link's href, and warns against adding syntax that puts
+it anywhere else — its escape pass does not cover quotes. So the name never reaches an
+attribute: `data-xlink` carries `kind:id`, a number this code produced, and the name stays in
+element content like everything else. A test sweeps every emitted tag for an `on*=` handler.
+
+The index behind it (`GET /api/campaigns/:id/link-targets`) is role-filtered in SQL and selects
+an explicit column list — `campaign_locations.image_data` is a base64 pin image, and `SELECT *`
+would have pulled every one of them into a fetch whose job is to offer six suggestions. Measured
+live: 270 bytes for a campaign holding a 4 KB pin image.
+
+`placeCard` moved from `InventoryTab.jsx` to `data/placeCard.js` so the popover can reuse its
+flip-at-the-viewport-edge logic without importing a page component.
+
+### Verified
+
+**79 new tests**, 867 in all. Live against a scratch Postgres: all five share links answer 401
+anonymous, 403 to a non-member and 200 to a member and the DM; a revoked map token still answers
+404 to a member rather than 403; `pc-public` no longer returns the `campaign_id` it fetches for
+the gate; and a player's link index omits a hidden location entirely and contains no NPCs.
+
+Each guard was proved able to fail — the five gates removed one at a time, the `is_public`
+filter and the NPC withholding dropped, and the name forced into an attribute.
+
+---
+
+
+### Fixed — a shared journey map stopped working the moment the DM pressed Share again
+
+`POST /api/journey-maps/:id/share` minted a fresh token on every call and upserted over the old
+one. Pressing Share a second time — which is mostly what Share is *for*, re-copying the URL —
+silently orphaned every link already pasted into Discord. The players' next click returned a 404
+reading *"Map not found"*, which points at the map rather than at the link, so the obvious thing
+to go and check was the one thing that was fine.
+
+Every other share token in the app was already stable (the diary's, a timeline's, the campaign
+timeline's); this one was the exception. It now returns the existing token, with a separate
+`DELETE …/share` for revocation so losing a link stays a deliberate act. The dead-link 404 says
+so in words and carries `code: 'SHARE_REVOKED'`.
+
+Reproduced on the old code before fixing it — two Shares, two different tokens, the first link
+404 — and `test/shareTokens.test.js` now holds all five share routes to the same rule: SELECT the
+existing row before INSERT, and do not even generate randomness until that check has passed.
+
+### Added — 🔗 Campaign Links, a tab on the PC Sheet
+
+Everything the DM has shared with the table, in one column: the public journey maps and the
+shared timelines, each a real `<a>` to a read-only page that works without a session.
+
+It exists because there was nowhere else to put a share link. The in-app Journey Map is DM-only,
+so a player's only route to a map was a URL someone had pasted somewhere — and the bug above
+was quietly invalidating those.
+
+**A row appears only because a share token exists for it.** Every list is an INNER JOIN onto its
+shares table, never a left join with the token nulled out, so an unshared map cannot leak its
+name or the fact that it exists. The handler deliberately does not branch on role: the DM sees
+exactly the same list, because the tab answers *what has the table been given*, not *what is
+there*.
+
+An **NPCs** section is prepared and returns empty. `campaign_npcs` has no visibility column, so
+listing them today would mean either showing players every NPC the DM has ever named or
+inventing a visibility model in passing; the tab renders the section only when the server
+returns one, so filling it later is a server change and nothing else.
+
+Verified live: a second, unshared map named *"SECRET — the Ultheon approach"* appears nowhere in
+a player's response; a non-member gets 403; and every path handed to the player resolves 200.
+
 ---
 
 ## [1.0.0] – 2026-10-12 — The React rewrite, and everything built on top of it

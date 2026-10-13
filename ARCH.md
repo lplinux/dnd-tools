@@ -496,6 +496,54 @@ it is bound to the campaign it was minted for. The route validates `bundle.type`
 its own token namespace. Unlike journey maps it is *stable* on re-request (the DM presses Share to
 re-copy a link, not to rotate it); revocation is a separate, deliberate `DELETE`.
 
+### Share links and cross-links
+
+**Every token-gated surface requires a logged-in member of the campaign.** The journey map,
+timeline, PC sheet, diary and diary roster all call `shareGate(req, campaignId)` after resolving
+their token: 401 `LOGIN_REQUIRED` for an anonymous viewer, 403 `NOT_YOUR_CAMPAIGN` for a
+logged-in non-member. The token still names the thing and revocation still works; it stopped
+being the only thing between a campaign and a stranger.
+
+The gate runs **after** the token lookup, never before, so a revoked link still answers 404
+rather than sending someone to log in for something that no longer exists. `campaignAuth.test.js`
+treats `:token` as an id-bearing path and requires `shareGate` by name — those five routes used
+to be *excluded* from that walk, which is how they drifted.
+
+`pc-public` is the odd one: its token is `hashId(playerId)`, a pure function of the row id with
+no share table, so it has never been revocable. The gate is the only restriction it has ever had.
+
+| Method | Path | Role | Description |
+|---|---|---|---|
+| GET | `/api/campaigns/:campaignId/link-targets` | member | Locations and NPCs this viewer may resolve in a `[[Name]]` link |
+
+**Cross-links.** Prose in the diary and the Campaign Journal takes `[[Name]]`,
+`[[npc:Name]]` and `[[Name|display text]]`. The index is role-filtered in SQL — a player gets
+public locations and **no NPCs**, since `campaign_npcs` is DM-only and has no visibility column —
+and selects an explicit column list, because `image_data` is a base64 pin image that would
+otherwise ride along with every autocomplete fetch.
+
+An unresolved name renders as plain text rather than a broken link. That leaks nothing: the name
+is in the prose either way, so the only thing withheld is whether clicking does something.
+
+`renderMd(text, links)` honours the file's own safety contract rather than widening it. The
+**name never reaches an attribute** — `data-xlink` carries `kind:id`, a number this code
+produced — so the escape pass, which does not cover quotes, remains sufficient.
+
+### Campaign links
+
+| Method | Path | Role | Description |
+|---|---|---|---|
+| GET | `/api/campaigns/:campaignId/links` | member | Everything in the campaign that carries a share token |
+
+Backs the PC Sheet's **🔗 Campaign Links** tab. Every list is an **INNER JOIN onto its shares
+table** — a left join with the token nulled out would render identically for a shared map and
+leak the name, and the existence, of every unshared one. For the same reason the handler does
+not branch on role: the answer is "what has been shared", which is the same for everyone, and a
+role branch would be a second path to get wrong.
+
+`npcs` is returned as an empty array. `campaign_npcs` has no visibility column, so the list is
+prepared rather than populated.
+
 ### Campaign Journal
 
 | Method | Path | Role | Description |

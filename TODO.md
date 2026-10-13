@@ -80,6 +80,13 @@ Touch input and the two overflowing layouts are **done** — see `TOQA.md`. What
 
 ---
 
+## Manage Campaign
+
+- [ ] Small search box on Char Tree to filter for people
+
+
+---
+
 ## Planned features (not started)
 
 Captured for later — nothing here has been designed or scoped yet.

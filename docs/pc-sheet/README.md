@@ -210,6 +210,9 @@ It reads like the Diary on purpose: compact cards grouped under headings you can
 one to read it in full. Entries are listed in **in-game date order**, oldest first, with undated
 ones at the end.
 
+Type `[[` while writing an entry to link a location or an NPC; clicking one opens a panel with
+its description. See the [Diary docs](../diary/README.md#linking-to-places-and-people).
+
 A **search box** filters what you can see — any word from a title, a note, a category, a location
 or an author's name, accents optional, and several words narrow it further. A **Group by**
 selector beside it switches the headings between **Category**, **Location** and **Who wrote it**.
@@ -242,6 +245,22 @@ The same journal is also a tab in **Manage Campaigns**, which is usually the bet
 it from: the locations an entry points at are managed two tabs away, and staging a document for
 the party to find later is campaign prep rather than character work. It is the same journal, not
 a copy.
+
+### 🔗 Campaign Links
+
+Everything your DM has shared with the table, in one place — the public journey maps and the
+shared timelines, each as a link that opens a read-only page.
+
+Opening one needs you logged in **and** playing in that campaign, so a link that escapes the
+table shows a stranger nothing. Nothing appears here until it has actually been shared: an
+unshared map is not listed, and its name is never sent to the browser.
+
+The DM sees the same list a player does. The tab answers *what has the table been given*, not
+*what exists*.
+
+An **NPCs** section is prepared and deliberately empty — `campaign_npcs` has no visibility flag,
+so listing them today would mean showing players every NPC the DM has ever named. The section
+renders only once the server returns some.
 
 ### Printing the sheet
 
