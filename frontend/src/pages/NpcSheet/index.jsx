@@ -341,6 +341,12 @@ export default function NpcSheet() {
   }
 
   // ── Embedded mode (postMessage bridge for PcSheet iframe) ─────────────────
+  //
+  // The host is the same app serving this page, so the only valid peer origin
+  // is our own. Named explicitly rather than `'*'` on every send, and checked
+  // on every receive: a whole stat block crosses this bridge in both
+  // directions, and `'*'` hands it to whatever document happens to be in the
+  // parent frame.
   const isEmbedded = new URLSearchParams(window.location.search).get('embedded') === '1';
 
   // `collectSheet` changes identity on every edit (it closes over `fields`). Holding
@@ -361,13 +367,18 @@ export default function NpcSheet() {
     function sendResize() {
       window.parent.postMessage(
         { type: 'IFRAME_RESIZE', height: document.documentElement.scrollHeight },
-        '*',
+        window.location.origin,
       );
     }
     function handleMessage(e) {
+      if (e.origin !== window.location.origin) return;
       if (!e.data || typeof e.data !== 'object') return;
       if (e.data.type === 'LOAD_STATS')    { populateRef.current(e.data.payload ?? {}); setTimeout(sendResize, 200); }
-      if (e.data.type === 'COLLECT_STATS') { e.source?.postMessage({ type: 'STATS_DATA', payload: collectRef.current() }, e.origin ?? '*'); }
+      // Replies to our own origin, not to `e.origin` — the check above has
+      // already established they are the same, and naming it outright means a
+      // future edit to that guard cannot quietly turn this into a send to
+      // whoever asked.
+      if (e.data.type === 'COLLECT_STATS') { e.source?.postMessage({ type: 'STATS_DATA', payload: collectRef.current() }, window.location.origin); }
       // Distinct from LOAD_STATS with an empty payload: populateSheet ignores
       // `{}` by design, so the host's Clear button needs its own message.
       if (e.data.type === 'CLEAR_STATS')   { clearRef.current(); setTimeout(sendResize, 200); }
@@ -376,7 +387,7 @@ export default function NpcSheet() {
     window.addEventListener('message', handleMessage);
     const ro = new ResizeObserver(sendResize);
     ro.observe(document.body);
-    window.parent.postMessage({ type: 'NPC_READY' }, '*');
+    window.parent.postMessage({ type: 'NPC_READY' }, window.location.origin);
     setTimeout(sendResize, 250);
 
     return () => {

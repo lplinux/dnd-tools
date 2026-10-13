@@ -166,7 +166,22 @@ export function CharacterTab({ charData, playerId, actions, publicLink }) {
 
 // ─────────────────────────────────────────────────────────────────────────────
 // StatsTab — NpcSheet embedded via iframe + postMessage bridge
+//
+// The bridge is same-origin in both directions: the iframe's src is a route in
+// this very app (`/npc-sheet?embedded=1`). Both sides therefore name
+// `window.location.origin` explicitly rather than using `'*'`, and both ignore
+// anything arriving from somewhere else.
+//
+// `'*'` on a send means "deliver this to whatever document is in that frame,
+// whoever it belongs to". A character's whole stat block goes across this
+// bridge, so a frame that had been navigated elsewhere would have been handed
+// it. `'*'` costs nothing to replace here precisely because the two documents
+// are always the same origin.
 // ─────────────────────────────────────────────────────────────────────────────
+
+/** Both documents are served by this app, so this is the only valid peer. */
+const BRIDGE_ORIGIN = window.location.origin;
+
 export function StatsTab({ playerId, charData, onSaveStats }) {
   const confirm = useConfirm();
   const iframeRef = useRef(null);
@@ -182,6 +197,8 @@ export function StatsTab({ playerId, charData, onSaveStats }) {
   // Listen for messages from the embedded NpcSheet
   useEffect(() => {
     function onMessage(e) {
+      // Anything not from this app is not part of the bridge.
+      if (e.origin !== BRIDGE_ORIGIN) return;
       if (!e.data || typeof e.data !== 'object') return;
       // Only listen to OUR iframe. While printing there are two StatsTab
       // instances mounted (the on-screen one and the print copy), and without
@@ -195,7 +212,7 @@ export function StatsTab({ playerId, charData, onSaveStats }) {
         setReady(true);
         // Push stats data into the iframe
         iframeRef.current?.contentWindow?.postMessage(
-          { type: 'LOAD_STATS', payload: charData?.stats ?? {} }, '*'
+          { type: 'LOAD_STATS', payload: charData?.stats ?? {} }, BRIDGE_ORIGIN,
         );
       }
       if (e.data.type === 'STATS_DATA') {
@@ -219,14 +236,14 @@ export function StatsTab({ playerId, charData, onSaveStats }) {
   useEffect(() => {
     if (!ready) return;
     iframeRef.current?.contentWindow?.postMessage(
-      { type: 'LOAD_STATS', payload: charData?.stats ?? {} }, '*'
+      { type: 'LOAD_STATS', payload: charData?.stats ?? {} }, BRIDGE_ORIGIN,
     );
   }, [ready, charData?.stats]);
 
   function handleSave() {
     if (!ready) return;
     setSaving(true);
-    iframeRef.current?.contentWindow?.postMessage({ type: 'COLLECT_STATS' }, '*');
+    iframeRef.current?.contentWindow?.postMessage({ type: 'COLLECT_STATS' }, BRIDGE_ORIGIN);
   }
 
   /**
@@ -250,7 +267,7 @@ export function StatsTab({ playerId, charData, onSaveStats }) {
     // Not LOAD_STATS with an empty payload: populateSheet bails on `{}` (it has
     // to, or an empty save would wipe a sheet), so that was a silent no-op.
     // CLEAR_STATS calls the sheet's own clearSheet() instead.
-    iframeRef.current?.contentWindow?.postMessage({ type: 'CLEAR_STATS' }, '*');
+    iframeRef.current?.contentWindow?.postMessage({ type: 'CLEAR_STATS' }, BRIDGE_ORIGIN);
   }
 
   return (
