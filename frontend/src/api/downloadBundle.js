@@ -20,7 +20,7 @@
 /** Lowercase, hyphenated, ASCII-ish — safe on every filesystem. */
 export function slugify(s) {
   return String(s ?? '')
-    .normalize('NFD').replace(/[̀-ͯ]/g, '')   // Ailyssë → Ailysse
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')   // Ailyssë → Ailysse
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-+|-+$/g, '')
