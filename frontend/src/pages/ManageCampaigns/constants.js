@@ -40,6 +40,10 @@ export const TABS = [
   // No count: it loads its own data, and a badge that is always blank until
   // you open the tab is worse than no badge.
   { id: 'journal',   label: '📖 Journal',   count: false },
+  // Everything written down about this campaign, in one box. Here rather than
+  // in the header: the campaign is already chosen in this module, and a global
+  // control only a DM may use is one most of the table is shown and refused.
+  { id: 'search',    label: '🔍 Search',    count: false },
   { id: 'settings',  label: '⚙️ Settings',  count: false },
 ];
 

@@ -69,7 +69,7 @@ export function insertLink(value, caret, name) {
  */
 export function suggest(query, { locations = [], npcs = [] } = {}, limit = 8) {
   const q = String(query ?? '')
-    .normalize('NFD').replace(/[̀-ͯ]/g, '').trim().toLowerCase();
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim().toLowerCase();
 
   const rows = [
     ...locations.map((l) => ({ kind: 'location', id: l.id, name: l.name })),
@@ -81,7 +81,7 @@ export function suggest(query, { locations = [], npcs = [] } = {}, limit = 8) {
   const scored = [];
   for (const r of rows) {
     const folded = String(r.name)
-      .normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+      .normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
     const at = folded.indexOf(q);
     if (at === -1) continue;
     // A prefix match is what you meant; a substring match is a long shot.

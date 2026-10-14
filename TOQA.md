@@ -13,6 +13,60 @@ PC Sheet / Journey Map / Manage Campaign fix batch that went with it.
 
 ---
 
+## Campaign-wide search (DM only)
+
+### Already proved live
+
+- [x] **All nine sources return hits** ✅ — journal, campaign diary, player diary, locations,
+      NPCs, character sheets and DM notes all matched a seeded row.
+- [x] **Accent folding works both ways** ✅ — `thea` finds seven rows that all spell it *Théa*,
+      and `théa` returns the same seven.
+- [x] **Two terms in different fields of one row match** ✅ — `letter vault` finds the journal
+      entry whose title holds one and whose body holds the other.
+- [x] **A player gets 403, anonymous gets 401, a DM of another campaign gets 403** ✅, with no
+      body in any case.
+- [x] **A one-character query is refused** before any row is read ✅.
+- [x] **DM-only, draft, hidden and private rows are labelled** in the results ✅ — this is the
+      DM's own view, so they are shown *and* marked rather than withheld.
+
+### Wants your eyes in the browser
+
+- [ ] **The 🔍 Search tab** sits between Journal and Settings in Manage Campaigns, and the
+      header has no search control left on any page.
+- [ ] **Switching campaign in the sidebar** clears the box and the results — the previous
+      campaign's hits must not sit under a new campaign's name.
+- [ ] **A long result fills the tab** rather than stopping part-way down, and there is only one
+      scrollbar on screen.
+- [ ] **The columns** — check at one, two and three columns by narrowing the window, and that no
+      group is split across a column boundary.
+- [ ] **The result list reads well** with a real campaign behind it — Leruhy has far more rows
+      than my seven-row fixture, so this is the first honest look at the grouping and the caps.
+- [ ] **The marked match** is legible in all three themes, in the list *and* inside an opened
+      result.
+- [ ] **Highlighting inside an opened result** — this is the one piece with no automated
+      coverage: the DOM walk needs a browser, and there is no jsdom in this project. The
+      arithmetic under it has 17 tests; the walk itself has none. Check a long journal entry
+      (markdown), an item (its abilities are HTML) and a DM note (plain text).
+- [ ] **Search for a word that is also an HTML tag name** — `div`, `span`, `mark` — in an item's
+      abilities. The word should be marked and the card should still render; if the tags were
+      being rewritten instead, the formatting would collapse.
+- [ ] **Search two words** and check both are marked, not just the first.
+- [ ] **Clicking a hit opens it in the search**, not a new page. Check each of the nine kinds
+      renders sensibly — especially an item (its abilities are HTML) and a character sheet
+      (several fields, not one body).
+- [ ] **Follow a `[[link]]` out of a journal entry** and come back with Back. Then do it twice
+      and check the step counter reads sensibly.
+- [ ] **Open in the module ↗** still goes somewhere useful.
+- [ ] **Collapse a group, and Collapse all.** Then type a new query — the groups should come
+      back expanded and you should be returned to the list, not left reading the old result.
+- [ ] **With more than one campaign**, the selector appears and the choice is remembered.
+- [ ] **On a phone** — the modal is `max-w-3xl` with a scrolling result area.
+- [ ] **Search speed** on the real Leruhy database. Every row of nine tables is read per query;
+      if it feels slow, the fix is a coarse SQL pre-filter for queries that contain no accented
+      characters, which would cover most of them.
+
+---
+
 ## Security: session fixation, the postMessage bridge, and one password floor
 
 ### Already proved live
