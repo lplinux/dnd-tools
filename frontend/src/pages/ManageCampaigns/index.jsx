@@ -8,7 +8,7 @@
  *   Sidebar (campaign list + trash + create form)  |  Detail panel (tabbed)
  *
  * Tabs:
- *   Players · Locations · NPCs · Timelines · Char Tree · Journal · Settings
+ *   Players · Locations · NPCs · Timelines · Char Tree · Journal · Search · Settings
  */
 
 import { useRef, useState } from 'react';
@@ -25,6 +25,7 @@ import LocationsTab            from './tabs/LocationsTab';
 import { NpcsTab, TimelinesTab, SettingsTab } from './tabs/OtherTabs';
 import { CharTreeTab }         from './tabs/CharTreeTab';
 import JournalTab              from './tabs/JournalTab';
+import SearchTab               from './tabs/SearchTab';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Campaign sidebar
@@ -287,6 +288,8 @@ export default function ManageCampaigns() {
             calendarType={currentCampaign.calendar_type ?? 'harptos'}
           />
         );
+      case 'search':
+        return <SearchTab campaignId={currentId} />;
       case 'settings':
         return (
           <SettingsTab

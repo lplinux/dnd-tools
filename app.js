@@ -3848,6 +3848,368 @@ async function journalEntry(entryId, campaignId) {
   return r.rows[0] ?? null;
 }
 
+// ── Campaign-wide search (DM only) ──────────────────────────────────────────
+//
+// One box over everything written down about a campaign: the journal, both
+// diaries, locations, NPCs, timeline events, the character sheets and the DM's
+// own notes, and the magic items actually in play.
+//
+// DM ONLY, deliberately. Half these sources are things a player must not see —
+// DM-only journal entries, unpublished diary drafts, private_info, hidden
+// locations, every NPC — so rather than teach one query seven different
+// withholding rules, the route is closed to players outright. A player who
+// wants to search has per-module boxes that already filter correctly.
+//
+// MATCHING HAPPENS IN NODE, not in SQL, and that is the interesting decision.
+// `ILIKE '%thea%'` will not find "Théa", and folding accents in Postgres needs
+// the `unaccent` extension — a CREATE EXTENSION this self-hosted app cannot
+// assume it has rights to run. These are campaign notes full of Buldamar,
+// Théa and Grathul, and half the time they get typed without the accents, so
+// accent folding is the feature rather than a nicety. The cost is reading the
+// rows and filtering them here; a campaign is hundreds of rows, not millions,
+// and ROW_CAP below keeps the worst case bounded.
+//
+// `searchFold` mirrors `fold()` in frontend/src/pages/Diary/searchEntries.js —
+// the same pattern as deriveMovementPaths mirroring derivePaths.js. A test
+// asserts the two stay identical, because a search that behaves differently
+// in two places is worse than one that is merely imperfect.
+
+/** Lowercased and stripped of diacritics. Mirrors the frontend's `fold()`. */
+const searchFold = (v) => String(v ?? '')
+  .normalize('NFD')
+  .replace(/[\u0300-\u036f]/g, '')
+  .toLowerCase();
+
+/**
+ * `item_cards.abilities` holds sanitised HTML from the card editor, so both the
+ * matching and the excerpt need the text rather than the markup — otherwise a
+ * search for "span" hits every styled card and the excerpt reads as tag soup.
+ */
+const searchPlain = (html) => String(html ?? '')
+  .replace(/<[^>]*>/g, ' ')
+  .replace(/&nbsp;/g, ' ')
+  .replace(/&amp;/g, '&')
+  .replace(/&lt;/g, '<')
+  .replace(/&gt;/g, '>')
+  .replace(/\s+/g, ' ')
+  .trim();
+
+/** Per source. A campaign that somehow exceeds this gets told, not truncated silently. */
+const SEARCH_ROW_CAP = 2000;
+/** Hits returned per group. The UI shows a list, not a corpus. */
+const SEARCH_GROUP_CAP = 25;
+const SEARCH_MIN_QUERY = 2;
+
+/**
+ * A short piece of the field either side of the first match, so a hit explains
+ * itself without opening it.
+ *
+ * Returns PLAIN TEXT and an offset, never markup: the client marks the match
+ * by slicing the string into React nodes. Emitting `<mark>` here would put
+ * user text into HTML that something downstream has to trust.
+ */
+function searchExcerpt(text, folded, needle, radius = 60) {
+  const at = folded.indexOf(needle);
+  if (at === -1) return null;
+  const start = Math.max(0, at - radius);
+  const end = Math.min(text.length, at + needle.length + radius);
+  return {
+    text: (start > 0 ? '…' : '') + text.slice(start, end).trim() + (end < text.length ? '…' : ''),
+    at: at - start + (start > 0 ? 1 : 0),
+    len: needle.length,
+  };
+}
+
+/**
+ * Does this row match every term, and where is the best excerpt?
+ *
+ * Every term must appear SOMEWHERE in the row, not all in one field — so
+ * "grathul buldamar" finds the entry whose title names one and whose body
+ * names the other. The excerpt comes from the first field holding the first
+ * term, which is the one the reader is most likely looking for.
+ */
+function searchRow(fields, terms) {
+  const folded = fields.map(([, v]) => searchFold(v));
+  for (const t of terms) {
+    if (!folded.some((f) => f.includes(t))) return null;
+  }
+  for (let i = 0; i < fields.length; i++) {
+    const ex = searchExcerpt(String(fields[i][1] ?? ''), folded[i], terms[0]);
+    if (ex) return { field: fields[i][0], ...ex };
+  }
+  return { field: fields[0][0], text: String(fields[0][1] ?? '').slice(0, 120), at: -1, len: 0 };
+}
+
+app.get('/api/campaigns/:campaignId/search', requireRole(['dm', 'admin']), async (req, res) => {
+  const { campaignId } = req.params;
+  const raw = String(req.query.q ?? '').trim();
+  try {
+    if (!await dmOwnsCampaign(campaignId, req.session.userId, req.session.role))
+      return res.status(403).json({ error: 'Access denied' });
+
+    const terms = searchFold(raw).split(/\s+/).filter(Boolean);
+    if (!terms.length || raw.length < SEARCH_MIN_QUERY) {
+      return res.json({ query: raw, groups: [], tooShort: raw.length > 0 });
+    }
+
+    const q = (sql) => pool.query(`${sql} LIMIT ${SEARCH_ROW_CAP}`, [campaignId]);
+    const [journal, camDiary, plDiary, locs, npcs, events, chars, notes, items] =
+      await Promise.all([
+        q(`SELECT j.id, j.title, j.body, j.category, j.dm_only, cp.player_name AS who
+             FROM campaign_journal_entries j
+             LEFT JOIN campaign_players cp ON cp.id = j.player_id
+            WHERE j.campaign_id = $1`),
+        q(`SELECT id, title, body, chapter, status
+             FROM campaign_diary_entries WHERE campaign_id = $1`),
+        q(`SELECT d.id, d.title, d.body, d.category, cp.player_name AS who
+             FROM player_diary_entries d
+             LEFT JOIN campaign_players cp ON cp.id = d.player_id
+            WHERE d.campaign_id = $1`),
+        q(`SELECT id, name, description, is_public
+             FROM campaign_locations WHERE campaign_id = $1`),
+        q('SELECT id, name FROM campaign_npcs WHERE campaign_id = $1'),
+        q(`SELECT e.id, e.title, e.description, e.location, e.year, e.day_of_year,
+                  cp.player_name AS who
+             FROM player_timeline_entries e
+             LEFT JOIN campaign_players cp ON cp.id = e.player_id
+            WHERE e.campaign_id = $1`),
+        q(`SELECT pc.player_id AS id, pc.name, pc.story, pc.traits, pc.flaws, pc.goals,
+                  pc.public_info, pc.private_info, cp.player_name AS who
+             FROM pc_characters pc
+             JOIN campaign_players cp ON cp.id = pc.player_id
+            WHERE cp.campaign_id = $1`),
+        // Two hops: a note hangs off pc_characters, which hangs off the player.
+        q(`SELECT n.id, n.content, n.dm_visible, cp.player_name AS who, pc.player_id
+             FROM pc_dm_notes n
+             JOIN pc_characters pc ON pc.id = n.character_id
+             JOIN campaign_players cp ON cp.id = pc.player_id
+            WHERE cp.campaign_id = $1`),
+        // Only the cards actually granted in this campaign — the DM's wider
+        // library is not campaign content and searching it here would mix the
+        // two. DISTINCT because one card can be held by several characters.
+        q(`SELECT DISTINCT ic.id, ic.name, ic.type, ic.rarity, ic.flavor, ic.abilities
+             FROM inventory_items inv
+             JOIN item_cards ic ON ic.id = inv.item_card_id
+            WHERE inv.campaign_id = $1 AND inv.item_card_id IS NOT NULL`),
+      ]);
+
+    /** Build one group: match every row, keep the hits, cap the list. */
+    const group = (kind, label, rows, toFields, toHit) => {
+      const hits = [];
+      for (const r of rows) {
+        const m = searchRow(toFields(r), terms);
+        if (m) hits.push({ ...toHit(r), excerpt: m, matched: m.field });
+        if (hits.length >= SEARCH_GROUP_CAP) break;
+      }
+      return { kind, label, total: hits.length, hits };
+    };
+
+    const groups = [
+      group('journal', 'Journal', journal.rows,
+        (r) => [['title', r.title], ['body', r.body], ['category', r.category]],
+        (r) => ({ id: r.id, title: r.title || '(untitled)', path: '/pc-sheet',
+          note: [r.who, r.category, r.dm_only ? 'DM only' : null].filter(Boolean).join(' · ') })),
+      group('diary', 'Campaign diary', camDiary.rows,
+        (r) => [['title', r.title], ['body', r.body], ['chapter', r.chapter]],
+        (r) => ({ id: r.id, title: r.title || '(untitled)', path: '/diary',
+          note: [r.chapter, r.status === 'draft' ? 'draft' : null].filter(Boolean).join(' · ') })),
+      group('player-diary', 'Player diaries', plDiary.rows,
+        (r) => [['title', r.title], ['body', r.body], ['category', r.category]],
+        (r) => ({ id: r.id, title: r.title || '(untitled)', path: '/diary',
+          note: [r.who, r.category].filter(Boolean).join(' · ') })),
+      group('location', 'Locations', locs.rows,
+        (r) => [['name', r.name], ['description', r.description]],
+        (r) => ({ id: r.id, title: r.name, path: '/manage-campaigns',
+          note: r.is_public ? null : 'hidden from players' })),
+      group('npc', 'NPCs', npcs.rows,
+        (r) => [['name', r.name]],
+        (r) => ({ id: r.id, title: r.name, path: '/manage-campaigns', note: null })),
+      group('event', 'Timeline', events.rows,
+        (r) => [['title', r.title], ['description', r.description], ['location', r.location]],
+        (r) => ({ id: r.id, title: r.title || '(untitled)', path: '/timeline',
+          note: [r.who, r.location].filter(Boolean).join(' · ') })),
+      group('character', 'Character sheets', chars.rows,
+        (r) => [['name', r.name], ['story', r.story], ['traits', r.traits], ['flaws', r.flaws],
+          ['goals', r.goals], ['public_info', r.public_info], ['private_info', r.private_info]],
+        (r) => ({ id: r.id, title: r.name || r.who, path: '/pc-sheet', note: r.who })),
+      group('dm-note', 'DM notes', notes.rows,
+        (r) => [['content', r.content]],
+        (r) => ({ id: r.id, title: r.who || 'DM note', path: '/pc-sheet',
+          note: r.dm_visible ? 'shared with the player' : 'private' })),
+      group('item', 'Items in play', items.rows,
+        (r) => [['name', r.name], ['flavor', r.flavor],
+          ['abilities', searchPlain(r.abilities)], ['type', r.type], ['rarity', r.rarity]],
+        (r) => ({ id: r.id, title: r.name, path: '/item-cards',
+          note: [r.type, r.rarity].filter(Boolean).join(' · ') })),
+    ].filter((g) => g.hits.length);
+
+    res.json({
+      query: raw,
+      total: groups.reduce((n, g) => n + g.hits.length, 0),
+      groups,
+    });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+/**
+ * One search result, in full.
+ *
+ * The list deliberately carries only a title and a 120-character excerpt — nine
+ * groups of twenty-five rows with their bodies attached would be most of the
+ * campaign. This fetches the one row the DM actually clicked, so reading a
+ * result costs one small request rather than the list costing everything.
+ *
+ * Same DM-only rule as the search itself, re-checked here rather than assumed:
+ * this route is reachable directly, and every id it takes came from the client.
+ * Every query is scoped by campaign as well as by id, so a valid id belonging
+ * to somebody else's campaign returns nothing.
+ *
+ * `body` comes back with its format named, because the three differ: journal
+ * and diary bodies are markdown, an item's abilities are the sanitised HTML
+ * the card editor produced, and the rest is plain text that must not be
+ * rendered as either.
+ */
+app.get('/api/campaigns/:campaignId/search/:kind/:id', requireRole(['dm', 'admin']), async (req, res) => {
+  const { campaignId, kind, id } = req.params;
+  try {
+    if (!await dmOwnsCampaign(campaignId, req.session.userId, req.session.role))
+      return res.status(403).json({ error: 'Access denied' });
+
+    const one = async (sql) => (await pool.query(sql, [campaignId, id])).rows[0] ?? null;
+    const meta = (...pairs) =>
+      pairs.filter(([, v]) => v !== null && v !== undefined && v !== '')
+        .map(([label, value]) => ({ label, value: String(value) }));
+
+    let r;
+    switch (kind) {
+      case 'journal':
+        r = await one(`SELECT j.title, j.body, j.category, j.in_game_day, j.dm_only,
+                              j.created_at, u.username, cp.player_name,
+                              -- No CASE on is_public here, unlike the players'
+                              -- journal query: this route is DM-only, and the
+                              -- DM is who hid the location in the first place.
+                              cl.name AS location, cl.is_public AS location_public
+                         FROM campaign_journal_entries j
+                         JOIN users u ON u.id = j.created_by
+                         LEFT JOIN campaign_players cp ON cp.id = j.player_id
+                         LEFT JOIN campaign_locations cl ON cl.id = j.location_id
+                        WHERE j.campaign_id = $1 AND j.id = $2`);
+        if (!r) break;
+        r = { title: r.title || '(untitled)', body: r.body, bodyFormat: 'markdown',
+          meta: meta(['Written by', r.player_name || r.username], ['Category', r.category],
+            ['Where', r.location && (r.location_public ? r.location : `${r.location} (hidden)`)],
+            ['In-game day', r.in_game_day],
+            ['Visible to', r.dm_only ? 'you only' : 'the whole table']) };
+        break;
+      case 'diary':
+        r = await one(`SELECT title, body, chapter, session_no, session_date, status
+                         FROM campaign_diary_entries WHERE campaign_id = $1 AND id = $2`);
+        if (!r) break;
+        r = { title: r.title || '(untitled)', body: r.body, bodyFormat: 'markdown',
+          meta: meta(['Chapter', r.chapter], ['Session', r.session_no],
+            ['Played', r.session_date && String(r.session_date).slice(0, 10)],
+            ['Status', r.status]) };
+        break;
+      case 'player-diary':
+        r = await one(`SELECT d.title, d.body, d.category, d.session_no, d.session_date,
+                              cp.player_name
+                         FROM player_diary_entries d
+                         LEFT JOIN campaign_players cp ON cp.id = d.player_id
+                        WHERE d.campaign_id = $1 AND d.id = $2`);
+        if (!r) break;
+        r = { title: r.title || '(untitled)', body: r.body, bodyFormat: 'markdown',
+          meta: meta(['Whose', r.player_name], ['Category', r.category],
+            ['Session', r.session_no],
+            ['Played', r.session_date && String(r.session_date).slice(0, 10)]) };
+        break;
+      case 'location':
+        r = await one(`SELECT l.name, l.description, l.is_public, l.size_type, p.name AS parent
+                         FROM campaign_locations l
+                         LEFT JOIN campaign_locations p ON p.id = l.parent_id
+                        WHERE l.campaign_id = $1 AND l.id = $2`);
+        if (!r) break;
+        r = { title: r.name, body: r.description, bodyFormat: 'markdown',
+          meta: meta(['Type', r.size_type], ['Within', r.parent],
+            ['Players', r.is_public ? 'can see this' : 'cannot see this']) };
+        break;
+      case 'npc':
+        r = await one('SELECT name FROM campaign_npcs WHERE campaign_id = $1 AND id = $2');
+        if (!r) break;
+        // campaign_npcs is a name and nothing else. Saying so beats an empty panel.
+        r = { title: r.name, body: null, bodyFormat: 'text',
+          meta: meta(['Notes', 'NPCs hold only a name today']) };
+        break;
+      case 'event':
+        r = await one(`SELECT e.title, e.description, e.location, e.year, e.day_of_year,
+                              e.duration_days, cp.player_name
+                         FROM player_timeline_entries e
+                         LEFT JOIN campaign_players cp ON cp.id = e.player_id
+                        WHERE e.campaign_id = $1 AND e.id = $2`);
+        if (!r) break;
+        r = { title: r.title || '(untitled)', body: r.description, bodyFormat: 'text',
+          meta: meta(['Whose', r.player_name || 'the party'], ['Where', r.location],
+            ['Year', r.year], ['Day of year', r.day_of_year],
+            ['Lasts', r.duration_days && `${r.duration_days} day(s)`]) };
+        break;
+      case 'character':
+        // Keyed by player_id, which is what the list returns and what selects a
+        // character everywhere else in the app.
+        r = await one(`SELECT pc.name, pc.story, pc.traits, pc.flaws, pc.goals,
+                              pc.public_info, pc.private_info, cp.player_name
+                         FROM pc_characters pc
+                         JOIN campaign_players cp ON cp.id = pc.player_id
+                        WHERE cp.campaign_id = $1 AND pc.player_id = $2`);
+        if (!r) break;
+        r = { title: r.name || r.player_name, body: null, bodyFormat: 'text',
+          sections: [['Story', r.story], ['Traits', r.traits], ['Flaws', r.flaws],
+            ['Goals', r.goals], ['Public info', r.public_info],
+            ['Private info', r.private_info]]
+            .filter(([, v]) => v && String(v).trim())
+            .map(([label, value]) => ({ label, value: String(value) })),
+          meta: meta(['Played by', r.player_name]) };
+        break;
+      case 'dm-note':
+        r = await one(`SELECT n.content, n.dm_visible, n.created_at, cp.player_name
+                         FROM pc_dm_notes n
+                         JOIN pc_characters pc ON pc.id = n.character_id
+                         JOIN campaign_players cp ON cp.id = pc.player_id
+                        WHERE cp.campaign_id = $1 AND n.id = $2`);
+        if (!r) break;
+        r = { title: `Note on ${r.player_name}`, body: r.content, bodyFormat: 'text',
+          meta: meta(['About', r.player_name],
+            ['Visible to', r.dm_visible ? 'the player too' : 'you only']) };
+        break;
+      case 'item':
+        r = await one(`SELECT DISTINCT ic.name, ic.type, ic.rarity, ic.flavor, ic.abilities,
+                              ic.attunement, ic.damage, ic.damage_type, ic.ac_bonus
+                         FROM inventory_items inv
+                         JOIN item_cards ic ON ic.id = inv.item_card_id
+                        WHERE inv.campaign_id = $1 AND ic.id = $2`);
+        if (!r) break;
+        // `abilities` is the card editor's HTML, already run through
+        // sanitizeAbilities on write (no <a>, no href, no event handlers).
+        r = { title: r.name, body: r.abilities, bodyFormat: 'html',
+          lead: r.flavor,
+          meta: meta(['Type', r.type], ['Rarity', r.rarity], ['Attunement', r.attunement],
+            ['Damage', r.damage && `${r.damage} ${r.damage_type ?? ''}`.trim()],
+            ['AC', r.ac_bonus]) };
+        break;
+      default:
+        return res.status(400).json({ error: 'Unknown result type' });
+    }
+
+    if (!r) return res.status(404).json({ error: 'Not found' });
+    // Where to go to EDIT this, for the reader who wants the real module. Still
+    // the module rather than the entry — see the deep-linking item in TODO.md.
+    const MODULE = {
+      journal: '/pc-sheet', diary: '/diary', 'player-diary': '/diary',
+      location: '/manage-campaigns', npc: '/manage-campaigns', event: '/timeline',
+      character: '/pc-sheet', 'dm-note': '/pc-sheet', item: '/item-cards',
+    };
+    res.json({ kind, id: Number(id), path: MODULE[kind] ?? '/', ...r });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 // ── Cross-link targets ──────────────────────────────────────────────────────
 //
 // The index behind `[[Name]]` links in prose: every location and NPC in this

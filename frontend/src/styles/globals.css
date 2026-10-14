@@ -311,3 +311,15 @@ body {
 @media print {
   .xlink { color: inherit; border-bottom: none; }
 }
+
+/* ── Search hits ────────────────────────────────────────────── */
+/* Marked in the result list and again inside an opened result, so finding the
+   entry and finding the sentence inside it are the same gesture. Set on both
+   `mark` and the class because the DOM walk builds real <mark> elements while
+   the React path renders them as components. */
+mark.search-hit {
+  background: var(--gold-dim);
+  color: var(--bg);
+  border-radius: 2px;
+  padding: 0 1px;
+}
