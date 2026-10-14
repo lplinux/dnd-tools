@@ -496,6 +496,57 @@ it is bound to the campaign it was minted for. The route validates `bundle.type`
 its own token namespace. Unlike journey maps it is *stable* on re-request (the DM presses Share to
 re-copy a link, not to rotate it); revocation is a separate, deliberate `DELETE`.
 
+### Campaign-wide search (DM only)
+
+| Method | Path | Role | Description |
+|---|---|---|---|
+| GET | `/api/campaigns/:campaignId/search?q=` | dm/admin | One box over everything written about a campaign |
+
+Backs the **🔍 Search** tab in Manage Campaigns, between Journal and Settings — the module is
+already DM-only and already has a campaign chosen, so the tab takes `campaignId` as a prop and
+has no selector of its own.
+
+Nine sources: the journal, the campaign diary, every player diary, locations, NPCs, timeline
+events, character sheets, the DM's own notes, and the item cards actually granted in this
+campaign (joined through `inventory_items` — `item_cards` is keyed to a *user*, so the DM's
+wider library is not campaign content).
+
+**DM only, deliberately.** Half of what it reads is withheld from players somewhere else —
+`dm_only` journal entries, unpublished diary drafts, `private_info`, hidden locations, every NPC,
+the DM notes themselves. Teaching one query seven different withholding rules is how a leak gets
+written; refusing players outright is not. They keep the per-module boxes, which filter a list
+they are already entitled to see.
+
+**Matching happens in Node, not SQL.** `ILIKE '%thea%'` does not find *Théa*, and folding accents
+in Postgres needs the `unaccent` extension — a `CREATE EXTENSION` a self-hosted install cannot
+assume it may run. These are campaign notes full of Buldamar, Théa and Grathul, typed without
+their accents about half the time, so folding is the feature rather than a nicety. The cost is
+reading the rows; `SEARCH_ROW_CAP` and `SEARCH_GROUP_CAP` bound it, and a query under two
+characters is refused before anything is read.
+
+`searchFold` mirrors `fold()` in `pages/Diary/searchEntries.js`, the same way
+`deriveMovementPaths` mirrors `derivePaths.js`. A test asserts the two stay identical — a search
+that behaves differently in two places is worse than one that is merely imperfect.
+
+**Excerpts are plain text plus an offset**, never markup. The client marks the match by slicing
+the string into React nodes; emitting `<mark>` server-side would put a DM's prose into HTML
+something downstream has to trust.
+
+| Method | Path | Role | Description |
+|---|---|---|---|
+| GET | `/api/campaigns/:campaignId/search/:kind/:id` | dm/admin | One result in full, read inside the search |
+
+The list carries only a title and a short excerpt; this fetches the one row the DM clicked.
+It re-checks ownership rather than trusting the list it came from — the route is reachable
+directly and every id it takes came from a browser — and **every lookup is scoped by campaign as
+well as by id**, so a valid id belonging to another DM's campaign returns 404 rather than their
+note.
+
+Each body comes back with its format named (`markdown`, `html`, `text`), because the three are
+rendered three different ways and a body sent without one would be guessed at. `html` is only
+ever an item's abilities, the one field the card editor produces as markup and the only one
+`sanitizeAbilities` has cleaned.
+
 ### Share links and cross-links
 
 **Every token-gated surface requires a logged-in member of the campaign.** The journey map,

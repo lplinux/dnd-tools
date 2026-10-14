@@ -13,6 +13,118 @@ The newest tag is `1.0.0`. Anything above it is marked *Unreleased* until it is 
 
 ## [1.0.1] – Unreleased
 
+### Added — one search box over the whole campaign (DM only)
+
+**🔍 Search**, a tab in Manage Campaigns between Journal and Settings. It covers the journal, the
+campaign diary, every player diary, locations, NPCs, timeline events, character sheets, the DM's
+own notes, and the item cards actually in play — nine sources, grouped and collapsible, with the
+matched run marked in a line of context.
+
+It answers *where did I write about Grathul?* The per-module boxes in the Diary and the Journal
+stay, because filtering a list you are already reading is a different act from finding something
+you cannot.
+
+It lives in the module rather than the header for two reasons: the campaign is already chosen
+there, so the tab has nothing to ask; and a global control only a DM may use is one most of the
+table would be shown and then refused.
+
+**DM only**, and the route refuses a player rather than filtering for them. Half of what it reads
+is withheld elsewhere — DM-only journal entries, diary drafts, `private_info`, hidden locations,
+every NPC — and teaching one query seven withholding rules is how a leak gets written.
+
+**Matching is in Node, not SQL**, which is the decision worth recording. `ILIKE '%thea%'` does
+not find *Théa*, and folding accents in Postgres needs the `unaccent` extension — a
+`CREATE EXTENSION` a self-hosted install cannot assume it may run. Verified live: searching
+`thea` finds all seven seeded sources, each of which spells it *Théa*, and searching `théa`
+returns exactly the same seven.
+
+Items search the cards granted **in this campaign**, joined through `inventory_items`, not the
+DM's whole library — `item_cards` is keyed to a user. Their HTML abilities are read as text, so
+searching "span" finds nothing.
+
+### Changed — search results are read inside the search
+
+Clicking a result used to navigate away, which was wrong twice over: it closed the search you
+had just run, and it landed you on the *module* rather than on the thing, because nothing in
+this app can be deep-linked to a single entry.
+
+A result now opens in a reading pane in the same modal — title, metadata, and the body rendered
+as what it actually is: markdown for journal and diary entries, the card editor's sanitised HTML
+for an item's abilities, and plain text for everything else, because a DM note containing `*` is
+not emphasis.
+
+**`[[Name]]` links inside a result resolve and are clickable, and following one opens that thing
+in the same pane.** Back walks the stack. That is what turns the search from a list you consume
+once into something you can browse — find a journal entry, follow it to the location it names,
+come back, carry on.
+
+**Open in the module ↗** is still there for when you actually want to edit.
+
+A second route, `GET /api/campaigns/:id/search/:kind/:id`, fetches the one row rather than
+attaching every body to the list — nine groups of twenty-five with their bodies would have been
+most of the campaign. It re-checks DM ownership rather than trusting the list it came from, and
+every lookup is scoped **by campaign as well as by id**, so a valid id belonging to another DM's
+campaign returns 404 rather than their note. Verified live in both directions.
+
+### Added — search terms stay marked after you open a result
+
+Finding the entry was half the job; finding the sentence inside a long session
+write-up was the other half, and scrolling one hunting for the word you searched for is exactly
+what the excerpt was meant to save you. Every term is now marked in the title, the flavour line,
+the body and each section of a character sheet — and in all three body formats.
+
+**Marking walks text nodes, never the HTML string.** A search for "div" must mark the word, not
+rewrite the tags, so the markdown and item-card paths render first and then wrap matches using
+the DOM API, building `<mark>` elements and setting `.textContent`. Nothing is re-parsed as
+HTML. For markdown this means `Markdown` takes a `highlight` prop and fills the node from an
+effect rather than via `dangerouslySetInnerHTML`, so React and the effect are never writing the
+same node — which is how a mark ends up nested inside a mark. Every other caller of `Markdown`
+is on the unchanged path.
+
+**The offset arithmetic is the part that needed care.** Folding accents does not preserve
+length: `é` is one character, but text pasted out of some editors arrives already decomposed as
+`e` + U+0301, which folds to one — and every offset after it is then wrong by one.
+`foldWithMap` folds character by character and records where each folded character came from, so
+a match found in the folded string maps back exactly. 17 tests, including the decomposed case a
+naive fold gets wrong.
+
+The list excerpt now uses the same splitter. The server still chooses the window — it is the
+only side holding the whole field — but the marking happens client-side, so the list and the
+reading pane agree, **every** term is marked rather than only the first, and nothing depends on
+an offset surviving a fold.
+
+### Fixed — the search tab's sizing was left over from the modal
+
+Two things only showed once it stopped being a modal and had a whole tab to fill:
+
+**A result stopped mid-screen.** The reading pane carried `max-h-[22rem] overflow-y-auto`, sized
+to fit inside a modal. In a tab that nested a second scrollbar inside the tab's own and cut a
+long journal entry off part-way down. Both caps are gone; the tab body already scrolls.
+
+**Results now flow into columns** — one, two or three by width — so a campaign's worth of hits
+fits on a screen instead of running past the fold. CSS columns rather than a grid, because
+groups are different heights and columns pack them without leaving a row's worth of empty space
+under the short ones; `break-inside-avoid` keeps each group whole, so a heading never lands in
+one column with its hits in the next. The toolbar and the empty states stay full width.
+
+### Changed — search groups collapse
+
+Individually or all at once, the same way the diary's groups do, with collapsed tracked rather
+than expanded so a group that appears after a collapse is open rather than silently hidden.
+
+### Fixed — accent folding was written with invisible characters
+
+Every copy of the fold — `searchEntries.js`, `crossLinks.js`, `wikiLinkInput.js`,
+`downloadBundle.js` and the new server one — had the combining-mark range written as **literal
+U+0300–U+036F characters** rather than the `\u0300-\u036f` escape. Behaviourally identical, and
+it worked; but they are invisible in an editor and one Unicode-normalising tool or a careless
+copy-paste would have silently removed accent-insensitivity across search, cross-links and
+export filenames at once. All six now use the escape.
+
+Found by a test asserting the server's fold matches the client's, which could not be written
+until both were spelled the same way.
+
+
 ### Security — session fixation, a wildcard postMessage, and one password floor
 
 **Logging in now issues a new session id.** `POST /api/auth/login` assigned `userId` onto

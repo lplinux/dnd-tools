@@ -138,6 +138,35 @@ entries happened at the same secret place. You still see both.
 
 ---
 
+## Search
+
+One box over everything written down about this campaign: the journal, the campaign diary, every
+player's diary, locations, NPCs, timeline events, the character sheets, your own DM notes, and
+the item cards actually granted to someone.
+
+Accents are ignored in both directions — `thea` finds *Théa* and so does `théa` — and every word
+you type has to appear somewhere in a result, though not all in the same field, so
+`letter vault` finds the entry whose title holds one and whose body the other.
+
+Whatever you searched for stays **marked** — in the result list and again inside a result once
+you open it, so a hit in the middle of a long session write-up does not have to be hunted for.
+
+**Results are read here, not somewhere else.** Click one and it opens in place, with its text
+and the things worth knowing about it; **← Back to results** returns you to the list, which is
+still exactly as you left it. A `[[Name]]` inside a result is a link, and following one opens
+*that* thing in the same pane — so you can walk from a journal entry to the location it names
+and back without losing your search. **Open in the module ↗** is there for when you want to edit
+rather than read.
+
+Results flow into two or three columns on a wide window, so a campaign's worth of hits fits
+on one screen. Groups collapse, individually or all at once.
+
+It is DM-only, and the server refuses a player outright rather than filtering nine sources for
+them — half of what it reads is yours alone. Players keep the search boxes inside the Diary and
+the Journal, which filter lists they are already allowed to see.
+
+---
+
 ## Today Marker
 
 The Today Marker places a highlighted line across the full Timeline at a specific in-game date. It is the DM's way of telling the group "the party is currently here in time."
