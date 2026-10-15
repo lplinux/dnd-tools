@@ -213,6 +213,58 @@ body {
 .jm-matrix td.editable:hover { background: var(--surface3); color: var(--gold); }
 .jm-matrix td.self { background: var(--surface3); color: var(--text-muted); }
 
+/* ── Tag chips (NpcSheet/TagInput) ──────────────────────────────
+   The app-theme base for a component that began life on the NPC sheet, so
+   every rule it had lived under `.npc-sheet`. The first caller outside that
+   sheet — the Item Cards form — therefore got NO styling at all: bare serif
+   chips and a default browser input, white box and blue focus ring on a dark
+   form. Same fix and same shape as `.srd-combo` below, which had the same
+   problem with Languages.
+
+   These are the defaults; npc-sheet.css keeps the parchment versions and
+   still wins on specificity without needing `!important`. Sizing follows
+   FIELD_CLS in pages/ItemCards so a chip box sits level with the plain
+   inputs above it. */
+.tag-field { position: relative; }
+.tag-box {
+  display: flex; flex-wrap: wrap; gap: 4px; align-items: center; min-height: 34px;
+  background: var(--surface2); border: 1px solid var(--border2); border-radius: 2px;
+  padding: 3px 6px; cursor: text;
+}
+.tag-box:focus-within { border-color: var(--gold-dim); }
+.tag {
+  display: inline-flex; align-items: center; gap: 2px;
+  background: var(--surface3); border: 1px solid var(--border); border-radius: 2px;
+  padding: 1px 4px 1px 7px; white-space: nowrap;
+  font-family: var(--fb); font-size: 13px; line-height: 1.5; color: var(--text);
+}
+.tag .tag-x {
+  background: none; border: none; cursor: pointer; padding: 0 1px;
+  font-family: sans-serif; font-size: 13px; line-height: 1; color: var(--text-muted);
+}
+.tag .tag-x:hover { color: var(--red-hover); }
+/* Borderless: the box around it IS the field. */
+.tag-input {
+  border: none; outline: none; background: none; flex: 1; min-width: 90px; padding: 1px 2px;
+  font-family: var(--fb); font-size: 14px; color: var(--text);
+}
+.tag-dropdown {
+  position: absolute; top: 100%; left: 0; right: 0; z-index: 50;
+  max-height: 200px; overflow-y: auto;
+  background: var(--surface2); border: 1px solid var(--border2);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, .35);
+}
+.tag-opt {
+  padding: 5px 10px; cursor: pointer;
+  font-family: var(--fb); font-size: 14px; color: var(--text);
+}
+.tag-opt:hover, .tag-opt.focused { background: var(--surface3); color: var(--gold); }
+
+@media print {
+  /* Controls, not content — the same rule npc-sheet.css applies to its own. */
+  .tag-dropdown, .tag-input, .tag .tag-x { display: none !important; }
+}
+
 /* ── SRD lookup (2024 SRD via dnd5eapi.co) ──────────────────────
    Unscoped: used by the NPC sheet (parchment palette, overridden in
    npc-sheet.css), Item Cards, and anywhere else a lookup is offered.
@@ -322,4 +374,28 @@ mark.search-hit {
   color: var(--bg);
   border-radius: 2px;
   padding: 0 1px;
+}
+
+/* ── A rules term you can click, inside an item card ─────────── */
+/* Used where an ⓘ after every entry would be more punctuation than card —
+   "Light, Finesse, Thrown" reads as prose and each word is the control.
+   Inherits the card's typography deliberately: it is the same text, with an
+   affordance, not a button dropped into a sentence. */
+.srd-info-term {
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  border-bottom: 1px dotted currentColor;
+  opacity: .95;
+}
+.srd-info-term:hover,
+.srd-info-term:focus-visible { border-bottom-style: solid; outline: none; }
+
+/* Never on paper or in a PNG: `lookups` is off on those paths, but if one
+   ever leaks through it should look like text. */
+@media print {
+  .srd-info-term { border-bottom: none; cursor: default; }
 }

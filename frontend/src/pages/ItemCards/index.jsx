@@ -24,6 +24,9 @@ import { flushSync } from 'react-dom';
 import AppHeader      from '@/components/layout/AppHeader';
 import { Button } from '@/components/ui';
 import SrdCombobox    from '@/components/SrdCombobox';
+import TagInput from '@/pages/NpcSheet/TagInput';
+import { splitList, joinList, removeOne } from '@/data/listValue';
+import { useSrdNames } from '@/hooks/useSrdNames';
 import { useItemCards, rowToForm } from '@/hooks/useItemCards';
 import { saveBlob, slugify } from '@/api/downloadBundle';
 import { useConfirm } from '@/contexts/ConfirmContext';
@@ -100,6 +103,8 @@ const MIGRATED_KEY = 'ic-migrated';
 
 export default function ItemCards() {
   const [form, setForm] = useState(defaultForm);
+  // The ten SRD weapon properties, for the comma-separated field below.
+  const weaponProperties = useSrdNames('weapon-properties');
   const previewRef = useRef(null);
   const importRef  = useRef(null);
   const confirm    = useConfirm();
@@ -657,10 +662,39 @@ export default function ItemCards() {
                   <input type="text" value={form.damage}     onChange={set('damage')}     placeholder="e.g., 1d8+2"     className={INPUT_CLS} />
                 </Field>
                 <Field label="Damage Type">
-                  <input type="text" value={form.damageType} onChange={set('damageType')} placeholder="e.g., Slashing"  className={INPUT_CLS} />
+                  {/* One value, so the whole-field combobox fits. 13 SRD
+                      damage types, and still free text for a homebrew one.
+                      No ⓘ: it sat outside the field's box, and the lookup
+                      belongs on the card, where you read the item. */}
+                  <SrdCombobox
+                    value={form.damageType}
+                    onChange={(v) => setForm((f) => ({ ...f, damageType: v }))}
+                    srdResource="damage-types"
+                    info={false}
+                    placeholder="e.g., Slashing"
+                    inputClassName={INPUT_CLS}
+                  />
                 </Field>
                 <Field label="Properties">
-                  <input type="text" value={form.properties} onChange={set('properties')} placeholder="e.g., Light, Finesse" className={INPUT_CLS} />
+                  {/* Chips, like the stat sheet's damage resistances. A
+                      comma-separated text field was wrong on re-entry: the
+                      caret landed at the end, inside the LAST entry, so
+                      reopening a saved item read as editing "Finesse" and
+                      offered it back. A chip is finished the moment it is
+                      added, so there is no half-edited entry to land in.
+                      Stored as a comma-separated string either way. */}
+                  <TagInput
+                    options={weaponProperties}
+                    values={splitList(form.properties)}
+                    onAdd={(v) => setForm((f) => ({
+                      ...f, properties: joinList([...splitList(f.properties), v]),
+                    }))}
+                    onRemove={(v) => setForm((f) => ({
+                      ...f, properties: joinList(removeOne(splitList(f.properties), v)),
+                    }))}
+                    srdResource="weapon-properties"
+                    placeholder="Light, Finesse…"
+                  />
                 </Field>
               </div>
             )}

@@ -194,9 +194,22 @@ export async function loadEntries(resource) {
     if (res.ok) {
       const body = await res.json();
       if (Array.isArray(body?.results)) {
+        // Spell levels come free: the index already carries `level` on every
+        // row, so narrowing a picker to one level costs no second request and
+        // no `?level=` round trip per row.
+        const levels = new Map(
+          body.results
+            // `typeof === 'number'`, not truthiness — a cantrip is level 0 and
+            // would drop all 27 of them.
+            .filter((r) => r.name && typeof r.level === 'number')
+            .map((r) => [r.name, r.level]),
+        );
         entries = {
           slugs: new Set(body.results.map((r) => r.index ?? toSlug(r.name))),
           names: body.results.map((r) => r.name).filter(Boolean).sort((a, b) => a.localeCompare(b)),
+          // null for every resource that has no levels, so callers can tell
+          // "not a levelled resource" from "level 0".
+          levels: levels.size ? levels : null,
         };
       }
     }
@@ -208,6 +221,24 @@ export async function loadEntries(resource) {
   // Only memoise a real answer; a transient failure must stay retryable.
   if (entries) indexCache.set(resource, entries);
   return entries;
+}
+
+/**
+ * The names in an index, optionally narrowed to one level.
+ *
+ * Pure, so it is tested without a DOM or a network.
+ *
+ * Fails OPEN twice over, because an over-narrow picker is worse than a long
+ * one: a resource with no level data returns every name, and so does a level
+ * that matches nothing. The worst case is the unfiltered list we had before —
+ * never an empty dropdown on a field that is supposed to help.
+ */
+export function namesAtLevel(entries, level = null) {
+  if (!entries) return [];
+  // `== null`, not falsy: level 0 is cantrips and is a real filter.
+  if (level == null || !entries.levels) return entries.names;
+  const at = entries.names.filter((n) => entries.levels.get(n) === level);
+  return at.length ? at : entries.names;
 }
 
 /** Slugs available in a resource. Null when unknown, so callers can fail open. */

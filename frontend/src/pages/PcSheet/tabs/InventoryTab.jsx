@@ -374,6 +374,21 @@ export default function InventoryTab({
   };
 
   /**
+   * Escape closes a pinned card.
+   *
+   * It has a backdrop and takes clicks, so it is a dialog in everything but
+   * name and Escape is what people try first. Only when PINNED: the hover
+   * card is dismissed by moving the pointer, and binding a global key for it
+   * would fight every other Escape on the sheet.
+   */
+  useEffect(() => {
+    if (!card?.pinned) return undefined;
+    const onKey = (e) => { if (e.key === 'Escape') setCard(null); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [card?.pinned]);
+
+  /**
    * Place the hover card next to the pointer, inside the viewport.
    *
    * The box is measured rather than assumed: the two card bodies are different
@@ -635,8 +650,14 @@ export default function InventoryTab({
           <div
             ref={cardRef}
             className={[
-              'fixed z-50 pointer-events-none',
-              card.pinned ? 'left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2' : '',
+              'fixed z-50',
+              // The hover card follows the pointer and must not intercept it,
+              // or it would steal the hover from the row underneath and
+              // flicker. A PINNED card is a thing you came to read, so it
+              // takes clicks — which is what makes the rules terms inside it
+              // reachable at all.
+              card.pinned ? 'pointer-events-auto left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2'
+                : 'pointer-events-none',
             ].join(' ')}
             // Before the measuring pass lands, sit at the raw pointer offset —
             // close enough that a mis-measured frame would still be beside the
@@ -645,7 +666,7 @@ export default function InventoryTab({
           >
             <div className="shadow-card rounded-sm overflow-hidden">
               {card.item.item_card_id
-                ? <ItemCardPreview form={cardFormOf(card.item)} />
+                ? <ItemCardPreview form={cardFormOf(card.item)} lookups={card.pinned} />
                 : <PlainDetails item={card.item} />}
             </div>
           </div>

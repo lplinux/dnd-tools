@@ -11,6 +11,7 @@
  */
 
 import { forwardRef } from 'react';
+import SrdInfo, { useSrdIndex, srdHasEntry } from '@/components/SrdInfo';
 import { RARITIES } from './constants';
 
 /** Circle use-charge indicator */
@@ -44,7 +45,36 @@ export const CARD_WIDTH = '63mm';
  */
 const PREVIEW_MAX_WIDTH = '34rem';
 
-const ItemCardPreview = forwardRef(function ItemCardPreview({ form }, ref) {
+/**
+ * A rules term the reader can click for its 2024 SRD text, or just the text.
+ *
+ * `lookups` is OFF by default and that default matters: this same component is
+ * what `handleDownload` captures for the PNG and what the creator renders as a
+ * live preview. Interactive chrome in either would end up baked into an image.
+ * Only the pinned inventory card turns it on.
+ */
+function Term({ lookups, resource, name, slugs }) {
+  // Only offer the click for a name the SRD actually has. A homebrew property
+  // rendered as a link would be a dead end that opens "no entry"; as plain
+  // text it is simply the DM's own word, which is what it is.
+  if (!lookups || !name || !srdHasEntry(slugs, name)) return name ?? null;
+  return <SrdInfo resource={resource} name={name}>{name}</SrdInfo>;
+}
+
+/** "Light, Finesse" → each one clickable, commas left as commas. */
+function TermList({ lookups, resource, value, slugs }) {
+  if (!lookups) return value;
+  const parts = String(value).split(',').map((p) => p.trim()).filter(Boolean);
+  if (!parts.length) return value;
+  return parts.map((p, i) => (
+    <span key={p}>
+      {i > 0 && ', '}
+      <Term lookups resource={resource} name={p} slugs={slugs} />
+    </span>
+  ));
+}
+
+const ItemCardPreview = forwardRef(function ItemCardPreview({ form, lookups = false }, ref) {
   const {
     name, type, rarity, flavor, attunement,
     damage, damageType, properties,
@@ -52,6 +82,12 @@ const ItemCardPreview = forwardRef(function ItemCardPreview({ form }, ref) {
     uses,
     abilities,
   } = form;
+
+  // Gated on `lookups`: useSrdIndex does nothing without a resource, so the
+  // creator's live preview and the PNG capture fetch nothing. One cached
+  // index request per resource, not one per term.
+  const propSlugs = useSrdIndex(lookups ? 'weapon-properties' : null);
+  const dmgSlugs  = useSrdIndex(lookups ? 'damage-types' : null);
 
   const rarityDef   = RARITIES.find(r => r.id === rarity);
   const rarityColor = rarityDef?.color ?? 'var(--border)';
@@ -112,8 +148,18 @@ const ItemCardPreview = forwardRef(function ItemCardPreview({ form }, ref) {
             {showWeapon && (
               <>
                 {damage     && <div className="ic-stat">Damage: {damage}</div>}
-                {damageType && <div className="ic-stat">Type: {damageType}</div>}
-                {properties && <div className="ic-stat">Properties: {properties}</div>}
+                {damageType && (
+                  <div className="ic-stat">
+                    Type: <Term lookups={lookups} resource="damage-types"
+                      name={damageType} slugs={dmgSlugs} />
+                  </div>
+                )}
+                {properties && (
+                  <div className="ic-stat">
+                    Properties: <TermList lookups={lookups} resource="weapon-properties"
+                      value={properties} slugs={propSlugs} />
+                  </div>
+                )}
               </>
             )}
             {showArmor && (
