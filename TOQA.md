@@ -13,6 +13,117 @@ PC Sheet / Journey Map / Manage Campaign fix batch that went with it.
 
 ---
 
+## Rules lookups on a pinned item card
+
+### Already proved live
+
+- [x] **The SRD returns real text** for both resources ✅ — `weapon-properties/finesse` and
+      `damage-types/slashing` both answer, under `description` (not `desc`; our `lookup()`
+      already reads either).
+
+### Wants your eyes in the browser
+
+- [ ] **Escape closes a pinned card** — and moving the pointer still dismisses an unpinned one.
+- [ ] **Click an item in the inventory to pin it**, then click a property — the SRD text should
+      open. Hovering alone should still just show the card, unclickable.
+- [ ] **A weapon with several properties** — each word separately clickable, commas untouched.
+- [ ] **Damage type** likewise.
+- [ ] **A homebrew property** the SRD does not have should be plain text, not a link.
+- [ ] **The PNG and the Print Set must be unchanged.** Download a card and print a set; neither
+      should carry a dotted underline or any other affordance. This is the regression the
+      `lookups` default exists to prevent.
+- [ ] **The Item Cards creator's live preview** should also be unchanged.
+- [ ] **The lookup modal over the pinned card** — it should open above it, and closing it should
+      leave the card still pinned.
+- [ ] **Offline**, a property should fall back to plain text or an empty modal rather than
+      hanging.
+
+---
+
+## Cross-link popover, the party in the filter, SRD lookups, Char Tree filter
+
+### Already proved live
+
+- [x] **`link-targets` returns the party** ✅ — sheet name when set (*Thalia Moonwhisper*),
+      player-slot name otherwise (*Brun*), for both the DM and a player.
+- [x] **A player still gets no NPCs** ✅ — the party being added did not widen anything.
+- [x] **A character name does not resolve as a link** ✅ — `buildIndex` takes only locations and
+      NPCs, asserted by a test that passes characters in and expects an empty index.
+- [x] **The SRD resources exist and are reachable** ✅ — spells 339, damage-types 13,
+      weapon-properties 10.
+
+### Wants your eyes in the browser
+
+- [ ] **Click a `[[link]]` while reading a journal entry.** The popover must appear ON TOP of
+      the entry — this is the bug being fixed, so it is the one to check first. Then press
+      Escape, and click outside it, and confirm both dismiss it.
+- [ ] **Type `[[` and look for a party member** — they should appear with a 🧝 and *name only*.
+      Pick one, save, and confirm the name renders as plain text rather than a link.
+- [ ] **The chips look like a field** in the Item Cards form — a bordered box on the dark
+      theme, level with the Damage Type input above it, not bare text beside a white browser
+      input. Check the NPC sheet's parchment chips are untouched.
+- [ ] **Spell suggestions are per level**: type `fire` in the 3rd-level row and only Fireball
+      should appear; the cantrip row should offer Fire Bolt and not Fireball.
+- [ ] **The cantrip row still has suggestions at all** — level 0 is the one most likely to have
+      been filtered away to nothing.
+- [ ] **Spells are chips now.** Add one, add a second, remove the first with its ×, and check
+      the ⓘ opens its SRD text. Then save, reload, and add another — reopening must not land
+      you inside the last spell, which is the bug this replaced.
+- [ ] **Free text still works** — type a homebrew spell and press Enter.
+- [ ] **A comma also commits**, matching the old habit.
+- [ ] **Ten spell levels of chips** — check the table is not noticeably taller or harder to
+      scan than the old single-line chip row.
+- [ ] **Print the stat sheet**: no × and no ⓘ on paper, for spells *or* Defenses, and no
+      "+ Add spell level…" row under the last level.
+- [ ] **Item Card properties** behave the same way.
+- [ ] **No ⓘ beside Damage Type** in the Item Cards form.
+- [ ] **Item card damage type**: the combobox should offer the 13 SRD types and still accept
+      free text for homebrew.
+- [ ] **Offline behaviour** — with no network, all three fields should behave as plain inputs
+      rather than hanging or erroring.
+- [ ] **Char Tree filter**: type a player's name and check the chips AND the cross-connection
+      columns narrow, that the count reads sensibly, and that **nobody disappears from the
+      tree** — the filter is for the lists only.
+- [ ] **On a phone**, the three dropdowns: tapping a suggestion must insert it. They use
+      `onPointerDown` for exactly this reason and it is the part most likely to be wrong.
+
+---
+
+## Printing the Journal and the Diary
+
+### Already proved live
+
+- [x] **The document is well-formed** ✅ — every tag balanced across groups, notes, markdown
+      lists and blockquotes.
+
+### Wants your eyes in the browser
+
+The whole point of this one is how it looks on paper, so these need a real print preview.
+
+- [ ] **As a PLAYER, print the Journal** from the PC Sheet tab, and **print your Diary** from
+      the Diary tab. Both buttons should be there at all.
+- [ ] **Search first, then print** — only the matching entries should be on the page, and the
+      header should say what it was filtered by.
+- [ ] **Change Group by, then print** — the printed headings should follow the selector.
+- [ ] **Collapse a group, then print** — it should still print. (Deliberate; say if you want
+      the opposite.)
+- [ ] **Two columns** should look right, and a short note should not be torn across a column
+      or a page.
+- [ ] **A long note** will break across columns — check it still reads sensibly.
+- [ ] **A heading should never be the last thing on a page.**
+- [ ] **A diary with no categories** should print as a plain list, with no "Uncategorised"
+      heading over everything.
+- [ ] **Markdown**: bold, italics, a bullet list (bullets should actually appear) and a
+      blockquote.
+- [ ] **Nothing matching the search** — the page should say so rather than printing blank.
+- [ ] **Block pop-ups** and press Print: you should get a message, not silence.
+- [ ] **As the DM**, print the journal with a DM-only entry in it — it should be marked
+      *DM only* on the paper, since the printout leaves the table.
+- [ ] **The campaign Diary's own book button is unchanged** — it moved to shared plumbing, so
+      check the title page, contents, drop caps and party annex all still come out.
+
+---
+
 ## Campaign-wide search (DM only)
 
 ### Already proved live
