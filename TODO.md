@@ -64,41 +64,6 @@ Touch input and the two overflowing layouts are **done** — see `TOQA.md`. What
 
 ---
 
-## Campaign-wide search — follow-ups
-
-Built and working; these are what it does not do yet.
-
-- [ ] **No entry in this app has an addressable URL.** Clicking a result now *reads it inside
-      the search*, which sidesteps the problem for reading — but **Open in the module ↗** still
-      lands you on the module rather than on the thing, and a link to one journal entry or
-      timeline event cannot be pasted anywhere. Giving each of those a real URL is a wider
-      change than the search, and now a lower priority than it was, since the common case
-      (find it, read it) no longer needs it.
-- [ ] **Speed is unmeasured against a real campaign.** Every row of nine tables is read per
-      query, because accent folding happens in Node. The fixture it was verified on had seven
-      rows; Leruhy has far more. If it drags, the fix is a coarse SQL pre-filter for queries
-      containing no accented characters — which is most of them — falling back to the full read
-      only when the query carries one. `SEARCH_ROW_CAP` bounds the worst case meanwhile.
-- [ ] **Items only match cards that are in play.** A card sitting in the DM's library but never
-      granted is invisible to search, deliberately — `item_cards` is keyed to a user, not a
-      campaign. Worth revisiting only if you find yourself searching for items you have not
-      handed out.
-
----
-
-## Manage Campaign
-
-- [ ] Small search box on Char Tree to filter for people
-
----
-
-## Cross-link reference text
-
-- [ ] Player Character should also be included on the filter
-- [ ] Clicking on a cross-link sends the message back of the current note
-
----
-
 ## Planned features (not started)
 
 Captured for later — nothing here has been designed or scoped yet.
@@ -128,44 +93,28 @@ half and would complete the idea the tab came from.
 Not done when the tab shipped because only maps and timelines were asked for, and widening the
 scope unasked is how a tab becomes a dashboard.
 
+- [ ] NPCs that the party have not met appears on the search of Journeis and Diaries. This will be fixed after NPC Management is implemented
+
 ### PHB & DM Rules - A series of quicklinks for accessing the Official Rules of D&D
 
-- [ ] Link for status, conditions, properties, etc (inside PC Sheets)
 - [ ] Accesss to Official books (Maybe upload the PDF into the PDF Viewer or by API calls to SRDs)
-
 
 ### PC Sheet — other
 
 - [ ] Prepare for Multi-Class
 - [ ] Expand to character creation and level up (automatical, based on D&D rules and not manual)
-- [ ] Autocomplete for Spell search (while writing, there should appear a hint of all the spells)
 
+### Manage Campaign
+
+- [ ] Invite link for new users to join a Campaign
+      - [ ] A 1 hour link should be expose and a new screen should ask for the invitee to add the username, Password & Character Name. It should also display the campaign that he is join to.
+      - [ ] A user created this way should be added to the DB among the character to the Campaign.
+      
 ---
 
 ## Ideas worth considering
 
-My suggestions, not your backlog — nothing here has been agreed. Ordered by what I think is
-worth most relative to its cost, and each one grounded in something this app already has or
-is missing rather than in a feature list from elsewhere. The comparisons name the tool that
-does the same thing well, so you can judge whether you want that at all.
-
-**Three of these have since shipped** and are no longer ideas:
-
-- **2. One search box across the whole campaign** — built as
-  `GET /api/campaigns/:id/search`, reached from 🔍 in the header or Ctrl/Cmd+K. Nine sources.
-  Not Postgres full-text as suggested here: `ILIKE` cannot fold accents and `unaccent` is a
-  `CREATE EXTENSION` a self-hosted install may not be allowed to run, so matching happens in
-  Node. The visibility problem this entry called "the actual design work" was settled by making
-  the route **DM-only** rather than by filtering nine sources per viewer.
-- **3. Cross-links in the text you already write** — `[[Name]]` over locations and NPCs, in the
-  diary and the journal. The caveat about per-viewer resolution was the thing that shaped it:
-  an unresolved name renders as plain text, which is what a player sees for a hidden location
-  or any NPC.
-- **4. A player-facing campaign page** — in part. The **🔗 Campaign Links** tab gathers the
-  shared maps and timelines. What it does *not* yet gather is the published diary and the
-  player's own sheet — the rest of this idea, captured under Planned features above.
-
-### 5. Session prep, in the app
+### 1. Session prep, in the app
 
 The diary records what *happened*. Nothing records what you intend to happen. A "next session" note per
 campaign, with a one-click promote-to-diary-entry after the session, would close that loop and
