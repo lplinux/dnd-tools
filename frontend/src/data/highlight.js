@@ -49,6 +49,13 @@ export function queryTerms(query) {
   return [...seen].sort((a, b) => b.length - a.length);
 }
 
+/** Does every term appear in the text, ignoring case and accents? */
+export function matchesAll(text, terms) {
+  if (!terms?.length) return true;
+  const { folded } = foldWithMap(text);
+  return terms.every((t) => folded.includes(t));
+}
+
 /**
  * Every place a term occurs, as ranges into the ORIGINAL string.
  *
