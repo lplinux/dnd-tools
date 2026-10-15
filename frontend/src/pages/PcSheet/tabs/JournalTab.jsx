@@ -10,13 +10,14 @@
  */
 import JournalPanel from '@/pages/Journal/JournalPanel';
 
-export default function JournalTab({ campaignId, isDM, calendarType }) {
+export default function JournalTab({ campaignId, isDM, calendarType, campaignName }) {
   return (
     <JournalPanel
       key={campaignId}
       campaignId={campaignId}
       isDM={isDM}
       calendarType={calendarType}
+      campaignName={campaignName}
     />
   );
 }

@@ -14,11 +14,12 @@ import { Button, Spinner } from '@/components/ui';
 import { useToast } from '@/hooks/useToast';
 import { diaryApi } from '@/api/diary';
 import GroupedEntries from '@/pages/Diary/GroupedEntries';
+import PrintNotesButton from '@/pages/Diary/PrintNotesButton';
 import EntryModal from '@/pages/Diary/EntryModal';
 import CrossLinkPopover from '@/components/CrossLinkPopover';
 import { useCrossLinks } from '@/hooks/useCrossLinks';
 
-export default function DiaryTab({ campaignId, playerId, isDM }) {
+export default function DiaryTab({ campaignId, playerId, isDM, campaignName }) {
   const { toast } = useToast();
   const [entries, setEntries] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -91,6 +92,14 @@ export default function DiaryTab({ campaignId, playerId, isDM }) {
         onDelete={remove}
         emptyText={isDM ? 'This player has not written anything yet.'
           : 'Your diary is empty. Write up a session and it stays yours.'}
+        toolbar={({ groups, query }) => (
+          <PrintNotesButton
+            groups={groups} query={query}
+            title={campaignName}
+            subtitle={isDM ? 'Player Diary' : 'My Diary'}
+            label={isDM ? 'Print this diary as shown' : 'Print your diary as shown'}
+          />
+        )}
       />
 
       <EntryModal

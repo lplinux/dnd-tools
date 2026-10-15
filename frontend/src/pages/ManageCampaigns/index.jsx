@@ -286,6 +286,7 @@ export default function ManageCampaigns() {
           <JournalTab
             campaignId={currentId}
             calendarType={currentCampaign.calendar_type ?? 'harptos'}
+            campaignName={currentCampaign.name}
           />
         );
       case 'search':
