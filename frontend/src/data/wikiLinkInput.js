@@ -64,16 +64,21 @@ export function insertLink(value, caret, name) {
 }
 
 /**
- * The suggestions for a query: locations then NPCs, prefix matches before
- * substring ones, capped so the list stays a glance rather than a scroll.
+ * The suggestions for a query: locations, NPCs, then the party — prefix
+ * matches before substring ones, capped so the list stays a glance rather
+ * than a scroll.
  */
-export function suggest(query, { locations = [], npcs = [] } = {}, limit = 8) {
+export function suggest(query, { locations = [], npcs = [], characters = [] } = {}, limit = 8) {
   const q = String(query ?? '')
     .normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim().toLowerCase();
 
   const rows = [
     ...locations.map((l) => ({ kind: 'location', id: l.id, name: l.name })),
     ...npcs.map((n) => ({ kind: 'npc', id: n.id, name: n.name })),
+    // Offered, but never indexed as a link target — see buildIndex. Picking
+    // one spells the character's name correctly; it does not become a link,
+    // because a character has no page to open.
+    ...characters.map((c) => ({ kind: 'character', id: c.id, name: c.name })),
   ].filter((r) => r.name);
 
   if (!q) return rows.slice(0, limit);

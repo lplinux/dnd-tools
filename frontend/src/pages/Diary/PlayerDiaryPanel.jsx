@@ -12,9 +12,10 @@
 import { useEffect, useState } from 'react';
 import { Button } from '@/components/ui';
 import GroupedEntries from './GroupedEntries';
+import PrintNotesButton from './PrintNotesButton';
 
 export default function PlayerDiaryPanel({
-  isDM, entries, myPlayerId, onNew, onEdit, onDelete, links, onLinkClick,
+  isDM, entries, myPlayerId, campaignName, onNew, onEdit, onDelete, links, onLinkClick,
 }) {
   const byPlayer = new Map();
   if (isDM) {
@@ -72,6 +73,14 @@ export default function PlayerDiaryPanel({
           links={links}
           onLinkClick={onLinkClick}
           readOnly
+          toolbar={({ groups, query }) => (
+            <PrintNotesButton
+              groups={groups} query={query}
+              title={campaignName}
+              subtitle={`${active}'s Diary`}
+              label={`Print ${active}'s diary as shown`}
+            />
+          )}
         />
       </div>
     );
@@ -104,6 +113,14 @@ export default function PlayerDiaryPanel({
         onEdit={onEdit}
         onDelete={onDelete}
         emptyText="Your diary is empty. Write up a session and it stays yours."
+        toolbar={({ groups, query }) => (
+          <PrintNotesButton
+            groups={groups} query={query}
+            title={campaignName}
+            subtitle="My Diary"
+            label="Print your diary as shown"
+          />
+        )}
       />
     </div>
   );

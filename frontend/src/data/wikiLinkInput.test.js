@@ -177,6 +177,15 @@ describe('suggest', () => {
     expect(suggest('', { locations: DATA.locations, npcs: [] }).length).toBe(4);
   });
 
+  it('offers the party too', () => {
+    const withParty = { ...DATA, characters: [{ id: 99, name: 'Thalia' }] };
+    expect(suggest('thal', withParty)).toEqual([{ kind: 'character', id: 99, name: 'Thalia' }]);
+  });
+
+  it('works without a characters list at all', () => {
+    expect(suggest('water', { locations: DATA.locations }).length).toBeGreaterThan(0);
+  });
+
   it('survives missing input', () => {
     expect(suggest('x')).toEqual([]);
     expect(suggest(null, DATA).length).toBe(6);

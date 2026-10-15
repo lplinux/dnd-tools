@@ -3,18 +3,15 @@
  *
  * Renders the campaign diary as a book and sends it to the printer.
  *
- * WHY A SEPARATE WINDOW rather than the off-canvas print document the PC Sheet
- * uses: Vite leaves a lazily loaded route's stylesheet in the document after you
- * navigate away, so an `@page` rule in a diary stylesheet would become GLOBAL
- * after one visit to /diary and silently change the PC and NPC sheets' margins.
- * Naming the page to confine it re-introduces the blank-page bug this project
- * has already fixed twice (see pc-print.css and npc-sheet.css). A document of
- * its own has its own page context and cannot leak.
+ * The window plumbing, the webfonts and `esc` live in data/printDoc — shared
+ * with printNotes, which prints the Journal and a player's Diary. The reasons
+ * for a separate window are documented there. Precedent for the whole
+ * approach: printGraph() in PcSheet/components/RelGraph.jsx.
  *
- * It also sidesteps three other traps for free: no theme tokens are in scope, so
- * nothing prints as a dark block; no dependence on the positional
- * `#root > div` un-clip chain in globals.css; and no component mounts twice with
- * live side effects. Precedent: printGraph() in PcSheet/components/RelGraph.jsx.
+ * THE BOOK IS FOR THE CAMPAIGN DIARY SPECIFICALLY: a title page, a contents, a
+ * party annex, and one session per page with a drop cap. That shape earns its
+ * paper for a dozen long session write-ups and wastes it on forty short notes,
+ * which is why the Journal prints through printNotes instead.
  *
  * `renderMd` emits Tailwind utility classes, which are INERT here because this
  * document never loads the app's CSS — so the stylesheet below targets semantic
@@ -23,13 +20,7 @@
  */
 
 import { renderMd } from '@/components/ui';
-
-const FONTS = 'https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700&family=Crimson+Text:ital,wght@0,400;0,600;1,400&display=swap';
-
-/** Escape for element content. Entry titles are user text and are NOT markdown. */
-function esc(s) {
-  return String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-}
+import { PRINT_FONTS, esc, openPrintWindow } from '@/data/printDoc';
 
 function metaLine(e) {
   const bits = [];
@@ -250,7 +241,7 @@ export function buildDiaryBookHtml({ campaignName, entries, roster }) {
 <html lang="en"><head>
 <meta charset="utf-8">
 <title>${esc(campaignName)} — Campaign Diary</title>
-<link rel="stylesheet" href="${FONTS}">
+<link rel="stylesheet" href="${PRINT_FONTS}">
 <style>${STYLES}</style>
 </head><body><div class="book">
   <section class="title-page">
@@ -266,18 +257,7 @@ export function buildDiaryBookHtml({ campaignName, entries, roster }) {
 </div></body></html>`;
 }
 
-/** Open the book in its own window and print it. */
+/** Open the book in its own window and print it. False if the popup was blocked. */
 export function openDiaryBook({ campaignName, entries, roster }) {
-  const win = window.open('', '_blank');
-  if (!win) return false;           // popup blocked — the caller tells the user
-  win.document.write(buildDiaryBookHtml({ campaignName, entries, roster }));
-  win.document.close();
-
-  // Wait for the webfonts rather than guessing with a timeout: they are loaded
-  // from Google with `display=swap`, so printing too early renders the whole
-  // book in Georgia. document.fonts.ready resolves once swapping is done.
-  const go = () => { win.focus(); win.print(); };
-  if (win.document.fonts?.ready) win.document.fonts.ready.then(go).catch(go);
-  else win.addEventListener('load', go);
-  return true;
+  return openPrintWindow(buildDiaryBookHtml({ campaignName, entries, roster }));
 }

@@ -13,6 +13,166 @@ The newest tag is `1.0.0`. Anything above it is marked *Unreleased* until it is 
 
 ## [1.0.1] – Unreleased
 
+### Added — rules lookups on a pinned item card
+
+Open an item from the inventory and its **weapon properties** and **damage type** are clickable,
+each showing its 2024 SRD text. *Finesse* on a rapier now answers what Finesse does, without
+leaving the sheet.
+
+Each property is its own control rather than the line being one — "Light, Finesse, Thrown" reads
+as prose and the words are the affordance, because an ⓘ after each of three would be more
+punctuation than card. `SrdInfo` takes `children` as the trigger for that; every existing caller
+still gets the ⓘ.
+
+**Two things gate it, and both matter:**
+
+- `lookups` is **off by default**. The same component is what `handleDownload` captures for the
+  PNG and what the Item Cards creator renders as a live preview — interactive chrome in either
+  would be baked into an image. Only the pinned inventory card turns it on, so the creator and
+  the capture fetch no SRD index either.
+- The inventory card was **`pointer-events-none`**, so nothing inside it was reachable however it
+  rendered. The *hover* card keeps that — it follows the pointer and must not steal the hover
+  from the row beneath — while a **pinned** card now takes clicks, which is what makes any of
+  this work.
+
+A name the SRD does not have renders as plain text rather than a link, so a homebrew property is
+the DM's own word instead of a dead end that opens "no entry".
+
+**What was left out, and why.** Rarity and attunement have no SRD entry. `armorType` here is
+free text ("Medium"), not an SRD resource. Conditions named inside an item's abilities prose
+would need scanning the text rather than a field — that is the existing `TODO.md` item about
+linking statuses and conditions from the PC Sheet, and it is a bigger job than this one.
+
+
+### Fixed — a cross-link popover opened behind the note that triggered it
+
+Clicking `[[Buldamar]]` while reading a journal or diary entry appeared to do nothing. The
+reading `Modal` portals itself to the end of `<body>`, so a popover rendered in place sat at the
+same `z-50` but EARLIER in the document and lost the tie. It is now portalled too, at `z-[60]`,
+with its click-away layer above the modal so it can still be dismissed.
+
+### Added — the party in the `[[` autocomplete, offered but not linked
+
+`link-targets` now returns the campaign's characters alongside locations and NPCs, and the
+dropdown offers them, marked *name only*. They are deliberately **not** indexed: a character has
+no page to open, so `[[Thalia]]` renders as plain text like any other unresolved name. Picking
+one spells the name consistently, which is the point. A character's sheet name is used when
+there is one, falling back to the player slot's name.
+
+### Added — three SRD lookups
+
+- **Spell names** on the NPC/stat sheet, per level. 339 SRD spells.
+- **Weapon properties** on an item card. Ten of them.
+- **Damage type** on an item card, via the existing `SrdCombobox`.
+
+**Spells and weapon properties are edited as chips**, the same way Defenses always has been:
+each one has an × to remove it and an ⓘ for its SRD text, and the box takes free text for
+anything the SRD does not have.
+
+They were first built as a comma-separated text field that completed the segment the caret was
+in. That was the wrong shape twice over. Picking the last entry left the caret *inside* it, so
+the field still read as editing that entry and the dropdown offered it straight back; and
+reopening a saved item put the caret at the end — inside the last entry — reproducing the same
+thing on every edit. A chip is finished the moment it is added, so there is no half-edited entry
+to land in. `ListAutocompleteInput` and `data/listInput` are gone rather than left orphaned;
+`data/listValue` is the string ↔ list seam, since the column still stores
+`"Light, Finesse"` and every import, export and print path reads it.
+
+The spell editor loses its click-to-edit toggle with them, along with the `beforeprint` hook
+that existed to close a half-open text input before the sheet reached paper.
+
+All three fail open: `loadEntries` already caches per resource and returns null when the API is
+slow or unreachable, so offline the fields behave exactly as they did before.
+
+### Added — print the Journal and your Diary
+
+A **🖨 Print** button on the Campaign Journal and on a player's Diary, in all three places a
+diary is shown: the PC Sheet's Diary tab, the `/diary` page's player view, and the DM reading a
+player's diary. Players get it as well as the DM — the journal is theirs to read, and the server
+has already decided what is in the list, so a DM-only entry is not in a player's copy to filter.
+
+**It prints what is on screen** — the current grouping, the current search, in the order shown,
+and the printout says so in its header (*"by category, matching 'key'"*) so a filtered page does
+not read as the whole journal with entries mysteriously missing. Collapsed groups still print:
+collapsing is a way to see past a group, not a way to exclude it, and nothing on screen suggests
+otherwise. The search lives inside `GroupedEntries`, so its `toolbar` prop now also takes a
+render function and hands over the filtered, grouped list; a button outside that component could
+only see the unfiltered entries and would quietly print a different set from the one you are
+looking at.
+
+**Notes, not the book.** `printBook` gives each entry a page of its own with a drop cap, which is
+right for a dozen long session write-ups and absurd for forty short notes — *"Found a key,
+Buldamar cellars"* would get an A4 sheet to itself. These flow in two columns under their group
+headings, each note kept whole where it fits, with no forced break per entry and no heading left
+stranded at the foot of a page. An all-unfiled list prints with no heading at all, the same call
+the screen makes.
+
+The separate-print-window machinery moved to `data/printDoc` and is now shared rather than
+copied: the reasoning for it (a lazily loaded `@page` rule becomes global after one visit and
+silently changes the PC and NPC sheets' margins) was already written down once and did not need
+writing twice.
+
+### Fixed — "+ Add spell level…" printed on the stat sheet
+
+The whole table footer is hidden now, not just the control: hiding the `<select>` alone left an
+empty row with the spell table's rules drawn under the last level.
+
+### Changed — spell suggestions are narrowed to the row's level
+
+Typing `fire` in the 3rd-level row offers **Fireball** and nothing else. It used to offer all
+seven spells with "fire" in the name — Fire Bolt (a cantrip), Fire Shield (4th), Fire Storm
+(7th) — every one of which belongs to a different row on the same table.
+
+It costs no extra request. The spells index already carries `level` on every one of its 339
+rows, so the filtering is local to the copy already cached; ten rows asking for ten levels still
+make one call between them. A `?level=` query per row would have made ten.
+
+Two things it is careful about, both of which would look fine in review:
+
+- **A cantrip is level 0.** Testing `if (!level)` instead of `if (level == null)` would silently
+  turn the cantrip row back into the unfiltered list — and only there, which is the kind of bug
+  that survives a demo. Guarded at both ends: the index reads `typeof r.level === 'number'`
+  before storing it, and the filter compares against null explicitly.
+- **It fails open.** A resource with no levels — weapon properties, damage types, conditions —
+  returns everything, as does a level that matches nothing. The worst case is the long list we
+  had before, never an empty dropdown on a field whose whole job is to help.
+
+### Fixed — chips were unstyled everywhere except the NPC sheet
+
+`TagInput` was written for the stat sheet, so all of its CSS was scoped `.npc-sheet .tag-*`. The
+Item Cards form was its first caller anywhere else, and got **none** of it: bare serif chips, a
+raw `ⓘ×` with no chip around them, and a default browser input — a white box with a blue focus
+ring, on a dark parchment form.
+
+The base rules now live unscoped in `globals.css` on the app's own tokens, exactly as
+`.srd-combo` already did after Languages hit the same problem. The sheet keeps its parchment
+versions, which still win on specificity without an `!important` anywhere.
+
+### Fixed — three things that only showed in use
+
+- **Escape now closes a pinned item card.** It has a backdrop and takes clicks, so it is a
+  dialog in all but name and Escape is what people try. Only when pinned: the hover card is
+  dismissed by moving the pointer.
+- **No ⓘ beside the Item Card form's damage type.** It sat outside the field's box, and the
+  lookup belongs on the card, where you are reading the item rather than editing it.
+  `SrdCombobox` takes `info={false}`; every other caller still gets the button.
+- **A chip's × and ⓘ no longer print.** They are controls, not content, and had been printing
+  on every Defenses tag since long before spells used the same editor — ten more rows of them
+  is what made it worth noticing.
+
+### Added — a people filter on the Char Tree
+
+One box narrowing two lists: the player chips and the cross-connection rows, which is the one
+that gets long. A connection matches on either end, because "show me everything touching
+Grathul" is the question being asked. Accent-folded like every other search here.
+
+It does **not** hide anyone from the tree — the eye on each chip owns that. Conflating "I cannot
+find this person" with "this person is not in the tree" would make a filter destructive.
+
+Four lists in that component were `data?.x ?? []`, producing a fresh array every render and
+defeating every `useMemo` below them. They now share one stable empty array.
+
+
 ### Added — one search box over the whole campaign (DM only)
 
 **🔍 Search**, a tab in Manage Campaigns between Journal and Settings. It covers the journal, the

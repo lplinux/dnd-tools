@@ -377,22 +377,7 @@
 /* The click target. Matches .spell-name-inp's box so swapping to the editor does
    not shift the row; the dotted underline only appears on hover so the resting
    sheet reads as a list rather than a form. */
-.npc-sheet .spell-chips-btn {
-  display: block; width: 100%; text-align: left;
-  background: none; border: none; border-bottom: 1px dotted transparent;
-  padding: 2px 0; cursor: text; color: inherit; font: inherit;
-}
-.npc-sheet .spell-chips-btn:hover,
-.npc-sheet .spell-chips-btn:focus-visible { border-bottom-color: var(--parch3); outline: none; }
-.npc-sheet .spell-chips-btn.is-empty { min-height: 19px; }
-.npc-sheet .spell-chips-ph { font-family: var(--fi); font-size: 12px; color: var(--parch3); }
 
-/* Print: no affordance, and an empty level should not leave a dotted gap or a
-   placeholder reading like real content. */
-@media print {
-  .npc-sheet .spell-chips-btn { cursor: default; border-bottom-color: transparent; }
-  .npc-sheet .spell-chips-ph { display: none; }
-}
 /* The ⓘ button and the SRD combobox are styled in styles/globals.css — they are
    used outside `.npc-sheet` too (Item Cards). Only the parchment palette override
    lives here. */
@@ -432,6 +417,14 @@
      live after navigating between the two. */
   .npc-sheet { max-width: 100%; margin: 0; box-shadow: none; border: none; padding: 10px 14px; }
   .npc-sheet .tag-dropdown, .npc-sheet .prof-btn, .npc-sheet .tag-input { display: none !important; }
+  /* A chip's controls are not content. The × and the ⓘ printed on every
+     Defenses tag long before spells used the same editor; ten more rows of
+     them is what made it worth fixing. */
+  .npc-sheet .tag .tag-x, .npc-sheet .srd-info-btn { display: none !important; }
+  /* "+ Add spell level…" is a control, and the whole FOOTER ROW goes with it —
+     hiding only the <select> would leave an empty row with the table's rules
+     drawn under the last spell level. */
+  .npc-sheet .spell-table tfoot { display: none !important; }
   /* Defenses keep their boxes on paper. This used to strip them to bare text,
      which was fine while the section was hidden when empty — now that it always
      prints, an empty field would otherwise be a label with nothing under it.

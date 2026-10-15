@@ -115,6 +115,26 @@ describe('resolve', () => {
   });
 });
 
+describe('the party is offered but never linked', () => {
+  it('a character name does NOT resolve, even when passed in', () => {
+    // Deliberate: picking one from the `[[` dropdown spells the name, but a
+    // character has no page to open, so it renders as plain text. buildIndex
+    // takes only locations and npcs, so an extra key cannot creep in.
+    const i = buildIndex({
+      locations: [], npcs: [], characters: [{ id: 99, name: 'Thalia' }],
+    });
+    expect(i.size).toBe(0);
+    expect(resolve(parseToken('Thalia'), i)).toBeNull();
+  });
+
+  it('a location with the same name as a character still resolves', () => {
+    const i = buildIndex({
+      locations: [{ id: 1, name: 'Thalia' }], characters: [{ id: 99, name: 'Thalia' }],
+    });
+    expect(resolve(parseToken('Thalia'), i)).toMatchObject({ kind: 'location', id: 1 });
+  });
+});
+
 describe('buildIndex', () => {
   it('copes with an empty campaign', () => {
     expect(buildIndex({}).size).toBe(0);

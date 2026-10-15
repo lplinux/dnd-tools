@@ -14,8 +14,16 @@
  *
  * Placement reuses `placeCard`, which already handles flipping away from the
  * pointer near a viewport edge and is tested without a DOM.
+ *
+ * PORTALLED, and above the modal layer. The journal and diary read an entry
+ * inside a `Modal`, which portals itself to the end of `<body>` — so a
+ * popover rendered in place sat at the same z-50 but EARLIER in the document,
+ * and opened behind the note that triggered it. Portalling puts it in the
+ * same stacking layer; `z-[60]` puts it in front, and keeps it in front of the
+ * `z-[51]` the modal's own panel uses.
  */
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 
 import { Button, Markdown } from '@/components/ui';
 import { placeCard } from '@/data/placeCard';
@@ -70,16 +78,17 @@ export default function CrossLinkPopover({ target, at, campaignId, mapPath, onCl
 
   if (!target) return null;
 
-  return (
+  return createPortal(
     <>
       {/* A click anywhere else dismisses it. Transparent, so it does not dim
-          the entry you are reading. */}
-      <div className="fixed inset-0 z-40" onClick={onClose} aria-hidden="true" />
+          the entry you are reading — but it must sit above the modal, or the
+          modal swallows the click and the popover cannot be dismissed. */}
+      <div className="fixed inset-0 z-[59]" onClick={onClose} aria-hidden="true" />
       <div
         ref={ref}
         role="dialog"
         aria-label={target.name}
-        className="fixed z-50 w-72 max-w-[calc(100vw-2rem)] bg-surface2 border
+        className="fixed z-[60] w-72 max-w-[calc(100vw-2rem)] bg-surface2 border
                    border-[var(--gold-dim)] rounded-sm shadow-xl p-3 flex flex-col gap-2"
         style={pos
           ? { left: pos.left, top: pos.top }
@@ -115,6 +124,7 @@ export default function CrossLinkPopover({ target, at, campaignId, mapPath, onCl
           </Button>
         )}
       </div>
-    </>
+    </>,
+    document.body,
   );
 }

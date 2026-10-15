@@ -109,6 +109,11 @@ export default function GroupedEntries({
   const groups = groupEntries(shown, field, { sortGroups });
   const searching = searchable && !!query.trim();
 
+  // `toolbar` may be a render function. Printing has to send exactly what is
+  // on screen, and the filtering happens in here — so a Print button outside
+  // this component can only see the unfiltered list and would print a
+  // different set from the one you are looking at. A plain node still works;
+  // only the callers that need the filtered view pass a function.
   const head = (searchable || toolbar) && (
     <div className="flex items-center gap-2 flex-wrap">
       {searchable && (
@@ -117,7 +122,9 @@ export default function GroupedEntries({
           matched={shown.length} total={entries.length}
         />
       )}
-      {toolbar}
+      {typeof toolbar === 'function'
+        ? toolbar({ shown, groups, query: query.trim() })
+        : toolbar}
     </div>
   );
 

@@ -87,6 +87,7 @@ export default function SrdCombobox({
   srdResource = null,
   /** Resource used for the ⓘ lookup, when it differs from the option source. */
   infoResource = null,
+  info = true,
   placeholder = 'Type to search…',
   className = '',
   /**
@@ -112,7 +113,10 @@ export default function SrdCombobox({
     : all;
 
   const lookupRes = infoResource ?? srdResource;
-  const showInfo = !!lookupRes && !!value && srdHasEntry(entries?.slugs ?? null, value);
+  // `info={false}` suppresses the ⓘ entirely. The Item Card form wants the
+  // completion without the button — the lookup for a damage type lives on the
+  // card itself, where you are reading the item rather than editing it.
+  const showInfo = info && !!lookupRes && !!value && srdHasEntry(entries?.slugs ?? null, value);
 
   // `opt` carries the full option (key, source, edition) when one was chosen, so
   // a caller can fetch detail by key rather than re-resolving the display name.

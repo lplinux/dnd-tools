@@ -421,6 +421,7 @@ export default function PcSheet() {
                   campaignId={currentCampaignId}
                   playerId={currentPlayerId}
                   isDM={isDM}
+                  campaignName={currentCampaign?.name}
                 />
               )}
               {activeTab === 'journal' && (
@@ -428,6 +429,7 @@ export default function PcSheet() {
                   campaignId={currentCampaignId}
                   isDM={isDM}
                   calendarType={currentCampaign?.calendar_type ?? 'harptos'}
+                  campaignName={currentCampaign?.name}
                 />
               )}
               {activeTab === 'links' && (

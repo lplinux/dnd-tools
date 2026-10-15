@@ -27,6 +27,7 @@ import { campaignsApi } from '@/api/campaigns';
 import { useToast } from '@/hooks/useToast';
 import { formatDate, fromAbsDay } from '@/data/calendar';
 import GroupedEntries from '@/pages/Diary/GroupedEntries';
+import { openNotesPrint } from '@/pages/Diary/printNotes';
 import LinkingTextarea from '@/components/LinkingTextarea';
 import CrossLinkPopover from '@/components/CrossLinkPopover';
 import { useCrossLinks } from '@/hooks/useCrossLinks';
@@ -86,7 +87,29 @@ function writtenOn(iso) {
   return d.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
 }
 
-export default function JournalPanel({ campaignId, isDM, calendarType = 'harptos' }) {
+/**
+ * The same three facts as the on-screen meta line, as a plain string.
+ *
+ * Separate from `meta` below rather than shared, because that one returns JSX
+ * and the print document never loads React — there is nothing to render it
+ * with. The emoji go too: they print as tofu in half the fonts a browser will
+ * fall back to.
+ */
+export function journalMetaText(e, calType) {
+  const when = inGameDate(e.in_game_day, calType);
+  return [
+    e.author_character || e.author_username,
+    e.location_name,
+    when,
+    // Worth carrying onto paper: a printout that leaves the table should say
+    // which lines were never meant for the players.
+    e.dm_only ? 'DM only' : null,
+  ].filter(Boolean).join(' · ');
+}
+
+export default function JournalPanel({
+  campaignId, isDM, calendarType = 'harptos', campaignName = '',
+}) {
   const { toast } = useToast();
   const [entries, setEntries] = useState([]);
   const [locations, setLocations] = useState([]);
@@ -207,6 +230,32 @@ export default function JournalPanel({ campaignId, isDM, calendarType = 'harptos
     );
   }, [calendarType]);
 
+  /**
+   * Print what is on screen.
+   *
+   * `groups` comes from GroupedEntries, so the current grouping and the
+   * current search both carry over. Players get this as well as the DM: the
+   * journal is theirs to read, and the server has already decided what is in
+   * the list — a DM-only entry is not in a player's `entries` to begin with,
+   * so there is nothing to filter here.
+   */
+  function print(groups, query) {
+    const ok = openNotesPrint({
+      title: campaignName || 'Campaign',
+      subtitle: 'Campaign Journal',
+      groups,
+      ungroupedLabel: GROUP_BY[groupBy].ungrouped,
+      meta: (e) => journalMetaText(e, calendarType),
+      // Say so on the paper, or a filtered printout looks like the whole
+      // journal with entries mysteriously missing.
+      note: [
+        `by ${GROUP_BY[groupBy].label.toLowerCase()}`,
+        query ? `matching “${query}”` : null,
+      ].filter(Boolean).join(', '),
+    });
+    if (!ok) toast('Allow pop-ups for this site to print.', 'error');
+  }
+
   // Shared, so rights are per entry rather than per list: your own entry is
   // yours to edit, and the DM may remove anyone's without being able to
   // rewrite it. Both halves are enforced server-side; this only avoids
@@ -239,22 +288,34 @@ export default function JournalPanel({ campaignId, isDM, calendarType = 'harptos
         searchPlaceholder="Search the journal…"
         links={index}
         onLinkClick={openLink}
-        toolbar={(
-          <label className="flex items-center gap-1.5 text-[0.6rem] font-display uppercase
-                            tracking-wider text-text-muted">
-            Group by
-            <select
-              value={groupBy}
-              onChange={(ev) => setGroupBy(ev.target.value)}
-              className="bg-surface2 border border-border2 text-text px-1.5 py-1 rounded-sm
-                         text-[0.7rem] font-body normal-case tracking-normal
-                         focus:outline-none focus:border-[var(--gold-dim)]"
+        toolbar={({ groups, query }) => (
+          <>
+            <label className="flex items-center gap-1.5 text-[0.6rem] font-display uppercase
+                              tracking-wider text-text-muted">
+              Group by
+              <select
+                value={groupBy}
+                onChange={(ev) => setGroupBy(ev.target.value)}
+                className="bg-surface2 border border-border2 text-text px-1.5 py-1 rounded-sm
+                           text-[0.7rem] font-body normal-case tracking-normal
+                           focus:outline-none focus:border-[var(--gold-dim)]"
+              >
+                {Object.entries(GROUP_BY).map(([k, g]) => (
+                  <option key={k} value={k}>{g.label}</option>
+                ))}
+              </select>
+            </label>
+            {/* Takes the grouped list from GroupedEntries rather than
+                `entries`, so what prints is what is on screen — current
+                grouping, current search. */}
+            <Button
+              variant="default"
+              onClick={() => print(groups, query)}
+              title="Print the journal as shown"
             >
-              {Object.entries(GROUP_BY).map(([k, g]) => (
-                <option key={k} value={k}>{g.label}</option>
-              ))}
-            </select>
-          </label>
+              🖨 Print
+            </Button>
+          </>
         )}
         meta={meta}
         can={can}

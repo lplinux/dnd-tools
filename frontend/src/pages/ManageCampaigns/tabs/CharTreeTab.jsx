@@ -33,6 +33,10 @@ import { useToast } from '@/hooks/useToast';
 import { useConfirm } from '@/contexts/ConfirmContext';
 import { minCrossingOrder, median } from '@/components/graph/ordering';
 import { usePinch } from '@/hooks/usePinch';
+import { matchesAll, queryTerms } from '@/data/highlight';
+
+/** One shared empty array, so a missing list keeps a stable identity. */
+const EMPTY = [];
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Layout constants (world units, identical to the vanilla version)
@@ -873,6 +877,7 @@ export function CharTreeTab({ campaignId }) {
   const [connModal, setConnModal] = useState(false);
   const [editConn,  setEditConn]  = useState(null);
   const [hiddenPlayers, setHiddenPlayers] = useState(() => new Set()); // hidden from the tree
+  const [peopleFilter, setPeopleFilter] = useState('');                // narrows the lists only
   const togglePlayer = (pid) => setHiddenPlayers((prev) => {
     const next = new Set(prev);
     if (next.has(pid)) next.delete(pid); else next.add(pid);
@@ -897,10 +902,39 @@ export function CharTreeTab({ campaignId }) {
 
   useEffect(() => { load(); }, [load]);
 
-  const players          = data?.players          ?? [];
-  const relationships    = data?.relationships     ?? [];
-  const npcs             = data?.npcs             ?? [];
-  const crossConnections = data?.cross_connections ?? [];
+  // Memoised, not `data?.x ?? []` inline: a fresh [] on every render defeats
+  // every useMemo below it, and the filter would recompute on each keystroke
+  // of something unrelated.
+  const players          = data?.players           ?? EMPTY;
+  const relationships    = data?.relationships     ?? EMPTY;
+  const npcs             = data?.npcs              ?? EMPTY;
+  const crossConnections = data?.cross_connections ?? EMPTY;
+
+  /**
+   * The people filter. It narrows the two LISTS — the player chips and the
+   * cross-connection rows — and never the tree itself; the eye on each chip
+   * owns that. Accent-folded like every other search in the app, so `thea`
+   * finds Théa.
+   *
+   * A cross-connection matches on either end, because "show me everything
+   * touching Grathul" is the question being asked.
+   */
+  const peopleTerms = useMemo(() => queryTerms(peopleFilter), [peopleFilter]);
+  const shownPlayers = useMemo(
+    () => players.filter((p) => matchesAll(p.player_name, peopleTerms)),
+    [players, peopleTerms],
+  );
+  const shownConns = useMemo(() => {
+    if (!peopleTerms.length) return crossConnections;
+    return crossConnections.filter((c) => {
+      const ends = [
+        entityName(c.from_entity_type, c.from_entity_id, players, relationships, npcs),
+        entityName(c.to_entity_type, c.to_entity_id, players, relationships, npcs),
+        c.label, c.notes,
+      ].filter(Boolean).join(' \u0000 ');
+      return matchesAll(ends, peopleTerms);
+    });
+  }, [crossConnections, peopleTerms, players, relationships, npcs]);
   const entityOptions    = buildEntityOptions(players, relationships, npcs);
 
   async function handleSave(form) {
@@ -955,10 +989,39 @@ export function CharTreeTab({ campaignId }) {
         hiddenPlayers={hiddenPlayers}
       />
 
+      {/* One box, two lists. It narrows the player chips below AND the
+          cross-connection rows further down, because both are lists of people
+          and the second is the one that gets long. It does NOT hide anyone
+          from the tree — the eye on each chip does that, and conflating
+          "I cannot find this person" with "this person is not in the tree"
+          would make the filter destructive. */}
+      {(players.length > 0 || crossConnections.length > 0) && (
+        <div className="flex items-center gap-2 flex-wrap">
+          <input
+            type="search"
+            value={peopleFilter}
+            onChange={(e) => setPeopleFilter(e.target.value)}
+            placeholder="Filter people…"
+            aria-label="Filter people in the character tree"
+            className="w-56 max-w-full bg-surface2 border border-border2 text-text px-2 py-1
+                       rounded-sm text-xs font-body
+                       focus:outline-none focus:border-[var(--gold-dim)]"
+          />
+          {peopleTerms.length > 0 && (
+            <span className="text-[0.6rem] font-display uppercase tracking-wider text-text-muted">
+              {shownPlayers.length} of {players.length} · {shownConns.length} of {crossConnections.length} links
+            </span>
+          )}
+        </div>
+      )}
+
       {/* Players — toggle each in/out of the tree (name only) */}
       {players.length > 0 && (
         <div className="flex flex-wrap gap-2">
-          {players.map((p) => {
+          {shownPlayers.length === 0 && (
+            <p className="text-text-dim text-xs italic">No one matches that.</p>
+          )}
+          {shownPlayers.map((p) => {
             const hidden = hiddenPlayers.has(p.player_id);
             return (
               <button
@@ -1008,6 +1071,10 @@ export function CharTreeTab({ campaignId }) {
           <p className="text-text-dim text-xs italic py-3 text-center">
             No DM cross-connections yet. Link any two entities (players, relationships, NPCs) here.
           </p>
+        ) : shownConns.length === 0 ? (
+          <p className="text-text-dim text-xs italic py-3 text-center">
+            No cross-connection matches “{peopleFilter.trim()}”.
+          </p>
         ) : (
           (() => {
             const hasPlayer = (c) => c.from_entity_type === 'player' || c.to_entity_type === 'player';
@@ -1016,9 +1083,9 @@ export function CharTreeTab({ campaignId }) {
               .localeCompare(entityName(b.from_entity_type, b.from_entity_id, players, relationships, npcs));
             // Priority partition: player-involved → Player; else NPC-involved → NPC
             // (npc↔npc + rel↔npc); else → Relationships (rel↔rel).
-            const playerLinks = crossConnections.filter(hasPlayer).sort(byFromName);
-            const relLinks = crossConnections.filter(c => !hasPlayer(c) && !hasNpc(c)).sort(byFromName);
-            const npcLinks = crossConnections.filter(c => !hasPlayer(c) && hasNpc(c)).sort(byFromName);
+            const playerLinks = shownConns.filter(hasPlayer).sort(byFromName);
+            const relLinks = shownConns.filter(c => !hasPlayer(c) && !hasNpc(c)).sort(byFromName);
+            const npcLinks = shownConns.filter(c => !hasPlayer(c) && hasNpc(c)).sort(byFromName);
             const column = (title, list) => (
               <div>
                 <div className="font-display text-text-dim uppercase tracking-wider text-[0.65rem] mb-1 pb-1 border-b border-border">{title}</div>

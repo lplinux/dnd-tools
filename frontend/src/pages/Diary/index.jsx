@@ -42,6 +42,12 @@ export default function Diary() {
 
   const activeTab = tab;   // DM-only page; the role branch moved to the PC Sheet
 
+  // Printed documents are titled with the campaign. Hoisted out of printBook,
+  // which used to compute it inline, now that the player panel prints too.
+  const campaignName = d.campaigns.find(
+    (c) => String(c.id) === String(d.campaignId),
+  )?.name || 'Campaign';
+
   async function share() {
     const url = await d.loadShareUrl();
     if (!url) return;
@@ -86,12 +92,11 @@ export default function Diary() {
       window.alert('Nothing to print yet — publish at least one entry first.');
       return;
     }
-    const name = d.campaigns.find((c) => String(c.id) === String(d.campaignId))?.name || 'Campaign';
     // Credits and bios are fetched only now: portraits are base64 and have no
     // business loading on a page nobody is printing. A failure here costs the
     // annex, not the book.
     const roster = await diaryApi.roster(d.campaignId).catch(() => null);
-    if (!openDiaryBook({ campaignName: name, entries: published, roster })) {
+    if (!openDiaryBook({ campaignName, entries: published, roster })) {
       window.alert('Your browser blocked the print window. Allow pop-ups for this site and try again.');
     }
   }
@@ -197,6 +202,7 @@ export default function Diary() {
                   isDM={d.isDM}
                   entries={d.playerEntries}
                   myPlayerId={d.myPlayerId}
+                  campaignName={campaignName}
                   onNew={() => setModal({ scope: 'player', entry: null })}
                   onEdit={(entry) => setModal({ scope: 'player', entry })}
                   onDelete={d.deletePlayerEntry}

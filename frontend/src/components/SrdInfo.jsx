@@ -40,7 +40,12 @@ export function srdHasEntry(slugs, name) {
   return slugs ? slugs.has(toSlug(name)) : true;
 }
 
-export default function SrdInfo({ resource, name, className = '' }) {
+/**
+ * `children`, when given, replaces the ⓘ as the trigger — so a term can be
+ * clickable in place. An item card lists several weapon properties on one
+ * line and an ⓘ after each would be more punctuation than card.
+ */
+export default function SrdInfo({ resource, name, className = '', children }) {
   const [open, setOpen] = useState(false);
   const [state, setState] = useState({ loading: false, entry: null });
 
@@ -58,13 +63,15 @@ export default function SrdInfo({ resource, name, className = '' }) {
     <>
       <button
         type="button"
-        className={`srd-info-btn ${className}`.trim()}
+        className={children
+          ? `srd-info-term ${className}`.trim()
+          : `srd-info-btn ${className}`.trim()}
         title={`${name} — 2024 SRD`}
         aria-label={`Look up ${name} in the 2024 SRD`}
         onPointerDown={(e) => e.preventDefault()}
         onClick={(e) => { e.stopPropagation(); setOpen(true); }}
       >
-        ⓘ
+        {children ?? 'ⓘ'}
       </button>
 
       <Modal open={open} onClose={() => setOpen(false)} title={name}>

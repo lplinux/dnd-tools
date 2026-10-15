@@ -6,9 +6,43 @@
  * used/unused. The spell-meta-row (DC/Atk/Ability/Reset) lives in index.jsx.
  */
 
-import { useEffect, useRef, useState } from 'react';
 import { SPELL_LEVEL_NAMES, getSlotArray } from '@/data/dnd';
-import SrdInfo, { useSrdIndex, srdHasEntry } from '@/components/SrdInfo';
+import TagInput from './TagInput';
+import { useSrdNames } from '@/hooks/useSrdNames';
+import { splitList, joinList, removeOne } from '@/data/listValue';
+
+/**
+ * The spell chips for ONE level.
+ *
+ * Its own component because the suggestions are now per-level and a hook
+ * cannot be called inside the row loop. Ten of these still make one network
+ * request between them — `loadEntries` caches the index per resource, and the
+ * level narrowing happens locally on the cached copy.
+ */
+function SpellNames({ level, value, onSet }) {
+  // Only this level's spells: 42 at 3rd rather than all 339, so "fire" offers
+  // Fireball without Fire Bolt and Fire Shield, which belong to other rows.
+  const options = useSrdNames('spells', level);
+  const names = splitList(value);
+  const setNames = (next) => onSet(joinList(next));
+
+  // Chips, the same editor as Defenses. It replaced a comma-separated text
+  // box with a click-to-edit toggle, which was wrong twice: reopening a saved
+  // level put the caret at the end — inside the LAST spell — so it read as
+  // editing that one and the autocomplete offered it straight back; and the
+  // resting view had no way to remove a single spell. A chip is finished the
+  // moment it is added.
+  return (
+    <TagInput
+      options={options}
+      values={names}
+      onAdd={(v) => setNames([...names, v])}
+      onRemove={(v) => setNames(removeOne(names, v))}
+      srdResource="spells"
+      placeholder={level === 0 ? 'Fire Bolt, Mage Hand…' : `Add a ${SPELL_LEVEL_NAMES[level]}-level spell…`}
+    />
+  );
+}
 
 function SlotBox({ used, onToggle }) {
   return (
@@ -23,30 +57,11 @@ function SlotBox({ used, onToggle }) {
 
 export default function SpellSection({ casterType, level, spellNames, usedSlots, onSetSpellName, onToggleSlot }) {
   const slots = getSlotArray(casterType, level);
-  const srdSlugs = useSrdIndex('spells');
 
-  // Which level is being typed into, or null for none. The names used to render
-  // TWICE — once in this input, once as the chips below it — because a ⓘ lookup
-  // link cannot live inside an <input>, so the parsed names were mirrored
-  // underneath. The textareas elsewhere do the same thing but hide the mirror on
-  // screen (.field-print); the spell chips never got that gate, so every spell
-  // appeared twice. Now the chips ARE the view and the input is the editor:
-  // exactly one list is on screen at a time, and the lookups survive.
-  //
-  // Local state on purpose — this is view state and must never reach
-  // collectSheet(), which serialises the sheet for saving.
-  const [editingLevel, setEditingLevel] = useState(null);
-  // Set while Escape is cancelling, so the blur it triggers does not re-open.
-  const escaping = useRef(false);
-
-  // Printing mid-edit would put a text input on the paper instead of the chip
-  // list. The stat sheet prints via its own window.print(), so beforeprint is
-  // the one hook that fires on every path into it.
-  useEffect(() => {
-    const close = () => setEditingLevel(null);
-    window.addEventListener('beforeprint', close);
-    return () => window.removeEventListener('beforeprint', close);
-  }, []);
+  // There is no editing MODE any more. The chips are the editor, as they are
+  // for Defenses — which also retired the beforeprint hook that used to close
+  // a half-open text input before the sheet reached paper, and the mirrored
+  // chip list that input needed in order to show its ⓘ lookups.
 
   const rows = [];
   for (let i = 0; i < 10; i++) {
@@ -79,68 +94,11 @@ export default function SpellSection({ casterType, level, spellNames, usedSlots,
           <tr key={lv}>
             <td className="lvl-cell">{SPELL_LEVEL_NAMES[lv]}</td>
             <td>
-              {(() => {
-                const raw = String(spellNames[lv] ?? '');
-                const names = raw.split(',').map((n) => n.trim()).filter(Boolean);
-                const editing = editingLevel === lv;
-
-                // The editor. autoFocus is safe here because it only mounts in
-                // response to a click or Enter on the chip row.
-                if (editing) {
-                  return (
-                    <input
-                      className="spell-name-inp"
-                      type="text"
-                      autoFocus
-                      value={raw}
-                      onChange={(e) => onSetSpellName(lv, e.target.value)}
-                      onBlur={() => { if (!escaping.current) setEditingLevel(null); escaping.current = false; }}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter') { e.preventDefault(); setEditingLevel(null); }
-                        // Escape closes without reverting: every keystroke has
-                        // already gone through onSetSpellName, so there is no
-                        // pre-edit value left to restore and pretending
-                        // otherwise would be a lie. It just stops editing.
-                        if (e.key === 'Escape') { escaping.current = true; setEditingLevel(null); }
-                      }}
-                      placeholder={lv === 0 ? 'Fire Bolt, Mage Hand…' : 'Spell names, comma separated…'}
-                      autoComplete="off"
-                    />
-                  );
-                }
-
-                // The resting view: chips, each with its ⓘ lookup where the SRD
-                // has one. A button rather than a div so it is reachable by
-                // keyboard — this is the only way into the editor.
-                return (
-                  <button
-                    type="button"
-                    className={`spell-chips-btn${names.length ? '' : ' is-empty'}`}
-                    onClick={() => setEditingLevel(lv)}
-                    title="Click to edit"
-                  >
-                    {names.length ? (
-                      <span className="spell-chips">
-                        {names.map((n, i) => (
-                          <span className="spell-chip" key={`${n}-${i}`}>
-                            {n}
-                            {/* Stop the ⓘ from opening the editor underneath it. */}
-                            {srdHasEntry(srdSlugs, n) && (
-                              <span onClick={(e) => e.stopPropagation()}>
-                                <SrdInfo resource="spells" name={n} />
-                              </span>
-                            )}
-                          </span>
-                        ))}
-                      </span>
-                    ) : (
-                      <span className="spell-chips-ph">
-                        {lv === 0 ? 'Fire Bolt, Mage Hand…' : 'Spell names, comma separated…'}
-                      </span>
-                    )}
-                  </button>
-                );
-              })()}
+              <SpellNames
+                level={lv}
+                value={spellNames[lv]}
+                onSet={(v) => onSetSpellName(lv, v)}
+              />
             </td>
             <td style={{ textAlign: 'right' }}>
               {count > 0 ? (
