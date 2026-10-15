@@ -118,8 +118,15 @@ export default function LinkingTextarea({
                   i === focused ? 'bg-surface3 text-gold' : 'text-text hover:bg-surface3',
                 ].join(' ')}
               >
-                <span aria-hidden="true">{o.kind === 'npc' ? '🧟' : '📍'}</span>
+                <span aria-hidden="true">
+                  {o.kind === 'npc' ? '🧟' : o.kind === 'character' ? '🧝' : '📍'}
+                </span>
                 <span className="truncate">{o.name}</span>
+                {/* Said plainly rather than discovered: picking one spells the
+                    name, it does not make a link. */}
+                {o.kind === 'character' && (
+                  <span className="ml-auto text-[0.6rem] text-text-muted">name only</span>
+                )}
               </button>
             </li>
           ))}

@@ -4233,7 +4233,7 @@ app.get('/api/campaigns/:campaignId/link-targets', requireAuth, async (req, res)
       return res.status(403).json({ error: 'Access denied' });
     const isDM = await isCampaignDm(campaignId, req.session.userId, req.session.role);
 
-    const [locs, npcs] = await Promise.all([
+    const [locs, npcs, chars] = await Promise.all([
       pool.query(
         `SELECT id, name, description, size_type, parent_id
            FROM campaign_locations
@@ -4247,9 +4247,23 @@ app.get('/api/campaigns/:campaignId/link-targets', requireAuth, async (req, res)
           [campaignId],
         )
         : Promise.resolve({ rows: [] }),
+      // The party, for the autocomplete only. Everyone in a campaign may see
+      // who else is in it, so these are not role-filtered — and unlike the
+      // other two they are NOT indexed as link targets, so `[[Thalia]]`
+      // renders as plain text. A character has no page to open, and naming
+      // one in a note is about writing their name consistently rather than
+      // about linking to them.
+      pool.query(
+        `SELECT cp.id, COALESCE(NULLIF(pc.name, ''), cp.player_name) AS name
+           FROM campaign_players cp
+           LEFT JOIN pc_characters pc ON pc.player_id = cp.id
+          WHERE cp.campaign_id = $1
+          ORDER BY name ASC`,
+        [campaignId],
+      ),
     ]);
 
-    res.json({ locations: locs.rows, npcs: npcs.rows });
+    res.json({ locations: locs.rows, npcs: npcs.rows, characters: chars.rows });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 

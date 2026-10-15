@@ -63,6 +63,11 @@ export function parseToken(inner) {
  * the other case. Within a kind the FIRST entry wins: locations are unique per
  * campaign case-insensitively (a DB index enforces it), but NPC names are only
  * unique case-SENSITIVELY, so two can fold together.
+ *
+ * `characters` is deliberately NOT a parameter. The party is offered by the
+ * `[[` autocomplete so a name gets spelled consistently, but a character has
+ * no page to open, so `[[Thalia]]` renders as plain text like any other
+ * unresolved name. Adding them here is all it would take if that changes.
  */
 export function buildIndex({ locations = [], npcs = [] } = {}) {
   const index = new Map();
