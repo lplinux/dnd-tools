@@ -89,6 +89,59 @@ PC Sheet / Journey Map / Manage Campaign fix batch that went with it.
 
 ---
 
+## Campaign invite links
+
+### Already proved live
+
+Against a scratch Postgres — 52 checks, all passing. Each guard was also re-broken to confirm
+the check could fail.
+
+- [x] **A link creates the account, the seat and the character sheet** ✅, and logs them in.
+- [x] **It works once** ✅ — the second use 404s and creates nothing.
+- [x] **20 simultaneous redemptions produce exactly one account** ✅. With the conditional
+      dropped, 19 of 20 got through — so the guard is doing the work, not the row lock.
+- [x] **A fumbled attempt does not burn it** ✅ — short password, missing character name,
+      taken username and wrong password all leave the invite live.
+- [x] **`"role": "admin"` in the body is ignored** ✅ — the account comes out a player.
+- [x] **Expired, revoked and forged links are all refused identically** ✅.
+- [x] **A seat invite fills that seat** ✅, keeps the DM's name for it, and makes no new user.
+- [x] **Another DM cannot mint, list or revoke invites for a campaign they do not own** ✅,
+      and a player cannot mint one at all.
+- [x] **You cannot join the same campaign twice** ✅.
+- [x] **The raw token is never in the database** ✅ — only a sha256 of it.
+
+### Wants your eyes in the browser
+
+- [ ] **Create a link** in Players and check it lands on the clipboard, and that the box warns
+      it cannot be shown again.
+- [ ] **Open it in a private window** — you should see the campaign name before being asked
+      for anything.
+- [ ] **Join as a new player**, and confirm you land on the PC Sheet already logged in with
+      your character on it.
+- [ ] **Open the same link again** — it should say it is spent, with no form.
+- [ ] **Invite into an existing empty seat** and check the seat selector only offers empty
+      ones.
+- [ ] **While logged in as someone else**, open a link: it should offer "join as <you>", and
+      "use a different account" should actually honour the credentials you then type.
+- [ ] **Revoke** an outstanding invite and confirm the link dies.
+- [ ] **Let one expire** (or edit `expires_at`) and check the message reads sensibly.
+- [ ] **Unassign a player**: on a row that has a user, pick "— None —" and Save. The User
+      column should go to `—`. This was impossible before, so it is the one to check.
+- [ ] **The Reassign select should open showing the current user**, not a blank.
+- [ ] **Save should be greyed out** until you change the selection.
+- [ ] **No DM accounts in either user dropdown** — the Add one or the Reassign one.
+- [ ] **If any seat is currently assigned to a DM account**, that row should still show them,
+      marked *(not a player)*, and saving without touching it should be impossible.
+- [ ] **The Players tab header block** — "Create a character" and "Invite a player" should sit
+      side by side in one bordered block with a divider, not stacked.
+- [ ] **Narrow the window** — below the md breakpoint they should stack with a horizontal
+      divider instead of a vertical one, and nothing should overflow sideways.
+- [ ] **With a link showing and invites outstanding**, the right column gets taller than the
+      left — check that looks deliberate rather than broken.
+- [ ] **On a phone** — this is the one screen a player may well open on one.
+
+---
+
 ## Printing the Journal and the Diary
 
 ### Already proved live
