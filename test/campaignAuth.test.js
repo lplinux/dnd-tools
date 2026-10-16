@@ -79,6 +79,19 @@ function routes() {
  */
 const tokenBearing = (p) => /:(token|playerToken)\b/.test(p);
 
+/**
+ * Invite links are token-bearing but are NOT share links, and must not be
+ * held to shareGate: the whole point is that the person following one has no
+ * account yet, so "log in and be a member of this campaign" is the one thing
+ * they cannot satisfy.
+ *
+ * They get their own rule of equal strength below. `liveInvite` is the single
+ * function that decides a token is real, unexpired and unspent, so a new
+ * /api/invites route that reads a token without it is the same class of bug
+ * shareGate exists to catch.
+ */
+const inviteRoute = (p) => p.startsWith('/api/invites/');
+
 const idBearing = (p) =>
   /:(campaignId|playerId|timelineId|locationId|mapId|npcId|id|token|playerToken)\b/.test(p)
   && !p.startsWith('/api/users/');          // user admin, gated by requireRole(['admin'])
@@ -110,6 +123,11 @@ describe('every id-bearing route checks ownership', () => {
     // A token route must call shareGate SPECIFICALLY. "Some helper is
     // mentioned" is too weak here: these are the routes an anonymous stranger
     // can reach, and the gate is the only thing that stops them.
+    if (inviteRoute(r.path)) {
+      expect(r.body, `${label} does not validate the token with liveInvite`)
+        .toMatch(/await liveInvite\(/);
+      return;
+    }
     if (tokenBearing(r.path)) {
       expect(r.body, `${label} does not call shareGate`).toMatch(/await shareGate\(req,/);
       return;
@@ -121,7 +139,9 @@ describe('every id-bearing route checks ownership', () => {
   it('is actually looking at the five share routes', () => {
     // If the path patterns ever stop matching, every assertion above silently
     // stops covering them — the exact failure this suite just had.
-    const tokens = candidates.filter((r) => tokenBearing(r.path)).map((r) => r.path).sort();
+    const tokens = candidates
+      .filter((r) => tokenBearing(r.path) && !inviteRoute(r.path))
+      .map((r) => r.path).sort();
     expect(tokens).toEqual([
       '/api/diary-public/:token',
       '/api/diary-public/:token/roster',
@@ -129,6 +149,30 @@ describe('every id-bearing route checks ownership', () => {
       '/api/pc-public/:playerToken',
       '/api/timeline-public/:token',
     ]);
+  });
+
+  it('and at every invite route', () => {
+    // Same reason: a new unauthenticated invite route that the walk stops
+    // matching would be covered by nothing at all.
+    const invites = candidates.filter((r) => inviteRoute(r.path))
+      .map((r) => `${r.method} ${r.path}`).sort();
+    expect(invites).toEqual([
+      'GET /api/invites/:token',
+      'POST /api/invites/:token/accept',
+      'POST /api/invites/:token/join',
+    ]);
+  });
+
+  it('no invite route trusts a role from the request body', () => {
+    // The accept route is the only place in the app where an unauthenticated
+    // caller inserts into `users`. A role read from input there would be a
+    // self-service admin account.
+    for (const r of candidates.filter((x) => inviteRoute(x.path))) {
+      expect(r.body, `${r.method} ${r.path} reads a role from the body`)
+        .not.toMatch(/\brole\s*[,}]?\s*=\s*req\.body|req\.body\.role|\brole\b[^\n]*=\s*(req\.body|body)\./);
+    }
+    const accept = candidates.find((r) => r.path === '/api/invites/:token/accept');
+    expect(accept.body, 'accept must hard-code the player role').toMatch(/'player'/);
   });
 });
 

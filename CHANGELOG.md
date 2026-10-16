@@ -84,6 +84,68 @@ that existed to close a half-open text input before the sheet reached paper.
 All three fail open: `loadEntries` already caches per resource and returns null when the API is
 slow or unreachable, so offline the fields behave exactly as they did before.
 
+### Fixed — a seat could never be freed, and DMs were offered as players
+
+Two bugs in the Players tab's **Reassign** column.
+
+**Unassigning was impossible.** The select's value was always `''` — which *is* the "— None —"
+option — so choosing it changed nothing, fired no change event, and left Save with nothing to
+send. A seat could be handed from one user to another but never emptied. The select now shows
+whoever holds the seat, so "— None —" is a real change; the server already read `null` as
+unassign, and always had.
+
+That also means the current holder has to stay in the option list. They were filtered out, on
+the reasoning that reassigning to the same person is a no-op — but a `<select>` cannot display
+a value that is not among its options, so the row showed whichever name happened to be first as
+though it were saved.
+
+**The user list was `role !== 'admin'`**, which left every DM in it. It is players only now. A
+DM already has a seat in their own campaign through `is_dm_player`, so offering them another
+here only ever produced a mistake. An assignment that predates the filter is still shown,
+marked *(not a player)*, rather than vanishing and letting Save quietly replace it.
+
+Save is disabled until something actually changes, so a no-op press no longer looks like a
+failed one.
+
+### Added — invite links
+
+A DM can hand someone a link that puts them in the campaign. **Players → Invite a player →
+Create link**, which copies it to the clipboard. Whoever opens it sees the campaign name, picks
+a username, password and character name, and lands on their sheet already logged in — or signs
+in, if they already have an account, which is the case when you invite someone who plays in
+another of your campaigns.
+
+The DM chooses whether the link makes a **new seat** or fills **one that already exists**. The
+second keeps whatever is already hanging off that seat — timeline entries, DM notes — and keeps
+the DM's spelling of the character's name over whatever the invitee types.
+
+**The link is a bearer credential that creates an account**, so it is treated as one:
+
+- **256 bits of CSPRNG**, not the `hashId(id) + 4 bytes` the share links use. That pattern has
+  32 bits of randomness and leaks the row id; fine for a read-only map, not for this.
+- **Stored hashed.** The server keeps a sha256 of the token and never the token, so a leaked
+  backup is not a stack of live invites. It also means the link genuinely cannot be shown
+  again — the panel says so rather than letting a DM discover it.
+- **One hour, one use.** Both enforced in SQL against the database's own clock.
+- **The role is a literal `'player'`** in the INSERT. This is the only route in the app where a
+  caller with no account writes to `users`, and a role read from the body would be a
+  self-service admin account.
+- **Revocable**, with the outstanding links listed under the button.
+
+**Single use had to survive two people clicking at once**, which is the part that is easy to get
+wrong and impossible to notice by hand. The token is consumed by an `UPDATE … WHERE id = $1 AND
+used_at IS NULL`, running last inside the transaction. Conditional, because a plain `UPDATE`
+still takes the row lock but the second writer simply overwrites the first and succeeds —
+against a live database, **19 of 20 concurrent redemptions got through, each with its own
+account**. Last, because everything that can legitimately fail — a taken username, a seat filled
+in the meantime — must roll back without burning the link, and ordering is the only thing that
+guarantees it.
+
+Joining with an existing account **prefers the credentials typed into the form over the current
+session**. The opposite reading seems natural and is wrong: someone logged in as A can follow a
+link meant for B, and preferring the session would collect B's password, ignore it, and quietly
+seat A. A live test caught that one.
+
 ### Added — print the Journal and your Diary
 
 A **🖨 Print** button on the Campaign Journal and on a player's Diary, in all three places a

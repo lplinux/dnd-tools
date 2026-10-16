@@ -74,6 +74,9 @@ describe('every route that sets a password checks it', () => {
     const paths = setters.map((r) => `${r.method} ${r.path}`).sort();
     expect(paths).toEqual([
       'POST /api/auth/change-password',
+      // The invite redemption: the ONLY route where a caller with no account
+      // writes to `users`, so the floor matters most here.
+      'POST /api/invites/:token/accept',
       'POST /api/users',
       'PUT /api/users/:id/password',
     ]);

@@ -26,6 +26,10 @@ const JourneyMapPublicPage = lazy(() => import('@/pages/JourneyMapPublic'));
 const DiaryPublicPage = lazy(() => import('@/pages/DiaryPublic'));
 const TimelinePublicPage = lazy(() => import('@/pages/TimelinePublic'));
 
+// Invite links. Public for the same reason the others are — the people it
+// is for do not have accounts yet.
+const JoinPage = lazy(() => import('@/pages/Join'));
+
 /**
  * ProtectedRoute — redirects to "/" when role requirements are not met.
  *
@@ -57,6 +61,9 @@ export default function App() {
         <Route path="journey-map-public/:token"  element={<JourneyMapPublicPage />} />
         <Route path="timeline-public/:token"     element={<TimelinePublicPage />} />
         <Route path="diary-public/:token"        element={<DiaryPublicPage />} />
+
+        {/* Join a campaign from an invite link */}
+        <Route path="join/:token"                element={<JoinPage />} />
 
         {/* ── Authenticated (DM + Player) ──────────────── */}
         <Route

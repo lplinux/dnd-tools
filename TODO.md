@@ -106,10 +106,14 @@ scope unasked is how a tab becomes a dashboard.
 
 ### Manage Campaign
 
-- [ ] Invite link for new users to join a Campaign
-      - [ ] A 1 hour link should be expose and a new screen should ask for the invitee to add the username, Password & Character Name. It should also display the campaign that he is join to.
-      - [ ] A user created this way should be added to the DB among the character to the Campaign.
-      
+- [x] Invite link for new users to join a Campaign — **done**, see the CHANGELOG. One hour,
+      single use, token stored hashed, revocable. The DM points it at a new seat or an
+      existing empty one, and someone who already has an account can use it too.
+      - [x] A 1 hour link, and a screen that shows the campaign and asks for username,
+            password and character name.
+      - [x] The user, the seat and the character sheet are all created and attached.
+      - [ ] Still no email — the link is copied to the clipboard and sent by hand, as agreed.
+
 ---
 
 ## Ideas worth considering

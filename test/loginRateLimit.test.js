@@ -148,10 +148,54 @@ describe('the login route wires it up', () => {
     expect(handler).not.toMatch(/rows\.length === 0/);
   });
 
-  it('is the only route that is throttled', () => {
-    const calls = [...appSource.replace(/\/\*[\s\S]*?\*\//g, '')
-      .matchAll(/recordLoginFailure\(/g)];
-    expect(calls.length).toBe(2);   // the definition, and the one call site
+  it('is throttled by exactly the routes that should be, and no others', () => {
+    // This used to assert "the login route and nothing else". The invite
+    // redemptions joined it: both take a guessable-in-principle secret from
+    // an anonymous caller, and /join also takes a password. Naming the routes
+    // rather than counting the calls means a NEW unlisted call site still
+    // fails this, which is the whole point of the check.
+    const code = appSource.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');
+    const throttled = [...code.matchAll(/app\.(get|post|put|patch|delete)\('([^']+)'/g)]
+      .map((m, i, all) => {
+        const start = m.index;
+        // Stop at the handler's OWN closing `});`, not at the next route.
+        // Slicing route-to-route credits a handler with every helper defined
+        // after it — which is how this first came back naming /api/docs,
+        // whose only crime is sitting above `function recordLoginFailure`.
+        const close = code.indexOf('\n});', start);
+        const next = all[i + 1]?.index ?? code.length;
+        const end = close === -1 ? next : Math.min(close + 4, next);
+        return { route: `${m[1].toUpperCase()} ${m[2]}`, body: code.slice(start, end) };
+      })
+      .filter((r) => r.body.includes('recordLoginFailure('))
+      .map((r) => r.route)
+      .sort();
+
+    expect(throttled).toEqual([
+      'POST /api/auth/login',
+      'POST /api/invites/:token/accept',
+      'POST /api/invites/:token/join',
+    ]);
+  });
+
+  it('the invite limiter is looser than the login one, on purpose', () => {
+    // Its key is an IP alone — there is no username to pair it with — so the
+    // login threshold would lock out a household far sooner.
+    expect(appSource).toMatch(/const INVITE_MAX_FAILURES = (\d+)/);
+    const invite = Number(appSource.match(/const INVITE_MAX_FAILURES = (\d+)/)[1]);
+    expect(invite).toBeGreaterThan(L.LOGIN_MAX_FAILURES);
+  });
+
+  it('a redemption that fails for an honest reason is NOT counted', () => {
+    // A taken username and "you already play here" are not guesses, and
+    // counting them would let one clumsy invitee lock out the next.
+    const at = appSource.indexOf("app.post('/api/invites/:token/accept'");
+    const body = appSource.slice(at, appSource.indexOf("app.post('/api/invites/:token/join'", at));
+    const taken = body.indexOf('USERNAME_TAKEN');
+    const counted = [...body.matchAll(/recordLoginFailure\(/g)].map((m) => m.index);
+    expect(taken).toBeGreaterThan(-1);
+    expect(counted.every((i) => i < taken), 'the username collision path counts a failure')
+      .toBe(true);
   });
 });
 
