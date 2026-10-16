@@ -232,12 +232,18 @@ function sweepLoginFailures(now) {
   }
 }
 
-/** Seconds this key must wait, or 0 if it may try now. */
-function loginRetryAfter(key, now) {
+/**
+ * Seconds this key must wait, or 0 if it may try now.
+ *
+ * `max` is a parameter because the invite routes share this window with a
+ * looser threshold — their key is an IP alone, with no username to narrow it,
+ * so the same count would lock out a household far sooner.
+ */
+function loginRetryAfter(key, now, max = LOGIN_MAX_FAILURES) {
   const rec = loginFailures.get(key);
   if (!rec) return 0;
   if (now - rec.firstAt >= LOGIN_WINDOW_MS) { loginFailures.delete(key); return 0; }
-  if (rec.count < LOGIN_MAX_FAILURES) return 0;
+  if (rec.count < max) return 0;
   return Math.ceil((rec.firstAt + LOGIN_WINDOW_MS - now) / 1000);
 }
 
@@ -848,6 +854,417 @@ app.put('/api/campaigns/:campaignId/players/:playerId/reassign', requireRole(['d
 
     await client.query('COMMIT');
     res.json({ success: true });
+  } catch (e) {
+    await client.query('ROLLBACK');
+    res.status(500).json({ error: e.message });
+  } finally { client.release(); }
+});
+
+// ============================================
+// CAMPAIGN INVITES
+// ============================================
+
+/**
+ * How long an invite lives. Short on purpose: the link is a bearer credential
+ * that creates an account, and it travels over whatever chat app the DM
+ * happens to use. An hour is enough to send it and have someone act on it.
+ */
+const INVITE_TTL_MS = 60 * 60 * 1000;
+
+/** 256 bits of CSPRNG, URL-safe. The only time the raw token exists. */
+const mintInviteToken = () => crypto.randomBytes(32).toString('base64url');
+
+/** What goes in the database. See the campaign_invites comment in initDb. */
+const hashInviteToken = (token) =>
+  crypto.createHash('sha256').update(String(token)).digest('hex');
+
+/**
+ * Invite-redemption throttling, keyed on IP alone.
+ *
+ * Unlike the login limiter there is no username to pair it with — the token
+ * IS the identity — and locking out a token would hand an attacker a way to
+ * burn someone else's invite just by guessing at it. Guessing the token
+ * itself is not the threat a 256-bit secret needs defending from; this is
+ * here so that scanning, and password attempts against the existing-account
+ * path, both cost something.
+ */
+const INVITE_MAX_FAILURES = 20;
+const inviteKey = (req) => `invite:${req.ip}`;
+
+/**
+ * The invite behind a token, or null.
+ *
+ * Deliberately returns null for expired and already-used invites as well as
+ * for unknown ones: every caller wants the same "this link does not work"
+ * answer, and telling them WHICH would confirm that a token was once real.
+ */
+async function liveInvite(token) {
+  if (!token || typeof token !== 'string') return null;
+  const r = await pool.query(
+    `SELECT i.id, i.campaign_id, i.player_id, i.expires_at,
+            c.name AS campaign_name,
+            p.player_name
+       FROM campaign_invites i
+       JOIN campaigns c ON c.id = i.campaign_id AND c.deleted_at IS NULL
+       LEFT JOIN campaign_players p ON p.id = i.player_id
+      WHERE i.token_hash = $1
+        AND i.used_at IS NULL
+        AND i.expires_at > NOW()`,
+    [hashInviteToken(token)],
+  );
+  return r.rows[0] ?? null;
+}
+
+/** Is this user already playing in this campaign? */
+async function alreadyInCampaign(client, campaignId, userId) {
+  const r = await client.query(
+    `SELECT 1 FROM campaign_user_assignments a
+       JOIN campaign_players p ON p.id = a.player_id
+      WHERE p.campaign_id = $1 AND a.user_id = $2`,
+    [campaignId, userId],
+  );
+  return r.rows.length > 0;
+}
+
+/**
+ * Consume the invite and seat the user, inside the caller's transaction.
+ *
+ * The conditional UPDATE is what makes the link single-use: two redemptions
+ * racing each other both reach it, the second blocks on the row lock until
+ * the first commits, and then matches zero rows. Checking `used_at` with a
+ * SELECT first and updating after would let both through.
+ *
+ * It runs LAST for the same reason it is conditional. Everything that can
+ * legitimately fail — a taken username, a seat someone else filled — has
+ * already failed and rolled the transaction back by this point, so a fumbled
+ * attempt never burns the link.
+ *
+ * Returns the player_id, or null when the invite was already spent.
+ */
+async function redeemInvite(client, invite, userId, characterName) {
+  let playerId = invite.player_id;
+
+  if (playerId) {
+    // A seat the DM picked. Re-check it under the transaction: it may have
+    // been filled or deleted in the hour since the link was sent.
+    const seat = await client.query(
+      `SELECT p.id FROM campaign_players p
+        WHERE p.id = $1 AND p.campaign_id = $2
+          AND NOT EXISTS (SELECT 1 FROM campaign_user_assignments a WHERE a.player_id = p.id)
+          FOR UPDATE`,
+      [playerId, invite.campaign_id],
+    );
+    if (!seat.rows.length) return { error: 'SEAT_TAKEN' };
+  } else {
+    const made = await client.query(
+      'INSERT INTO campaign_players (campaign_id, player_name) VALUES ($1, $2) RETURNING id',
+      [invite.campaign_id, characterName],
+    );
+    playerId = made.rows[0].id;
+  }
+
+  await client.query(
+    'INSERT INTO campaign_user_assignments (player_id, user_id) VALUES ($1, $2)',
+    [playerId, userId],
+  );
+
+  // The character sheet. A seat the DM prepared may already have one, in
+  // which case its name is left alone — the DM's spelling of an existing
+  // character outranks what the invitee typed into a join form.
+  const sheet = await client.query('SELECT id FROM pc_characters WHERE player_id=$1', [playerId]);
+  if (!sheet.rows.length) {
+    await client.query(
+      'INSERT INTO pc_characters (player_id, name) VALUES ($1, $2)',
+      [playerId, characterName],
+    );
+  }
+
+  const spent = await client.query(
+    `UPDATE campaign_invites SET used_at = NOW(), used_by = $2
+      WHERE id = $1 AND used_at IS NULL AND expires_at > NOW()
+      RETURNING id`,
+    [invite.id, userId],
+  );
+  if (!spent.rows.length) return { error: 'INVITE_SPENT' };
+
+  return { playerId };
+}
+
+/** Log the redeemer straight in. Same session-fixation rules as /auth/login. */
+async function startSession(req, user) {
+  await new Promise((resolve, reject) => {
+    req.session.regenerate((err) => (err ? reject(err) : resolve()));
+  });
+  req.session.userId = user.id;
+  req.session.username = user.username;
+  req.session.role = user.role;
+  req.session.cookie.maxAge = 24 * 60 * 60 * 1000;
+  delete req.session.csrfToken;
+}
+
+// ── DM side ──
+
+/**
+ * Mint an invite. The raw token is returned ONCE and never stored, so a DM
+ * who loses the link revokes it and makes another rather than re-reading it.
+ */
+app.post('/api/campaigns/:campaignId/invites', requireRole(['admin', 'dm']), async (req, res) => {
+  const { campaignId } = req.params;
+  const { playerId } = req.body ?? {};
+  try {
+    if (!await dmOwnsCampaign(campaignId, req.session.userId, req.session.role))
+      return res.status(403).json({ error: 'Access denied' });
+
+    // An invite into a specific seat is only meaningful while that seat is
+    // empty and in this campaign — checked again at redemption, because an
+    // hour is long enough for it to stop being true.
+    if (playerId) {
+      const seat = await pool.query(
+        `SELECT p.id FROM campaign_players p
+          WHERE p.id=$1 AND p.campaign_id=$2
+            AND NOT EXISTS (SELECT 1 FROM campaign_user_assignments a WHERE a.player_id=p.id)`,
+        [playerId, campaignId],
+      );
+      if (!seat.rows.length) {
+        return res.status(400).json({ error: 'That player is not an empty seat in this campaign' });
+      }
+    }
+
+    const token = mintInviteToken();
+    const r = await pool.query(
+      `INSERT INTO campaign_invites (campaign_id, player_id, token_hash, created_by, expires_at)
+       VALUES ($1, $2, $3, $4, NOW() + ($5 || ' milliseconds')::interval)
+       RETURNING id, expires_at`,
+      [campaignId, playerId || null, hashInviteToken(token), req.session.userId, INVITE_TTL_MS],
+    );
+
+    res.json({ id: r.rows[0].id, token, expiresAt: r.rows[0].expires_at });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+/** Pending invites, so a DM can see what is outstanding and revoke it. */
+app.get('/api/campaigns/:campaignId/invites', requireRole(['admin', 'dm']), async (req, res) => {
+  try {
+    if (!await dmOwnsCampaign(req.params.campaignId, req.session.userId, req.session.role))
+      return res.status(403).json({ error: 'Access denied' });
+    // No token column here — we only hold its hash, which is the point.
+    const r = await pool.query(
+      `SELECT i.id, i.player_id, i.expires_at, p.player_name
+         FROM campaign_invites i
+         LEFT JOIN campaign_players p ON p.id = i.player_id
+        WHERE i.campaign_id = $1 AND i.used_at IS NULL AND i.expires_at > NOW()
+        ORDER BY i.created_at DESC`,
+      [req.params.campaignId],
+    );
+    res.json(r.rows);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.delete('/api/campaigns/:campaignId/invites/:id', requireRole(['admin', 'dm']), async (req, res) => {
+  try {
+    if (!await dmOwnsCampaign(req.params.campaignId, req.session.userId, req.session.role))
+      return res.status(403).json({ error: 'Access denied' });
+    // Scoped by campaign as well as id, so a DM cannot revoke another's invite
+    // by guessing a number.
+    await pool.query(
+      'DELETE FROM campaign_invites WHERE id=$1 AND campaign_id=$2',
+      [req.params.id, req.params.campaignId],
+    );
+    res.json({ success: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ── Invitee side (no auth: the token is the credential) ──
+
+/**
+ * What the join screen shows. The campaign's NAME and nothing else about it —
+ * an invite is not a reason to learn who else is playing or what is in it.
+ */
+app.get('/api/invites/:token', async (req, res) => {
+  try {
+    const invite = await liveInvite(req.params.token);
+    if (!invite) return res.status(404).json({ error: 'This invite link is invalid or has expired', code: 'INVITE_INVALID' });
+    res.json({
+      campaignName: invite.campaign_name,
+      playerName: invite.player_name ?? null,
+      expiresAt: invite.expires_at,
+      // So the screen can offer "join as the account you are already in".
+      loggedInAs: req.session.userId ? req.session.username : null,
+    });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+/** Shared shape check for the two redemption paths. */
+function characterNameError(name) {
+  if (!name || !String(name).trim()) return 'Character name required';
+  if (String(name).trim().length > 255) return 'Character name is too long';
+  return null;
+}
+
+/**
+ * Create an account and join. The invitee's own first request — they have no
+ * session and no password yet, so the token is the only thing vouching for
+ * them, which is why it is 256 bits and lives an hour.
+ */
+app.post('/api/invites/:token/accept', async (req, res) => {
+  const { username, password, characterName } = req.body ?? {};
+  const name = String(username ?? '').trim();
+  const charName = String(characterName ?? '').trim();
+
+  if (!name || !password) return res.status(400).json({ error: 'Username and password required' });
+  const badChar = characterNameError(charName);
+  if (badChar) return res.status(400).json({ error: badChar });
+  const badPassword = passwordError(password);
+  if (badPassword) return res.status(400).json({ error: badPassword });
+
+  const now = Date.now();
+  const key = inviteKey(req);
+  const wait = loginRetryAfter(key, now, INVITE_MAX_FAILURES);
+  if (wait) {
+    res.set('Retry-After', String(wait));
+    return res.status(429).json({ error: `Too many attempts. Try again in ${Math.ceil(wait / 60)} minute(s).` });
+  }
+
+  const invite = await liveInvite(req.params.token);
+  if (!invite) {
+    recordLoginFailure(key, now);
+    return res.status(404).json({ error: 'This invite link is invalid or has expired', code: 'INVITE_INVALID' });
+  }
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+
+    const taken = await client.query('SELECT id FROM users WHERE username = $1', [name]);
+    if (taken.rows.length) {
+      await client.query('ROLLBACK');
+      // Not a throttled failure: this is an honest collision, and the invite
+      // is still good — the screen asks them for another name.
+      return res.status(409).json({ error: 'That username is taken', code: 'USERNAME_TAKEN' });
+    }
+
+    /*
+     * ALWAYS 'player'. Never from the request body — this is the one route in
+     * the app where an unauthenticated caller inserts into `users`, so a role
+     * read from input would be a self-service admin account.
+     */
+    const hash = await bcrypt.hash(password, 10);
+    const made = await client.query(
+      `INSERT INTO users (username, password_hash, role) VALUES ($1, $2, 'player')
+       RETURNING id, username, role`,
+      [name, hash],
+    );
+    const user = made.rows[0];
+
+    const seated = await redeemInvite(client, invite, user.id, charName);
+    if (seated.error) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({
+        error: seated.error === 'SEAT_TAKEN'
+          ? 'That seat has already been filled. Ask your DM for a new link.'
+          : 'This invite has already been used',
+        code: seated.error,
+      });
+    }
+
+    await client.query('COMMIT');
+    await startSession(req, user);
+    res.json({ success: true, csrfToken: csrfToken(req), user });
+  } catch (e) {
+    await client.query('ROLLBACK');
+    res.status(500).json({ error: e.message });
+  } finally { client.release(); }
+});
+
+/**
+ * Join with an account that already exists — the DM invited someone who
+ * already plays in another of their campaigns.
+ *
+ * Takes the session when there is one, and a username/password otherwise, so
+ * the screen does not have to send someone away to log in and lose the link.
+ */
+app.post('/api/invites/:token/join', async (req, res) => {
+  const { username, password, characterName } = req.body ?? {};
+  const charName = String(characterName ?? '').trim();
+
+  const badChar = characterNameError(charName);
+  if (badChar) return res.status(400).json({ error: badChar });
+
+  const now = Date.now();
+  const key = inviteKey(req);
+  const wait = loginRetryAfter(key, now, INVITE_MAX_FAILURES);
+  if (wait) {
+    res.set('Retry-After', String(wait));
+    return res.status(429).json({ error: `Too many attempts. Try again in ${Math.ceil(wait / 60)} minute(s).` });
+  }
+
+  const invite = await liveInvite(req.params.token);
+  if (!invite) {
+    recordLoginFailure(key, now);
+    return res.status(404).json({ error: 'This invite link is invalid or has expired', code: 'INVITE_INVALID' });
+  }
+
+  /*
+   * EXPLICIT CREDENTIALS WIN over the session, which is the opposite of what
+   * reading "take the session when there is one" suggests.
+   *
+   * Someone already logged in as A can follow an invite meant for B. If the
+   * session took priority, the form would collect B's username and password,
+   * ignore them, and silently seat A — and the screen's "use a different
+   * account" option could not work at all. Sending no credentials is how the
+   * screen says "join as whoever I already am".
+   */
+  let user = null;
+  const name = String(username ?? '').trim();
+  if (!name && !password && req.session.userId) {
+    const r = await pool.query('SELECT id, username, role FROM users WHERE id=$1', [req.session.userId]);
+    user = r.rows[0] ?? null;
+  } else {
+    if (!name || !password) return res.status(400).json({ error: 'Username and password required' });
+    const r = await pool.query(
+      'SELECT id, username, role, password_hash FROM users WHERE username = $1',
+      [name],
+    );
+    const found = r.rows[0];
+    // Same timing equalisation as /auth/login: an unknown username must cost
+    // a bcrypt round too, or this route becomes the oracle that one is not.
+    const ok = await bcrypt.compare(password, found?.password_hash || DUMMY_PASSWORD_HASH);
+    if (!found || !ok) {
+      recordLoginFailure(key, now);
+      return res.status(401).json({ error: 'Invalid credentials' });
+    }
+    user = { id: found.id, username: found.username, role: found.role };
+  }
+  if (!user) return res.status(401).json({ error: 'Invalid credentials' });
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+
+    if (await alreadyInCampaign(client, invite.campaign_id, user.id)) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({
+        error: 'You are already playing in this campaign',
+        code: 'ALREADY_JOINED',
+      });
+    }
+
+    const seated = await redeemInvite(client, invite, user.id, charName);
+    if (seated.error) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({
+        error: seated.error === 'SEAT_TAKEN'
+          ? 'That seat has already been filled. Ask your DM for a new link.'
+          : 'This invite has already been used',
+        code: seated.error,
+      });
+    }
+
+    await client.query('COMMIT');
+    // A fresh session id even when they were already logged in: they arrived
+    // by following a link, which is the shape of a fixation attempt.
+    await startSession(req, user);
+    res.json({ success: true, csrfToken: csrfToken(req), user });
   } catch (e) {
     await client.query('ROLLBACK');
     res.status(500).json({ error: e.message });
@@ -6341,6 +6758,43 @@ async function initializeDatabase() {
         user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       );
+    `);
+
+    /*
+     * Campaign invites — a one-hour, single-use link that lets someone join a
+     * campaign without the DM first creating them an account.
+     *
+     * THE TOKEN IS STORED HASHED, unlike the share tokens elsewhere in this
+     * file. Those are read-only links to one map or diary; this one creates a
+     * user account and adds it to a campaign, so a leaked database backup
+     * would otherwise hand over every live invite. sha256 with no salt,
+     * because the token is 256 bits of CSPRNG output — there is no dictionary
+     * to defend against, and the lookup has to be by equality.
+     *
+     * `player_id` NULL means "make a new seat on redemption"; set, it means
+     * the DM is inviting someone into a seat that already exists, keeping the
+     * timeline entries and notes already hanging off it.
+     *
+     * Used invites are KEPT, not deleted: `used_at`/`used_by` are how a DM
+     * answers "did that link get used, and by whom", and a row that vanishes
+     * on use cannot distinguish a used link from a forged one.
+     */
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS campaign_invites (
+        id          SERIAL PRIMARY KEY,
+        campaign_id INTEGER NOT NULL REFERENCES campaigns(id) ON DELETE CASCADE,
+        player_id   INTEGER REFERENCES campaign_players(id) ON DELETE CASCADE,
+        token_hash  VARCHAR(64) NOT NULL UNIQUE,
+        created_by  INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        expires_at  TIMESTAMP NOT NULL,
+        used_at     TIMESTAMP,
+        used_by     INTEGER REFERENCES users(id) ON DELETE SET NULL,
+        created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
+    await pool.query(`
+      CREATE INDEX IF NOT EXISTS idx_campaign_invites_campaign
+        ON campaign_invites (campaign_id);
     `);
 
     // Named player timelines — one player can have multiple timelines

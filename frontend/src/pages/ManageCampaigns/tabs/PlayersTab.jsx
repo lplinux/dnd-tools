@@ -9,6 +9,7 @@ import { useNavigate } from 'react-router-dom';
 import { Trash2, Save, Upload } from 'lucide-react';
 import { Button, Modal, FormField } from '@/components/ui';
 import { useToast } from '@/hooks/useToast';
+import InvitePanel from './InvitePanel';
 
 export default function PlayersTab({ players, allUsers, campaignId, actions }) {
   const navigate = useNavigate();
@@ -88,17 +89,37 @@ export default function PlayersTab({ players, allUsers, campaignId, actions }) {
 
   return (
     <div className="space-y-4">
-      {/* Add player */}
-      <div className="flex gap-2 flex-wrap">
-        <input type="text" placeholder="Character name" value={name}
-          onChange={e => setName(e.target.value)}
-          onKeyDown={e => e.key === 'Enter' && handleAdd()}
-          className={inputCls + ' flex-[2] min-w-[140px]'} />
-        <select value={userId} onChange={e => setUserId(e.target.value)} className={inputCls + ' flex-[2] min-w-[140px]'}>
-          <option value="">— No user —</option>
-          {[...userOpts].sort((a, b) => (a.username || '').localeCompare(b.username || '')).map(u => <option key={u.id} value={u.id}>{u.username}</option>)}
-        </select>
-        <Button variant="accent" loading={adding} onClick={handleAdd}>Add</Button>
+      {/* Two ways to add someone, side by side: build the seat yourself, or
+          send a link and let them. They were stacked, which gave two ways of
+          doing one thing a third of the screen before the table that is the
+          actual content of this tab.
+
+          md: is the breakpoint rather than lg: because each column is a short
+          row of controls; below it they stack, which is the only thing that
+          fits a phone. */}
+      <div className="border border-border rounded-sm bg-surface2/40
+                      grid grid-cols-1 md:grid-cols-2 divide-y md:divide-y-0 md:divide-x divide-border">
+        <section className="p-3 flex flex-col gap-2">
+          <p className="font-display uppercase tracking-wider text-[0.6rem] text-text-dim">
+            Create a character
+          </p>
+          <div className="flex gap-2 flex-wrap">
+            <input type="text" placeholder="Character name" value={name}
+              onChange={e => setName(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && handleAdd()}
+              className={inputCls + ' flex-[2] min-w-[120px]'} />
+            <select value={userId} onChange={e => setUserId(e.target.value)} className={inputCls + ' flex-1 min-w-[110px]'}>
+              <option value="">— No user —</option>
+              {[...userOpts].sort((a, b) => (a.username || '').localeCompare(b.username || '')).map(u => <option key={u.id} value={u.id}>{u.username}</option>)}
+            </select>
+            <Button variant="accent" loading={adding} onClick={handleAdd}>Add</Button>
+          </div>
+          <p className="text-[0.7rem] text-text-muted font-body italic">
+            For a player who already has an account, or a seat to fill later.
+          </p>
+        </section>
+
+        <InvitePanel campaignId={campaignId} players={players} />
       </div>
 
       {/* Table */}
