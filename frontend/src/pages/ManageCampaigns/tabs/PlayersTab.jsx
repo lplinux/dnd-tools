@@ -31,7 +31,32 @@ export default function PlayersTab({ players, allUsers, campaignId, actions }) {
   const sorted = [...players].sort((a, b) =>
     (a.player_name || '').localeCompare(b.player_name || ''));
 
-  const userOpts = allUsers.filter(u => u.role !== 'admin');
+  // Players only. It used to be `role !== 'admin'`, which left every DM in the
+  // list — and a DM already has a seat in their own campaign through
+  // is_dm_player, so offering them one here only ever produced a mistake.
+  const userOpts = [...allUsers]
+    .filter(u => u.role === 'player')
+    .sort((a, b) => (a.username || '').localeCompare(b.username || ''));
+
+  /** The select's current value for a row: a pending edit, else what is saved. */
+  const currentUser = (p) => String(p.user_id ?? '');
+  const chosen = (p) => reassigns[p.id] ?? currentUser(p);
+
+  /**
+   * Options for one row.
+   *
+   * Whoever holds the seat is always included, even when they are not a
+   * player — an assignment made before DMs were filtered out would otherwise
+   * be invisible, and the select would silently show someone else's name as
+   * though it were saved.
+   */
+  function optionsFor(p) {
+    const held = currentUser(p);
+    if (held && !userOpts.some(u => String(u.id) === held)) {
+      return [{ id: p.user_id, username: `${p.username ?? `User ${p.user_id}`} (not a player)` }, ...userOpts];
+    }
+    return userOpts;
+  }
 
   async function handleAdd() {
     if (!name.trim()) return;
@@ -41,9 +66,21 @@ export default function PlayersTab({ players, allUsers, campaignId, actions }) {
   }
 
   async function handleReassign(pid) {
-    const newId = reassigns[pid];
-    if (newId === undefined) return;
-    await actions.reassignPlayer(pid, newId || null);
+    const p = players.find(x => String(x.id) === String(pid));
+    if (!p) return;
+    const next = chosen(p);
+    if (next === currentUser(p)) return;        // nothing to save
+    // '' is "— None —", which the server reads as unassign. This is the whole
+    // bug: the select used to sit on '' whatever was saved, so choosing
+    // "— None —" fired no change event and Save had nothing to send. There
+    // was no way to free a seat once it was taken.
+    await actions.reassignPlayer(pid, next || null);
+    // Drop the local override so the row shows what came back from the server.
+    setReassigns(prev => {
+      const copy = { ...prev };
+      delete copy[pid];
+      return copy;
+    });
   }
 
   function openImportFor(player) {
@@ -144,16 +181,29 @@ export default function PlayersTab({ players, allUsers, campaignId, actions }) {
                     <div className="flex gap-1.5">
                       <select
                         className={inputCls + ' text-xs py-1'}
-                        value={reassigns[p.id] ?? ''}
+                        /* Shows who HOLDS the seat, not a blank. The current
+                           holder therefore stays in the option list — filtering
+                           them out left the select unable to display its own
+                           value. */
+                        value={chosen(p)}
                         onChange={e => setReassigns(prev => ({ ...prev, [p.id]: e.target.value }))}
+                        aria-label={`User assigned to ${p.player_name}`}
                       >
                         <option value="">— None —</option>
-                        {userOpts.filter(u => u.id !== p.user_id).map(u => (
+                        {optionsFor(p).map(u => (
                           <option key={u.id} value={u.id}>{u.username}</option>
                         ))}
                       </select>
-                      <Button variant="default" onClick={() => handleReassign(p.id)}
-                        title={`Save the selected user for ${p.player_name}`}>
+                      <Button
+                        variant="default"
+                        onClick={() => handleReassign(p.id)}
+                        disabled={chosen(p) === currentUser(p)}
+                        title={chosen(p) === currentUser(p)
+                          ? 'Pick a different user first'
+                          : (chosen(p)
+                            ? `Assign this user to ${p.player_name}`
+                            : `Leave ${p.player_name} unassigned`)}
+                      >
                         <Save size={11} className="inline mr-1" /> Save
                       </Button>
                     </div>
