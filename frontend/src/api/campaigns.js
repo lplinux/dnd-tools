@@ -17,6 +17,12 @@ export const campaignsApi = {
   purge:   (id)          => client.del(`/campaigns/${id}/purge`),
   exportCampaign: (id)   => client.get(`/campaigns/${id}/export`),
   importCampaign: (data) => client.post('/campaigns/import', data),
+  /**
+   * Import a bundle INTO an existing campaign, replacing only the sections
+   * the file carries. The sibling of importCampaign, which always makes a
+   * new one.
+   */
+  importIntoCampaign: (cid, data) => client.post(`/campaigns/${cid}/import-into`, data),
 
   // ── Players ───────────────────────────────────────────
   listPlayers:    (cid)          => client.get(`/campaigns/${cid}/players`),

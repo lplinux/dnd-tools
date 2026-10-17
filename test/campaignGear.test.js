@@ -47,8 +47,13 @@ describe('the export carries gear', () => {
     expect(exp).toMatch(/inventory: inventoryFor\(p\.id\)/);
   });
 
-  it('bumps the bundle version', () => {
-    expect(exp).toMatch(/version: 5/);
+  it('is at a version that carries gear', () => {
+    // Gear arrived in 5. The exact current number is NOT pinned here — it
+    // moves whenever anything else is added to the bundle, and this file is
+    // about gear. test/campaignBundle.test.js owns the number.
+    const m = exp.match(/version: (\d+)/);
+    expect(m, 'no version in the export').not.toBeNull();
+    expect(Number(m[1])).toBeGreaterThanOrEqual(5);
   });
 
   it('refers to a card by POSITION, never by id', () => {
