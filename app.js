@@ -2208,12 +2208,25 @@ app.get('/api/diary-public/:token', async (req, res) => {
     // the campaign and works again if they restore it.
     if (!campR.rows.length) return res.status(404).json({ error: 'Not found' });
 
+    /*
+     * A published entry can still name a place the party has not found or a
+     * person they have not met, and blanking the link would leave the name
+     * in the prose. Same rule as the journal, and the same helper, so the
+     * two cannot drift apart.
+     *
+     * Applied to EVERYONE here, the DM included, which keeps this route
+     * session-blind: what the link shows is what the table sees, and a DM
+     * opening their own share link is previewing exactly that. The DM reads
+     * the unabridged diary in the Diary module.
+     */
+    const entries = await withholdHiddenEntries(campaignId, entriesR.rows);
+
     // Session-blind on purpose: unlike the public journey map this never tailors
     // its output to a logged-in cookie, so "did we leak?" stays reproducible
     // with a cookie-less curl.
     res.json({
       campaign_name: campR.rows[0].name,
-      entries: entriesR.rows,
+      entries,
     });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -4269,6 +4282,110 @@ const journalDay = (v) => {
   return Number.isFinite(n) && n >= 0 && n < 3650000 ? n : null;
 };
 
+/*
+ * ── Withholding a journal entry that names something hidden ────────────────
+ *
+ * An entry can mention a place the party has not found or a person they have
+ * not met, via a `[[cross-link]]`. Blanking the LINK is not enough: the name
+ * is still sitting in the prose, and the sentence around it is usually the
+ * spoiler. So an entry that references anything hidden is withheld whole
+ * until every thing it names is visible, and reappears on its own the moment
+ * the DM reveals the last of them.
+ *
+ * This is the one withholding rule in the app that cannot be a SQL predicate
+ * — it needs the body parsed — so it happens in the route instead. The
+ * principle is unchanged: the row never leaves the server.
+ *
+ * These three mirror frontend/src/data/crossLinks.js. They have to agree
+ * about what counts as a link, or the server would withhold entries the
+ * client would not have linked, or worse, miss one that it would.
+ */
+const LINK_KINDS = { location: 'location', loc: 'location', place: 'location', npc: 'npc' };
+
+/** `[[npc:Théa|her]]` → `{ kind: 'npc', name: 'Théa' }`. Mirrors parseToken. */
+function journalLinkToken(inner) {
+  const raw = String(inner ?? '');
+  const pipe = raw.indexOf('|');
+  const target = (pipe === -1 ? raw : raw.slice(0, pipe)).trim();
+  const colon = target.indexOf(':');
+  if (colon > 0) {
+    const kind = LINK_KINDS[target.slice(0, colon).trim().toLowerCase()];
+    // An unknown prefix is part of the name: "Act II: The Road" is a
+    // plausible thing to link to.
+    if (kind) return { kind, name: target.slice(colon + 1).trim() };
+  }
+  return { kind: null, name: target };
+}
+
+/**
+ * Folded name → { kind, hidden } for everything a `[[link]]` can reach.
+ *
+ * Built from ALL rows, hidden ones included — resolving against only the
+ * visible set would mean a hidden name simply failed to resolve, and the
+ * entry would sail through.
+ *
+ * Locations are inserted first so a bare `[[Name]]` prefers a place, which is
+ * what the client does; being faithful here avoids withholding an entry whose
+ * link actually resolves to a visible location that happens to share a name
+ * with a hidden NPC.
+ */
+function journalLinkIndex(locations, npcs) {
+  const index = new Map();
+  const put = (kind, row) => {
+    const key = searchFold(row?.name).trim();
+    if (!key) return;
+    const entry = { kind, hidden: !row.is_public };
+    const typed = `${kind}:${key}`;
+    if (!index.has(typed)) index.set(typed, entry);
+    if (!index.has(key)) index.set(key, entry);
+  };
+  for (const l of locations) put('location', l);
+  for (const n of npcs) put('npc', n);
+  return index;
+}
+
+/** Does this entry name anything the viewer is not meant to know about? */
+function journalNamesSomethingHidden(entry, index, hiddenLocationIds) {
+  // The "where it happened" field counts as naming it. Tagging an entry with
+  // a secret place and not linking it would otherwise be a way around this.
+  if (entry.location_id != null && hiddenLocationIds.has(entry.location_id)) return true;
+
+  for (const m of String(entry.body ?? '').matchAll(/\[\[([^\]\n]+)\]\]/g)) {
+    const token = journalLinkToken(m[1]);
+    const key = searchFold(token.name).trim();
+    if (!key) continue;
+    const hit = index.get(token.kind ? `${token.kind}:${key}` : key);
+    // A name that resolves to nothing is ordinary prose, not a leak — the
+    // client renders it as plain text for everyone.
+    if (hit?.hidden) return true;
+  }
+  return false;
+}
+
+/**
+ * Drop every entry that names something hidden, for one campaign.
+ *
+ * Shared by the journal and the public diary so the two cannot drift: a rule
+ * that holds in one place and not the other is worse than no rule, because
+ * the DM stops thinking about it.
+ *
+ * `locationIdOf` says where to find an entry's own location, because the two
+ * callers hold it under different names — and the journal's player query has
+ * already blanked it, so it has to be read from elsewhere there.
+ */
+async function withholdHiddenEntries(campaignId, entries, locationIdOf = (e) => e.location_id) {
+  if (!entries.length) return entries;
+  const [locs, npcRows] = await Promise.all([
+    pool.query('SELECT id, name, is_public FROM campaign_locations WHERE campaign_id=$1', [campaignId]),
+    pool.query('SELECT id, name, is_public FROM campaign_npcs WHERE campaign_id=$1', [campaignId]),
+  ]);
+  const index = journalLinkIndex(locs.rows, npcRows.rows);
+  const hiddenLocationIds = new Set(locs.rows.filter((l) => !l.is_public).map((l) => l.id));
+  return entries.filter((e) => !journalNamesSomethingHidden(
+    { body: e.body, location_id: locationIdOf(e) }, index, hiddenLocationIds,
+  ));
+}
+
 /**
  * Validate a location the author claims to be writing about.
  *
@@ -4897,7 +5014,30 @@ app.get('/api/campaigns/:campaignId/journal', requireAuth, async (req, res) => {
       [campaignId],
     );
 
-    res.json(r.rows.map((e) => ({ ...e, mine: e.created_by === req.session.userId })));
+    let rows = r.rows;
+    if (!isDM) {
+      /*
+       * Withhold any entry that names something this player is not meant to
+       * know about — see journalNamesSomethingHidden. Two queries rather
+       * than a join, because the index is built once for the whole list and
+       * a join would repeat every location on every row.
+       *
+       * The SQL above already blanks a hidden location's name and id; this
+       * goes further and removes the entry, because the prose around the
+       * name is usually the spoiler.
+       */
+      // `j.location_id` is already nulled for a player by the SELECT above,
+      // so the real one has to be read separately — testing the blanked
+      // value would never match and the tag would be a way around the rule.
+      const rawLoc = new Map(
+        (await pool.query(
+          'SELECT id, location_id FROM campaign_journal_entries WHERE campaign_id=$1', [campaignId],
+        )).rows.map((x) => [x.id, x.location_id]),
+      );
+      rows = await withholdHiddenEntries(campaignId, rows, (e) => rawLoc.get(e.id));
+    }
+
+    res.json(rows.map((e) => ({ ...e, mine: e.created_by === req.session.userId })));
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
