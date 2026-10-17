@@ -50,10 +50,16 @@ describe('who may read it', () => {
     expect(body).toMatch(/403/);
   });
 
-  it('does not branch on role', () => {
-    // Deliberate: the list is "what has been shared", which is the same answer
-    // for everyone. A role branch here would be a second code path to get wrong.
-    expect(body).not.toMatch(/isDM|isCampaignDm|role === 'dm'/);
+  it('branches on role for NPCs, and ONLY for NPCs', () => {
+    // The shared maps and timelines are "what has been shared", the same
+    // answer for everyone — a role branch there would be a second code path
+    // to get wrong, and this once asserted there was no branch at all.
+    // NPCs forced one: a player gets the revealed ones, the DM gets all of
+    // them so the tab shows what the table sees plus what is still hidden.
+    expect(body).toMatch(/const isDM = await isCampaignDm\(/);
+    const branches = body.match(/\$\{isDM \? [^}]*\}/g) ?? [];
+    expect(branches.length, 'a role branch outside the NPC query').toBe(1);
+    expect(body).toMatch(/n\.is_public = true/);
   });
 });
 
@@ -77,11 +83,25 @@ describe('what it hands back', () => {
     expect(body).toMatch(/scope: 'timeline'/);
   });
 
-  it('returns npcs as a prepared empty list', () => {
-    // Shipping the real list would mean either showing players every NPC the
-    // DM has named or inventing a visibility model in passing; campaign_npcs
-    // has no visibility flag at all.
-    expect(body).toMatch(/npcs: \[\]/);
-    expect(source).not.toMatch(/campaign_npcs[^\n]*is_public/);
+  it('returns the NPCs the viewer may see', () => {
+    // The empty placeholder is filled now that campaign_npcs has a
+    // visibility flag.
+    expect(body).toMatch(/npcs: npcRows\.rows/);
+    expect(body).not.toMatch(/npcs: \[\]/);
+  });
+
+  it('never sends private_info', () => {
+    // The one column on campaign_npcs that must not reach a player. An
+    // explicit column list is what keeps it out; SELECT * would not.
+    const q = body.slice(body.indexOf('FROM campaign_npcs') - 400,
+      body.indexOf('FROM campaign_npcs') + 400);
+    expect(q).not.toMatch(/private_info/);
+    expect(q).not.toMatch(/SELECT \*/);
+  });
+
+  it('hides the location of an NPC standing somewhere secret', () => {
+    // From a PLAYER. Revealing Grathul must not reveal the undiscovered
+    // place he is standing in.
+    expect(body).toMatch(/CASE WHEN l\.is_public OR \$2 THEN l\.name END/);
   });
 });

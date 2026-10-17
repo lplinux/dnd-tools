@@ -770,6 +770,15 @@ app.post('/api/campaigns/:campaignId/players', requireRole(['dm']), async (req, 
   try {
     if (!await dmOwnsCampaign(req.params.campaignId, req.session.userId, req.session.role))
       return res.status(403).json({ error: 'Access denied' });
+
+    const taken = await seatHeldBy(userId, campaignId);
+    if (taken) {
+      return res.status(409).json({
+        error: `That user already plays ${taken.player_name} in this campaign.`,
+        code: 'USER_ALREADY_SEATED',
+      });
+    }
+
     // Create player
     const playerResult = await pool.query(
       'INSERT INTO campaign_players (campaign_id, player_name) VALUES ($1, $2) RETURNING id',
@@ -788,6 +797,15 @@ app.post('/api/campaigns/:campaignId/players', requireRole(['dm']), async (req, 
 
     res.json({ success: true, playerId });
   } catch (error) {
+    // The (campaign_id, LOWER(player_name)) index. Adding a second "Davin"
+    // is a thing a DM will do by accident, and it deserves a sentence
+    // rather than a 500.
+    if (error.code === '23505') {
+      return res.status(409).json({
+        error: 'A character with that name already exists in this campaign',
+        code: 'NAME_TAKEN',
+      });
+    }
     res.status(500).json({ error: error.message });
   }
 });
@@ -833,6 +851,17 @@ app.put('/api/campaigns/:campaignId/players/:playerId/reassign', requireRole(['d
     if (!check.rows.length) {
       await client.query('ROLLBACK');
       return res.status(404).json({ error: 'Player not found in this campaign' });
+    }
+
+    // One seat per person. Checked before anything is deleted, so a refusal
+    // leaves the current assignment exactly as it was.
+    const taken = await seatHeldBy(userId, campaignId, playerId);
+    if (taken) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({
+        error: `That user already plays ${taken.player_name} in this campaign.`,
+        code: 'USER_ALREADY_SEATED',
+      });
     }
 
     // Remove any existing assignment for this player
@@ -1172,6 +1201,14 @@ app.post('/api/invites/:token/accept', async (req, res) => {
     res.json({ success: true, csrfToken: csrfToken(req), user });
   } catch (e) {
     await client.query('ROLLBACK');
+    // A character name already in this campaign. The rollback above leaves
+    // the invite unused, so they can simply pick another name.
+    if (e.code === '23505') {
+      return res.status(409).json({
+        error: 'A character with that name already exists in this campaign',
+        code: 'NAME_TAKEN',
+      });
+    }
     res.status(500).json({ error: e.message });
   } finally { client.release(); }
 });
@@ -1267,6 +1304,12 @@ app.post('/api/invites/:token/join', async (req, res) => {
     res.json({ success: true, csrfToken: csrfToken(req), user });
   } catch (e) {
     await client.query('ROLLBACK');
+    if (e.code === '23505') {
+      return res.status(409).json({
+        error: 'A character with that name already exists in this campaign',
+        code: 'NAME_TAKEN',
+      });
+    }
     res.status(500).json({ error: e.message });
   } finally { client.release(); }
 });
@@ -4256,6 +4299,32 @@ async function isCampaignDm(campaignId, userId, role) {
   return r.rows.length > 0;
 }
 
+/**
+ * The seat this user already holds in this campaign, or null.
+ *
+ * One person plays one character per campaign. Two seats for the same user
+ * makes "which character wrote this" unanswerable — the journal's author
+ * query picks the lowest id and says so — and silently halves the PC Sheet's
+ * campaign selector, which is how this surfaced in the first place.
+ *
+ * `is_dm_player` seats are excluded: the DM's marker row is not a character
+ * anyone plays, and a DM who also runs a PC holds a real seat alongside it.
+ */
+async function seatHeldBy(userId, campaignId, exceptPlayerId = null) {
+  if (!userId) return null;
+  const r = await pool.query(
+    `SELECT cp.id, cp.player_name
+       FROM campaign_user_assignments cua
+       JOIN campaign_players cp ON cp.id = cua.player_id
+      WHERE cua.user_id = $1 AND cp.campaign_id = $2
+        AND (cp.is_dm_player IS NULL OR cp.is_dm_player = false)
+        AND ($3::int IS NULL OR cp.id <> $3)
+      LIMIT 1`,
+    [userId, campaignId, exceptPlayerId],
+  );
+  return r.rows[0] ?? null;
+}
+
 /** The entry, if this user may change it. Author always; DM for deletion only. */
 async function journalEntry(entryId, campaignId) {
   const r = await pool.query(
@@ -4384,7 +4453,11 @@ app.get('/api/campaigns/:campaignId/search', requireRole(['dm', 'admin']), async
             WHERE d.campaign_id = $1`),
         q(`SELECT id, name, description, is_public
              FROM campaign_locations WHERE campaign_id = $1`),
-        q('SELECT id, name FROM campaign_npcs WHERE campaign_id = $1'),
+        q(`SELECT n.id, n.name, n.description, n.public_info, n.private_info, n.is_public,
+                  l.name AS location
+             FROM campaign_npcs n
+             LEFT JOIN campaign_locations l ON l.id = n.current_location_id
+            WHERE n.campaign_id = $1`),
         q(`SELECT e.id, e.title, e.description, e.location, e.year, e.day_of_year,
                   cp.player_name AS who
              FROM player_timeline_entries e
@@ -4438,9 +4511,13 @@ app.get('/api/campaigns/:campaignId/search', requireRole(['dm', 'admin']), async
         (r) => [['name', r.name], ['description', r.description]],
         (r) => ({ id: r.id, title: r.name, path: '/manage-campaigns',
           note: r.is_public ? null : 'hidden from players' })),
+      // private_info included: this route is DM-only, and notes the DM wrote
+      // about an NPC are exactly what they are searching for.
       group('npc', 'NPCs', npcs.rows,
-        (r) => [['name', r.name]],
-        (r) => ({ id: r.id, title: r.name, path: '/manage-campaigns', note: null })),
+        (r) => [['name', r.name], ['description', r.description],
+          ['public_info', r.public_info], ['private_info', r.private_info]],
+        (r) => ({ id: r.id, title: r.name, path: '/manage-campaigns',
+          note: [r.location, r.is_public ? null : 'not yet met'].filter(Boolean).join(' · ') || null })),
       group('event', 'Timeline', events.rows,
         (r) => [['title', r.title], ['description', r.description], ['location', r.location]],
         (r) => ({ id: r.id, title: r.title || '(untitled)', path: '/timeline',
@@ -4550,11 +4627,25 @@ app.get('/api/campaigns/:campaignId/search/:kind/:id', requireRole(['dm', 'admin
             ['Players', r.is_public ? 'can see this' : 'cannot see this']) };
         break;
       case 'npc':
-        r = await one('SELECT name FROM campaign_npcs WHERE campaign_id = $1 AND id = $2');
+        // This route is DM-only, so private_info is included — it is the one
+        // place the DM reads their own secrets without leaving the search.
+        r = await one(`SELECT n.name, n.description, n.public_info, n.private_info,
+                              n.is_public, l.name AS location, l.is_public AS location_public
+                         FROM campaign_npcs n
+                         LEFT JOIN campaign_locations l ON l.id = n.current_location_id
+                        WHERE n.campaign_id = $1 AND n.id = $2`);
         if (!r) break;
-        // campaign_npcs is a name and nothing else. Saying so beats an empty panel.
-        r = { title: r.name, body: null, bodyFormat: 'text',
-          meta: meta(['Notes', 'NPCs hold only a name today']) };
+        r = {
+          title: r.name,
+          body: [r.description, r.public_info && `**What the party knows**\n\n${r.public_info}`,
+            r.private_info && `**Your notes**\n\n${r.private_info}`]
+            .filter(Boolean).join('\n\n') || null,
+          bodyFormat: 'markdown',
+          meta: meta(
+            ['Currently at', r.location && (r.location_public ? r.location : `${r.location} (hidden)`)],
+            ['Players', r.is_public ? 'can see this NPC' : 'have not met them'],
+          ),
+        };
         break;
       case 'event':
         r = await one(`SELECT e.title, e.description, e.location, e.year, e.day_of_year,
@@ -4633,11 +4724,14 @@ app.get('/api/campaigns/:campaignId/search/:kind/:id', requireRole(['dm', 'admin
 // campaign that THIS viewer is allowed to resolve.
 //
 // Role-filtered in SQL, reusing the rule the locations route already applies —
-// a player gets public locations only, and no NPCs at all, because
-// `campaign_npcs` is DM-only and has no visibility column. A name the viewer
-// cannot resolve renders as plain text rather than a link, which leaks
-// nothing: the name is sitting in the prose either way, so the only difference
-// is whether clicking it does anything.
+// a player gets public locations and public NPCs. A name the viewer cannot
+// resolve renders as plain text rather than a link, which leaks nothing: the
+// name is sitting in the prose either way, so the only difference is whether
+// clicking it does anything.
+//
+// `private_info` is NOT selected here for anybody. The index is fetched once
+// per campaign and held in memory to drive an autocomplete; the DM's secrets
+// have no business in it, and the NPCs tab is where they are read and written.
 //
 // An explicit column list, never SELECT *: `campaign_locations.image_data`
 // holds a base64 pin image, and pulling every one of them into an autocomplete
@@ -4658,12 +4752,13 @@ app.get('/api/campaigns/:campaignId/link-targets', requireAuth, async (req, res)
           ORDER BY name ASC`,
         [campaignId],
       ),
-      isDM
-        ? pool.query(
-          'SELECT id, name FROM campaign_npcs WHERE campaign_id = $1 ORDER BY name ASC',
-          [campaignId],
-        )
-        : Promise.resolve({ rows: [] }),
+      pool.query(
+        `SELECT id, name, description, public_info, is_public
+           FROM campaign_npcs
+          WHERE campaign_id = $1 ${isDM ? '' : 'AND is_public = true'}
+          ORDER BY name ASC`,
+        [campaignId],
+      ),
       // The party, for the autocomplete only. Everyone in a campaign may see
       // who else is in it, so these are not role-filtered — and unlike the
       // other two they are NOT indexed as link targets, so `[[Thalia]]`
@@ -4706,7 +4801,9 @@ app.get('/api/campaigns/:campaignId/links', requireAuth, async (req, res) => {
     if (!await canAccessCampaign(campaignId, req.session.userId, req.session.role))
       return res.status(403).json({ error: 'Access denied' });
 
-    const [maps, campaignTl, playerTl] = await Promise.all([
+    const isDM = await isCampaignDm(campaignId, req.session.userId, req.session.role);
+
+    const [maps, campaignTl, playerTl, npcRows] = await Promise.all([
       pool.query(
         `SELECT jm.id, jm.name, jms.token, jms.created_at
            FROM journey_maps jm
@@ -4731,6 +4828,18 @@ app.get('/api/campaigns/:campaignId/links', requireAuth, async (req, res) => {
           ORDER BY cp.player_name ASC NULLS LAST, pt.name ASC`,
         [campaignId],
       ),
+      // The people the party has met. A player gets the revealed ones; the DM
+      // gets all of them, so this tab shows the DM what their table sees plus
+      // what is still hidden. Never private_info, for either.
+      pool.query(
+        `SELECT n.id, n.name, n.description, n.public_info, n.is_public,
+                CASE WHEN l.is_public OR $2 THEN l.name END AS location_name
+           FROM campaign_npcs n
+           LEFT JOIN campaign_locations l ON l.id = n.current_location_id
+          WHERE n.campaign_id = $1 ${isDM ? '' : 'AND n.is_public = true'}
+          ORDER BY n.name ASC`,
+        [campaignId, isDM],
+      ),
     ]);
 
     res.json({
@@ -4748,13 +4857,14 @@ app.get('/api/campaigns/:campaignId/links', requireAuth, async (req, res) => {
           token: t.token, path: `/timeline-public/${t.token}`, shared_at: t.created_at,
         })),
       ],
-      // Prepared, deliberately empty. NPCs are campaign-scoped and DM-only
-      // today (`campaign_npcs` has no visibility flag at all), so shipping the
-      // list now would mean either showing players every NPC the DM has ever
-      // named, or inventing a visibility model in passing. The tab renders the
-      // section only when this is non-empty, so filling it later is a server
-      // change and nothing else.
-      npcs: [],
+      // The people the party has met: NPCs the DM has revealed. This was an
+      // empty placeholder until `campaign_npcs` grew a visibility flag; it is
+      // now the same rule the cross-link index uses.
+      //
+      // No private_info, and no link: an NPC has no page of their own. The
+      // description and public notes are the whole of it, which is why they
+      // are carried here rather than fetched per row.
+      npcs: npcRows.rows,
     });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -4786,6 +4896,7 @@ app.get('/api/campaigns/:campaignId/journal', requireAuth, async (req, res) => {
         ORDER BY j.in_game_day ASC NULLS LAST, j.created_at ASC`,
       [campaignId],
     );
+
     res.json(r.rows.map((e) => ({ ...e, mine: e.created_by === req.session.userId })));
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -4893,14 +5004,50 @@ app.delete('/api/campaigns/:campaignId/journal/:entryId', requireAuth, async (re
 // ============================================
 // CAMPAIGN META (today_marker, etc.)
 
-// ─── Campaign NPCs (DM-only) ─────────────────────────────────────────────────
-app.get('/api/campaigns/:campaignId/npcs', requireRole(['dm', 'admin']), async (req, res) => {
+// ─── Campaign NPCs ───────────────────────────────────────────────────────────
+//
+// Managed like locations: a description, a visibility flag, public and private
+// notes, and where they are now.
+//
+// The player branch of every query here NAMES ITS COLUMNS. Locations can get
+// away with `SELECT *` because nothing on that table is secret; campaign_npcs
+// has `private_info`, so a star here would hand the DM's secrets to the table.
+
+/** Columns a player may see. The absence of private_info is the whole point. */
+const NPC_PLAYER_COLUMNS = `n.id, n.name, n.description, n.public_info, n.is_public`;
+
+/**
+ * The current location, for a player: name AND id, or neither.
+ *
+ * Withholding the name but keeping the id is a leak, not a half-measure —
+ * two NPCs coming back with the same unexplained id tells a player they are
+ * in the same undiscovered place, and the id maps straight onto a location
+ * they may already know by another route. The journal had exactly this bug.
+ */
+const NPC_PLAYER_LOCATION = `CASE WHEN l.is_public THEN l.name END AS location_name,
+                             CASE WHEN l.is_public THEN n.current_location_id END AS current_location_id`;
+
+app.get('/api/campaigns/:campaignId/npcs', requireRole(['dm', 'player']), async (req, res) => {
   try {
-    if (!await dmOwnsCampaign(req.params.campaignId, req.session.userId, req.session.role))
+    if (!await canAccessCampaign(req.params.campaignId, req.session.userId, req.session.role))
       return res.status(403).json({ error: 'Access denied' });
+    const isDM = await isCampaignDm(req.params.campaignId, req.session.userId, req.session.role);
+
+    // `location_name` is joined rather than fetched separately so a list of
+    // forty NPCs is one query. For a player it is nulled when the LOCATION is
+    // hidden, independently of the NPC: knowing Grathul is visible must not
+    // reveal that he is standing in a place they have not found.
     const r = await pool.query(
-      'SELECT * FROM campaign_npcs WHERE campaign_id=$1 ORDER BY name ASC',
-      [req.params.campaignId]
+      isDM
+        ? `SELECT n.*, l.name AS location_name
+             FROM campaign_npcs n
+             LEFT JOIN campaign_locations l ON l.id = n.current_location_id
+            WHERE n.campaign_id = $1 ORDER BY n.name ASC`
+        : `SELECT ${NPC_PLAYER_COLUMNS}, ${NPC_PLAYER_LOCATION}
+             FROM campaign_npcs n
+             LEFT JOIN campaign_locations l ON l.id = n.current_location_id
+            WHERE n.campaign_id = $1 AND n.is_public = true ORDER BY n.name ASC`,
+      [req.params.campaignId],
     );
     res.json(r.rows);
   } catch (e) { res.status(500).json({ error: e.message }); }
@@ -4918,12 +5065,78 @@ app.post('/api/campaigns/:campaignId/npcs', requireRole(['dm', 'admin']), async 
     const inserted = [];
     for (const name of list) {
       const r = await pool.query(
-        'INSERT INTO campaign_npcs (campaign_id, name) VALUES ($1,$2) ON CONFLICT (campaign_id, name) DO NOTHING RETURNING *',
+        // The index is on LOWER(name), so the conflict target must be too —
+        // naming the plain column would miss a differing-case clash and
+        // surface it as a 500 instead of quietly skipping the duplicate.
+        'INSERT INTO campaign_npcs (campaign_id, name) VALUES ($1,$2) ON CONFLICT (campaign_id, LOWER(name)) DO NOTHING RETURNING *',
         [req.params.campaignId, name]
       );
       if (r.rows.length) inserted.push(r.rows[0]);
     }
     res.json(inserted);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+/**
+ * Edit one NPC.
+ *
+ * `current_location_id` is verified to belong to THIS campaign before it is
+ * written. Without that, a DM could point an NPC at a location in someone
+ * else's campaign by id — harmless to them, but it would surface that
+ * location's name in this campaign's lists, which is a cross-campaign leak
+ * through a column nobody would think to audit.
+ */
+app.put('/api/campaigns/:campaignId/npcs/:npcId', requireRole(['dm', 'admin']), async (req, res) => {
+  const { name, description, public_info, private_info, current_location_id } = req.body ?? {};
+  const { campaignId, npcId } = req.params;
+  if (!name || !String(name).trim()) return res.status(400).json({ error: 'Name required' });
+
+  try {
+    if (!await dmOwnsCampaign(campaignId, req.session.userId, req.session.role))
+      return res.status(403).json({ error: 'Access denied' });
+
+    let locId = null;
+    if (current_location_id) {
+      const loc = await pool.query(
+        'SELECT id FROM campaign_locations WHERE id=$1 AND campaign_id=$2',
+        [current_location_id, campaignId],
+      );
+      if (!loc.rows.length) {
+        return res.status(400).json({ error: 'That location is not in this campaign' });
+      }
+      locId = loc.rows[0].id;
+    }
+
+    const r = await pool.query(
+      `UPDATE campaign_npcs
+          SET name=$1, description=$2, public_info=$3, private_info=$4, current_location_id=$5
+        WHERE id=$6 AND campaign_id=$7
+        RETURNING *`,
+      [String(name).trim(), description || null, public_info || null, private_info || null,
+        locId, npcId, campaignId],
+    );
+    if (!r.rows.length) return res.status(404).json({ error: 'NPC not found' });
+    res.json(r.rows[0]);
+  } catch (e) {
+    // The (campaign_id, name) unique constraint — renaming onto a name that
+    // already exists in this campaign.
+    if (e.code === '23505') return res.status(409).json({ error: 'An NPC with that name already exists' });
+    res.status(500).json({ error: e.message });
+  }
+});
+
+/** Reveal or hide. Its own route, mirroring the locations toggle. */
+app.patch('/api/campaigns/:campaignId/npcs/:npcId/visibility', requireRole(['dm', 'admin']), async (req, res) => {
+  try {
+    if (!await dmOwnsCampaign(req.params.campaignId, req.session.userId, req.session.role))
+      return res.status(403).json({ error: 'Access denied' });
+    const r = await pool.query(
+      `UPDATE campaign_npcs SET is_public = NOT is_public
+        WHERE id=$1 AND campaign_id=$2 RETURNING *`,
+      [req.params.npcId, req.params.campaignId],
+    );
+    if (!r.rows.length) return res.status(404).json({ error: 'NPC not found' });
+    res.json(r.rows[0]);
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -5083,7 +5296,9 @@ app.post('/api/campaigns/:campaignId/dm-player', requireRole(['dm', 'admin']), a
     const user = await pool.query('SELECT username FROM users WHERE id=$1', [req.session.userId]);
     const dmName = `DM (${user.rows[0]?.username || 'DM'})`;
     const player = await pool.query(
-      'INSERT INTO campaign_players (campaign_id, player_name, is_dm_player) VALUES ($1,$2,true) RETURNING id',
+      `INSERT INTO campaign_players (campaign_id, player_name, is_dm_player) VALUES ($1,$2,true)
+       ON CONFLICT (campaign_id, LOWER(player_name)) DO UPDATE SET is_dm_player = true
+       RETURNING id`,
       [campaignId, dmName]
     );
     await pool.query(
@@ -6063,7 +6278,7 @@ app.post('/api/campaigns/import', requireRole(['dm']), async (req, res) => {
       const name = typeof n === 'string' ? n : n?.name;
       if (!name) continue;
       const r = await client.query(
-        'INSERT INTO campaign_npcs (campaign_id, name) VALUES ($1,$2) ON CONFLICT (campaign_id,name) DO UPDATE SET name=EXCLUDED.name RETURNING id',
+        'INSERT INTO campaign_npcs (campaign_id, name) VALUES ($1,$2) ON CONFLICT (campaign_id, LOWER(name)) DO UPDATE SET name=EXCLUDED.name RETURNING id',
         [newId, name]
       );
       npcIdByName[name] = r.rows[0].id;
@@ -6116,8 +6331,19 @@ app.post('/api/campaigns/import', requireRole(['dm']), async (req, res) => {
     const playerPassB = []; // [{ playerId, timelines }]
 
     for (const p of players) {
+      /*
+       * Upsert, not insert. A bundle written before player names were unique
+       * can carry two seats with the same name; they already collapsed into
+       * one on import (the refs key on the name), and this keeps that
+       * outcome rather than aborting the whole restore on a constraint. The
+       * second one's rows land on the first, which is what the old code did
+       * too — only now it is deliberate.
+       */
       const playerRes = await client.query(
-        'INSERT INTO campaign_players (campaign_id, player_name) VALUES ($1,$2) RETURNING id',
+        `INSERT INTO campaign_players (campaign_id, player_name) VALUES ($1,$2)
+         ON CONFLICT (campaign_id, LOWER(player_name))
+           DO UPDATE SET player_name = EXCLUDED.player_name
+         RETURNING id`,
         [newId, p.player_name]
       );
       const playerId = playerRes.rows[0].id;
@@ -6283,7 +6509,9 @@ app.post('/api/campaigns/import', requireRole(['dm']), async (req, res) => {
       const dmUser = await client.query('SELECT username FROM users WHERE id=$1', [req.session.userId]);
       const dmName = `DM (${dmUser.rows[0]?.username || 'DM'})`;
       const dmPlayerRes = await client.query(
-        'INSERT INTO campaign_players (campaign_id, player_name, is_dm_player) VALUES ($1,$2,true) RETURNING id',
+        `INSERT INTO campaign_players (campaign_id, player_name, is_dm_player) VALUES ($1,$2,true)
+         ON CONFLICT (campaign_id, LOWER(player_name)) DO UPDATE SET is_dm_player = true
+         RETURNING id`,
         [newId, dmName]
       );
       const dmPlayerId = dmPlayerRes.rows[0].id;
@@ -6748,6 +6976,36 @@ async function initializeDatabase() {
         is_dm_player BOOLEAN NOT NULL DEFAULT false,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       );
+    `);
+
+    /*
+     * Migrate: a character's name is unique within its campaign,
+     * case-insensitively — the third table to get this rule, after locations
+     * and NPCs, and for the same reason. The bundle refers to a player by
+     * NAME, so two seats called "Davin" collapse into one on import, taking
+     * their inventory, diary and timelines with them.
+     *
+     * Across campaigns a name is free: the same character may be played in
+     * two of them, and that is not a clash.
+     *
+     * RENAMED, not deleted, like the NPC migration: a seat owns a character
+     * sheet, stats, relationships, diary entries and timelines. The id
+     * suffix is what stops the new name clashing with the next renamed row.
+     */
+    await pool.query(`
+      UPDATE campaign_players p
+         SET player_name = p.player_name || ' #' || p.id
+        FROM (
+          SELECT id, ROW_NUMBER() OVER (
+                   PARTITION BY campaign_id, LOWER(player_name) ORDER BY id
+                 ) AS rn
+            FROM campaign_players
+        ) d
+       WHERE d.id = p.id AND d.rn > 1;
+    `);
+    await pool.query(`
+      CREATE UNIQUE INDEX IF NOT EXISTS campaign_players_campaign_name_unique
+      ON campaign_players (campaign_id, LOWER(player_name));
     `);
 
     // Campaign-User assignments (which user plays which player in which campaign)
@@ -7399,6 +7657,84 @@ async function initializeDatabase() {
     // always DM-only on the public map). Column kept in place to avoid a destructive drop.
     await pool.query(`
       ALTER TABLE campaign_npcs ADD COLUMN IF NOT EXISTS path_public BOOLEAN NOT NULL DEFAULT false;
+    `);
+
+    /*
+     * Migrate: NPC names unique per campaign, case-insensitively.
+     *
+     * The table already had UNIQUE (campaign_id, name), which is exact —
+     * "Grathul" and "grathul" could both exist and then resolve
+     * unpredictably, since every lookup that matters (the bundle's NPC refs,
+     * the cross-connection refs, the `[[Name]]` index) keys on the NAME.
+     * Locations settled this long ago with a LOWER(name) index; this brings
+     * NPCs into line.
+     *
+     * RENAMED, not deleted — the opposite of what the locations migration
+     * did. A location was a name and a description; an NPC carries prose the
+     * DM wrote, and its id is referenced by character_relationships and by
+     * `npc_<id>` actor tokens in timeline entries. Deleting the loser of a
+     * case clash would silently orphan those. The id suffix is what
+     * guarantees the new name cannot collide with another renamed row.
+     */
+    await pool.query(`
+      UPDATE campaign_npcs n
+         SET name = n.name || ' #' || n.id
+        FROM (
+          SELECT id, ROW_NUMBER() OVER (
+                   PARTITION BY campaign_id, LOWER(name) ORDER BY id
+                 ) AS rn
+            FROM campaign_npcs
+        ) d
+       WHERE d.id = n.id AND d.rn > 1;
+    `);
+    await pool.query(`
+      CREATE UNIQUE INDEX IF NOT EXISTS campaign_npcs_campaign_name_unique
+      ON campaign_npcs (campaign_id, LOWER(name));
+    `);
+
+    /*
+     * Migrate: NPCs become a managed thing rather than a bare name — the same
+     * shape as a location, which is what they are from the DM's side.
+     *
+     * `is_public` DEFAULTS TO FALSE, the opposite of campaign_locations.
+     * Locations default to visible because they always were; NPCs have never
+     * been visible to a player at all, so defaulting to true would publish
+     * every NPC a DM has ever named the moment they upgrade. False keeps
+     * today's behaviour exactly and lets the DM reveal them one at a time,
+     * which is the point of the feature.
+     *
+     * Three text fields, with different audiences:
+     *   description  — who they are. Shown to players once the NPC is public,
+     *                  exactly as a location's description is.
+     *   public_info  — what the party has learned. Shown on the same terms.
+     *   private_info — the DM's secrets. NEVER sent to a player, which is why
+     *                  the player branch of every query below names its
+     *                  columns instead of using SELECT *.
+     */
+    await pool.query(`
+      ALTER TABLE campaign_npcs ADD COLUMN IF NOT EXISTS description  TEXT;
+    `);
+    await pool.query(`
+      ALTER TABLE campaign_npcs ADD COLUMN IF NOT EXISTS public_info  TEXT;
+    `);
+    await pool.query(`
+      ALTER TABLE campaign_npcs ADD COLUMN IF NOT EXISTS private_info TEXT;
+    `);
+    await pool.query(`
+      ALTER TABLE campaign_npcs ADD COLUMN IF NOT EXISTS is_public BOOLEAN NOT NULL DEFAULT false;
+    `);
+    /*
+     * Where they are NOW. A single column, not a history table: an NPC's
+     * movement over time already exists — timeline events tagged `npc_<id>`
+     * are what the journey map draws their path from — and a second,
+     * unconnected history would be two answers to one question.
+     *
+     * ON DELETE SET NULL: deleting a location should not delete the people
+     * who were standing in it.
+     */
+    await pool.query(`
+      ALTER TABLE campaign_npcs ADD COLUMN IF NOT EXISTS current_location_id
+        INTEGER REFERENCES campaign_locations(id) ON DELETE SET NULL;
     `);
 
     // Migrate: location visibility (is_public)

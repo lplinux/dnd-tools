@@ -22,7 +22,8 @@ import { TABS }                from './constants';
 
 import PlayersTab              from './tabs/PlayersTab';
 import LocationsTab            from './tabs/LocationsTab';
-import { NpcsTab, TimelinesTab, SettingsTab } from './tabs/OtherTabs';
+import { TimelinesTab, SettingsTab } from './tabs/OtherTabs';
+import NpcsTab from './tabs/NpcsTab';
 import { CharTreeTab }         from './tabs/CharTreeTab';
 import JournalTab              from './tabs/JournalTab';
 import SearchTab               from './tabs/SearchTab';
@@ -227,7 +228,7 @@ export default function ManageCampaigns() {
     createCampaign, exportCampaign, importFile, importPcSheetInto, importTimelineInto,
     addPlayer, deletePlayer, reassignPlayer, createTimeline,
     addLocation, editLocation, deleteLocation, toggleLocVisibility,
-    addNpcs, deleteNpc,
+    addNpcs, editNpc, toggleNpcVisibility, deleteNpc,
     saveTodayMarker, deleteCampaign, restoreCampaign, purgeCampaign, exportTrashed,
   } = mc;
 
@@ -276,7 +277,13 @@ export default function ManageCampaigns() {
           />
         );
       case 'npcs':
-        return <NpcsTab npcs={npcs} actions={{ addNpcs, deleteNpc }} />;
+        return (
+          <NpcsTab
+            npcs={npcs}
+            locations={locations}
+            actions={{ addNpcs, editNpc, toggleNpcVisibility, deleteNpc }}
+          />
+        );
       case 'timelines':
         return <TimelinesTab timelines={timelines} campaignId={currentId} />;
       case 'chartree':

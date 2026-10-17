@@ -285,6 +285,21 @@ export function useManageCampaigns() {
     toast(`${names.length} NPC(s) added.`);
   }, [currentId, reload, toast]);
 
+  const editNpc = useCallback(async (nid, data) => {
+    await campaignsApi.updateNpc(currentId, nid, data);
+    await reload();
+    toast('NPC updated.');
+  }, [currentId, reload, toast]);
+
+  const toggleNpcVisibility = useCallback(async (nid) => {
+    const row = await campaignsApi.toggleNpcVis(currentId, nid);
+    // Patched in place rather than reloaded: the eye is clicked repeatedly
+    // while revealing a scene, and a full campaign reload per click makes the
+    // whole tab flicker. The server returns the new row, so this is its
+    // answer and not an optimistic guess.
+    setNpcs(prev => prev.map(n => (n.id === nid ? { ...n, ...row } : n)));
+  }, [currentId]);
+
   const deleteNpc = useCallback(async (nid) => {
     await campaignsApi.removeNpc(currentId, nid);
     await reload();
@@ -341,7 +356,7 @@ export function useManageCampaigns() {
     uploadLocationImage, clearLocationImage,
 
     // NPC actions
-    addNpcs, deleteNpc,
+    addNpcs, editNpc, toggleNpcVisibility, deleteNpc,
 
     // Settings
     saveTodayMarker,
