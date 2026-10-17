@@ -10,7 +10,8 @@
  * Idiomatic React port of the former public/journey-map.html (removed). Access: DM.
  */
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 
 import { useJourneyMap } from '@/hooks/useJourneyMap';
 import { useToast } from '@/hooks/useToast';
@@ -48,6 +49,31 @@ const TOOL_CURSORS = {
 
 export default function JourneyMap() {
   const jm = useJourneyMap();
+
+  /*
+   * `?campaign=<id>&map=<id>` — what the globe beside a location in Manage
+   * Campaigns links to, mirroring the Timeline module's own params.
+   *
+   * Once only. Without the ref this re-runs whenever `jm.maps` changes and
+   * drags the DM back to the map in the URL every time they pick a
+   * different one, which is maddening and very hard to attribute.
+   */
+  const [searchParams] = useSearchParams();
+  const deepLinked = useRef(false);
+  useEffect(() => {
+    if (deepLinked.current) return;
+    const campaign = searchParams.get('campaign');
+    const map = searchParams.get('map');
+    if (!campaign) return;
+    deepLinked.current = true;
+    (async () => {
+      const list = await jm.selectCampaign(parseInt(campaign, 10));
+      // selectCampaign loads the maps; selectMap needs that list, because it
+      // reads the map's scope out of it.
+      if (map) jm.selectMap(parseInt(map, 10), list);
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams]);
   const { toast } = useToast();
   const confirm = useConfirm();
 

@@ -50,16 +50,19 @@ describe('who may read it', () => {
     expect(body).toMatch(/403/);
   });
 
-  it('branches on role for NPCs, and ONLY for NPCs', () => {
+  it('branches on role only for the things that have a visibility flag', () => {
     // The shared maps and timelines are "what has been shared", the same
     // answer for everyone — a role branch there would be a second code path
     // to get wrong, and this once asserted there was no branch at all.
-    // NPCs forced one: a player gets the revealed ones, the DM gets all of
-    // them so the tab shows what the table sees plus what is still hidden.
+    // NPCs and places each forced one: a player gets the revealed ones, the
+    // DM gets all of them so the tab shows what the table sees plus what is
+    // still hidden. Two is the ceiling; a third would be on something that
+    // is not visibility-gated.
     expect(body).toMatch(/const isDM = await isCampaignDm\(/);
     const branches = body.match(/\$\{isDM \? [^}]*\}/g) ?? [];
-    expect(branches.length, 'a role branch outside the NPC query').toBe(1);
+    expect(branches.length, 'a role branch on something ungated').toBe(2);
     expect(body).toMatch(/n\.is_public = true/);
+    expect(body).toMatch(/AND is_public = true/);
   });
 });
 

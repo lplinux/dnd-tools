@@ -107,7 +107,7 @@ export function useJourneyMap() {
     setMapId(null);
     resetMapState();
     setMaps([]);
-    if (!id) return;
+    if (!id) return [];
     try {
       const [locs, mapsData, players, npcs, events] = await Promise.all([
         campaignsApi.listLocations(id),
@@ -123,7 +123,12 @@ export function useJourneyMap() {
       setCampaignEvents(events || []);
       setScope({ type: 'continent', locationId: null });
       if (mapsData.length === 1) selectMap(mapsData[0].id, mapsData);
+      // Returned so a caller can select a map in the same breath — selectMap
+      // reads the map's scope out of this list, and React state is not
+      // readable yet at this point.
+      return mapsData;
     } catch (e) { fail(e); }
+    return [];
   }, [resetMapState, selectMap, fail]);
 
   // Load campaigns + global default pin images once on mount.

@@ -273,6 +273,8 @@ export default function ManageCampaigns() {
         return (
           <LocationsTab
             locations={locations}
+            campaignId={currentId}
+            npcs={npcs}
             actions={{ addLocation, editLocation, deleteLocation, toggleLocVisibility }}
           />
         );
@@ -281,6 +283,7 @@ export default function ManageCampaigns() {
           <NpcsTab
             npcs={npcs}
             locations={locations}
+            campaignId={currentId}
             actions={{ addNpcs, editNpc, toggleNpcVisibility, deleteNpc }}
           />
         );

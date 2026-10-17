@@ -4086,8 +4086,41 @@ app.get('/api/campaigns/:campaignId/locations', requireRole(['dm', 'player']), a
     if (!await canAccessCampaign(req.params.campaignId, req.session.userId, req.session.role))
       return res.status(403).json({ error: 'Access denied' });
     const isDM = req.session.role === 'dm' || req.session.role === 'admin';
+    /*
+     * The DM also gets "which map is this place on", for the globe beside
+     * its name. Three ways a location can have one, in preference order:
+     *
+     *   1. a map scoped TO it      — the city's own map
+     *   2. a region pin linking out — the same idea, reached from a parent map
+     *   3. a map it is pinned on   — not its map, but where to go to see it
+     *
+     * One LATERAL rather than a query per row: a campaign has a hundred
+     * locations and this list is loaded on every visit to the tab.
+     *
+     * Not sent to players. A map link is only useful if they can open it,
+     * which depends on a share token this route knows nothing about.
+     */
     const query = isDM
-      ? 'SELECT * FROM campaign_locations WHERE campaign_id = $1 ORDER BY created_at ASC'
+      ? `SELECT l.*, m.id AS map_id, m.name AS map_name
+           FROM campaign_locations l
+           LEFT JOIN LATERAL (
+             SELECT jm.id, jm.name, 1 AS rank
+               FROM journey_maps jm
+              WHERE jm.campaign_id = l.campaign_id AND jm.scope_location_id = l.id
+             UNION ALL
+             SELECT jm.id, jm.name, 2
+               FROM journey_map_locations jml
+               JOIN journey_maps jm ON jm.id = jml.linked_map_id
+              WHERE jml.campaign_location_id = l.id AND jm.campaign_id = l.campaign_id
+             UNION ALL
+             SELECT jm.id, jm.name, 3
+               FROM journey_map_locations jml
+               JOIN journey_maps jm ON jm.id = jml.map_id
+              WHERE jml.campaign_location_id = l.id AND jm.campaign_id = l.campaign_id
+             ORDER BY rank, id
+             LIMIT 1
+           ) m ON true
+          WHERE l.campaign_id = $1 ORDER BY l.created_at ASC`
       : 'SELECT * FROM campaign_locations WHERE campaign_id = $1 AND is_public = true ORDER BY created_at ASC';
     const result = await pool.query(query, [req.params.campaignId]);
     res.json(result.rows);
@@ -4920,7 +4953,7 @@ app.get('/api/campaigns/:campaignId/links', requireAuth, async (req, res) => {
 
     const isDM = await isCampaignDm(campaignId, req.session.userId, req.session.role);
 
-    const [maps, campaignTl, playerTl, npcRows] = await Promise.all([
+    const [maps, campaignTl, playerTl, npcRows, locRows] = await Promise.all([
       pool.query(
         `SELECT jm.id, jm.name, jms.token, jms.created_at
            FROM journey_maps jm
@@ -4957,6 +4990,16 @@ app.get('/api/campaigns/:campaignId/links', requireAuth, async (req, res) => {
           ORDER BY n.name ASC`,
         [campaignId, isDM],
       ),
+      // The places they know. Same visibility rule, and deliberately no
+      // image_data: a list of forty base64 map pins to render a list of
+      // names would be megabytes for nothing.
+      pool.query(
+        `SELECT id, name, description, size_type, is_public
+           FROM campaign_locations
+          WHERE campaign_id = $1 ${isDM ? '' : 'AND is_public = true'}
+          ORDER BY name ASC`,
+        [campaignId],
+      ),
     ]);
 
     res.json({
@@ -4982,6 +5025,7 @@ app.get('/api/campaigns/:campaignId/links', requireAuth, async (req, res) => {
       // description and public notes are the whole of it, which is why they
       // are carried here rather than fetched per row.
       npcs: npcRows.rows,
+      places: locRows.rows,
     });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });

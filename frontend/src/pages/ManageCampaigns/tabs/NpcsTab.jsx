@@ -20,11 +20,12 @@ import { useMemo, useState } from 'react';
 import { Eye, EyeOff, MapPin, Pencil, Trash2 } from 'lucide-react';
 
 import { Button, Modal, FormField } from '@/components/ui';
+import CrossLinkPopover from '@/components/CrossLinkPopover';
 import { useConfirm } from '@/contexts/ConfirmContext';
 
 const INPUT_CLS = 'w-full bg-surface2 border border-border2 text-text px-2 py-1.5 rounded-sm text-sm focus:outline-none focus:border-[var(--gold-dim)]';
 
-export default function NpcsTab({ npcs, locations = [], actions }) {
+export default function NpcsTab({ npcs, locations = [], campaignId, actions }) {
   const confirm = useConfirm();
   const [input, setInput] = useState('');
   const [adding, setAdding] = useState(false);
@@ -32,6 +33,10 @@ export default function NpcsTab({ npcs, locations = [], actions }) {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
   const [query, setQuery] = useState('');
+  // The read-only card, opened by clicking a row. Reading an NPC and editing
+  // one are different intents, and the edit modal is a poor reader: it is a
+  // stack of textareas. The pencil still opens that.
+  const [card, setCard] = useState(null);   // { target, at } | null
 
   const sorted = useMemo(
     () => [...npcs].sort((a, b) => a.name.localeCompare(b.name)),
@@ -150,8 +155,20 @@ export default function NpcsTab({ npcs, locations = [], actions }) {
                   key={n.id}
                   className={`border-b border-border hover:bg-surface2 transition-colors ${n.is_public ? '' : 'opacity-60'}`}
                 >
-                  <td className="px-2 py-2"><strong className="text-text">{n.name}</strong></td>
-                  <td className="px-2 py-2 text-text-dim text-xs max-w-[220px] truncate">
+                  {/* The name and description open the card; the controls to
+                      their right keep their own handlers and are not nested
+                      inside this one. */}
+                  <td
+                    className="px-2 py-2 cursor-pointer"
+                    onClick={(e) => setCard({ target: { ...n, kind: 'npc' }, at: { x: e.clientX, y: e.clientY } })}
+                    title={`Read ${n.name}`}
+                  >
+                    <strong className="text-text">{n.name}</strong>
+                  </td>
+                  <td
+                    className="px-2 py-2 text-text-dim text-xs max-w-[220px] truncate cursor-pointer"
+                    onClick={(e) => setCard({ target: { ...n, kind: 'npc' }, at: { x: e.clientX, y: e.clientY } })}
+                  >
                     {n.description || ''}
                   </td>
                   <td className="px-2 py-2 text-text-dim text-xs whitespace-nowrap">
@@ -255,6 +272,13 @@ export default function NpcsTab({ npcs, locations = [], actions }) {
           </div>
         )}
       </Modal>
+
+      <CrossLinkPopover
+        target={card?.target ?? null}
+        at={card?.at}
+        campaignId={campaignId}
+        onClose={() => setCard(null)}
+      />
     </div>
   );
 }
