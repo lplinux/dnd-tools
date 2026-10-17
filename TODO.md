@@ -68,32 +68,16 @@ Touch input and the two overflowing layouts are **done** — see `TOQA.md`. What
 
 Captured for later — nothing here has been designed or scoped yet.
 
-### NPC Management — a new module, or a section of Manage Campaigns
+### NPC Management — mostly shipped
 
-- [ ] **Manage NPCs and other characters properly**, the way LoreForge does — somewhere richer
-      than the current `campaign_npcs` table, which holds little more than a name. Important to have a flag to define NPCs with Sheet (enemies/allies) and without it.
-- [ ] **Public and private information per NPC**, so a DM can write everything down in one place
-      and reveal only part of it. The split should work the way it already does elsewhere in the
-      app: *withheld server-side*, not merely un-rendered — see the PC sheet's
-      `public_info` / `private_info` and the diary's draft/published handling for the pattern.
-- [ ] Decide **module vs. tab**: Manage Campaigns already has an NPCs tab, and the Journey Map,
-      Timeline and character tree all reference NPCs by id. A separate module means another
-      campaign selector; a tab means a very large tab. Worth settling before building.
-- [ ] Open question: what do players see, and *where*? A read-only NPC view would need its own
-      access rule (every campaign member? only NPCs they have met?) and probably a share link,
-      like the other public views.
+Most of this section is **done** — see the CHANGELOG. Settled: it is a **tab**, not a module;
+public/private info is withheld server-side like the PC sheet's; and players see revealed NPCs
+through cross-links and the Campaign Links tab, gated on having met them. What remains:
 
-### Campaign Links — finish gathering what a player can reach
+- [ ] **A flag for NPCs that have a stat block** (enemies/allies) versus those that do not, so
+      the ones that need a sheet can be told apart from the ones that are just a name and a note.
+      The one part of the original idea not built.
 
-The 🔗 tab lists the shared maps and timelines. Two things a player is already entitled to see
-are missing from it: the **published campaign diary** (a share token exists; it is about five
-lines to add) and **their own character sheet's public link**. Adding the diary is the cheap
-half and would complete the idea the tab came from.
-
-Not done when the tab shipped because only maps and timelines were asked for, and widening the
-scope unasked is how a tab becomes a dashboard.
-
-- [ ] NPCs that the party have not met appears on the search of Journeis and Diaries. This will be fixed after NPC Management is implemented
 
 ### PHB & DM Rules - A series of quicklinks for accessing the Official Rules of D&D
 
@@ -106,12 +90,12 @@ scope unasked is how a tab becomes a dashboard.
 
 ### Manage Campaign
 
+- [ ] A campaign can export a bundle larger than the 50 MB import limit (`express.json`), so a
+      big enough campaign produces a backup it cannot restore. The dominant payload is base64
+      map and portrait images. A 413 currently surfaces as Express's HTML error page.
 - [x] Invite link for new users to join a Campaign — **done**, see the CHANGELOG. One hour,
       single use, token stored hashed, revocable. The DM points it at a new seat or an
       existing empty one, and someone who already has an account can use it too.
-      - [x] A 1 hour link, and a screen that shows the campaign and asks for username,
-            password and character name.
-      - [x] The user, the seat and the character sheet are all created and attached.
       - [ ] Still no email — the link is copied to the clipboard and sent by hand, as agreed.
 
 ---

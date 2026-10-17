@@ -89,6 +89,169 @@ PC Sheet / Journey Map / Manage Campaign fix batch that went with it.
 
 ---
 
+## Character/player uniqueness, and the diary's hidden names
+
+### Already proved live
+
+- [x] **A differing-case duplicate character name is refused** ✅ (409), by the route and by
+      the database — while the same name in **another** campaign is fine.
+- [x] **One user cannot hold two seats** ✅, by adding or by reassigning; a refused reassign
+      leaves the existing assignment untouched, and they can still play in another campaign.
+- [x] **The migration renames rather than deletes** ✅ — seeded `DAVIN` + `davin`, restarted:
+      5 rows before and after, the character sheet survived, 0 duplicates remain.
+- [x] **A published diary entry naming a hidden location or an unmet NPC is withheld** ✅,
+      with no trace of the name in the payload, and returns when the NPC is revealed.
+- [x] **The DM still reads all of it** in the Diary module ✅.
+
+### Wants your eyes in the browser
+
+- [ ] **After upgrading**, look for any character name ending in ` #<number>` in Players —
+      that is a clash the migration renamed and wants a human to resolve. Leruhy has none.
+- [ ] **Try to add a second character for a user who already plays** — the message should name
+      the character they already have.
+- [ ] **Open your published diary share link as a player** and confirm entries naming
+      unrevealed things are absent, not blanked.
+- [ ] **Then reveal one** and reload the link — the entry should appear.
+
+---
+
+## Hidden-aware journal, cards, and import-into
+
+### Already proved live
+
+- [x] **An entry naming a hidden location or an unmet NPC is withheld** ✅ — including the
+      accent-folded form `[[thea]]`, the typed form `[[npc:Théa]]`, and an entry merely
+      *tagged* with a secret location and containing no link at all.
+- [x] **Entries that name nothing hidden still show** ✅, including one that links a name
+      matching nothing at all.
+- [x] **Revealing the NPC brings its entries back on their own** ✅, while an entry naming a
+      still-hidden location stays withheld.
+- [x] **No hidden name appears anywhere in the player's payload** ✅.
+- [x] **import-into replaces only the sections in the file** ✅ — an NPC-only file left the
+      campaign's locations, journal and diary untouched.
+- [x] **A matched NPC keeps its row id**, takes the file's notes and visibility ✅.
+- [x] **An unreferenced NPC absent from the file is removed; a referenced one is kept** and
+      reported ✅.
+- [x] **The real Leruhy file imported into a live campaign** ✅ — 91 NPCs, 106 locations,
+      22 diary entries, 0.3s, players/maps/DM-timelines reported as skipped.
+
+### Already proved live — location maps
+
+- [x] **A location with both its own map and a pin on the world map links to its own** ✅.
+- [x] **A pinned-only location links to the map it is on** ✅; one on no map gets no globe.
+- [x] **Players get no map link at all** ✅.
+- [x] **43 locations still load in 6ms** ✅ — one LATERAL, not a query per row.
+
+### Wants your eyes in the browser
+
+- [ ] **Open a location's card** and check the people listed there are right, with unmet ones
+      dimmed.
+- [ ] **Click the globe** beside a location — it should open the Journey Map on the right map,
+      and NOT also open the card.
+- [ ] **Then pick a different map** on that page — it must stay picked, not snap back to the
+      one in the URL.
+- [ ] **A location with no map** should show no globe at all.
+- [ ] **As a player**, open a place in Campaign Links — the people listed must only be ones
+      you have met.
+- [ ] **Click an NPC row and a location row** in Manage Campaigns — the card should open where
+      you clicked, show your private notes, and Escape or a click away should close it.
+- [ ] **The pencil should still edit** — clicking the name must not open the editor by accident.
+- [ ] **As a player, open Campaign Links**: People and Places, both clickable, and no private
+      notes anywhere in the card.
+- [ ] **Write a journal entry naming a hidden place**, then check a player cannot see the entry
+      at all. Reveal the place; it should appear.
+- [ ] **Import a file with a campaign selected** — read the confirmation carefully and check
+      the counts match what you expect before accepting.
+- [ ] **Cancel that dialog** and confirm it imports as a new campaign instead.
+- [ ] **A long NPC description** in the card should scroll rather than run off the screen.
+
+---
+
+## Campaign export / import
+
+### Already proved live
+
+A real round-trip against a scratch Postgres — 15 checks, plus 23 static. Four guards were
+broken one at a time to confirm each check can fail.
+
+- [x] **NPC description, public/private notes, visibility and location all survive** ✅.
+- [x] **The Journal survives**, DM-only entries included, with its category, author, location
+      and in-game day ✅.
+- [x] **Day zero survives as zero**, not null ✅.
+- [x] **Nothing points at another campaign after import** ✅ — asserted by a join, for NPC
+      locations and journal locations and players.
+- [x] **The hidden location's raw id appears nowhere in the bundle** ✅ — asserted by walking
+      the whole JSON.
+- [x] **A v5-shaped bundle lands every NPC hidden and no journal** ✅ — restoring an old
+      backup must not publish anyone.
+- [x] **Restored data is still governed by the visibility gate** ✅ — a player reading the
+      imported campaign gets the hidden NPC not at all, and the visible one with no location.
+- [x] **Importing the same bundle twice** produces two clean campaigns ✅.
+
+### NPC name uniqueness — already proved live
+
+- [x] **Two NPCs differing only in case cannot exist** ✅ — by bulk add (silently skipped), by
+      rename (409), or by raw SQL (23505).
+- [x] **An existing clash is renamed, not deleted** ✅ — seeded `GRATHUL` + `grathul` in a
+      94-row campaign, restarted: still 94 rows, one became `grathul #96`, and the
+      `character_relationships` row pointing at it survived.
+
+### Wants your eyes in the browser
+
+- [ ] **After upgrading**, check the NPCs tab for any name ending in ` #<number>` — that is a
+      case clash the migration renamed, and it wants a human to pick the right name.
+- [ ] **Export Leruhy, then import the file.** Open the new copy's NPCs tab: descriptions,
+      notes and locations should all be there, and the hide/show state should match.
+- [ ] **Check the Journal in the copy** — entries, categories, dates, and your DM-only ones.
+- [ ] **Import one of your OLD backup files** (pre-v6). It should load without complaint, with
+      NPCs as bare hidden names and an empty journal. Nothing should be published.
+- [ ] **Open a restored journal entry that points at a hidden location** and confirm it still
+      reads as hidden rather than naming the place.
+- [ ] **A very large campaign**: the export has no size cap but the import is limited to 50 MB,
+      so a big enough campaign can produce a file it cannot re-import. Worth knowing where
+      Leruhy sits — check the downloaded file's size.
+
+---
+
+## NPC management
+
+### Already proved live
+
+Against a scratch Postgres — 37 checks. Each leak guard was then re-broken to confirm the
+check fails: `SELECT n.*` on the player branch returns `private_info` outright.
+
+- [x] **New NPCs start hidden** ✅, and a player sees none of them — not in the list, not in
+      cross-links, not on the Campaign Links tab.
+- [x] **Revealing one shows description + public info and NOTHING else** ✅ — the player's
+      payload has no `private_info` key at all.
+- [x] **An NPC in a hidden location** ✅ — the player gets neither the location name nor its
+      id. Move them somewhere public and both appear.
+- [x] **No player-reachable payload contains the secret** ✅ — swept `npcs`, `link-targets`
+      and `links` for the private text and the hidden place name.
+- [x] **A player cannot POST, PUT, PATCH or DELETE an NPC** ✅ (403 on all four).
+- [x] **A location from another campaign is refused** ✅, and a duplicate name is a 409.
+- [x] **Deleting a location leaves the NPC standing**, location cleared ✅.
+- [x] **The DM search finds an NPC by name, description, public info and private note** ✅,
+      and still refuses a player.
+
+### Wants your eyes in the browser
+
+- [ ] **The NPCs tab** — add a few by comma, then edit one and fill in all four fields.
+- [ ] **The eye toggles without the tab flickering** (it patches one row rather than
+      reloading the campaign).
+- [ ] **Hidden NPCs look hidden** in the list — dimmed, with a closed eye.
+- [ ] **The search box** appears once you have more than three, and matches private notes.
+- [ ] **As a PLAYER**: an unrevealed NPC's `[[name]]` in a journal entry stays plain text;
+      once revealed it becomes a link and the popover shows description and public info, with
+      no sign of your private notes.
+- [ ] **As a PLAYER**: the Campaign Links tab shows a People section with the revealed ones.
+- [ ] **As the DM** on that same tab: you should see all of them, with the hidden ones marked.
+- [ ] **Current location** — set it, check it shows in the list; point an NPC at a hidden
+      location and confirm the player sees no location at all for them.
+- [ ] **A long description** in the list should truncate rather than stretch the row.
+
+---
+
 ## Campaign invite links
 
 ### Already proved live

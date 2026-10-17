@@ -84,6 +84,267 @@ that existed to close a half-open text input before the sheet reached paper.
 All three fail open: `loadEntries` already caches per resource and returns null when the API is
 slow or unreachable, so offline the fields behave exactly as they did before.
 
+### Changed — a character's name is unique in its campaign, and one person holds one seat
+
+Two rules that `campaign_players` never had.
+
+**A character's name is unique within its campaign**, case-insensitively, and free across
+campaigns — the same character may be played in two of them, which is not a clash. The third
+table to get this rule after locations and NPCs, and for the same reason: the campaign bundle
+refers to a player by NAME, so two seats called "Davin" collapsed into one on import, taking
+the second one's inventory, diary and timelines with them.
+
+Existing clashes are **renamed, not deleted** — a seat owns a character sheet, stats,
+relationships, diary entries and timelines. Adding a duplicate now answers 409 rather than
+500, as does redeeming an invite with a name already taken, and the import upserts rather than
+aborting a whole restore on a constraint a pre-rule bundle cannot satisfy.
+
+**One person holds one seat per campaign.** Two seats for the same user make "which character
+wrote this" unanswerable — the journal's author query picks the lowest id and says so in a
+comment — and it duplicated the PC Sheet's campaign selector, which is how it first surfaced.
+Enforced when adding a player and when reassigning one, and the check on reassign runs
+**before** the existing assignment is deleted, so a refusal leaves the seat as it was. The DM's
+own marker row is excluded: it is bookkeeping, not a character anyone plays.
+
+### Fixed — the diary withheld nothing, while the journal withheld everything
+
+The rule that hides an entry naming a place the party has not found, or a person they have not
+met, was applied to the journal only. A published diary entry could still name either — and
+the campaign diary reaches players solely through the share link, so that was the one surface
+still leaking.
+
+It now goes through **one shared implementation**, because two copies of a withholding rule
+are worse than one: they disagree eventually, and the DM stops being able to reason about it.
+
+On the share link the rule applies to **everyone, the DM included**, which keeps that route
+session-blind — what the link shows is what the table sees, and a DM opening their own link is
+previewing exactly that. They read the unabridged diary in the Diary module.
+
+That closes the TODO note about unmet NPCs surfacing in the journal and diary searches. The
+other half of it was already closed by the NPC visibility flag: the `[[` autocomplete and the
+cross-link index have been filtered since that shipped.
+
+### Added — a location's card lists who is there, and links to its map
+
+Opening a location's card now shows **the people standing there** — the NPCs whose current
+location is that place, each marked as met or not. The list comes from the NPCs the page
+already holds rather than a request per card, and a player's copy of that list contains only
+revealed NPCs, so a place cannot give away someone they have not met.
+
+A **globe beside the name** in the Locations tab opens the map that place is on, and the card
+offers the same. Only for a location that actually has one: an icon that is present but dead
+is worse than no icon.
+
+Three ways a location can have a map, and they are not equally good answers, so they are
+ranked rather than taken in whatever order the planner returns:
+
+1. a map scoped **to** it — the city's own map,
+2. a region pin **linking out** to one — the same idea, reached from a parent map,
+3. a map it is **pinned on** — not its map, but where to go to see it.
+
+Buldamar having both its own street map and a pin on the world map is the ordinary case, and
+sending the DM to the world map there would be the wrong answer. One `LEFT JOIN LATERAL`, not
+a query per row: a campaign runs to a hundred locations and this list loads on every visit.
+
+Players do not get the link. A DM map has no share token, so it would be an affordance that
+cannot work.
+
+The link needed somewhere to go, so the Journey Map page now reads `?campaign=&map=`, mirroring
+the Timeline module. It applies them **once** — without that guard it re-runs as the map list
+settles and drags the DM back to the URL's map every time they pick a different one.
+
+### Added — click an NPC or a place to read its card
+
+In the **NPCs** and **Locations** tabs, clicking a row opens the read-only card instead of the
+edit modal. Reading and editing are different intents and the modal is a poor reader — it is a
+stack of textareas. The pencil still opens it. For a DM the card also shows their private
+notes, gated by the data rather than by a role check: the server never sends `private_info` to
+a player, so that section can only ever render for someone entitled to it.
+
+The player's **Campaign Links** tab gets the same treatment, plus a **Places** section
+alongside People — public locations, which a player could not reach from anywhere before. Both
+are compact rows that open the card, rather than expanded blocks: a campaign has dozens of
+each, and forty open blocks is a scroll rather than a list.
+
+### Added — a journal entry that names something hidden is withheld whole
+
+An entry can mention a place the party has not found or a person they have not met. Blanking
+the **link** was never enough — the name is still in the prose, and the sentence around it is
+usually the spoiler. Such an entry is now withheld entirely, and reappears on its own the
+moment the DM reveals the last thing it names.
+
+It covers `[[links]]` in the body **and** the entry's own "where it happened" field, since
+tagging an entry with a secret place and not linking it would otherwise walk straight around
+the rule. It applies to every entry, whoever wrote it, rather than only the DM's: a player
+quoting a name they heard somewhere is the same leak.
+
+This is the one withholding rule in the app that **cannot be a SQL predicate** — it needs the
+body parsed — so it happens in the route. The row still never leaves the server.
+
+Two details decide whether it works at all. The resolution index is built from **all** rows,
+hidden ones included: filter to the visible set first and a hidden name simply fails to
+resolve, so the entry publishes — a failure that looks exactly like success. And names are
+folded the way the client folds them, so `[[thea]]` is caught for Théa.
+
+### Added — import into a campaign that already exists
+
+Importing a campaign file used to always create a new campaign. With one selected, it now asks
+whether to **replace content in the campaign you are looking at** instead, naming real counts
+— "Replace 91 NPCs, 106 locations in *Leruhy*?" — because "are you sure?" with no numbers is
+not a decision anyone can make. Cancel still imports it as a separate campaign.
+
+**Only the sections the file carries are touched.** A file with just NPCs replaces the NPCs and
+leaves locations, the diary, the journal and the maps exactly as they were.
+
+Rows are matched **by name**, so one that exists in both keeps its row id — which is what keeps
+journey-map pins, `npc_<id>` timeline actors and cross-connections pointing at the right thing.
+An insert-after-delete would renumber everything and quietly break all three.
+
+An NPC the file omits is removed, **unless something still points at it**, in which case it is
+kept and named in the result. Neither referrer is a foreign key the database would protect:
+`character_relationships` stores a bare id beside a type, and a timeline's actors are
+`npc_<id>` strings inside a `text[]`.
+
+**It will not touch players, timelines, maps or gear**, and says so rather than ignoring them.
+Replacing a player means deleting their character sheet, their stats, their relationships and
+their timelines — far past what an import should do without a much more specific conversation.
+
+### Changed — NPC names are unique per campaign, case-insensitively
+
+The table already had `UNIQUE (campaign_id, name)`, which is exact: "Grathul" and "grathul"
+could both exist and then resolve unpredictably, because every lookup that matters keys on the
+**name** — the bundle's NPC refs, the character-tree cross-connection refs, the `[[Name]]`
+index. Locations settled this long ago with a `LOWER(name)` index; NPCs now match.
+
+**Existing clashes are renamed, not deleted** — the opposite of what the locations migration
+did, and deliberately. A location was a name and a description; an NPC carries prose the DM
+wrote, and its id is referenced by `character_relationships` and by `npc_<id>` actor tokens in
+timeline entries, so deleting the loser of a case clash would silently orphan both. The
+survivor keeps its name and the rest get their row id appended — an id, because any fixed
+suffix could clash with the next renamed row in the same group.
+
+Both upserts now name `(campaign_id, LOWER(name))` as their conflict target. Naming the plain
+column would miss a differing-case clash and surface it as a 500 rather than skipping the
+duplicate; renaming onto an existing name still answers 409.
+
+### Fixed — the campaign backup was losing NPCs and the whole Journal
+
+Export succeeded, import succeeded, and data was gone. Two separate holes, found while
+checking whether this week's work had broken the bundle.
+
+**NPC detail never travelled.** The export was `SELECT id, name` emitting `{ name }`, and the
+import inserted a name and nothing else — so a backup/restore destroyed every NPC's
+description, public and private notes, visibility and current location. A regression from the
+NPC work, caught before it shipped.
+
+**The Campaign Journal had never been in the bundle at all.** `campaign_journal_entries`
+appeared nowhere in either handler, so every backup ever taken was missing the table's shared
+notes. That one predates this week.
+
+Both now travel, by symbolic ref rather than by id — the rule the rest of the bundle already
+follows, because a row id means nothing in the campaign being created.
+
+**The NPC pass now runs after locations, rather than gaining a second pass.** Every
+create-then-UPDATE in the importer exists because of a *cycle* — a location's parent is a
+location, a relationship's parent is a relationship. An NPC's location is not a cycle, so
+ordering settles it; copying the two-pass shape here would have cost a second statement per NPC
+and blunted a marker that currently means something specific.
+
+Three details that would each have been a quiet data bug:
+
+- **`is_public` is read as `=== true`, not the `!== false` locations use.** A location defaults
+  to visible because it always was; an NPC has never been visible to a player. An absent key
+  therefore has to mean *hidden*, or restoring a backup written before the field existed would
+  publish every NPC in the campaign at once.
+- **In-game day goes through `journalDay`, never `|| null`.** The absolute-day epoch puts year
+  1 day 1 at **zero**, so a falsy test silently deletes a real date.
+- **`created_at` is `COALESCE`d.** A bare null parameter *stores* null — a column DEFAULT only
+  fires when the column is omitted — and a null `created_at` scrambles the order the journal
+  reads back in.
+
+**Journal authorship is resolved, but fenced.** A restore onto the same instance keeps who
+wrote what — but only for someone who is actually in the campaign being built. `created_by`
+governs who may edit an entry, so matching a bare username without that fence would hand edit
+rights over a restored note to an unrelated account that merely shares a name on the server.
+Anyone who does not resolve collapses to the importing DM.
+
+Old bundles still import silently: NPCs arrive hidden with no detail, the journal is empty, and
+the response says `journal: 0` — a fact about the file rather than a failure. The version is
+now 6, and the import still does not read it: compatibility here is field-driven, and a version
+branch nobody keeps fixtures for would rot untested.
+
+`campaign_invites` stays out, and the export now says why. An invite is a credential, not
+campaign content — the same reason the share tokens do not travel, which is a different reason
+from `journey_trackers` being retired.
+
+#### Verified
+
+The first live round-trip test in the repo — `test/campaignRoundTrip.live.test.js`, gated on
+`ROUNDTRIP_DB` so `npm test` stays green. It spawns the server against a scratch Postgres,
+seeds a campaign with a hidden location and a visible NPC standing in it, exports, imports and
+compares. 15 checks, plus 23 static ones in `test/campaignBundle.test.js`.
+
+The sharpest is a join asserting no restored row points at a location in another campaign, and
+a walk over the whole bundle asserting the hidden location's raw id appears nowhere in it at
+all. Four guards were then broken one at a time to confirm each check fails: reading
+`is_public` the location way republishes every NPC from an old bundle; dropping the ref
+resolution makes the cross-campaign count non-zero; `|| null` loses day zero; and putting the
+NPC pass back above locations fails both suites.
+
+Also fixed: a seed case in that test asserted two locations could share a name. They cannot —
+`campaign_locations_campaign_name_unique` forbids it — so the `__n` disambiguation suffix in
+the exporter is unreachable for anything created through the app and only protects rows older
+than that index.
+
+### Added — NPC management
+
+NPCs were a name and nothing else. They are now managed the way locations are, in the same
+**🧟 NPCs** tab: a table with a hide/show eye, an edit modal, a search box, and delete.
+
+Each NPC gains **a description**, **public info**, **private info**, and **a current location**
+picked from the campaign's own locations. Bulk-add by comma-separated names stays — naming six
+NPCs before a session is still the common case — and the rest is filled in later, when they
+turn out to matter.
+
+**Hidden by default**, which is the opposite of how locations behave and is deliberate.
+Locations default to visible because they always were; a player has never been able to see an
+NPC at all, so defaulting to visible would publish every NPC a DM has ever named the moment
+they upgrade. Reveal them one at a time as the party meets them.
+
+A revealed NPC shows up in the two places that were already built for it:
+
+- **`[[Grathul]]` in prose** resolves for players, opening his description and public info. The
+  cross-link machinery was DM-only purely because NPCs had no visibility flag.
+- **The PC Sheet's Campaign Links tab** grows a *People* section — the empty `npcs: []`
+  placeholder the server has been carrying, with a comment saying it was waiting for exactly
+  this. They are plain cards, not links: an NPC has no page to open.
+
+**Their current location is a single column, not a history table.** An NPC's movement over time
+already exists — timeline events tagged with them are what the journey map draws their path
+from — and a second, unconnected history would be two answers to one question.
+
+#### What took the care
+
+`campaign_npcs` is the first table in this app that a player may read *and* that holds a column
+they must never see. Locations get away with `SELECT *` because nothing on that table is secret;
+the moment `private_info` exists, a star is a leak. Every player-reachable query here names its
+columns, and reverting just that one line hands `private_info` straight to the table — which is
+how it was verified.
+
+**A hidden location stays hidden even when the NPC standing in it does not.** Withholding the
+location's *name* but keeping its *id* is a leak rather than a half-measure: two NPCs coming
+back with the same unexplained id tells a player they are in the same undiscovered place, and
+that id maps onto a location they may know by another route. The journal shipped exactly this
+mistake once; both are nulled together here.
+
+A current location is **verified to belong to this campaign** before it is written. Without
+that, an id from another campaign would be accepted and that location's name would then surface
+in this campaign's NPC list — a cross-campaign leak through a column nobody would think to
+audit.
+
+The DM search now reads the new fields, private notes included, and the DM-only search popover
+shows all three rather than *"NPCs hold only a name today"*.
+
 ### Fixed — a seat could never be freed, and DMs were offered as players
 
 Two bugs in the Players tab's **Reassign** column.
