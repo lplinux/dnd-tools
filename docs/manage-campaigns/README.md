@@ -279,6 +279,7 @@ Open the **Settings** tab and click **💾 Export Campaign** (under "Export / Ba
   day, author and the location and character it points at
 - DM cross-connections from the character tree
 - All Journey Maps — including background image, all pins and region polygons (with per-pin `icon_scale`), `scope_type`/`scope_location_ref`, distances, and paths with waypoints, route type, and dragged name-label positions (`label_x`/`label_y`)
+- **Session prep** — every session (number, title, date, played/prepared) and all of its cards, nested, with their section and state, as a top-level `sessions[]` array. The same shape the `campaign-sessions` file uses, and written by the same code
 
 > **Never exported:** campaign **invite links**. An invite is a credential rather than campaign
 > content — its token is unique, its user references do not exist on the far side, and it expires
@@ -357,6 +358,7 @@ receiving build doesn't understand is dropped.
 
 | Field absent in an older bundle | Imported as |
 |---|---|
+| `sessions[]` | none (no session prep) |
 | `party_events[]` | none (no party events) |
 | `journey_maps[].locations[].icon_scale` | `1` |
 | `journey_maps[].paths[].label_x` / `label_y` | `null` (label at default midpoint) |
@@ -364,7 +366,7 @@ receiving build doesn't understand is dropped.
 
 **Newer bundle → older build — imports, but newer-only data is dropped.** It loads without error,
 but a build that predates these fields ignores them, so the following do **not** carry across:
-**party events, per-pin `icon_scale`, road name-label positions, and map scope**.
+**session prep, party events, per-pin `icon_scale`, road name-label positions, and map scope**.
 (`kind`/`route_type` and all waypoint data — `locId`/`segMiles`/`curve` — do survive.) Round-tripping
 newer → older → newer therefore loses those fields.
 
@@ -585,6 +587,7 @@ server's startup block in `app.js`. There is no separate migration tool or folde
 | `players[].relationships[].parent_ref` | string | No | `_ref` of parent relationship |
 | `players[].timelines[].entries[].player_id_refs[]` | string[] | No | Participant tokens — see the table below |
 | `dm_timelines[]` | object[] | No | DM-owned timelines (World timeline, Private DM timeline). Same structure as `players[].timelines[]`. Absent in v2 bundles. |
+| `sessions[]` | object[] | No | Session prep. Each is `{ session_no, title, session_date, status, items[] }`; each item is `{ section, title, body, state, children[] }`, nesting to any depth. `section` is one of `recap`/`prep`/`beats`/`outcome` and a child always takes its parent's. Absent in bundles from before the Sessions tab. |
 | `dm_timelines[].name` | string | Yes | Timeline name, e.g. `"World Timeline"` or `"DM Private Notes"` |
 | `dm_timelines[].entries[].player_id_refs[]` | string[] | No | Same token format as player timeline entries; remapped to new IDs on import |
 | `cross_connections[].from_type` | string | Yes | `"player"`, `"relationship"`, or `"npc"` |

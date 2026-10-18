@@ -64,9 +64,11 @@ Touch input and the two overflowing layouts are **done** — see `TOQA.md`. What
 
 ---
 
-## Planned features (not started)
+## Features — planned, or part-built
 
-Captured for later — nothing here has been designed or scoped yet.
+Most of this was captured before anything was designed. Where a section has since shipped it
+says so and keeps only what is still open; the built part is in `CHANGELOG.md`, and whatever
+is waiting on your QA is in `TOQA.md`.
 
 ### NPC Management — mostly shipped
 
@@ -79,9 +81,15 @@ through cross-links and the Campaign Links tab, gated on having met them. What r
       The one part of the original idea not built.
 
 
-### PHB & DM Rules - A series of quicklinks for accessing the Official Rules of D&D
+### New Module - DM Screen
+#### DM Notes
+
+- [ ] A way of taking notes with ideas not linked to a Campaign (like a DM Diary of what I'd like a future Campaign or One Shot to be). This would be the start of a World Building module.
+
+#### PHB & DM Rules - A series of quicklinks for accessing the Official Rules of D&D
 
 - [ ] Accesss to Official books (Maybe upload the PDF into the PDF Viewer or by API calls to SRDs)
+- [ ] Quick access to Conditions, Spells, Monsters, rules, etc... Search would be the key here
 
 ### PC Sheet — other
 
@@ -93,21 +101,81 @@ through cross-links and the Campaign Links tab, gated on having met them. What r
 - [ ] A campaign can export a bundle larger than the 50 MB import limit (`express.json`), so a
       big enough campaign produces a backup it cannot restore. The dominant payload is base64
       map and portrait images. A 413 currently surfaces as Express's HTML error page.
-- [x] Invite link for new users to join a Campaign — **done**, see the CHANGELOG. One hour,
-      single use, token stored hashed, revocable. The DM points it at a new seat or an
-      existing empty one, and someone who already has an account can use it too.
-      - [ ] Still no email — the link is copied to the clipboard and sent by hand, as agreed.
+- [ ] **Invite links still have no email** — the link is copied to the clipboard and sent by
+      hand, as agreed. Everything else about them shipped; see the CHANGELOG.
+
+### Campaign Diary and other modals
+
+- [ ] When open an entry, it should fit the whole screen and not just a small column. Same for editing or adding a new entry (the modal is too small)
+
+Every `<Modal>` call site, surveyed. `Modal.jsx` defaults to **`max-w-md` (448px)** and each
+site may override it via `className`. Sizes below are what they are *today*. Nothing here is
+changed yet — pick what should widen.
+
+**One thing worth knowing before choosing:** the entry-reading modal is a single shared
+component, `Diary/EntryList.jsx:150`. The Campaign Diary, every player diary, the PC Sheet 📔
+tab and the Journal all read through it, so that one line covers four surfaces at once.
+
+Also undecided: whether "full screen" means a real `95vw/92vh` like the distance matrix, or
+just a larger cap such as `max-w-4xl`. Reading wants the former; edit forms probably want the
+latter, since a 1600px-wide text input is unpleasant to type in.
+
+*Long-form prose — what this TODO is about:*
+
+| File | What it is | Today |
+|---|---|---|
+| `Diary/EntryList.jsx:150` | **Reading an entry** — shared by Campaign Diary, player diaries, PC Sheet 📔, Journal | `max-w-2xl` |
+| `Diary/EntryModal.jsx:57` | New/edit diary entry (campaign + player) | `max-w-2xl` |
+| `Journal/JournalPanel.jsx:329` | New/edit journal entry | `max-w-2xl` |
+| `Sessions/SessionsPanel.jsx:608` | New/edit session card — markdown body | **default** |
+| `components/SrdInfo.jsx:77` | SRD rules text — spells, item descriptions | **default** |
+
+*Many fields, cramped at 448px:*
+
+| File | What it is |
+|---|---|
+| `ManageCampaigns/tabs/NpcsTab.jsx:214` | Edit NPC — **three textareas** (description, public, private) plus name and location |
+| `ManageCampaigns/tabs/LocationsTab.jsx:275` | Edit Location — also listed above for its non-responsive 2-col grid |
+| `ManageCampaigns/tabs/CharTreeTab.jsx:830` | Add/edit cross-connection |
+| `PcSheet/components/RelationModal.jsx:49` | Add/edit relationship |
+| `Timeline/Modals.jsx:258` and `:192` | Edit event / read event — also listed above for its 2-col grid |
+| `PcSheet/tabs/InventoryTab.jsx:690`, `:772` | Item editor, grant from library |
+
+*Already wide — nothing to do:* `JourneyMap/modals/DistanceMatrixModal.jsx:29` (`95vw × 92vh`,
+the only true full-screen one), `Home.jsx:144` and `JourneyMap/modals/WaypointEventModal.jsx:63`
+(both `max-w-lg`).
+
+*Small by nature — leave them:* confirm dialogs (`ConfirmContext.jsx:45`), login
+(`Home.jsx:192`), Manage HP (`NpcSheet/index.jsx:806`), Set Today Marker (×2), New Timeline
+(×2), Add Player, Add Location, Filter by date, Share Map, New Journey Map, Name Path,
+Distance, Import PC Sheet/Timeline, Give item, User Panel. Each is a few short fields;
+widening only spreads three inputs across a wall.
 
 ---
 
 ## Ideas worth considering
 
-### 1. Session prep, in the app
+### 1. Session prep, in the app — **shipped**
 
-The diary records what *happened*. Nothing records what you intend to happen. A "next session" note per
-campaign, with a one-click promote-to-diary-entry after the session, would close that loop and
-reuse the diary's editor and markdown wholesale.
+The 🗓 Sessions tab in Manage Campaigns. Everything asked for was built except the one item
+below: the five states, nesting to any depth, cross-links, the On-Going view, drag and drop
+across sections, search and filtering, read-only played sessions, generate-next, export and
+import, a place in the campaign bundle, and converting *What happened* into Journal entries.
+The detail is in `CHANGELOG.md`; the QA checklist is in `TOQA.md`.
 
-Lower down the list because your Obsidian workflow already works, and a worse copy inside the app
-is a step backwards. Only worth it if the cross-links from idea 3 exist, so prep can point at
-real NPCs and locations — **and they now do**, so the precondition is met if you ever want this.
+- [ ] **Campaign Pendings** — a campaign-level backlog, not tied to any session. Deferred by
+      agreement when the feature was scoped, and still the only part not built. Until it
+      exists, the *Pending* and *For later on* headings of the Obsidian prep notes import
+      into one labelled parent card under the session's beats.
+
+### 2. Character Evolution / Learning Path
+
+A feature/section to track DM notes for ways of evolve characters. Extra things (spell, learnings, information, etc) and how to get them. Use my notes on Obsidian as reference.
+
+### 3. Application API
+
+- [ ] A DM could generate a token for API authentication
+- [ ] API should allow read campaigns. I'd like this so AI could connect to a running instance and fetch information or write updates instead of messing up with a json
+      - [ ] I might ask AI to insert into the Campaign Journey every time I update the summaries
+      - [ ] I might ask to update the session prep
+      - [ ] I might ask to update NPCs and locations descriptions

@@ -164,6 +164,49 @@ Editing and deleting are deliberately asymmetric: only the author may edit, whil
 **or** the DM may delete. A DM tidying the campaign should be able to remove an entry, but not
 to rewrite a player's words without them knowing.
 
+### Session prep
+
+The DM's plan for one sitting, as the 🗓 Sessions tab of Manage Campaigns. **DM-only
+throughout** — there is no player-facing counterpart at all, because it holds what the table
+must not know yet.
+
+```
+campaign_sessions
+  id, campaign_id (FK campaigns, CASCADE), created_by (FK users),
+  session_no (nullable), title, session_date (nullable),
+  status ('prepared'|'played'), created_at, updated_at
+
+campaign_session_items
+  id, campaign_id (FK campaigns, CASCADE),      -- denormalised, see below
+  session_id (FK campaign_sessions, CASCADE),
+  parent_id (FK self, CASCADE, nullable),       -- nests to any depth
+  section CHECK IN ('recap','prep','beats','outcome'),
+  title, body, state CHECK IN
+    ('in-preparation','ready','on-going','skipped','done'),
+  position (int), created_at, updated_at
+```
+
+`campaign_id` is carried on the items as well as the session so the On-Going view is one
+indexed read rather than a join back through `campaign_sessions` for every row.
+
+**A child's section is always its parent's.** Enforced on create, on import and on move — a
+card whose section disagreed with its parent's would appear in neither and be unreachable.
+Moving a card to another section therefore rewrites the whole subtree, in one bounded
+recursive statement.
+
+**"On-Going" is a view, not a fifth section.** An item marked on-going anywhere in the campaign
+surfaces in every *later* session until its state changes, so there is exactly one copy of a
+thread and marking it done clears it everywhere at once. "Later" is the campaign's own
+`session_no`/`session_date` order, not clock time — a DM writing session 12 before session 11
+should still see 11's threads in 12. The view excludes `section = 'outcome'`: a card dragged
+into *What happened* keeps whatever state it had, and a thread filed as having happened is a
+record rather than something still running.
+
+**`done` and `skipped` cascade to sub-cards; the other three do not.** Both mean "stop looking
+at this". A parent is on-going precisely because one child is and the rest are not, so pushing
+that down would erase the distinction. The cascade is one recursive statement bounded at fifty
+levels, because `parent_id` is a tree by construction and not by constraint.
+
 **Two mount points, one component.** `pages/Journal/JournalPanel` fetches its own data and is
 rendered both as a PC Sheet tab and as a Manage Campaigns tab, so neither page threads journal
 state through its hook and the player's view and the DM's cannot drift. Presentation is the
@@ -668,8 +711,11 @@ silently blanked: accepting it would confirm that the guessed id exists. The che
 
 | Method | Path | Role | Description |
 |---|---|---|---|
-| GET | `/api/campaigns/:id/export` | dm | Full campaign bundle (`type: campaign`) |
+| GET | `/api/campaigns/:id/export` | dm | Full campaign bundle (`type: campaign`) — session prep included |
 | POST | `/api/campaigns/import` | dm | Restore a campaign bundle as a new campaign |
+| GET | `/api/campaigns/:campaignId/sessions/export` | dm/admin | Session prep bundle (`type: campaign-sessions`) |
+| POST | `/api/campaigns/:campaignId/sessions/import` | dm/admin | Merge a session-prep bundle by session number |
+| POST | `/api/campaigns/:campaignId/sessions/:sessionId/to-journal` | dm/admin | Copy *What happened* into the Campaign Journal |
 | POST | `/api/campaigns/:id/import/timeline` | dm/admin | Import a timeline onto a player |
 | GET | `/api/player-timelines/:id/export` | auth | Portable timeline bundle |
 | GET | `/api/pc/:playerId/export` | dm/player | PC sheet bundle — `scope: full` for a DM, `scope: player` otherwise |
