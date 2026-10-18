@@ -5347,6 +5347,894 @@ app.delete('/api/campaigns/:campaignId/npcs/:npcId', requireRole(['dm', 'admin']
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// ─── Session prep (DM-only) ──────────────────────────────────────────────────
+//
+// The DM's plan for one sitting. Every route here is requireRole(['dm',
+// 'admin']) + dmOwnsCampaign, with no player-facing counterpart anywhere —
+// the whole point of the feature is that it holds what the table must not
+// know yet.
+
+/** The four stored sections. "On-Going" is derived; see sessionOnGoing. */
+const SESSION_SECTIONS = ['recap', 'prep', 'beats', 'outcome'];
+const SESSION_STATES = ['in-preparation', 'ready', 'on-going', 'skipped', 'done'];
+
+// Sessions read in the order the campaign runs: numbered ones first and in
+// order, then dated ones, then whatever is left by age — the same NULLS LAST
+// shape the diary uses, so the two read alike. Written out at each use site
+// rather than shared, because each one needs its own table alias.
+
+/** The session, if it belongs to this campaign. */
+async function sessionOf(sessionId, campaignId) {
+  const r = await pool.query(
+    'SELECT * FROM campaign_sessions WHERE id=$1 AND campaign_id=$2', [sessionId, campaignId]);
+  return r.rows[0] ?? null;
+}
+
+/** The item, if it belongs to this campaign. Scoped by campaign, never by id alone. */
+async function sessionItemOf(itemId, campaignId) {
+  const r = await pool.query(
+    'SELECT * FROM campaign_session_items WHERE id=$1 AND campaign_id=$2', [itemId, campaignId]);
+  return r.rows[0] ?? null;
+}
+
+/**
+ * Threads still running, from EARLIER sessions.
+ *
+ * A view, not a table: an item marked on-going anywhere in the campaign
+ * shows up here until someone changes its state, and marking it done makes
+ * it leave on its own. Copying it forward would give you two of the same
+ * thread, and eventually one of them stale.
+ *
+ * "Earlier" is the campaign's own order, not clock time — a DM writing
+ * session 12 before session 11 should still see 11's threads in 12.
+ *
+ * WHAT HAPPENED IS EXCLUDED. Those cards carry no state in the UI, but they
+ * can still hold one: a beat dragged there keeps whatever it had, and a
+ * thread the DM has just filed under "this happened" must not come back as
+ * something still running.
+ */
+async function sessionOnGoing(campaignId, session) {
+  const r = await pool.query(
+    `SELECT i.*, s.session_no, s.title AS session_title, s.session_date
+       FROM campaign_session_items i
+       JOIN campaign_sessions s ON s.id = i.session_id
+      WHERE i.campaign_id = $1 AND i.state = 'on-going' AND i.section <> 'outcome'
+        AND i.session_id <> $2
+        AND (
+          COALESCE(s.session_no, 2147483647), COALESCE(s.session_date, '9999-12-31'::date), s.id
+        ) < (
+          COALESCE($3::int, 2147483647), COALESCE($4::date, '9999-12-31'::date), $2::int
+        )
+      ORDER BY s.session_no ASC NULLS LAST, s.session_date ASC NULLS LAST, i.position ASC, i.id ASC`,
+    [campaignId, session.id, session.session_no, session.session_date],
+  );
+  return r.rows;
+}
+
+app.get('/api/campaigns/:campaignId/sessions', requireRole(['dm', 'admin']), async (req, res) => {
+  try {
+    if (!await dmOwnsCampaign(req.params.campaignId, req.session.userId, req.session.role))
+      return res.status(403).json({ error: 'Access denied' });
+    // Counts rather than the items: the list is a sidebar, and a campaign's
+    // worth of item bodies to render twenty titles would be absurd.
+    const r = await pool.query(
+      `SELECT s.*,
+              (SELECT count(*)::int FROM campaign_session_items i WHERE i.session_id = s.id) AS item_count,
+              (SELECT count(*)::int FROM campaign_session_items i
+                WHERE i.session_id = s.id AND i.state = 'on-going'
+                  AND i.section <> 'outcome') AS ongoing_count
+         FROM campaign_sessions s
+        WHERE s.campaign_id = $1
+        ORDER BY s.session_no ASC NULLS LAST, s.session_date ASC NULLS LAST, s.id ASC`,
+      [req.params.campaignId],
+    );
+    res.json(r.rows);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/api/campaigns/:campaignId/sessions', requireRole(['dm', 'admin']), async (req, res) => {
+  const { session_no: no, title, session_date: date } = req.body ?? {};
+  try {
+    if (!await dmOwnsCampaign(req.params.campaignId, req.session.userId, req.session.role))
+      return res.status(403).json({ error: 'Access denied' });
+    const n = parseInt(no, 10);
+    const r = await pool.query(
+      `INSERT INTO campaign_sessions (campaign_id, created_by, session_no, title, session_date)
+       VALUES ($1,$2,$3,$4,$5) RETURNING *`,
+      [req.params.campaignId, req.session.userId,
+        Number.isFinite(n) ? n : null, journalStr(title, 255), date || null],
+    );
+    res.json(r.rows[0]);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.put('/api/campaigns/:campaignId/sessions/:sessionId', requireRole(['dm', 'admin']), async (req, res) => {
+  const { session_no: no, title, session_date: date, status } = req.body ?? {};
+  try {
+    if (!await dmOwnsCampaign(req.params.campaignId, req.session.userId, req.session.role))
+      return res.status(403).json({ error: 'Access denied' });
+    const n = parseInt(no, 10);
+    const r = await pool.query(
+      `UPDATE campaign_sessions
+          SET session_no=$1, title=$2, session_date=$3,
+              status = CASE WHEN $4::text IN ('prepared','played') THEN $4 ELSE status END,
+              updated_at = CURRENT_TIMESTAMP
+        WHERE id=$5 AND campaign_id=$6 RETURNING *`,
+      [Number.isFinite(n) ? n : null, journalStr(title, 255), date || null,
+        status ?? null, req.params.sessionId, req.params.campaignId],
+    );
+    if (!r.rows.length) return res.status(404).json({ error: 'Session not found' });
+    res.json(r.rows[0]);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.delete('/api/campaigns/:campaignId/sessions/:sessionId', requireRole(['dm', 'admin']), async (req, res) => {
+  try {
+    if (!await dmOwnsCampaign(req.params.campaignId, req.session.userId, req.session.role))
+      return res.status(403).json({ error: 'Access denied' });
+    // The items go with it by CASCADE, which is what deleting a session means.
+    await pool.query('DELETE FROM campaign_sessions WHERE id=$1 AND campaign_id=$2',
+      [req.params.sessionId, req.params.campaignId]);
+    res.json({ success: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+/**
+ * Export every session as a `campaign-sessions` bundle.
+ *
+ * Its own file type rather than a slice of the campaign bundle, for the same
+ * reason the diary and the journey maps have theirs: a DM wants to move one
+ * campaign's prep onto another, or keep it under version control, without
+ * dragging players and maps along. The campaign bundle is the whole-world
+ * backup; this is one drawer of it.
+ *
+ * Items are NESTED here, unlike the read route which sends them flat. A file
+ * is read by people and diffed by tools, and `children` survives both; a
+ * flat list keyed on database ids does not survive either.
+ */
+/**
+ * Every session of a campaign, nested, with no database ids in it.
+ *
+ * Shared by the `campaign-sessions` file and the whole-campaign bundle, so
+ * the two can never drift into carrying different amounts of the prep.
+ */
+async function sessionsForExport(campaignId) {
+  const [sessR, itemR] = await Promise.all([
+    pool.query(
+      `SELECT id, session_no, title, session_date, status FROM campaign_sessions
+        WHERE campaign_id=$1
+        ORDER BY session_no ASC NULLS LAST, session_date ASC NULLS LAST, id ASC`, [campaignId]),
+    pool.query(
+      `SELECT id, session_id, parent_id, section, title, body, state
+         FROM campaign_session_items
+        WHERE campaign_id=$1 ORDER BY position ASC, id ASC`, [campaignId]),
+  ]);
+
+  // Flat rows → nested, the inverse of what the client does on read. No
+  // ids in the output: they mean nothing in the campaign this lands in.
+  const kids = new Map();
+  for (const i of itemR.rows) {
+    const key = `${i.session_id}:${i.parent_id ?? 'root'}`;
+    if (!kids.has(key)) kids.set(key, []);
+    kids.get(key).push(i);
+  }
+  const build = (sessionId, parentId) =>
+    (kids.get(`${sessionId}:${parentId ?? 'root'}`) ?? []).map((i) => {
+      const children = build(sessionId, i.id);
+      return {
+        section: i.section, title: i.title, body: i.body, state: i.state,
+        ...(children.length ? { children } : {}),
+      };
+    });
+
+  return sessR.rows.map((x) => ({
+    session_no: x.session_no, title: x.title,
+    session_date: x.session_date, status: x.status,
+    items: build(x.id, null),
+  }));
+}
+
+/**
+ * Write a list of exported sessions into a campaign, merging by identity.
+ *
+ * Takes a client because both callers are already inside a transaction —
+ * the campaign import in particular must roll the prep back with everything
+ * else if a later step fails.
+ */
+async function importSessionList(client, campaignId, userId, sessions) {
+  const existing = (await client.query(
+    'SELECT id, session_no, title FROM campaign_sessions WHERE campaign_id=$1', [campaignId],
+  )).rows;
+
+  /** Depth-first, so a parent row exists before its children reference it. */
+  const insertItems = async (sessionId, list, parentId, inherited) => {
+    let n = 0;
+    let pos = 0;
+    for (const raw of list ?? []) {
+      if (!raw) continue;
+      // A child belongs to its parent's section whatever the file says —
+      // the same rule the interactive route enforces, so a hand-edited
+      // bundle cannot produce a card that appears in neither section.
+      const section = inherited
+        ?? (SESSION_SECTIONS.includes(raw.section) ? raw.section : 'beats');
+      const r = await client.query(
+        `INSERT INTO campaign_session_items
+           (campaign_id, session_id, parent_id, section, title, body, state, position)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING id`,
+        [campaignId, sessionId, parentId, section,
+          journalStr(raw.title, 255), journalStr(raw.body, 50000),
+          SESSION_STATES.includes(raw.state) ? raw.state : 'in-preparation',
+          pos],
+      );
+      pos += 1;
+      n += 1;
+      n += await insertItems(sessionId, raw.children, r.rows[0].id, section);
+    }
+    return n;
+  };
+
+  let added = 0; let replaced = 0; let cards = 0;
+  for (const s of sessions ?? []) {
+    if (!s) continue;
+    const no = Number.isFinite(parseInt(s.session_no, 10)) ? parseInt(s.session_no, 10) : null;
+    const title = journalStr(s.title, 255);
+    const match = no != null
+      ? existing.find((e) => e.session_no === no)
+      : (title ? existing.find((e) => e.session_no == null && e.title === title) : null);
+
+    let sessionId;
+    if (match) {
+      // Replace it whole. The cards go by CASCADE on the row, but the row
+      // itself is kept so anything pointing at it keeps pointing.
+      await client.query('DELETE FROM campaign_session_items WHERE session_id=$1', [match.id]);
+      await client.query(
+        `UPDATE campaign_sessions
+            SET session_no=$1, title=$2, session_date=$3,
+                status = CASE WHEN $4::text IN ('prepared','played') THEN $4 ELSE status END,
+                updated_at = CURRENT_TIMESTAMP
+          WHERE id=$5`,
+        [no, title, s.session_date || null, s.status ?? null, match.id],
+      );
+      sessionId = match.id;
+      replaced += 1;
+    } else {
+      const made = await client.query(
+        `INSERT INTO campaign_sessions
+           (campaign_id, created_by, session_no, title, session_date, status)
+         VALUES ($1,$2,$3,$4,$5,
+                 CASE WHEN $6::text IN ('prepared','played') THEN $6 ELSE 'prepared' END)
+         RETURNING id`,
+        [campaignId, userId, no, title, s.session_date || null, s.status ?? null],
+      );
+      sessionId = made.rows[0].id;
+      existing.push({ id: sessionId, session_no: no, title });
+      added += 1;
+    }
+    cards += await insertItems(sessionId, s.items, null, null);
+  }
+  return { added, replaced, cards };
+}
+
+app.get('/api/campaigns/:campaignId/sessions/export', requireRole(['dm', 'admin']), async (req, res) => {
+  const { campaignId } = req.params;
+  try {
+    // includeTrashed, like the diary export: a DM should be able to take a
+    // copy of their prep out of a campaign they are about to purge.
+    if (!await dmOwnsCampaign(campaignId, req.session.userId, req.session.role, { includeTrashed: true }))
+      return res.status(403).json({ error: 'Access denied' });
+
+    const [campR, sessions] = await Promise.all([
+      pool.query('SELECT name FROM campaigns WHERE id=$1', [campaignId]),
+      sessionsForExport(campaignId),
+    ]);
+
+    res.json({
+      type: 'campaign-sessions',
+      version: 1,
+      exported_at: new Date().toISOString(),
+      campaign_name: campR.rows[0]?.name || 'Campaign',
+      sessions,
+    });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+/**
+ * Import a `campaign-sessions` bundle.
+ *
+ * MERGES BY IDENTITY rather than replacing everything, which is the one way
+ * it differs from the diary import. A diary is a single document; sessions
+ * are a running series, and a DM importing session 25 should not lose the
+ * twenty-four they already have.
+ *
+ * Identity is the session NUMBER, falling back to the title. A session that
+ * matches is replaced whole — its cards deleted and rebuilt — so importing
+ * the same file twice leaves the same thing rather than doubling it. One
+ * with neither a number nor a title has no identity to match on and is
+ * always added; that is the only way to get duplicates, and it takes a file
+ * with anonymous sessions in it.
+ */
+app.post('/api/campaigns/:campaignId/sessions/import', requireRole(['dm', 'admin']), async (req, res) => {
+  const { campaignId } = req.params;
+  const bundle = req.body;
+  // Checked here as well as in the import hub: this is a direct endpoint,
+  // and the wrong file arriving at a route that deletes should 400.
+  if (bundle?.type !== 'campaign-sessions') {
+    return res.status(400).json({ error: 'Not a campaign-sessions export file' });
+  }
+  if (!Array.isArray(bundle.sessions)) {
+    return res.status(400).json({ error: 'Bundle has no sessions array' });
+  }
+  try {
+    if (!await dmOwnsCampaign(campaignId, req.session.userId, req.session.role))
+      return res.status(403).json({ error: 'Access denied' });
+  } catch (e) { return res.status(500).json({ error: e.message }); }
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const { added, replaced, cards } =
+      await importSessionList(client, campaignId, req.session.userId, bundle.sessions);
+    await client.query('COMMIT');
+    res.json({ success: true, added, replaced, cards });
+  } catch (e) {
+    await client.query('ROLLBACK');
+    res.status(500).json({ error: e.message });
+  } finally { client.release(); }
+});
+
+/** One session, with its items grouped by section and the on-going view. */
+app.get('/api/campaigns/:campaignId/sessions/:sessionId', requireRole(['dm', 'admin']), async (req, res) => {
+  const { campaignId, sessionId } = req.params;
+  try {
+    if (!await dmOwnsCampaign(campaignId, req.session.userId, req.session.role))
+      return res.status(403).json({ error: 'Access denied' });
+    const session = await sessionOf(sessionId, campaignId);
+    if (!session) return res.status(404).json({ error: 'Session not found' });
+
+    const [items, ongoing] = await Promise.all([
+      pool.query(
+        `SELECT * FROM campaign_session_items
+          WHERE session_id=$1 ORDER BY position ASC, id ASC`, [sessionId]),
+      sessionOnGoing(campaignId, session),
+    ]);
+    // Flat, with parent_id — the client nests it. Sending a tree would mean
+    // choosing a depth limit here, and the DM's notes nest as deep as they
+    // nest.
+    res.json({ session, items: items.rows, ongoing });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/api/campaigns/:campaignId/sessions/:sessionId/items', requireRole(['dm', 'admin']), async (req, res) => {
+  const { campaignId, sessionId } = req.params;
+  const { section, parent_id: parentId, title, body, state } = req.body ?? {};
+  if (!SESSION_SECTIONS.includes(section)) return res.status(400).json({ error: 'Unknown section' });
+  try {
+    if (!await dmOwnsCampaign(campaignId, req.session.userId, req.session.role))
+      return res.status(403).json({ error: 'Access denied' });
+    if (!await sessionOf(sessionId, campaignId)) return res.status(404).json({ error: 'Session not found' });
+
+    let parent = null;
+    if (parentId) {
+      // A sub-item belongs to its parent's session AND section, whatever the
+      // caller claims — otherwise a card could be nested under one in a
+      // different session and appear in neither place properly.
+      const row = await sessionItemOf(parentId, campaignId);
+      if (!row || String(row.session_id) !== String(sessionId)) {
+        return res.status(400).json({ error: 'That parent is not in this session' });
+      }
+      parent = row;
+    }
+
+    const next = await pool.query(
+      `SELECT COALESCE(MAX(position), -1) + 1 AS pos FROM campaign_session_items
+        WHERE session_id=$1 AND section=$2 AND parent_id IS NOT DISTINCT FROM $3`,
+      [sessionId, parent ? parent.section : section, parentId || null],
+    );
+    const r = await pool.query(
+      `INSERT INTO campaign_session_items
+         (campaign_id, session_id, parent_id, section, title, body, state, position)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,
+      [campaignId, sessionId, parentId || null,
+        parent ? parent.section : section,
+        journalStr(title, 255), journalStr(body, 50000),
+        SESSION_STATES.includes(state) ? state : 'in-preparation',
+        next.rows[0].pos],
+    );
+    res.json(r.rows[0]);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.put('/api/campaigns/:campaignId/sessions/:sessionId/items/:itemId', requireRole(['dm', 'admin']), async (req, res) => {
+  const { campaignId, itemId } = req.params;
+  const { title, body, state } = req.body ?? {};
+  try {
+    if (!await dmOwnsCampaign(campaignId, req.session.userId, req.session.role))
+      return res.status(403).json({ error: 'Access denied' });
+    const r = await pool.query(
+      `UPDATE campaign_session_items
+          SET title=$1, body=$2,
+              state = CASE WHEN $3::text = ANY($4::text[]) THEN $3 ELSE state END,
+              updated_at = CURRENT_TIMESTAMP
+        WHERE id=$5 AND campaign_id=$6 RETURNING *`,
+      [journalStr(title, 255), journalStr(body, 50000),
+        state ?? null, SESSION_STATES, itemId, campaignId],
+    );
+    if (!r.rows.length) return res.status(404).json({ error: 'Item not found' });
+    res.json(r.rows[0]);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+/**
+ * Just the state — "easy change with a click".
+ *
+ * Its own route rather than a PUT with the other fields left out: a PUT
+ * omitting `title` would blank it, and flipping a card to Done is the single
+ * most frequent write this feature has.
+ */
+app.patch('/api/campaigns/:campaignId/sessions/:sessionId/items/:itemId/state', requireRole(['dm', 'admin']), async (req, res) => {
+  const { campaignId, itemId } = req.params;
+  const { state } = req.body ?? {};
+  if (!SESSION_STATES.includes(state)) return res.status(400).json({ error: 'Unknown state' });
+  try {
+    if (!await dmOwnsCampaign(campaignId, req.session.userId, req.session.role))
+      return res.status(403).json({ error: 'Access denied' });
+    /*
+     * Marking a card DONE or SKIPPED takes its sub-cards with it. Both mean
+     * "stop looking at this", and finishing a beat while leaving three
+     * half-ticked details underneath is just a second chore the DM would do
+     * by hand every time.
+     *
+     * The other three do not cascade, and that asymmetry is the point: a
+     * parent is on-going precisely because one child is and the rest are
+     * not, so pushing it down would erase the distinction.
+     *
+     * One statement rather than a walk from the client: the subtree is
+     * arbitrarily deep, and N requests would half-apply if one failed.
+     * `depth` bounds it, because parent_id is a tree only by construction
+     * and a cycle here would spin for ever.
+     */
+    const cascade = state === 'done' || state === 'skipped';
+    const r = await pool.query(
+      `WITH RECURSIVE sub AS (
+         SELECT id, 0 AS depth FROM campaign_session_items
+          WHERE id=$2 AND campaign_id=$3
+         UNION ALL
+         SELECT i.id, sub.depth + 1
+           FROM campaign_session_items i
+           JOIN sub ON i.parent_id = sub.id
+          WHERE sub.depth < 50
+       )
+       UPDATE campaign_session_items SET state=$1, updated_at=CURRENT_TIMESTAMP
+        WHERE id IN (SELECT id FROM sub)
+          AND ($4 OR id = $2)
+        RETURNING *`,
+      [state, itemId, campaignId, cascade],
+    );
+    if (!r.rows.length) return res.status(404).json({ error: 'Item not found' });
+    // Every row that changed, so the page can patch itself in place instead
+    // of refetching the session and losing the reader's scroll position.
+    res.json({ updated: r.rows });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+/**
+ * Move a card: reorder among its siblings, re-parent it, or move it to
+ * another section.
+ *
+ * Crossing sections used to be refused, on the grounds that a card means
+ * something because of where it sits. That is true, and it is also the
+ * point: a beat that actually happened belongs in What happened, and the
+ * DM should be able to say so by dragging it rather than retyping it.
+ *
+ * THE SUBTREE GOES TOO. A child's section is its parent's — enforced
+ * everywhere else — so moving a card without its descendants would leave
+ * them in a section their parent has left, which renders as nothing at all.
+ *
+ * `position` is an index among the destination's children, not a stored
+ * ordinal to guess at: the whole sibling list is renumbered afterwards, so
+ * positions stay dense and two cards can never claim the same slot.
+ */
+app.patch('/api/campaigns/:campaignId/sessions/:sessionId/items/:itemId/move', requireRole(['dm', 'admin']), async (req, res) => {
+  const { campaignId, sessionId, itemId } = req.params;
+  const { parent_id: parentId = null, position, section: wantSection } = req.body ?? {};
+
+  const client = await pool.connect();
+  try {
+    if (!await dmOwnsCampaign(campaignId, req.session.userId, req.session.role))
+      return res.status(403).json({ error: 'Access denied' });
+
+    await client.query('BEGIN');
+    const self = (await client.query(
+      'SELECT * FROM campaign_session_items WHERE id=$1 AND campaign_id=$2 AND session_id=$3',
+      [itemId, campaignId, sessionId],
+    )).rows[0];
+    if (!self) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'Item not found' }); }
+
+    // Where it is going. A named section only applies at the root of the
+    // move; dropped onto a card, the parent's section wins below.
+    let section = self.section;
+    if (parentId == null && SESSION_SECTIONS.includes(wantSection)) section = wantSection;
+
+    if (parentId != null) {
+      const parent = (await client.query(
+        'SELECT * FROM campaign_session_items WHERE id=$1 AND campaign_id=$2 AND session_id=$3',
+        [parentId, campaignId, sessionId],
+      )).rows[0];
+      if (!parent) { await client.query('ROLLBACK'); return res.status(400).json({ error: 'That parent is not in this session' }); }
+      // A card dropped onto another takes that card's section, whatever it
+      // was before — the parent decides, as it does on create and import.
+      section = parent.section;
+      /*
+       * Dropping a card onto its own descendant would detach the whole
+       * branch from the tree — the rows would still exist and nothing would
+       * ever render them again. Checked here rather than trusted to the UI,
+       * because the UI is not the only caller.
+       */
+      const loop = await client.query(
+        `WITH RECURSIVE sub AS (
+           SELECT id, 0 AS depth FROM campaign_session_items WHERE id=$1
+           UNION ALL
+           SELECT i.id, sub.depth + 1 FROM campaign_session_items i
+             JOIN sub ON i.parent_id = sub.id WHERE sub.depth < 50
+         )
+         SELECT 1 FROM sub WHERE id=$2`,
+        [itemId, parentId],
+      );
+      if (loop.rows.length) {
+        await client.query('ROLLBACK');
+        return res.status(400).json({ error: 'A card cannot be moved inside itself' });
+      }
+    }
+
+    await client.query(
+      'UPDATE campaign_session_items SET parent_id=$1, section=$2, updated_at=CURRENT_TIMESTAMP WHERE id=$3',
+      [parentId, section, itemId],
+    );
+    if (section !== self.section) {
+      // The whole subtree follows, or the children sit in a section their
+      // parent has left and nothing ever renders them.
+      await client.query(
+        `WITH RECURSIVE sub AS (
+           SELECT id, 0 AS depth FROM campaign_session_items WHERE id=$1
+           UNION ALL
+           SELECT i.id, sub.depth + 1 FROM campaign_session_items i
+             JOIN sub ON i.parent_id = sub.id WHERE sub.depth < 50
+         )
+         UPDATE campaign_session_items SET section=$2, updated_at=CURRENT_TIMESTAMP
+          WHERE id IN (SELECT id FROM sub)`,
+        [itemId, section],
+      );
+    }
+
+    // Renumber the destination list with the card at the asked-for index.
+    const sibs = (await client.query(
+      `SELECT id FROM campaign_session_items
+        WHERE session_id=$1 AND section=$2 AND parent_id IS NOT DISTINCT FROM $3 AND id <> $4
+        ORDER BY position ASC, id ASC`,
+      [sessionId, section, parentId, itemId],
+    )).rows.map((r) => r.id);
+    const at = Number.isInteger(position) ? Math.max(0, Math.min(position, sibs.length)) : sibs.length;
+    sibs.splice(at, 0, Number(itemId));
+    for (let i = 0; i < sibs.length; i++) {
+      await client.query('UPDATE campaign_session_items SET position=$1 WHERE id=$2', [i, sibs[i]]);
+    }
+
+    await client.query('COMMIT');
+    // The whole session's items, because a move renumbers siblings and the
+    // page has no way to work out which ones shifted.
+    const all = await pool.query(
+      'SELECT * FROM campaign_session_items WHERE session_id=$1 ORDER BY position ASC, id ASC',
+      [sessionId],
+    );
+    res.json({ items: all.rows });
+  } catch (e) {
+    await client.query('ROLLBACK');
+    res.status(500).json({ error: e.message });
+  } finally { client.release(); }
+});
+
+/**
+ * Build the next session's prep out of this one.
+ *
+ * Offered when a session is marked played, because that is the moment the
+ * DM knows what survived. What carries, and why:
+ *
+ *   ready / on-going  → The session. Prepared and not resolved, so it is
+ *                       still a thing that might happen.
+ *   in-preparation    → Before it begins. Not ready yet; it is work to do,
+ *                       not a beat to run.
+ *   done / skipped    → nothing. They are finished, and the played session
+ *                       keeps them as its record.
+ *   What happened     → one card at the top of Where we left off, as prose.
+ *                       That is the paragraph read aloud next time.
+ *
+ * COPIES rather than moves. The played session stays a record of what was
+ * planned and what came of it; emptying it would destroy that.
+ *
+ * A carried card whose parent did not carry becomes a root, the same rule
+ * the client uses when nesting — losing a live thread because the beat
+ * above it finished would be the worst possible failure here.
+ */
+app.post('/api/campaigns/:campaignId/sessions/:sessionId/generate-next', requireRole(['dm', 'admin']), async (req, res) => {
+  const { campaignId, sessionId } = req.params;
+  const CARRY = { 'ready': 'beats', 'on-going': 'beats', 'in-preparation': 'prep' };
+
+  const client = await pool.connect();
+  try {
+    if (!await dmOwnsCampaign(campaignId, req.session.userId, req.session.role))
+      return res.status(403).json({ error: 'Access denied' });
+
+    await client.query('BEGIN');
+    const src = (await client.query(
+      'SELECT * FROM campaign_sessions WHERE id=$1 AND campaign_id=$2', [sessionId, campaignId],
+    )).rows[0];
+    if (!src) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'Session not found' }); }
+
+    const items = (await client.query(
+      'SELECT * FROM campaign_session_items WHERE session_id=$1 ORDER BY position ASC, id ASC',
+      [sessionId],
+    )).rows;
+
+    // Numbered from the top of the campaign, not from this session, so
+    // generating twice cannot collide with a number already in use.
+    const top = (await client.query(
+      'SELECT COALESCE(MAX(session_no), 0) AS n FROM campaign_sessions WHERE campaign_id=$1',
+      [campaignId],
+    )).rows[0].n;
+    const made = (await client.query(
+      `INSERT INTO campaign_sessions (campaign_id, created_by, session_no, status)
+       VALUES ($1,$2,$3,'prepared') RETURNING *`,
+      [campaignId, req.session.userId, Number(top) + 1],
+    )).rows[0];
+
+    // ── Where we left off: the outcome, as one piece of prose ──
+    const outcome = items.filter((i) => i.section === 'outcome');
+    let recap = 0;
+    if (outcome.length) {
+      const depthOf = (i) => {
+        let d = 0; let cur = i;
+        while (cur?.parent_id != null && d < 50) {
+          cur = items.find((x) => x.id === cur.parent_id); d += 1;
+        }
+        return d;
+      };
+      const body = outcome.map((i) => {
+        const bullet = `${'  '.repeat(depthOf(i))}- ${i.title ?? ''}`.trimEnd();
+        return i.body ? `${bullet}\n${'  '.repeat(depthOf(i) + 1)}${i.body}` : bullet;
+      }).join('\n');
+      await client.query(
+        `INSERT INTO campaign_session_items
+           (campaign_id, session_id, section, title, body, state, position)
+         VALUES ($1,$2,'recap',$3,$4,'ready',0)`,
+        [campaignId, made.id,
+          src.session_no != null ? `What happened in session ${src.session_no}` : 'What happened last time',
+          journalStr(body, 50000)],
+      );
+      recap = 1;
+    }
+
+    // ── The cards that carry, parents before children ──
+    /*
+     * Which cards carry, and the trees they live in.
+     *
+     * A card carries on its own if it is still live — ready, on-going or
+     * in-preparation — and sits in one of the two forward-looking sections.
+     * `outcome` already travels as the recap prose above; carrying it as
+     * cards too would put every event of last session into next session's
+     * plan, which is what the first version of this did. `recap` is last
+     * session's looking-back and has no business in the next one.
+     *
+     * THE WHOLE TREE COMES WITH IT. A live sub-beat under a finished one is
+     * meaningless on its own — "if they refuse" with nothing to refuse —
+     * so every ancestor of a carrying card is carried too, keeping its own
+     * state so the DM can see it is already done. An earlier version
+     * promoted such a card to the root instead, which kept the thread but
+     * threw away what it was a part of.
+     *
+     * Finished LEAVES are still dropped. Only the connective tissue between
+     * a root and something still live earns its place.
+     */
+    const forward = (i) => i.section === 'prep' || i.section === 'beats';
+    const byId = new Map(items.map((i) => [i.id, i]));
+    const carries = (i) => forward(i) && !!CARRY[i.state];
+
+    const keep = new Set();
+    for (const i of items) {
+      if (!carries(i)) continue;
+      keep.add(i.id);
+      // Walk up. Bounded, because parent_id is a tree by construction only.
+      let cur = byId.get(i.parent_id);
+      for (let d = 0; cur && forward(cur) && d < 50; d++) {
+        keep.add(cur.id);
+        cur = byId.get(cur.parent_id);
+      }
+    }
+
+    /*
+     * One section per tree, decided by what is live in it rather than by
+     * the root. A tree holding anything ready or on-going is a thing that
+     * might happen, so it belongs in The session; a tree that is only
+     * in-preparation is still work to do. Splitting a tree across the two
+     * is the thing this whole change exists to avoid.
+     */
+    const rootOf = (i) => {
+      let cur = i;
+      for (let d = 0; cur.parent_id != null && byId.get(cur.parent_id) && d < 50; d++) {
+        cur = byId.get(cur.parent_id);
+      }
+      return cur.id;
+    };
+    const sectionOfTree = new Map();
+    for (const i of items) {
+      if (!keep.has(i.id) || !carries(i)) continue;
+      const root = rootOf(i);
+      if (CARRY[i.state] === 'beats') sectionOfTree.set(root, 'beats');
+      else if (!sectionOfTree.has(root)) sectionOfTree.set(root, 'prep');
+    }
+
+    const newIdOf = new Map();
+    const pos = {};
+    let carried = 0;
+    const ordered = [];
+    const visit = (parentId) => {
+      for (const i of items.filter((x) => x.parent_id === parentId)) { ordered.push(i); visit(i.id); }
+    };
+    visit(null);
+
+    for (const i of ordered) {
+      if (!keep.has(i.id)) continue;
+      const section = sectionOfTree.get(rootOf(i)) ?? CARRY[i.state] ?? 'beats';
+      // Every ancestor of a kept card is kept, so a parent is always
+      // present by the time its child is reached — the tree arrives whole.
+      const parent = newIdOf.get(i.parent_id) ?? null;
+      const key = `${section}:${parent ?? 'root'}`;
+      pos[key] = (pos[key] ?? -1) + 1;
+      const row = await client.query(
+        `INSERT INTO campaign_session_items
+           (campaign_id, session_id, parent_id, section, title, body, state, position)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING id`,
+        [campaignId, made.id, parent, section, i.title, i.body, i.state, pos[key]],
+      );
+      newIdOf.set(i.id, row.rows[0].id);
+      carried += 1;
+    }
+
+    await client.query('COMMIT');
+    res.json({ session: made, carried, recap });
+  } catch (e) {
+    await client.query('ROLLBACK');
+    res.status(500).json({ error: e.message });
+  } finally { client.release(); }
+});
+
+/**
+ * Turn "What happened" into Campaign Journal entries.
+ *
+ * The same night gets written down twice otherwise: once here as the DM's
+ * private record, and again in the Journal so the table can read it. This
+ * copies the first into the second.
+ *
+ * ONE ENTRY PER ROOT CARD, with its sub-cards folded into the body as
+ * bullets. A sub-card is detail about its parent, not a separate thing that
+ * happened, so splitting them would file four entries for one event.
+ *
+ * COPIES, never moves. The session keeps its record — the whole point of a
+ * played session is that it is a record — and the journal gets its own row
+ * that the DM can then edit without touching the prep.
+ *
+ * SKIPS WHAT IS ALREADY THERE, matched on title within the campaign. People
+ * click twice, and a convert button that silently doubles the journal is
+ * worse than one that does nothing the second time. The response says how
+ * many were skipped so it is visible rather than merely quiet.
+ */
+app.post('/api/campaigns/:campaignId/sessions/:sessionId/to-journal', requireRole(['dm', 'admin']), async (req, res) => {
+  const { campaignId, sessionId } = req.params;
+  const { item_ids: itemIds, category, in_game_day: day, dm_only: dmOnly } = req.body ?? {};
+
+  const client = await pool.connect();
+  try {
+    if (!await dmOwnsCampaign(campaignId, req.session.userId, req.session.role))
+      return res.status(403).json({ error: 'Access denied' });
+
+    await client.query('BEGIN');
+    const session = (await client.query(
+      'SELECT * FROM campaign_sessions WHERE id=$1 AND campaign_id=$2', [sessionId, campaignId],
+    )).rows[0];
+    if (!session) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'Session not found' }); }
+
+    // Only "What happened". The other sections are a plan, and a plan is
+    // not something the table should read as a record of the night.
+    const rows = (await client.query(
+      `SELECT * FROM campaign_session_items
+        WHERE session_id=$1 AND campaign_id=$2 AND section='outcome'
+        ORDER BY position ASC, id ASC`,
+      [sessionId, campaignId],
+    )).rows;
+
+    const kids = new Map();
+    for (const i of rows) {
+      const k = i.parent_id ?? 'root';
+      if (!kids.has(k)) kids.set(k, []);
+      kids.get(k).push(i);
+    }
+    /** A card's descendants as nested markdown bullets, bounded like the rest. */
+    const bullets = (id, depth) => {
+      if (depth > 50) return [];
+      let out = [];
+      for (const c of kids.get(id) ?? []) {
+        out.push(`${'  '.repeat(depth)}- ${(c.body || c.title || '').trim()}`);
+        out = out.concat(bullets(c.id, depth + 1));
+      }
+      return out;
+    };
+
+    let roots = kids.get('root') ?? [];
+    // A selection is optional; without one the whole section goes.
+    if (Array.isArray(itemIds) && itemIds.length) {
+      const want = new Set(itemIds.map(Number));
+      roots = roots.filter((r) => want.has(Number(r.id)));
+    }
+
+    // The author's character, if the DM happens to play one. Same lookup the
+    // journal's own POST does, so a converted entry is indistinguishable
+    // from a hand-written one.
+    const who = await client.query(
+      `SELECT cp.id FROM campaign_players cp
+         JOIN campaign_user_assignments cua ON cua.player_id = cp.id
+        WHERE cp.campaign_id=$1 AND cua.user_id=$2
+        ORDER BY cp.id ASC LIMIT 1`,
+      [campaignId, req.session.userId],
+    );
+    const playerId = who.rows[0]?.id ?? null;
+    const cat = journalStr(category, 120);
+    const when = journalDay(day);
+
+    let created = 0; let skipped = 0;
+    for (const r of roots) {
+      const title = journalStr(r.title, 255);
+      const detail = bullets(r.id, 0);
+      const body = journalStr(
+        [(r.body || '').trim(), detail.join('\n')].filter(Boolean).join('\n\n'), 50000,
+      );
+      if (!title && !body) continue;   // the journal's own rule
+
+      if (title) {
+        const dupe = await client.query(
+          'SELECT 1 FROM campaign_journal_entries WHERE campaign_id=$1 AND title=$2 LIMIT 1',
+          [campaignId, title],
+        );
+        if (dupe.rows.length) { skipped += 1; continue; }
+      }
+
+      await client.query(
+        `INSERT INTO campaign_journal_entries
+           (campaign_id, created_by, player_id, location_id, title, body,
+            category, in_game_day, dm_only)
+         VALUES ($1,$2,$3,NULL,$4,$5,$6,$7,$8)`,
+        [campaignId, req.session.userId, playerId, title, body, cat, when, !!dmOnly],
+      );
+      created += 1;
+    }
+
+    await client.query('COMMIT');
+    res.json({ success: true, created, skipped });
+  } catch (e) {
+    await client.query('ROLLBACK');
+    res.status(500).json({ error: e.message });
+  } finally { client.release(); }
+});
+
+app.delete('/api/campaigns/:campaignId/sessions/:sessionId/items/:itemId', requireRole(['dm', 'admin']), async (req, res) => {
+  try {
+    if (!await dmOwnsCampaign(req.params.campaignId, req.session.userId, req.session.role))
+      return res.status(403).json({ error: 'Access denied' });
+    // Sub-items go with it by CASCADE: a beat's detail has no life of its own.
+    await pool.query('DELETE FROM campaign_session_items WHERE id=$1 AND campaign_id=$2',
+      [req.params.itemId, req.params.campaignId]);
+    res.json({ success: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 // ─── Character Relationship Tree (DM cross-player connections) ────────────────
 // GET all pc_relationships for every player in a campaign + DM cross-connections
 app.get('/api/campaigns/:campaignId/char-tree', requireRole(['dm', 'admin']), async (req, res) => {
@@ -6442,12 +7330,18 @@ app.get('/api/campaigns/:id/export', requireRole(['dm']), async (req, res) => {
      * the far side; and the one-hour `expires_at` makes every restored invite
      * dead on arrival. Same reasoning as the diary share token above.
      */
+    // Session prep. The whole-campaign bundle is the whole-world backup, so
+    // it carries the prep too; the `campaign-sessions` file stays as the way
+    // to move prep BETWEEN campaigns without the players and maps.
+    const sessionsOut = await sessionsForExport(id);
+
     res.json({
       // 5 adds `item_cards` and per-player `inventory`. 6 adds the NPC detail
-      // fields and `campaign_journal`. Older bundles still import: every key
-      // here is additive and the import defaults each one, so nothing reads
-      // this number — see the note on the import side.
-      version: 6,
+      // fields and `campaign_journal`. 7 adds `sessions`, the prep. Older
+      // bundles still import: every key here is additive and the import
+      // defaults each one, so nothing reads this number — see the note on
+      // the import side.
+      version: 7,
       exported_at: new Date().toISOString(),
       type: 'campaign',
       item_cards: cardsOut,
@@ -6493,6 +7387,7 @@ app.get('/api/campaigns/:id/export', requireRole(['dm']), async (req, res) => {
         location_ref: e.location_id ? (locRefById[e.location_id] || null) : null,
       })),
       campaign_diary: diaryRes.rows,
+      sessions: sessionsOut,
     });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -6501,7 +7396,7 @@ app.get('/api/campaigns/:id/export', requireRole(['dm']), async (req, res) => {
 app.post('/api/campaigns/import', requireRole(['dm']), async (req, res) => {
   const bundle = req.body;
   if (bundle.type !== 'campaign') return res.status(400).json({ error: 'Not a campaign export file' });
-  const { campaign, players = [], locations = [], npcs = [], cross_connections = [], journey_maps = [], dm_timelines = [], party_events = [], campaign_diary = [], campaign_journal = [] } = bundle;
+  const { campaign, players = [], locations = [], npcs = [], cross_connections = [], journey_maps = [], dm_timelines = [], party_events = [], campaign_diary = [], campaign_journal = [], sessions = [] } = bundle;
   if (!campaign?.name) return res.status(400).json({ error: 'Missing campaign name' });
 
   const client = await pool.connect();
@@ -6982,6 +7877,18 @@ app.post('/api/campaigns/import', requireRole(['dm']), async (req, res) => {
       journalAdded += 1;
     }
 
+    /*
+     * 12. Session prep. Last, and inside the same transaction, so a bundle
+     *     that fails anywhere above does not leave half a campaign's prep
+     *     behind. The campaign is brand new, so the merge-by-number logic
+     *     has nothing to match and every session is simply added — but it
+     *     is the same function the `campaign-sessions` import uses, which
+     *     is the point: one importer, one set of rules.
+     *
+     *     An older bundle has no `sessions` key and lands zero of them.
+     */
+    const sessionsIn = await importSessionList(client, newId, req.session.userId, sessions);
+
     await client.query('COMMIT');
     // Say what happened to the gear: how many rows landed, how many cards were
     // brought into the library versus matched to ones already there, and
@@ -6990,6 +7897,8 @@ app.post('/api/campaigns/import', requireRole(['dm']), async (req, res) => {
     res.json({
       success: true,
       campaign_id: newId,
+      sessions: sessionsIn.added,
+      session_cards: sessionsIn.cards,
       gear: {
         items: gearAdded,
         cards_added: cardResolve.added,
@@ -7042,7 +7951,8 @@ app.post('/api/campaigns/:campaignId/import-into', requireRole(['dm', 'admin']),
       return res.status(403).json({ error: 'Access denied' });
 
     const cid = parseInt(campaignId, 10);
-    const report = { locations: null, npcs: null, journal: null, diary: null, skipped: [] };
+    const report = { locations: null, npcs: null, journal: null, diary: null,
+      sessions: null, skipped: [] };
     for (const [key, why] of [['players', 'player sheets, stats and timelines'],
       ['journey_maps', 'maps'], ['dm_timelines', 'DM timelines'],
       ['party_events', 'party events'], ['item_cards', 'gear']]) {
@@ -7196,6 +8106,24 @@ app.post('/api/campaigns/:campaignId/import-into', requireRole(['dm', 'admin']),
         n += 1;
       }
       report.diary = { added: n, replaced: had.rows.length };
+    }
+
+    /*
+     * ── Session prep ──
+     *
+     * Merged rather than skipped, unlike the player sheets and the maps.
+     * Those have no safe way to match a bundle's row to one already here —
+     * a seat, its user assignment, its stats and its inventory all have to
+     * agree — so the route refuses instead of guessing.
+     *
+     * Sessions do have one: `importSessionList` matches on session NUMBER,
+     * falling back to the title, which is exactly the rule the
+     * `campaign-sessions` file already imports by. A matched session is
+     * replaced whole; the rest are added. Same function, so the two paths
+     * cannot drift.
+     */
+    if (Array.isArray(bundle.sessions) && bundle.sessions.length) {
+      report.sessions = await importSessionList(client, cid, req.session.userId, bundle.sessions);
     }
 
     await client.query('COMMIT');
@@ -7841,6 +8769,69 @@ async function initializeDatabase() {
         ON item_cards (evolves_from);
     `);
 
+    /*
+     * Session prep — the DM's plan for one sitting, and what came of it.
+     *
+     * DM-ONLY, every row of it. This is where the twist lives. No route
+     * exposes any of it to a player, which is why neither table carries a
+     * visibility flag: there is no "show this one" to get wrong.
+     *
+     * Deliberately NOT the campaign diary. The diary is the finished account
+     * the table reads; this is the working document behind it, and `outcome`
+     * items are the raw material a diary entry gets written from afterwards.
+     */
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS campaign_sessions (
+        id           SERIAL PRIMARY KEY,
+        campaign_id  INTEGER NOT NULL REFERENCES campaigns(id) ON DELETE CASCADE,
+        created_by   INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        session_no   INTEGER,
+        title        VARCHAR(255),
+        session_date DATE,
+        status       VARCHAR(20) NOT NULL DEFAULT 'prepared'
+                       CHECK (status IN ('prepared','played')),
+        created_at   TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at   TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
+
+    /*
+     * Everything in a session is an ITEM — the recap, the prep checklist, the
+     * beats that might happen, and the write-up afterwards. One shape for all
+     * of them, so a card behaves the same wherever it sits and a thought can
+     * move from "might happen" to "what happened" without changing form.
+     *
+     * `parent_id` nests them, the way the DM's Obsidian notes do, and
+     * CASCADEs: deleting a beat should take its sub-beats with it rather
+     * than orphaning them into the root of the section.
+     *
+     * FOUR sections are stored, not the five the UI shows. "On-Going" is a
+     * VIEW over earlier sessions' items that are still on-going, never a
+     * place anything lives — carrying a thread forward by copying it is how
+     * you end up with two of it, one of them quietly stale.
+     *
+     * `campaign_id` sits alongside `session_id` so that view, which spans
+     * sessions, is one indexed read rather than a join back through
+     * campaign_sessions on every page load.
+     */
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS campaign_session_items (
+        id          SERIAL PRIMARY KEY,
+        campaign_id INTEGER NOT NULL REFERENCES campaigns(id) ON DELETE CASCADE,
+        session_id  INTEGER NOT NULL REFERENCES campaign_sessions(id) ON DELETE CASCADE,
+        parent_id   INTEGER REFERENCES campaign_session_items(id) ON DELETE CASCADE,
+        section     VARCHAR(20) NOT NULL
+                      CHECK (section IN ('recap','prep','beats','outcome')),
+        title       VARCHAR(255),
+        body        TEXT,
+        state       VARCHAR(20) NOT NULL DEFAULT 'in-preparation'
+                      CHECK (state IN ('in-preparation','ready','on-going','skipped','done')),
+        position    INTEGER NOT NULL DEFAULT 0,
+        created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
+
     /**
      * Campaign Journal — notes the whole table shares.
      *
@@ -8420,6 +9411,12 @@ async function initializeDatabase() {
 
       // Diary.
       ['idx_cde_campaign',                 'campaign_diary_entries(campaign_id)'],
+
+      // Session prep. The second one serves the on-going view, which asks
+      // "everything still running in this campaign" across every session.
+      ['idx_campaign_sessions_campaign',   'campaign_sessions(campaign_id)'],
+      ['idx_csi_session',                  'campaign_session_items(session_id)'],
+      ['idx_csi_campaign_state',           'campaign_session_items(campaign_id, state)'],
       ['idx_pde_campaign_player',          'player_diary_entries(campaign_id, player_id)'],
 
       // PC sheets — read on every sheet load.

@@ -181,8 +181,10 @@ describe('the journal import', () => {
 });
 
 describe('the bundle version', () => {
-  it('is 6', () => {
-    expect(exp).toMatch(/version: 6/);
+  it('is 7', () => {
+    // 6 added the NPC detail fields and the journal; 7 adds the session
+    // prep. Documentary only — see the next test.
+    expect(exp).toMatch(/version: 7/);
   });
 
   it('is never read by the import', () => {
