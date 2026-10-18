@@ -5,8 +5,10 @@
  */
 
 import { useMemo, useRef, useState } from 'react';
-import { Globe, Lock, Pencil, Trash2 } from 'lucide-react';
+import { Globe, Lock, Map as MapIcon, Pencil, Trash2 } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import { Button, Modal, FormField } from '@/components/ui';
+import CrossLinkPopover from '@/components/CrossLinkPopover';
 import { LOCATION_SIZE_TYPES } from '../constants';
 
 const INPUT_CLS = 'bg-surface2 border border-border2 text-text px-2 py-1.5 rounded-sm text-sm focus:outline-none focus:border-[var(--gold-dim)]';
@@ -25,20 +27,40 @@ function buildParentOptions(locs, excludeId = null, parentId = null, depth = 0) 
 }
 
 /** Recursive row renderer */
-function LocationRow({ loc, childrenOf, depth, actions, onEdit }) {
+function LocationRow({ loc, childrenOf, depth, actions, onEdit, onRead, onMap }) {
   const children = childrenOf[loc.id] ?? [];
+  const read = (e) => onRead(loc, e);
   return (
     <>
       <tr className={`border-b border-border hover:bg-surface2 transition-colors ${!loc.is_public ? 'opacity-50' : ''}`}>
-        <td className="px-2 py-2" style={{ paddingLeft: `${8 + depth * 20}px` }}>
+        {/* Name, type and description open the read-only card. The eye and
+            the buttons keep their own handlers. */}
+        <td className="px-2 py-2 cursor-pointer" style={{ paddingLeft: `${8 + depth * 20}px` }}
+          onClick={read} title={`Read ${loc.name}`}>
           {depth > 0 && <span className="text-text-muted text-xs mr-1">└</span>}
           <strong className="text-text">{loc.name}</strong>
           {children.length > 0 && (
             <span className="text-text-muted text-[10px] ml-1">({children.length})</span>
           )}
         </td>
-        <td className="px-2 py-2 text-text-dim text-xs">{loc.size_type ?? '—'}</td>
-        <td className="px-2 py-2 text-text-dim text-xs max-w-[180px] truncate">{loc.description ?? ''}</td>
+        {/* Only for a place that is actually on a map. An icon that is
+            present but dead would be worse than none. stopPropagation,
+            because the cell around it opens the card. */}
+        <td className="px-1 py-2 w-6">
+          {loc.map_id && (
+            <button
+              type="button"
+              onClick={(e) => { e.stopPropagation(); onMap(loc); }}
+              title={`Open "${loc.map_name}"`}
+              aria-label={`Open the map ${loc.map_name}`}
+              className="text-text-muted hover:text-gold transition-colors align-middle"
+            >
+              <MapIcon size={12} />
+            </button>
+          )}
+        </td>
+        <td className="px-2 py-2 text-text-dim text-xs cursor-pointer" onClick={read}>{loc.size_type ?? '—'}</td>
+        <td className="px-2 py-2 text-text-dim text-xs max-w-[180px] truncate cursor-pointer" onClick={read}>{loc.description ?? ''}</td>
         <td className="px-2 py-2 text-center">
           <button
             onClick={() => actions.toggleLocVisibility(loc.id)}
@@ -64,14 +86,32 @@ function LocationRow({ loc, childrenOf, depth, actions, onEdit }) {
         </td>
       </tr>
       {children.map(c => (
-        <LocationRow key={c.id} loc={c} childrenOf={childrenOf} depth={depth + 1} actions={actions} onEdit={onEdit} />
+        <LocationRow key={c.id} loc={c} childrenOf={childrenOf} depth={depth + 1} actions={actions} onEdit={onEdit} onRead={onRead} onMap={onMap} />
       ))}
     </>
   );
 }
 
-export default function LocationsTab({ locations, actions }) {
+export default function LocationsTab({ locations, campaignId, npcs = [], actions }) {
+  const navigate = useNavigate();
   const [search, setSearch]   = useState('');
+  const openMap = (loc) =>
+    navigate(`/journey-map?campaign=${campaignId}&map=${loc.map_id}`);
+  // The read-only card, opened by clicking a row — reading a place and
+  // editing one are different intents, and the edit modal is a form.
+  const [card, setCard] = useState(null);   // { target, at } | null
+  const openRead = (loc, e) => setCard({
+    target: {
+      ...loc,
+      kind: 'location',
+      // Who is standing here. Computed from the list already in memory
+      // rather than fetched: the tab holds every NPC anyway, and a request
+      // per card would be a round trip to answer a question we can already
+      // answer.
+      here: npcs.filter((n) => String(n.current_location_id) === String(loc.id)),
+    },
+    at: { x: e.clientX, y: e.clientY },
+  });
   const [form,   setForm]     = useState({ name: '', parentId: '', sizeType: '', description: '' });
   const [adding, setAdding]   = useState(false);
   const [editLoc, setEditLoc] = useState(null);   // location object being edited
@@ -195,8 +235,9 @@ export default function LocationsTab({ locations, actions }) {
           <table className="w-full text-sm font-body border-collapse">
             <thead>
               <tr className="border-b border-border">
-                {['Name','Type','Description','Visible',''].map(h => (
-                  <th key={h} className="text-left px-2 py-2 font-display text-[0.6rem] uppercase tracking-wider text-text-dim">{h}</th>
+                {/* The blank second column is the map globe. */}
+                {['Name','','Type','Description','Visible',''].map((h, i) => (
+                  <th key={`${h}-${i}`} className="text-left px-2 py-2 font-display text-[0.6rem] uppercase tracking-wider text-text-dim">{h}</th>
                 ))}
               </tr>
             </thead>
@@ -222,7 +263,7 @@ export default function LocationsTab({ locations, actions }) {
                     </tr>
                   ))
                 : roots.map(l => (
-                    <LocationRow key={l.id} loc={l} childrenOf={childrenOf} depth={0} actions={actions} onEdit={openEdit} />
+                    <LocationRow key={l.id} loc={l} childrenOf={childrenOf} depth={0} actions={actions} onEdit={openEdit} onRead={openRead} onMap={openMap} />
                   ))
               }
             </tbody>
@@ -277,6 +318,14 @@ export default function LocationsTab({ locations, actions }) {
           </div>
         </div>
       </Modal>
+
+      <CrossLinkPopover
+        target={card?.target ?? null}
+        at={card?.at}
+        campaignId={campaignId}
+        onMap={openMap}
+        onClose={() => setCard(null)}
+      />
     </div>
   );
 }

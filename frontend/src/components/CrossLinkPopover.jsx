@@ -33,8 +33,9 @@ import { campaignsApi } from '@/api/campaigns';
  * @param {{kind:string,id:number,name:string,description?:string}|null} target
  * @param {{x:number,y:number}} at        where the link was clicked
  * @param {string|null} mapPath           public map URL, when one is shared
+ * @param {Function} [onMap]              open this location's map in the app
  */
-export default function CrossLinkPopover({ target, at, campaignId, mapPath, onClose }) {
+export default function CrossLinkPopover({ target, at, campaignId, mapPath, onMap, onClose }) {
   const ref = useRef(null);
   const [pos, setPos] = useState(null);
   const [image, setImage] = useState(null);
@@ -106,9 +107,40 @@ export default function CrossLinkPopover({ target, at, campaignId, mapPath, onCl
           <img src={image} alt="" className="w-full max-h-32 object-contain rounded-sm" />
         )}
 
-        {target.description ? (
-          <div className="text-[0.75rem] text-text-dim max-h-48 overflow-y-auto">
-            <Markdown>{target.description}</Markdown>
+        {/* An NPC the DM has not revealed only ever reaches a DM — the index
+            a player loads leaves hidden ones out entirely — so this badge is
+            a reminder to the DM, never a hint to the table. */}
+        {target.kind === 'npc' && target.is_public === false && (
+          <p className="text-[0.6rem] font-display uppercase tracking-wider text-text-muted">
+            Not met yet · hidden from players
+          </p>
+        )}
+
+        {(target.description || target.public_info || target.private_info) ? (
+          <div className="text-[0.75rem] text-text-dim max-h-64 overflow-y-auto flex flex-col gap-1.5">
+            {target.description && <Markdown>{target.description}</Markdown>}
+            {/* An NPC's fields are different things — who they are, what the
+                party has worked out, and what only the DM knows — so they are
+                not run together into one blob. */}
+            {target.public_info && (
+              <>
+                {target.description && <hr className="border-border" />}
+                <Markdown>{target.public_info}</Markdown>
+              </>
+            )}
+            {/* Shown when it is THERE, which is the gate: the server never
+                sends private_info to a player, so this branch can only ever
+                render for someone entitled to it. No role check here would
+                add anything a missing field has not already decided. */}
+            {target.private_info && (
+              <>
+                <hr className="border-[var(--gold-dim)]" />
+                <p className="font-display uppercase tracking-wider text-[0.55rem] text-text-muted">
+                  Your notes
+                </p>
+                <Markdown>{target.private_info}</Markdown>
+              </>
+            )}
           </div>
         ) : (
           <p className="text-[0.7rem] text-text-muted italic">
@@ -116,6 +148,43 @@ export default function CrossLinkPopover({ target, at, campaignId, mapPath, onCl
               ? 'No notes on this one yet.'
               : 'No description yet.'}
           </p>
+        )}
+
+        {/* Who is standing here. Supplied by the caller rather than fetched:
+            the lists that open this card already hold every NPC, and a
+            request per card would be a round trip to answer a question the
+            page can already answer. A player's copy of that list contains
+            only revealed NPCs, so this cannot leak one. */}
+        {target.kind === 'location' && !!target.here?.length && (
+          <div className="flex flex-col gap-1 border-t border-border pt-2">
+            <p className="font-display uppercase tracking-wider text-[0.55rem] text-text-muted">
+              Here ({target.here.length})
+            </p>
+            <div className="flex flex-wrap gap-1">
+              {target.here.map((n) => (
+                <span
+                  key={n.id}
+                  className={`text-[0.68rem] px-1.5 py-0.5 rounded-sm border ${
+                    n.is_public
+                      ? 'bg-surface3 border-border text-text'
+                      : 'bg-surface2 border-border text-text-muted'
+                  }`}
+                  title={n.is_public ? n.name : `${n.name} — not met yet`}
+                >
+                  🧟 {n.name}{n.is_public ? '' : ' ·'}
+                </span>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* A map OF this place, or the one it is pinned on. `onMap` is the
+            in-app route; `mapPath` is the public share link the reading
+            views pass. They are different journeys, so both can appear. */}
+        {onMap && target.kind === 'location' && target.map_id && (
+          <Button variant="ghost" onClick={() => { onMap(target); onClose(); }}>
+            🗺 Open “{target.map_name}”
+          </Button>
         )}
 
         {mapPath && target.kind === 'location' && (

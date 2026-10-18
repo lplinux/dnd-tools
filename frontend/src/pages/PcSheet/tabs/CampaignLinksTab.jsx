@@ -20,6 +20,7 @@
 import { useCallback, useEffect, useState } from 'react';
 
 import { Spinner } from '@/components/ui';
+import CrossLinkPopover from '@/components/CrossLinkPopover';
 import { campaignsApi } from '@/api/campaigns';
 import { useToast } from '@/hooks/useToast';
 
@@ -58,6 +59,48 @@ function LinkCard({ icon, title, subtitle, href, meta }) {
   );
 }
 
+/**
+ * One NPC or place, as a row that opens its card.
+ *
+ * A row rather than a full card: a campaign has dozens of each, and forty
+ * expanded blocks is a scroll rather than a list. The card carries the prose;
+ * this carries enough to recognise which one you want.
+ *
+ * `is_public === false` only ever reaches a DM looking at their own sheet —
+ * the server leaves hidden rows out of a player's list entirely.
+ */
+function EntityRow({ icon, row, kind, onOpen }) {
+  return (
+    <button
+      type="button"
+      onClick={(e) => onOpen({ target: { ...row, kind }, at: { x: e.clientX, y: e.clientY } })}
+      className="w-full text-left bg-surface2 border border-border rounded-sm px-3 py-2
+                 flex items-start gap-3 hover:border-[var(--gold-dim)] transition-colors"
+    >
+      <span className="text-base leading-none mt-0.5 flex-shrink-0" aria-hidden="true">{icon}</span>
+      <span className="min-w-0 flex-1">
+        <span className="flex items-baseline gap-2 flex-wrap">
+          <span className="font-display text-gold text-sm">{row.name}</span>
+          {row.location_name && (
+            <span className="text-[0.65rem] text-text-muted">📍 {row.location_name}</span>
+          )}
+          {row.size_type && (
+            <span className="text-[0.65rem] text-text-muted">{row.size_type}</span>
+          )}
+          {row.is_public === false && (
+            <span className="text-[0.6rem] font-display uppercase tracking-wider text-text-muted">
+              hidden from players
+            </span>
+          )}
+        </span>
+        {row.description && (
+          <span className="block text-[0.7rem] text-text-dim truncate">{row.description}</span>
+        )}
+      </span>
+    </button>
+  );
+}
+
 function Section({ title, hint, children }) {
   return (
     <section>
@@ -75,6 +118,8 @@ export default function CampaignLinksTab({ campaignId }) {
   const { toast } = useToast();
   const [links, setLinks] = useState(null);
   const [loading, setLoading] = useState(false);
+  // The card opened by clicking a person or a place.
+  const [card, setCard] = useState(null);   // { target, at } | null
 
   const load = useCallback(async () => {
     if (!campaignId) { setLinks(null); return; }
@@ -83,7 +128,7 @@ export default function CampaignLinksTab({ campaignId }) {
       setLinks(await campaignsApi.listLinks(campaignId));
     } catch (e) {
       toast(e?.message || String(e), 'error');
-      setLinks({ maps: [], timelines: [], npcs: [] });
+      setLinks({ maps: [], timelines: [], npcs: [], places: [] });
     } finally { setLoading(false); }
   }, [campaignId, toast]);
 
@@ -98,8 +143,8 @@ export default function CampaignLinksTab({ campaignId }) {
     );
   }
 
-  const { maps = [], timelines = [], npcs = [] } = links;
-  const nothing = !maps.length && !timelines.length && !npcs.length;
+  const { maps = [], timelines = [], npcs = [], places = [] } = links;
+  const nothing = !maps.length && !timelines.length && !npcs.length && !places.length;
 
   return (
     <div className="flex flex-col gap-5">
@@ -154,18 +199,49 @@ export default function CampaignLinksTab({ campaignId }) {
         </Section>
       )}
 
-      {/* Prepared. The server returns an empty list today, so this renders
-          nothing — filling it later is a server change and nothing else. */}
+      {/* Not LinkCards: an NPC has no page to open, so a card that looks
+          clickable and is not would be worse than plain text. The server
+          sends a player only the revealed ones, and never private notes. */}
       {!!npcs.length && (
-        <Section title={`🧟 NPCs (${npcs.length})`} hint="People the party has met.">
+        <Section
+          title={`🧟 People (${npcs.length})`}
+          hint="Who you have met. Click one to read what you know about them."
+        >
           <div className="flex flex-col gap-2">
             {npcs.map((n) => (
-              <LinkCard key={n.token || n.id} icon="🧟" title={n.name}
-                subtitle={n.subtitle} href={n.path} />
+              <EntityRow key={n.id} icon="🧟" row={n} kind="npc" onOpen={setCard} />
             ))}
           </div>
         </Section>
       )}
+
+      {!!places.length && (
+        <Section
+          title={`📍 Places (${places.length})`}
+          hint="Where you have been, or heard of. Click one to read about it."
+        >
+          <div className="flex flex-col gap-2">
+            {places.map((l) => (
+              <EntityRow
+                key={l.id}
+                icon="📍"
+                // Who the party knows to be here. `npcs` is already the
+                // filtered list, so a place cannot reveal someone unmet.
+                row={{ ...l, here: npcs.filter((n) => String(n.current_location_id) === String(l.id)) }}
+                kind="location"
+                onOpen={setCard}
+              />
+            ))}
+          </div>
+        </Section>
+      )}
+
+      <CrossLinkPopover
+        target={card?.target ?? null}
+        at={card?.at}
+        campaignId={campaignId}
+        onClose={() => setCard(null)}
+      />
     </div>
   );
 }

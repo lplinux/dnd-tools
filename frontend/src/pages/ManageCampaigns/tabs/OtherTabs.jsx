@@ -1,8 +1,7 @@
 /**
  * pages/ManageCampaigns/tabs/OtherTabs.jsx
  *
- * Three tab components that share one file to keep the directory tidy:
- *   NpcsTab       — bulk-add NPCs, chip delete
+ * Two tab components that share one file to keep the directory tidy:
  *   TimelinesTab  — summary cards + navigate to timeline
  *   SettingsTab   — calendar info, today-marker date picker, move-to-trash
  */
@@ -13,63 +12,6 @@ import { Download } from 'lucide-react';
 import { Button, Modal, FormField } from '@/components/ui';
 import { useConfirm } from '@/contexts/ConfirmContext';
 import { HARPTOS, absDay, doyFromForm, formatAbsDay } from '../constants';
-
-// ─────────────────────────────────────────────────────────────────────────────
-// NpcsTab
-// ─────────────────────────────────────────────────────────────────────────────
-export function NpcsTab({ npcs, actions }) {
-  const [input,  setInput]  = useState('');
-  const [adding, setAdding] = useState(false);
-
-  const sorted = [...npcs].sort((a, b) => a.name.localeCompare(b.name));
-
-  async function handleAdd() {
-    const names = input.split(',').map(n => n.trim()).filter(Boolean);
-    if (!names.length) return;
-    setAdding(true);
-    try { await actions.addNpcs(names); setInput(''); }
-    finally { setAdding(false); }
-  }
-
-  return (
-    <div className="space-y-3">
-      <div className="flex gap-2">
-        <input
-          type="text"
-          value={input}
-          onChange={e => setInput(e.target.value)}
-          onKeyDown={e => e.key === 'Enter' && handleAdd()}
-          placeholder="Name, Name… (comma-separated)"
-          className="flex-1 bg-surface2 border border-border2 text-text px-2 py-1.5 rounded-sm text-sm focus:outline-none focus:border-[var(--gold-dim)]"
-        />
-        <Button variant="accent" loading={adding} onClick={handleAdd}>Add</Button>
-      </div>
-
-      <p className="text-text-muted text-xs italic">
-        NPCs are DM-only and can be used as actors in the DM Timeline.
-      </p>
-
-      {!sorted.length ? (
-        <p className="text-text-dim text-sm italic text-center py-6">No NPCs yet.</p>
-      ) : (
-        <div className="flex flex-wrap gap-2 pt-1">
-          {sorted.map(n => (
-            <span key={n.id} className="inline-flex items-center gap-1 bg-surface3 border border-border2 text-text text-xs font-body px-2 py-1 rounded-sm">
-              {n.name}
-              <button
-                onClick={() => actions.deleteNpc(n.id)}
-                className="text-text-muted hover:text-danger transition-colors leading-none"
-                aria-label={`Remove ${n.name}`}
-              >
-                ✕
-              </button>
-            </span>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // TimelinesTab

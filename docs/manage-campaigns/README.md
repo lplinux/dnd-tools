@@ -251,8 +251,8 @@ not sufficient on its own — a request for a campaign belonging to another DM r
 | `PUT` | `/api/campaigns/:id/meta` | Update campaign metadata |
 | `GET` | `/api/campaigns/:id/timelines` | Get player timeline summary |
 | `POST` | `/api/player-timelines/:campaignId/:playerId` | Create a new timeline for a player |
-| `GET` | `/api/campaigns/:id/export` | Export full campaign snapshot as JSON (v4) |
-| `POST` | `/api/campaigns/import` | Import a campaign bundle — v4, and older v2/v3 still load |
+| `GET` | `/api/campaigns/:id/export` | Export full campaign snapshot as JSON (v6) |
+| `POST` | `/api/campaigns/import` | Import a campaign bundle — v6, and older bundles still load |
 
 ---
 
@@ -261,10 +261,11 @@ not sufficient on its own — a request for a campaign belonging to another DM r
 ### Export
 
 Open the **Settings** tab and click **💾 Export Campaign** (under "Export / Backup"). Downloads
-`campaign-<campaign>-<date>.json` (v4) containing the complete campaign state:
+`campaign-<campaign>-<date>.json` (v6) containing the complete campaign state:
 
 - Campaign name, description, calendar type, today marker
-- All NPCs (names)
+- All NPCs — name, description, public and private notes, whether the party has met them
+  (`is_public`), and where they are now (`current_location_ref`)
 - All locations — including hidden ones (`is_public: false`), `size_type`, custom pin **image** (`image_data`), and the full parent/child hierarchy
 - All players with:
   - PC sheet (name, story, traits, flaws, goals, public/private info, portrait image as base64)
@@ -274,9 +275,16 @@ Open the **Settings** tab and click **💾 Export Campaign** (under "Export / Ba
   - All named timelines and every entry within them
 - **DM timelines** — the World timeline and Private DM timeline, with all entries and participant refs (DM identity is not written to the file)
 - **Party timeline events** — whole-group events (not tied to any player/timeline), exported as a top-level `party_events[]` array
+- The **Campaign Journal** — every entry including DM-only ones, with its category, in-game
+  day, author and the location and character it points at
 - DM cross-connections from the character tree
 - All Journey Maps — including background image, all pins and region polygons (with per-pin `icon_scale`), `scope_type`/`scope_location_ref`, distances, and paths with waypoints, route type, and dragged name-label positions (`label_x`/`label_y`)
 
+> **Never exported:** campaign **invite links**. An invite is a credential rather than campaign
+> content — its token is unique, its user references do not exist on the far side, and it expires
+> in an hour — so carrying one would either collide or install a live credential in a second
+> campaign. The same reasoning keeps the diary and map **share tokens** out.
+>
 > **Retired:** journey-map *trackers* and the per-NPC `path_public` flag are no longer written to the
 > export. Older bundles that still contain a `trackers[]` array or `npcs[].path_public` import fine —
 > those fields are ignored.
@@ -376,7 +384,7 @@ server's startup block in `app.js`. There is no separate migration tool or folde
 
 ---
 
-## Bundle format (v4)
+## Bundle format (v6)
 
 ```json
 {

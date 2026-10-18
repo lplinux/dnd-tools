@@ -17,6 +17,12 @@ export const campaignsApi = {
   purge:   (id)          => client.del(`/campaigns/${id}/purge`),
   exportCampaign: (id)   => client.get(`/campaigns/${id}/export`),
   importCampaign: (data) => client.post('/campaigns/import', data),
+  /**
+   * Import a bundle INTO an existing campaign, replacing only the sections
+   * the file carries. The sibling of importCampaign, which always makes a
+   * new one.
+   */
+  importIntoCampaign: (cid, data) => client.post(`/campaigns/${cid}/import-into`, data),
 
   // ── Players ───────────────────────────────────────────
   listPlayers:    (cid)          => client.get(`/campaigns/${cid}/players`),
@@ -49,9 +55,13 @@ export const campaignsApi = {
   setLocationImage:   (cid, lid, image_data) => client.put(`/campaigns/${cid}/locations/${lid}/image`, { image_data }),
 
   // ── NPCs ──────────────────────────────────────────────
-  listNpcs:   (cid)       => client.get(`/campaigns/${cid}/npcs`),
-  addNpcs:    (cid, data) => client.post(`/campaigns/${cid}/npcs`, data),
-  removeNpc:  (cid, nid)  => client.del(`/campaigns/${cid}/npcs/${nid}`),
+  // Role-filtered server-side: a player gets the revealed NPCs only, without
+  // private_info and without a hidden current location.
+  listNpcs:   (cid)        => client.get(`/campaigns/${cid}/npcs`),
+  addNpcs:    (cid, data)  => client.post(`/campaigns/${cid}/npcs`, data),
+  updateNpc:  (cid, nid, d) => client.put(`/campaigns/${cid}/npcs/${nid}`, d),
+  toggleNpcVis: (cid, nid) => client.patch(`/campaigns/${cid}/npcs/${nid}/visibility`),
+  removeNpc:  (cid, nid)   => client.del(`/campaigns/${cid}/npcs/${nid}`),
 
   // ── Meta ──────────────────────────────────────────────
   getMeta:    (cid)      => client.get(`/campaigns/${cid}/meta`),

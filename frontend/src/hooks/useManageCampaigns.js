@@ -149,8 +149,58 @@ export function useManageCampaigns() {
     const type = data?.type;
 
     if (type === 'campaign') {
-      try { await campaignsApi.importCampaign(data); await reloadCampaigns(); toast('Campaign imported.'); }
-      catch (e) { toast(e.message, 'error'); }
+      /*
+       * Two things a campaign file can mean, so it asks rather than guessing:
+       * restore it as a NEW campaign, or merge it into the one on screen.
+       *
+       * The counts are the whole point of the question. "Replace?" with no
+       * numbers is not a decision anyone can make, and this one can delete —
+       * the same reasoning the diary import below was built on.
+       */
+      const target = currentId ? campaigns.find((c) => String(c.id) === String(currentId)) : null;
+      let into = false;
+      if (target) {
+        const parts = [];
+        if (Array.isArray(data.npcs)) parts.push(`${data.npcs.length} NPC${data.npcs.length === 1 ? '' : 's'}`);
+        if (Array.isArray(data.locations)) parts.push(`${data.locations.length} location${data.locations.length === 1 ? '' : 's'}`);
+        if (Array.isArray(data.campaign_journal)) parts.push(`${data.campaign_journal.length} journal entries`);
+        if (Array.isArray(data.campaign_diary)) parts.push(`${data.campaign_diary.length} diary entries`);
+        const held = [];
+        if (Array.isArray(data.players) && data.players.length) held.push('player sheets');
+        if (Array.isArray(data.journey_maps) && data.journey_maps.length) held.push('maps');
+        into = await confirm(
+          [
+            `Replace ${parts.join(', ') || 'nothing'} in "${target.name}" with what is in this file?`,
+            'Anything the file does not carry is left alone.',
+            held.length ? `Its ${held.join(' and ')} will NOT be imported.` : null,
+            'Choose Cancel to import it as a separate new campaign instead.',
+          ].filter(Boolean).join('\n\n'),
+          { title: `Import into ${target.name}`, confirmLabel: 'Replace' },
+        );
+      }
+      try {
+        if (into) {
+          const r = await campaignsApi.importIntoCampaign(currentId, data);
+          await reload();
+          await reloadCampaigns();
+          const bits = [
+            r.npcs && `NPCs: ${r.npcs.added} added, ${r.npcs.updated} updated${r.npcs.removed ? `, ${r.npcs.removed} removed` : ''}`,
+            r.locations && `locations: ${r.locations.added} added, ${r.locations.updated} updated`,
+            r.journal && `journal: ${r.journal.added}`,
+            r.diary && `diary: ${r.diary.added}`,
+          ].filter(Boolean).join(' · ');
+          toast(`Imported into ${target.name} — ${bits || 'nothing to do'}.`);
+          // Said plainly rather than buried: an NPC something still points at
+          // is kept on purpose, and the DM has to decide what to do with it.
+          if (r.npcs?.kept?.length) {
+            toast(`Kept ${r.npcs.kept.length} NPC(s) the file omits — still used by a timeline or the char tree: ${r.npcs.kept.slice(0, 5).join(', ')}.`);
+          }
+        } else {
+          await campaignsApi.importCampaign(data);
+          await reloadCampaigns();
+          toast('Campaign imported as a new campaign.');
+        }
+      } catch (e) { toast(e.message, 'error'); }
       return { done: true };
     }
     if (!currentId) { toast('Select a campaign first to import this file into.', 'error'); return { done: true }; }
@@ -183,7 +233,7 @@ export function useManageCampaigns() {
     if (type === 'timeline') return { need: 'timeline', bundle: data };
     toast('Unrecognized file — expected a campaign, journey-map, pc-sheet, timeline or campaign-diary export.', 'error');
     return { done: true };
-  }, [currentId, reloadCampaigns, reload, toast, confirm]);
+  }, [currentId, campaigns, reloadCampaigns, reload, toast, confirm]);
 
   const importPcSheetInto = useCallback(async (playerId, bundle) => {
     try { await pcApi.importSheet(playerId, bundle); await reload(); toast('PC sheet imported.'); }
@@ -285,6 +335,21 @@ export function useManageCampaigns() {
     toast(`${names.length} NPC(s) added.`);
   }, [currentId, reload, toast]);
 
+  const editNpc = useCallback(async (nid, data) => {
+    await campaignsApi.updateNpc(currentId, nid, data);
+    await reload();
+    toast('NPC updated.');
+  }, [currentId, reload, toast]);
+
+  const toggleNpcVisibility = useCallback(async (nid) => {
+    const row = await campaignsApi.toggleNpcVis(currentId, nid);
+    // Patched in place rather than reloaded: the eye is clicked repeatedly
+    // while revealing a scene, and a full campaign reload per click makes the
+    // whole tab flicker. The server returns the new row, so this is its
+    // answer and not an optimistic guess.
+    setNpcs(prev => prev.map(n => (n.id === nid ? { ...n, ...row } : n)));
+  }, [currentId]);
+
   const deleteNpc = useCallback(async (nid) => {
     await campaignsApi.removeNpc(currentId, nid);
     await reload();
@@ -341,7 +406,7 @@ export function useManageCampaigns() {
     uploadLocationImage, clearLocationImage,
 
     // NPC actions
-    addNpcs, deleteNpc,
+    addNpcs, editNpc, toggleNpcVisibility, deleteNpc,
 
     // Settings
     saveTodayMarker,

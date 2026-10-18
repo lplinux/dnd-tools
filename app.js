@@ -770,6 +770,15 @@ app.post('/api/campaigns/:campaignId/players', requireRole(['dm']), async (req, 
   try {
     if (!await dmOwnsCampaign(req.params.campaignId, req.session.userId, req.session.role))
       return res.status(403).json({ error: 'Access denied' });
+
+    const taken = await seatHeldBy(userId, campaignId);
+    if (taken) {
+      return res.status(409).json({
+        error: `That user already plays ${taken.player_name} in this campaign.`,
+        code: 'USER_ALREADY_SEATED',
+      });
+    }
+
     // Create player
     const playerResult = await pool.query(
       'INSERT INTO campaign_players (campaign_id, player_name) VALUES ($1, $2) RETURNING id',
@@ -788,6 +797,15 @@ app.post('/api/campaigns/:campaignId/players', requireRole(['dm']), async (req, 
 
     res.json({ success: true, playerId });
   } catch (error) {
+    // The (campaign_id, LOWER(player_name)) index. Adding a second "Davin"
+    // is a thing a DM will do by accident, and it deserves a sentence
+    // rather than a 500.
+    if (error.code === '23505') {
+      return res.status(409).json({
+        error: 'A character with that name already exists in this campaign',
+        code: 'NAME_TAKEN',
+      });
+    }
     res.status(500).json({ error: error.message });
   }
 });
@@ -833,6 +851,17 @@ app.put('/api/campaigns/:campaignId/players/:playerId/reassign', requireRole(['d
     if (!check.rows.length) {
       await client.query('ROLLBACK');
       return res.status(404).json({ error: 'Player not found in this campaign' });
+    }
+
+    // One seat per person. Checked before anything is deleted, so a refusal
+    // leaves the current assignment exactly as it was.
+    const taken = await seatHeldBy(userId, campaignId, playerId);
+    if (taken) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({
+        error: `That user already plays ${taken.player_name} in this campaign.`,
+        code: 'USER_ALREADY_SEATED',
+      });
     }
 
     // Remove any existing assignment for this player
@@ -1172,6 +1201,14 @@ app.post('/api/invites/:token/accept', async (req, res) => {
     res.json({ success: true, csrfToken: csrfToken(req), user });
   } catch (e) {
     await client.query('ROLLBACK');
+    // A character name already in this campaign. The rollback above leaves
+    // the invite unused, so they can simply pick another name.
+    if (e.code === '23505') {
+      return res.status(409).json({
+        error: 'A character with that name already exists in this campaign',
+        code: 'NAME_TAKEN',
+      });
+    }
     res.status(500).json({ error: e.message });
   } finally { client.release(); }
 });
@@ -1267,6 +1304,12 @@ app.post('/api/invites/:token/join', async (req, res) => {
     res.json({ success: true, csrfToken: csrfToken(req), user });
   } catch (e) {
     await client.query('ROLLBACK');
+    if (e.code === '23505') {
+      return res.status(409).json({
+        error: 'A character with that name already exists in this campaign',
+        code: 'NAME_TAKEN',
+      });
+    }
     res.status(500).json({ error: e.message });
   } finally { client.release(); }
 });
@@ -2165,12 +2208,25 @@ app.get('/api/diary-public/:token', async (req, res) => {
     // the campaign and works again if they restore it.
     if (!campR.rows.length) return res.status(404).json({ error: 'Not found' });
 
+    /*
+     * A published entry can still name a place the party has not found or a
+     * person they have not met, and blanking the link would leave the name
+     * in the prose. Same rule as the journal, and the same helper, so the
+     * two cannot drift apart.
+     *
+     * Applied to EVERYONE here, the DM included, which keeps this route
+     * session-blind: what the link shows is what the table sees, and a DM
+     * opening their own share link is previewing exactly that. The DM reads
+     * the unabridged diary in the Diary module.
+     */
+    const entries = await withholdHiddenEntries(campaignId, entriesR.rows);
+
     // Session-blind on purpose: unlike the public journey map this never tailors
     // its output to a logged-in cookie, so "did we leak?" stays reproducible
     // with a cookie-less curl.
     res.json({
       campaign_name: campR.rows[0].name,
-      entries: entriesR.rows,
+      entries,
     });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -4030,8 +4086,41 @@ app.get('/api/campaigns/:campaignId/locations', requireRole(['dm', 'player']), a
     if (!await canAccessCampaign(req.params.campaignId, req.session.userId, req.session.role))
       return res.status(403).json({ error: 'Access denied' });
     const isDM = req.session.role === 'dm' || req.session.role === 'admin';
+    /*
+     * The DM also gets "which map is this place on", for the globe beside
+     * its name. Three ways a location can have one, in preference order:
+     *
+     *   1. a map scoped TO it      — the city's own map
+     *   2. a region pin linking out — the same idea, reached from a parent map
+     *   3. a map it is pinned on   — not its map, but where to go to see it
+     *
+     * One LATERAL rather than a query per row: a campaign has a hundred
+     * locations and this list is loaded on every visit to the tab.
+     *
+     * Not sent to players. A map link is only useful if they can open it,
+     * which depends on a share token this route knows nothing about.
+     */
     const query = isDM
-      ? 'SELECT * FROM campaign_locations WHERE campaign_id = $1 ORDER BY created_at ASC'
+      ? `SELECT l.*, m.id AS map_id, m.name AS map_name
+           FROM campaign_locations l
+           LEFT JOIN LATERAL (
+             SELECT jm.id, jm.name, 1 AS rank
+               FROM journey_maps jm
+              WHERE jm.campaign_id = l.campaign_id AND jm.scope_location_id = l.id
+             UNION ALL
+             SELECT jm.id, jm.name, 2
+               FROM journey_map_locations jml
+               JOIN journey_maps jm ON jm.id = jml.linked_map_id
+              WHERE jml.campaign_location_id = l.id AND jm.campaign_id = l.campaign_id
+             UNION ALL
+             SELECT jm.id, jm.name, 3
+               FROM journey_map_locations jml
+               JOIN journey_maps jm ON jm.id = jml.map_id
+              WHERE jml.campaign_location_id = l.id AND jm.campaign_id = l.campaign_id
+             ORDER BY rank, id
+             LIMIT 1
+           ) m ON true
+          WHERE l.campaign_id = $1 ORDER BY l.created_at ASC`
       : 'SELECT * FROM campaign_locations WHERE campaign_id = $1 AND is_public = true ORDER BY created_at ASC';
     const result = await pool.query(query, [req.params.campaignId]);
     res.json(result.rows);
@@ -4226,6 +4315,110 @@ const journalDay = (v) => {
   return Number.isFinite(n) && n >= 0 && n < 3650000 ? n : null;
 };
 
+/*
+ * ── Withholding a journal entry that names something hidden ────────────────
+ *
+ * An entry can mention a place the party has not found or a person they have
+ * not met, via a `[[cross-link]]`. Blanking the LINK is not enough: the name
+ * is still sitting in the prose, and the sentence around it is usually the
+ * spoiler. So an entry that references anything hidden is withheld whole
+ * until every thing it names is visible, and reappears on its own the moment
+ * the DM reveals the last of them.
+ *
+ * This is the one withholding rule in the app that cannot be a SQL predicate
+ * — it needs the body parsed — so it happens in the route instead. The
+ * principle is unchanged: the row never leaves the server.
+ *
+ * These three mirror frontend/src/data/crossLinks.js. They have to agree
+ * about what counts as a link, or the server would withhold entries the
+ * client would not have linked, or worse, miss one that it would.
+ */
+const LINK_KINDS = { location: 'location', loc: 'location', place: 'location', npc: 'npc' };
+
+/** `[[npc:Théa|her]]` → `{ kind: 'npc', name: 'Théa' }`. Mirrors parseToken. */
+function journalLinkToken(inner) {
+  const raw = String(inner ?? '');
+  const pipe = raw.indexOf('|');
+  const target = (pipe === -1 ? raw : raw.slice(0, pipe)).trim();
+  const colon = target.indexOf(':');
+  if (colon > 0) {
+    const kind = LINK_KINDS[target.slice(0, colon).trim().toLowerCase()];
+    // An unknown prefix is part of the name: "Act II: The Road" is a
+    // plausible thing to link to.
+    if (kind) return { kind, name: target.slice(colon + 1).trim() };
+  }
+  return { kind: null, name: target };
+}
+
+/**
+ * Folded name → { kind, hidden } for everything a `[[link]]` can reach.
+ *
+ * Built from ALL rows, hidden ones included — resolving against only the
+ * visible set would mean a hidden name simply failed to resolve, and the
+ * entry would sail through.
+ *
+ * Locations are inserted first so a bare `[[Name]]` prefers a place, which is
+ * what the client does; being faithful here avoids withholding an entry whose
+ * link actually resolves to a visible location that happens to share a name
+ * with a hidden NPC.
+ */
+function journalLinkIndex(locations, npcs) {
+  const index = new Map();
+  const put = (kind, row) => {
+    const key = searchFold(row?.name).trim();
+    if (!key) return;
+    const entry = { kind, hidden: !row.is_public };
+    const typed = `${kind}:${key}`;
+    if (!index.has(typed)) index.set(typed, entry);
+    if (!index.has(key)) index.set(key, entry);
+  };
+  for (const l of locations) put('location', l);
+  for (const n of npcs) put('npc', n);
+  return index;
+}
+
+/** Does this entry name anything the viewer is not meant to know about? */
+function journalNamesSomethingHidden(entry, index, hiddenLocationIds) {
+  // The "where it happened" field counts as naming it. Tagging an entry with
+  // a secret place and not linking it would otherwise be a way around this.
+  if (entry.location_id != null && hiddenLocationIds.has(entry.location_id)) return true;
+
+  for (const m of String(entry.body ?? '').matchAll(/\[\[([^\]\n]+)\]\]/g)) {
+    const token = journalLinkToken(m[1]);
+    const key = searchFold(token.name).trim();
+    if (!key) continue;
+    const hit = index.get(token.kind ? `${token.kind}:${key}` : key);
+    // A name that resolves to nothing is ordinary prose, not a leak — the
+    // client renders it as plain text for everyone.
+    if (hit?.hidden) return true;
+  }
+  return false;
+}
+
+/**
+ * Drop every entry that names something hidden, for one campaign.
+ *
+ * Shared by the journal and the public diary so the two cannot drift: a rule
+ * that holds in one place and not the other is worse than no rule, because
+ * the DM stops thinking about it.
+ *
+ * `locationIdOf` says where to find an entry's own location, because the two
+ * callers hold it under different names — and the journal's player query has
+ * already blanked it, so it has to be read from elsewhere there.
+ */
+async function withholdHiddenEntries(campaignId, entries, locationIdOf = (e) => e.location_id) {
+  if (!entries.length) return entries;
+  const [locs, npcRows] = await Promise.all([
+    pool.query('SELECT id, name, is_public FROM campaign_locations WHERE campaign_id=$1', [campaignId]),
+    pool.query('SELECT id, name, is_public FROM campaign_npcs WHERE campaign_id=$1', [campaignId]),
+  ]);
+  const index = journalLinkIndex(locs.rows, npcRows.rows);
+  const hiddenLocationIds = new Set(locs.rows.filter((l) => !l.is_public).map((l) => l.id));
+  return entries.filter((e) => !journalNamesSomethingHidden(
+    { body: e.body, location_id: locationIdOf(e) }, index, hiddenLocationIds,
+  ));
+}
+
 /**
  * Validate a location the author claims to be writing about.
  *
@@ -4254,6 +4447,32 @@ async function isCampaignDm(campaignId, userId, role) {
     [campaignId, userId],
   );
   return r.rows.length > 0;
+}
+
+/**
+ * The seat this user already holds in this campaign, or null.
+ *
+ * One person plays one character per campaign. Two seats for the same user
+ * makes "which character wrote this" unanswerable — the journal's author
+ * query picks the lowest id and says so — and silently halves the PC Sheet's
+ * campaign selector, which is how this surfaced in the first place.
+ *
+ * `is_dm_player` seats are excluded: the DM's marker row is not a character
+ * anyone plays, and a DM who also runs a PC holds a real seat alongside it.
+ */
+async function seatHeldBy(userId, campaignId, exceptPlayerId = null) {
+  if (!userId) return null;
+  const r = await pool.query(
+    `SELECT cp.id, cp.player_name
+       FROM campaign_user_assignments cua
+       JOIN campaign_players cp ON cp.id = cua.player_id
+      WHERE cua.user_id = $1 AND cp.campaign_id = $2
+        AND (cp.is_dm_player IS NULL OR cp.is_dm_player = false)
+        AND ($3::int IS NULL OR cp.id <> $3)
+      LIMIT 1`,
+    [userId, campaignId, exceptPlayerId],
+  );
+  return r.rows[0] ?? null;
 }
 
 /** The entry, if this user may change it. Author always; DM for deletion only. */
@@ -4384,7 +4603,11 @@ app.get('/api/campaigns/:campaignId/search', requireRole(['dm', 'admin']), async
             WHERE d.campaign_id = $1`),
         q(`SELECT id, name, description, is_public
              FROM campaign_locations WHERE campaign_id = $1`),
-        q('SELECT id, name FROM campaign_npcs WHERE campaign_id = $1'),
+        q(`SELECT n.id, n.name, n.description, n.public_info, n.private_info, n.is_public,
+                  l.name AS location
+             FROM campaign_npcs n
+             LEFT JOIN campaign_locations l ON l.id = n.current_location_id
+            WHERE n.campaign_id = $1`),
         q(`SELECT e.id, e.title, e.description, e.location, e.year, e.day_of_year,
                   cp.player_name AS who
              FROM player_timeline_entries e
@@ -4438,9 +4661,13 @@ app.get('/api/campaigns/:campaignId/search', requireRole(['dm', 'admin']), async
         (r) => [['name', r.name], ['description', r.description]],
         (r) => ({ id: r.id, title: r.name, path: '/manage-campaigns',
           note: r.is_public ? null : 'hidden from players' })),
+      // private_info included: this route is DM-only, and notes the DM wrote
+      // about an NPC are exactly what they are searching for.
       group('npc', 'NPCs', npcs.rows,
-        (r) => [['name', r.name]],
-        (r) => ({ id: r.id, title: r.name, path: '/manage-campaigns', note: null })),
+        (r) => [['name', r.name], ['description', r.description],
+          ['public_info', r.public_info], ['private_info', r.private_info]],
+        (r) => ({ id: r.id, title: r.name, path: '/manage-campaigns',
+          note: [r.location, r.is_public ? null : 'not yet met'].filter(Boolean).join(' · ') || null })),
       group('event', 'Timeline', events.rows,
         (r) => [['title', r.title], ['description', r.description], ['location', r.location]],
         (r) => ({ id: r.id, title: r.title || '(untitled)', path: '/timeline',
@@ -4550,11 +4777,25 @@ app.get('/api/campaigns/:campaignId/search/:kind/:id', requireRole(['dm', 'admin
             ['Players', r.is_public ? 'can see this' : 'cannot see this']) };
         break;
       case 'npc':
-        r = await one('SELECT name FROM campaign_npcs WHERE campaign_id = $1 AND id = $2');
+        // This route is DM-only, so private_info is included — it is the one
+        // place the DM reads their own secrets without leaving the search.
+        r = await one(`SELECT n.name, n.description, n.public_info, n.private_info,
+                              n.is_public, l.name AS location, l.is_public AS location_public
+                         FROM campaign_npcs n
+                         LEFT JOIN campaign_locations l ON l.id = n.current_location_id
+                        WHERE n.campaign_id = $1 AND n.id = $2`);
         if (!r) break;
-        // campaign_npcs is a name and nothing else. Saying so beats an empty panel.
-        r = { title: r.name, body: null, bodyFormat: 'text',
-          meta: meta(['Notes', 'NPCs hold only a name today']) };
+        r = {
+          title: r.name,
+          body: [r.description, r.public_info && `**What the party knows**\n\n${r.public_info}`,
+            r.private_info && `**Your notes**\n\n${r.private_info}`]
+            .filter(Boolean).join('\n\n') || null,
+          bodyFormat: 'markdown',
+          meta: meta(
+            ['Currently at', r.location && (r.location_public ? r.location : `${r.location} (hidden)`)],
+            ['Players', r.is_public ? 'can see this NPC' : 'have not met them'],
+          ),
+        };
         break;
       case 'event':
         r = await one(`SELECT e.title, e.description, e.location, e.year, e.day_of_year,
@@ -4633,11 +4874,14 @@ app.get('/api/campaigns/:campaignId/search/:kind/:id', requireRole(['dm', 'admin
 // campaign that THIS viewer is allowed to resolve.
 //
 // Role-filtered in SQL, reusing the rule the locations route already applies —
-// a player gets public locations only, and no NPCs at all, because
-// `campaign_npcs` is DM-only and has no visibility column. A name the viewer
-// cannot resolve renders as plain text rather than a link, which leaks
-// nothing: the name is sitting in the prose either way, so the only difference
-// is whether clicking it does anything.
+// a player gets public locations and public NPCs. A name the viewer cannot
+// resolve renders as plain text rather than a link, which leaks nothing: the
+// name is sitting in the prose either way, so the only difference is whether
+// clicking it does anything.
+//
+// `private_info` is NOT selected here for anybody. The index is fetched once
+// per campaign and held in memory to drive an autocomplete; the DM's secrets
+// have no business in it, and the NPCs tab is where they are read and written.
 //
 // An explicit column list, never SELECT *: `campaign_locations.image_data`
 // holds a base64 pin image, and pulling every one of them into an autocomplete
@@ -4658,12 +4902,13 @@ app.get('/api/campaigns/:campaignId/link-targets', requireAuth, async (req, res)
           ORDER BY name ASC`,
         [campaignId],
       ),
-      isDM
-        ? pool.query(
-          'SELECT id, name FROM campaign_npcs WHERE campaign_id = $1 ORDER BY name ASC',
-          [campaignId],
-        )
-        : Promise.resolve({ rows: [] }),
+      pool.query(
+        `SELECT id, name, description, public_info, is_public
+           FROM campaign_npcs
+          WHERE campaign_id = $1 ${isDM ? '' : 'AND is_public = true'}
+          ORDER BY name ASC`,
+        [campaignId],
+      ),
       // The party, for the autocomplete only. Everyone in a campaign may see
       // who else is in it, so these are not role-filtered — and unlike the
       // other two they are NOT indexed as link targets, so `[[Thalia]]`
@@ -4706,7 +4951,9 @@ app.get('/api/campaigns/:campaignId/links', requireAuth, async (req, res) => {
     if (!await canAccessCampaign(campaignId, req.session.userId, req.session.role))
       return res.status(403).json({ error: 'Access denied' });
 
-    const [maps, campaignTl, playerTl] = await Promise.all([
+    const isDM = await isCampaignDm(campaignId, req.session.userId, req.session.role);
+
+    const [maps, campaignTl, playerTl, npcRows, locRows] = await Promise.all([
       pool.query(
         `SELECT jm.id, jm.name, jms.token, jms.created_at
            FROM journey_maps jm
@@ -4731,6 +4978,28 @@ app.get('/api/campaigns/:campaignId/links', requireAuth, async (req, res) => {
           ORDER BY cp.player_name ASC NULLS LAST, pt.name ASC`,
         [campaignId],
       ),
+      // The people the party has met. A player gets the revealed ones; the DM
+      // gets all of them, so this tab shows the DM what their table sees plus
+      // what is still hidden. Never private_info, for either.
+      pool.query(
+        `SELECT n.id, n.name, n.description, n.public_info, n.is_public,
+                CASE WHEN l.is_public OR $2 THEN l.name END AS location_name
+           FROM campaign_npcs n
+           LEFT JOIN campaign_locations l ON l.id = n.current_location_id
+          WHERE n.campaign_id = $1 ${isDM ? '' : 'AND n.is_public = true'}
+          ORDER BY n.name ASC`,
+        [campaignId, isDM],
+      ),
+      // The places they know. Same visibility rule, and deliberately no
+      // image_data: a list of forty base64 map pins to render a list of
+      // names would be megabytes for nothing.
+      pool.query(
+        `SELECT id, name, description, size_type, is_public
+           FROM campaign_locations
+          WHERE campaign_id = $1 ${isDM ? '' : 'AND is_public = true'}
+          ORDER BY name ASC`,
+        [campaignId],
+      ),
     ]);
 
     res.json({
@@ -4748,13 +5017,15 @@ app.get('/api/campaigns/:campaignId/links', requireAuth, async (req, res) => {
           token: t.token, path: `/timeline-public/${t.token}`, shared_at: t.created_at,
         })),
       ],
-      // Prepared, deliberately empty. NPCs are campaign-scoped and DM-only
-      // today (`campaign_npcs` has no visibility flag at all), so shipping the
-      // list now would mean either showing players every NPC the DM has ever
-      // named, or inventing a visibility model in passing. The tab renders the
-      // section only when this is non-empty, so filling it later is a server
-      // change and nothing else.
-      npcs: [],
+      // The people the party has met: NPCs the DM has revealed. This was an
+      // empty placeholder until `campaign_npcs` grew a visibility flag; it is
+      // now the same rule the cross-link index uses.
+      //
+      // No private_info, and no link: an NPC has no page of their own. The
+      // description and public notes are the whole of it, which is why they
+      // are carried here rather than fetched per row.
+      npcs: npcRows.rows,
+      places: locRows.rows,
     });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -4786,7 +5057,31 @@ app.get('/api/campaigns/:campaignId/journal', requireAuth, async (req, res) => {
         ORDER BY j.in_game_day ASC NULLS LAST, j.created_at ASC`,
       [campaignId],
     );
-    res.json(r.rows.map((e) => ({ ...e, mine: e.created_by === req.session.userId })));
+
+    let rows = r.rows;
+    if (!isDM) {
+      /*
+       * Withhold any entry that names something this player is not meant to
+       * know about — see journalNamesSomethingHidden. Two queries rather
+       * than a join, because the index is built once for the whole list and
+       * a join would repeat every location on every row.
+       *
+       * The SQL above already blanks a hidden location's name and id; this
+       * goes further and removes the entry, because the prose around the
+       * name is usually the spoiler.
+       */
+      // `j.location_id` is already nulled for a player by the SELECT above,
+      // so the real one has to be read separately — testing the blanked
+      // value would never match and the tag would be a way around the rule.
+      const rawLoc = new Map(
+        (await pool.query(
+          'SELECT id, location_id FROM campaign_journal_entries WHERE campaign_id=$1', [campaignId],
+        )).rows.map((x) => [x.id, x.location_id]),
+      );
+      rows = await withholdHiddenEntries(campaignId, rows, (e) => rawLoc.get(e.id));
+    }
+
+    res.json(rows.map((e) => ({ ...e, mine: e.created_by === req.session.userId })));
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -4893,14 +5188,50 @@ app.delete('/api/campaigns/:campaignId/journal/:entryId', requireAuth, async (re
 // ============================================
 // CAMPAIGN META (today_marker, etc.)
 
-// ─── Campaign NPCs (DM-only) ─────────────────────────────────────────────────
-app.get('/api/campaigns/:campaignId/npcs', requireRole(['dm', 'admin']), async (req, res) => {
+// ─── Campaign NPCs ───────────────────────────────────────────────────────────
+//
+// Managed like locations: a description, a visibility flag, public and private
+// notes, and where they are now.
+//
+// The player branch of every query here NAMES ITS COLUMNS. Locations can get
+// away with `SELECT *` because nothing on that table is secret; campaign_npcs
+// has `private_info`, so a star here would hand the DM's secrets to the table.
+
+/** Columns a player may see. The absence of private_info is the whole point. */
+const NPC_PLAYER_COLUMNS = `n.id, n.name, n.description, n.public_info, n.is_public`;
+
+/**
+ * The current location, for a player: name AND id, or neither.
+ *
+ * Withholding the name but keeping the id is a leak, not a half-measure —
+ * two NPCs coming back with the same unexplained id tells a player they are
+ * in the same undiscovered place, and the id maps straight onto a location
+ * they may already know by another route. The journal had exactly this bug.
+ */
+const NPC_PLAYER_LOCATION = `CASE WHEN l.is_public THEN l.name END AS location_name,
+                             CASE WHEN l.is_public THEN n.current_location_id END AS current_location_id`;
+
+app.get('/api/campaigns/:campaignId/npcs', requireRole(['dm', 'player']), async (req, res) => {
   try {
-    if (!await dmOwnsCampaign(req.params.campaignId, req.session.userId, req.session.role))
+    if (!await canAccessCampaign(req.params.campaignId, req.session.userId, req.session.role))
       return res.status(403).json({ error: 'Access denied' });
+    const isDM = await isCampaignDm(req.params.campaignId, req.session.userId, req.session.role);
+
+    // `location_name` is joined rather than fetched separately so a list of
+    // forty NPCs is one query. For a player it is nulled when the LOCATION is
+    // hidden, independently of the NPC: knowing Grathul is visible must not
+    // reveal that he is standing in a place they have not found.
     const r = await pool.query(
-      'SELECT * FROM campaign_npcs WHERE campaign_id=$1 ORDER BY name ASC',
-      [req.params.campaignId]
+      isDM
+        ? `SELECT n.*, l.name AS location_name
+             FROM campaign_npcs n
+             LEFT JOIN campaign_locations l ON l.id = n.current_location_id
+            WHERE n.campaign_id = $1 ORDER BY n.name ASC`
+        : `SELECT ${NPC_PLAYER_COLUMNS}, ${NPC_PLAYER_LOCATION}
+             FROM campaign_npcs n
+             LEFT JOIN campaign_locations l ON l.id = n.current_location_id
+            WHERE n.campaign_id = $1 AND n.is_public = true ORDER BY n.name ASC`,
+      [req.params.campaignId],
     );
     res.json(r.rows);
   } catch (e) { res.status(500).json({ error: e.message }); }
@@ -4918,12 +5249,78 @@ app.post('/api/campaigns/:campaignId/npcs', requireRole(['dm', 'admin']), async 
     const inserted = [];
     for (const name of list) {
       const r = await pool.query(
-        'INSERT INTO campaign_npcs (campaign_id, name) VALUES ($1,$2) ON CONFLICT (campaign_id, name) DO NOTHING RETURNING *',
+        // The index is on LOWER(name), so the conflict target must be too —
+        // naming the plain column would miss a differing-case clash and
+        // surface it as a 500 instead of quietly skipping the duplicate.
+        'INSERT INTO campaign_npcs (campaign_id, name) VALUES ($1,$2) ON CONFLICT (campaign_id, LOWER(name)) DO NOTHING RETURNING *',
         [req.params.campaignId, name]
       );
       if (r.rows.length) inserted.push(r.rows[0]);
     }
     res.json(inserted);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+/**
+ * Edit one NPC.
+ *
+ * `current_location_id` is verified to belong to THIS campaign before it is
+ * written. Without that, a DM could point an NPC at a location in someone
+ * else's campaign by id — harmless to them, but it would surface that
+ * location's name in this campaign's lists, which is a cross-campaign leak
+ * through a column nobody would think to audit.
+ */
+app.put('/api/campaigns/:campaignId/npcs/:npcId', requireRole(['dm', 'admin']), async (req, res) => {
+  const { name, description, public_info, private_info, current_location_id } = req.body ?? {};
+  const { campaignId, npcId } = req.params;
+  if (!name || !String(name).trim()) return res.status(400).json({ error: 'Name required' });
+
+  try {
+    if (!await dmOwnsCampaign(campaignId, req.session.userId, req.session.role))
+      return res.status(403).json({ error: 'Access denied' });
+
+    let locId = null;
+    if (current_location_id) {
+      const loc = await pool.query(
+        'SELECT id FROM campaign_locations WHERE id=$1 AND campaign_id=$2',
+        [current_location_id, campaignId],
+      );
+      if (!loc.rows.length) {
+        return res.status(400).json({ error: 'That location is not in this campaign' });
+      }
+      locId = loc.rows[0].id;
+    }
+
+    const r = await pool.query(
+      `UPDATE campaign_npcs
+          SET name=$1, description=$2, public_info=$3, private_info=$4, current_location_id=$5
+        WHERE id=$6 AND campaign_id=$7
+        RETURNING *`,
+      [String(name).trim(), description || null, public_info || null, private_info || null,
+        locId, npcId, campaignId],
+    );
+    if (!r.rows.length) return res.status(404).json({ error: 'NPC not found' });
+    res.json(r.rows[0]);
+  } catch (e) {
+    // The (campaign_id, name) unique constraint — renaming onto a name that
+    // already exists in this campaign.
+    if (e.code === '23505') return res.status(409).json({ error: 'An NPC with that name already exists' });
+    res.status(500).json({ error: e.message });
+  }
+});
+
+/** Reveal or hide. Its own route, mirroring the locations toggle. */
+app.patch('/api/campaigns/:campaignId/npcs/:npcId/visibility', requireRole(['dm', 'admin']), async (req, res) => {
+  try {
+    if (!await dmOwnsCampaign(req.params.campaignId, req.session.userId, req.session.role))
+      return res.status(403).json({ error: 'Access denied' });
+    const r = await pool.query(
+      `UPDATE campaign_npcs SET is_public = NOT is_public
+        WHERE id=$1 AND campaign_id=$2 RETURNING *`,
+      [req.params.npcId, req.params.campaignId],
+    );
+    if (!r.rows.length) return res.status(404).json({ error: 'NPC not found' });
+    res.json(r.rows[0]);
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -5083,7 +5480,9 @@ app.post('/api/campaigns/:campaignId/dm-player', requireRole(['dm', 'admin']), a
     const user = await pool.query('SELECT username FROM users WHERE id=$1', [req.session.userId]);
     const dmName = `DM (${user.rows[0]?.username || 'DM'})`;
     const player = await pool.query(
-      'INSERT INTO campaign_players (campaign_id, player_name, is_dm_player) VALUES ($1,$2,true) RETURNING id',
+      `INSERT INTO campaign_players (campaign_id, player_name, is_dm_player) VALUES ($1,$2,true)
+       ON CONFLICT (campaign_id, LOWER(player_name)) DO UPDATE SET is_dm_player = true
+       RETURNING id`,
       [campaignId, dmName]
     );
     await pool.query(
@@ -5664,7 +6063,9 @@ app.get('/api/campaigns/:id/export', requireRole(['dm']), async (req, res) => {
          WHERE cp.campaign_id=$1 AND (cp.is_dm_player IS NULL OR cp.is_dm_player = false)
          ORDER BY cp.created_at ASC`, [id]),
       pool.query('SELECT id, name, description, is_public, size_type, parent_id, image_data FROM campaign_locations WHERE campaign_id=$1 ORDER BY created_at ASC', [id]),
-      pool.query('SELECT id, name FROM campaign_npcs WHERE campaign_id=$1 ORDER BY name ASC', [id]),
+      pool.query(
+        `SELECT id, name, description, public_info, private_info, is_public, current_location_id
+           FROM campaign_npcs WHERE campaign_id=$1 ORDER BY name ASC`, [id]),
       pool.query(
         `SELECT pte.*, pt.name as timeline_name, cp.player_name
          FROM player_timeline_entries pte
@@ -6001,6 +6402,27 @@ app.get('/api/campaigns/:id/export', requireRole(['dm']), async (req, res) => {
       year: e.year, day_of_year: e.day_of_year, duration_days: e.duration_days,
     }));
 
+    /*
+     * The Campaign Journal — the table's shared notes.
+     *
+     * Absent from the bundle until now, which meant every backup ever taken
+     * was missing a whole feature. Same treatment as the diary: no `dm_only`
+     * filter, because this is the DM's own backup and the diary carries
+     * unpublished drafts for the same reason.
+     *
+     * `author_username` rather than `created_by`: a user id means nothing on
+     * the far side. The import matches the name back to a member of the
+     * campaign it is building, and falls back to the importing DM.
+     */
+    const journalRes = await pool.query(
+      `SELECT j.title, j.body, j.category, j.in_game_day, j.dm_only, j.created_at,
+              j.player_id, j.location_id, u.username AS author_username
+         FROM campaign_journal_entries j
+         JOIN users u ON u.id = j.created_by
+        WHERE j.campaign_id = $1
+        ORDER BY j.in_game_day ASC NULLS LAST, j.created_at ASC`, [id],
+    );
+
     // Campaign diary. Statuses travel too, so a restored campaign keeps the
     // draft/published split. The share TOKEN deliberately does not — the import
     // creates a new campaign, so a carried token would either collide on the
@@ -6011,10 +6433,21 @@ app.get('/api/campaigns/:id/export', requireRole(['dm']), async (req, res) => {
         ORDER BY session_no ASC NULLS LAST, created_at ASC`, [id],
     );
 
+    /*
+     * `campaign_invites` is deliberately NOT in this bundle, and for a
+     * different reason than journey_trackers above (retired): an invite is a
+     * CREDENTIAL, not campaign content. `token_hash` is UNIQUE, so a carried
+     * one would either collide or install a live credential in a second
+     * campaign; `created_by`/`used_by` are FKs to users who may not exist on
+     * the far side; and the one-hour `expires_at` makes every restored invite
+     * dead on arrival. Same reasoning as the diary share token above.
+     */
     res.json({
-      // 5 adds `item_cards` and per-player `inventory`. A version-4 bundle
-      // still imports; it simply has no gear in it.
-      version: 5,
+      // 5 adds `item_cards` and per-player `inventory`. 6 adds the NPC detail
+      // fields and `campaign_journal`. Older bundles still import: every key
+      // here is additive and the import defaults each one, so nothing reads
+      // this number — see the note on the import side.
+      version: 6,
       exported_at: new Date().toISOString(),
       type: 'campaign',
       item_cards: cardsOut,
@@ -6023,13 +6456,42 @@ app.get('/api/campaigns/:id/export', requireRole(['dm']), async (req, res) => {
         calendar_type: metaRes.rows[0]?.calendar_type || 'harptos',
         today_marker: metaRes.rows[0]?.today_marker || null,
       },
-      npcs: npcsRes.rows.map(n => ({ name: n.name })),
+      // `private_info` travels, like pc_characters.private_info and the DM
+      // notes above: this is the DM's own backup of their own campaign.
+      //
+      // The location goes as a symbolic ref, never an id — `locRefById`
+      // carries the `__2` suffix that disambiguates two locations sharing a
+      // name, which a bare name would lose. NPC names need no such suffix:
+      // UNIQUE (campaign_id, name) already guarantees they are distinct.
+      //
+      // `is_public` is emitted RAW, not coalesced, so the import can tell an
+      // absent key from a false one. That distinction is what keeps a v5
+      // bundle's NPCs hidden on restore.
+      npcs: npcsRes.rows.map(n => ({
+        name: n.name,
+        description: n.description || null,
+        public_info: n.public_info || null,
+        private_info: n.private_info || null,
+        is_public: n.is_public,
+        current_location_ref: n.current_location_id
+          ? (locRefById[n.current_location_id] || null)
+          : null,
+      })),
       locations: locsOut,
       players: playersOut,
       cross_connections: crossOut,
       journey_maps: mapsOut,
       dm_timelines: dmTimelinesOut,
       party_events: partyEventsOut,
+      campaign_journal: journalRes.rows.map(e => ({
+        title: e.title, body: e.body, category: e.category,
+        in_game_day: e.in_game_day, dm_only: e.dm_only, created_at: e.created_at,
+        author_username: e.author_username,
+        // A DM-authored entry has no character, so this is legitimately null:
+        // playersRes excludes the DM's own seat.
+        player_ref: e.player_id ? (playerRefById[e.player_id] || null) : null,
+        location_ref: e.location_id ? (locRefById[e.location_id] || null) : null,
+      })),
       campaign_diary: diaryRes.rows,
     });
   } catch (e) { res.status(500).json({ error: e.message }); }
@@ -6039,7 +6501,7 @@ app.get('/api/campaigns/:id/export', requireRole(['dm']), async (req, res) => {
 app.post('/api/campaigns/import', requireRole(['dm']), async (req, res) => {
   const bundle = req.body;
   if (bundle.type !== 'campaign') return res.status(400).json({ error: 'Not a campaign export file' });
-  const { campaign, players = [], locations = [], npcs = [], cross_connections = [], journey_maps = [], dm_timelines = [], party_events = [], campaign_diary = [] } = bundle;
+  const { campaign, players = [], locations = [], npcs = [], cross_connections = [], journey_maps = [], dm_timelines = [], party_events = [], campaign_diary = [], campaign_journal = [] } = bundle;
   if (!campaign?.name) return res.status(400).json({ error: 'Missing campaign name' });
 
   const client = await pool.connect();
@@ -6057,19 +6519,16 @@ app.post('/api/campaigns/import', requireRole(['dm']), async (req, res) => {
       [newId, campaign.calendar_type || 'harptos', campaign.today_marker || null]
     );
 
-    // 2. NPCs — accept both string and object forms; any legacy `path_public` is ignored.
-    const npcIdByName = {};
-    for (const n of npcs) {
-      const name = typeof n === 'string' ? n : n?.name;
-      if (!name) continue;
-      const r = await client.query(
-        'INSERT INTO campaign_npcs (campaign_id, name) VALUES ($1,$2) ON CONFLICT (campaign_id,name) DO UPDATE SET name=EXCLUDED.name RETURNING id',
-        [newId, name]
-      );
-      npcIdByName[name] = r.rows[0].id;
-    }
-
-    // 3. Locations — two passes to handle parent_ref
+    // 2. Locations — two passes to handle parent_ref
+    //
+    // BEFORE the NPCs, which is the opposite of the old order. NPCs now carry
+    // a current_location_ref, and resolving it needs locIdByRef to exist.
+    // Reordering rather than adding a second NPC pass: every create-then-
+    // UPDATE in this handler exists because of a CYCLE (a location's parent is
+    // a location, a relationship's parent is a relationship, a map location
+    // links to a map whose own locations are still being written). An NPC's
+    // location is not a cycle, so ordering settles it, and the two-pass shape
+    // stays meaningful as a marker that says "there is a cycle here".
     const locIdByRef = {};
     for (const l of locations) {
       const r = await client.query(
@@ -6088,6 +6547,44 @@ app.post('/api/campaigns/import', requireRole(['dm']), async (req, res) => {
       }
     }
 
+    /*
+     * 3. NPCs — accepts both string and object forms; legacy `path_public` is ignored.
+     *
+     * `is_public === true`, NOT the `!== false` used for locations above. The
+     * asymmetry is deliberate and matches the migration: a location defaults
+     * to visible because locations always were, while an NPC has never been
+     * visible to a player at all. An absent key therefore has to mean HIDDEN —
+     * reading it the other way would publish every NPC in the campaign the
+     * moment someone restores a bundle written before the field existed.
+     *
+     * The location can only resolve to a row this import just created, so the
+     * same-campaign rule the PUT route enforces is satisfied by construction.
+     * An unknown ref degrades to null rather than erroring, as elsewhere.
+     */
+    const npcIdByName = {};
+    for (const n of npcs) {
+      const name = typeof n === 'string' ? n : n?.name;
+      if (!name) continue;
+      const ref = typeof n === 'string' ? null : n?.current_location_ref;
+      const r = await client.query(
+        `INSERT INTO campaign_npcs
+           (campaign_id, name, description, public_info, private_info, is_public, current_location_id)
+         VALUES ($1,$2,$3,$4,$5,$6,$7)
+         ON CONFLICT (campaign_id, LOWER(name)) DO UPDATE SET
+           name=EXCLUDED.name, description=EXCLUDED.description,
+           public_info=EXCLUDED.public_info, private_info=EXCLUDED.private_info,
+           is_public=EXCLUDED.is_public, current_location_id=EXCLUDED.current_location_id
+         RETURNING id`,
+        [newId, name,
+          (typeof n === 'string' ? null : n?.description) || null,
+          (typeof n === 'string' ? null : n?.public_info) || null,
+          (typeof n === 'string' ? null : n?.private_info) || null,
+          (typeof n === 'string' ? false : n?.is_public === true),
+          ref ? (locIdByRef[ref] ?? null) : null]
+      );
+      npcIdByName[name] = r.rows[0].id;
+    }
+
     // 4. Users lookup
     const allUsersRes = await client.query('SELECT id, username FROM users');
     const userByName = {};
@@ -6102,6 +6599,13 @@ app.post('/api/campaigns/import', requireRole(['dm']), async (req, res) => {
 
     const playerIdByRef = {};
     const relIdByRef = {};   // "playerName:relRef" → new rel_id
+    /*
+     * Who actually ends up playing in this campaign. Used only by the journal
+     * step, to decide whether a carried `author_username` may keep authorship
+     * of their entry — see the comment there. The importing DM is a member by
+     * definition.
+     */
+    const memberUserIds = new Set([req.session.userId]);
 
     // Gear. Cards are matched into THIS DM's library by name+type+rarity, whole
     // chains at a time, before any inventory row can point at one. A v4 bundle
@@ -6116,8 +6620,19 @@ app.post('/api/campaigns/import', requireRole(['dm']), async (req, res) => {
     const playerPassB = []; // [{ playerId, timelines }]
 
     for (const p of players) {
+      /*
+       * Upsert, not insert. A bundle written before player names were unique
+       * can carry two seats with the same name; they already collapsed into
+       * one on import (the refs key on the name), and this keeps that
+       * outcome rather than aborting the whole restore on a constraint. The
+       * second one's rows land on the first, which is what the old code did
+       * too — only now it is deliberate.
+       */
       const playerRes = await client.query(
-        'INSERT INTO campaign_players (campaign_id, player_name) VALUES ($1,$2) RETURNING id',
+        `INSERT INTO campaign_players (campaign_id, player_name) VALUES ($1,$2)
+         ON CONFLICT (campaign_id, LOWER(player_name))
+           DO UPDATE SET player_name = EXCLUDED.player_name
+         RETURNING id`,
         [newId, p.player_name]
       );
       const playerId = playerRes.rows[0].id;
@@ -6125,7 +6640,10 @@ app.post('/api/campaigns/import', requireRole(['dm']), async (req, res) => {
 
       if (p.username) {
         const uid = userByName[p.username.toLowerCase()];
-        if (uid) await client.query('INSERT INTO campaign_user_assignments (player_id, user_id) VALUES ($1,$2)', [playerId, uid]);
+        if (uid) {
+          await client.query('INSERT INTO campaign_user_assignments (player_id, user_id) VALUES ($1,$2)', [playerId, uid]);
+          memberUserIds.add(uid);
+        }
       }
 
       // The player's private diary. `created_by` is the importing DM because the
@@ -6283,7 +6801,9 @@ app.post('/api/campaigns/import', requireRole(['dm']), async (req, res) => {
       const dmUser = await client.query('SELECT username FROM users WHERE id=$1', [req.session.userId]);
       const dmName = `DM (${dmUser.rows[0]?.username || 'DM'})`;
       const dmPlayerRes = await client.query(
-        'INSERT INTO campaign_players (campaign_id, player_name, is_dm_player) VALUES ($1,$2,true) RETURNING id',
+        `INSERT INTO campaign_players (campaign_id, player_name, is_dm_player) VALUES ($1,$2,true)
+         ON CONFLICT (campaign_id, LOWER(player_name)) DO UPDATE SET is_dm_player = true
+         RETURNING id`,
         [newId, dmName]
       );
       const dmPlayerId = dmPlayerRes.rows[0].id;
@@ -6415,6 +6935,53 @@ app.post('/api/campaigns/import', requireRole(['dm']), async (req, res) => {
       );
     }
 
+    /*
+     * 11. The Campaign Journal.
+     *
+     * Last, because it points at both locations (step 2) and players (step 5).
+     *
+     * `created_by` is resolved rather than hard-assigned to the importer, so a
+     * restore onto the same instance keeps the table's authorship — but ONLY
+     * for someone who is actually in the campaign being built. That fence is
+     * the point: created_by governs who may edit an entry, so matching a bare
+     * username without it would hand edit rights over a restored note to an
+     * unrelated account that merely shares a name on this server. Anyone who
+     * does not resolve collapses to the importing DM, the same fallback the
+     * player diaries use.
+     */
+    let journalAdded = 0;
+    for (const e of campaign_journal) {
+      const title = journalStr(e.title, 255);
+      const body = journalStr(e.body, 50000);
+      // The POST route's rule: an entry needs one or the other.
+      if (!title && !body) continue;
+
+      const uid = userByName[String(e.author_username || '').toLowerCase()];
+      const author = (uid && memberUserIds.has(uid)) ? uid : req.session.userId;
+
+      await client.query(
+        `INSERT INTO campaign_journal_entries
+           (campaign_id, created_by, player_id, location_id, title, body, category,
+            in_game_day, dm_only, created_at, updated_at)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,
+                 COALESCE($10::timestamp, CURRENT_TIMESTAMP),
+                 COALESCE($10::timestamp, CURRENT_TIMESTAMP))`,
+        [newId, author,
+          e.player_ref ? (playerIdByRef[e.player_ref] ?? null) : null,
+          e.location_ref ? (locIdByRef[e.location_ref] ?? null) : null,
+          title, body, journalStr(e.category, 120),
+          // journalDay, never `|| null`: the absolute-day epoch puts year 1
+          // day 1 at ZERO, so a falsy test would silently drop a real date.
+          journalDay(e.in_game_day),
+          e.dm_only === true,
+          // A bare NULL here STORES null — a column DEFAULT only applies when
+          // the column is omitted — and a null created_at scrambles the order
+          // the journal is read back in.
+          e.created_at || null],
+      );
+      journalAdded += 1;
+    }
+
     await client.query('COMMIT');
     // Say what happened to the gear: how many rows landed, how many cards were
     // brought into the library versus matched to ones already there, and
@@ -6429,7 +6996,210 @@ app.post('/api/campaigns/import', requireRole(['dm']), async (req, res) => {
         cards_matched: cardResolve.reused,
         skipped: gearSkipped,
       },
+      // Zero for a bundle written before the journal travelled, which is a
+      // fact about the file rather than a failure.
+      journal: journalAdded,
     });
+  } catch (e) {
+    await client.query('ROLLBACK');
+    res.status(500).json({ error: e.message });
+  } finally { client.release(); }
+});
+
+/**
+ * Import a bundle INTO a campaign that already exists.
+ *
+ * The sibling of `POST /api/campaigns/import`, which always creates a new
+ * campaign. This one replaces content in place, which is what you want when
+ * a file holds a revised set of NPCs rather than a whole new world.
+ *
+ * ONLY THE SECTIONS THE FILE CARRIES are touched. A bundle with just `npcs`
+ * replaces the NPCs and leaves locations, players, the diary and the maps
+ * exactly as they were. The caller is told what each section did so the
+ * confirmation it showed can be checked against what happened.
+ *
+ * What it will NOT do, deliberately: players, timelines, journey maps and
+ * gear. Replacing a player means deleting their character sheet, their
+ * stats, their relationships and their timelines — far past what "import"
+ * should do without a much more specific conversation. Those sections are
+ * reported as skipped rather than silently ignored.
+ *
+ * Names are the identity here, as they are in the bundle. An NPC or location
+ * whose name is in the file is UPDATED, keeping its row id — which is what
+ * keeps journey-map pins, `npc_<id>` timeline actors and cross-connections
+ * pointing at the right thing. Only rows the file does not mention are
+ * candidates for deletion, and one that something still points at is kept
+ * and reported rather than quietly breaking the thing that points at it.
+ */
+app.post('/api/campaigns/:campaignId/import-into', requireRole(['dm', 'admin']), async (req, res) => {
+  const { campaignId } = req.params;
+  const bundle = req.body;
+  if (bundle?.type !== 'campaign') return res.status(400).json({ error: 'Not a campaign export file' });
+
+  const client = await pool.connect();
+  try {
+    if (!await dmOwnsCampaign(campaignId, req.session.userId, req.session.role))
+      return res.status(403).json({ error: 'Access denied' });
+
+    const cid = parseInt(campaignId, 10);
+    const report = { locations: null, npcs: null, journal: null, diary: null, skipped: [] };
+    for (const [key, why] of [['players', 'player sheets, stats and timelines'],
+      ['journey_maps', 'maps'], ['dm_timelines', 'DM timelines'],
+      ['party_events', 'party events'], ['item_cards', 'gear']]) {
+      if (Array.isArray(bundle[key]) && bundle[key].length) report.skipped.push(why);
+    }
+
+    await client.query('BEGIN');
+
+    // ── Locations ──
+    const locIdByRef = {};
+    if (Array.isArray(bundle.locations)) {
+      let added = 0; let updated = 0;
+      for (const l of bundle.locations) {
+        if (!l?.name) continue;
+        const before = await client.query(
+          'SELECT id FROM campaign_locations WHERE campaign_id=$1 AND LOWER(name)=LOWER($2)', [cid, l.name],
+        );
+        const r = await client.query(
+          `INSERT INTO campaign_locations (campaign_id, name, description, is_public, size_type, image_data)
+           VALUES ($1,$2,$3,$4,$5,$6)
+           ON CONFLICT (campaign_id, LOWER(name)) DO UPDATE SET
+             name=EXCLUDED.name, description=EXCLUDED.description, is_public=EXCLUDED.is_public,
+             size_type=EXCLUDED.size_type, image_data=COALESCE(EXCLUDED.image_data, campaign_locations.image_data)
+           RETURNING id`,
+          [cid, l.name, l.description || null, l.is_public !== false, l.size_type || null, l.image_data || null],
+        );
+        locIdByRef[l._ref || l.name] = r.rows[0].id;
+        if (before.rows.length) updated += 1; else added += 1;
+      }
+      // Second pass for parents, the same cycle the create-new import has.
+      for (const l of bundle.locations) {
+        const self = locIdByRef[l?._ref || l?.name];
+        if (l?.parent_ref && locIdByRef[l.parent_ref] && self) {
+          await client.query('UPDATE campaign_locations SET parent_id=$1 WHERE id=$2',
+            [locIdByRef[l.parent_ref], self]);
+        }
+      }
+      report.locations = { added, updated, removed: 0, kept: 0 };
+    } else {
+      // Not in the file, so the campaign's own locations stay — and NPC
+      // location refs below resolve against them by name.
+      const existing = await client.query(
+        'SELECT id, name FROM campaign_locations WHERE campaign_id=$1', [cid]);
+      for (const l of existing.rows) locIdByRef[l.name] = l.id;
+    }
+
+    // ── NPCs ──
+    if (Array.isArray(bundle.npcs)) {
+      let added = 0; let updated = 0;
+      const seen = [];
+      for (const n of bundle.npcs) {
+        const name = typeof n === 'string' ? n : n?.name;
+        if (!name) continue;
+        seen.push(name.toLowerCase());
+        const before = await client.query(
+          'SELECT id FROM campaign_npcs WHERE campaign_id=$1 AND LOWER(name)=LOWER($2)', [cid, name]);
+        const ref = typeof n === 'string' ? null : n?.current_location_ref;
+        await client.query(
+          `INSERT INTO campaign_npcs
+             (campaign_id, name, description, public_info, private_info, is_public, current_location_id)
+           VALUES ($1,$2,$3,$4,$5,$6,$7)
+           ON CONFLICT (campaign_id, LOWER(name)) DO UPDATE SET
+             name=EXCLUDED.name, description=EXCLUDED.description,
+             public_info=EXCLUDED.public_info, private_info=EXCLUDED.private_info,
+             is_public=EXCLUDED.is_public, current_location_id=EXCLUDED.current_location_id`,
+          [cid, name,
+            (typeof n === 'string' ? null : n?.description) || null,
+            (typeof n === 'string' ? null : n?.public_info) || null,
+            (typeof n === 'string' ? null : n?.private_info) || null,
+            (typeof n === 'string' ? false : n?.is_public === true),
+            ref ? (locIdByRef[ref] ?? null) : null],
+        );
+        if (before.rows.length) updated += 1; else added += 1;
+      }
+
+      /*
+       * The leftovers. An NPC the file does not mention is removed — that is
+       * what "replace" means — UNLESS something still points at it, because
+       * neither referrer is a foreign key the database would protect:
+       * character_relationships stores a bare id beside a type, and a
+       * timeline's actors are `npc_<id>` strings in a text[].
+       */
+      const leftovers = await client.query(
+        `SELECT id, name FROM campaign_npcs
+          WHERE campaign_id=$1 AND NOT (LOWER(name) = ANY($2::text[]))`,
+        [cid, seen],
+      );
+      let removed = 0; const kept = [];
+      for (const row of leftovers.rows) {
+        const used = await client.query(
+          `SELECT 1 FROM character_relationships
+            WHERE campaign_id=$1
+              AND ((from_entity_type='npc' AND from_entity_id=$2)
+                OR (to_entity_type='npc'   AND to_entity_id=$2))
+           UNION ALL
+           SELECT 1 FROM player_timeline_entries
+            WHERE campaign_id=$1 AND $3 = ANY(player_ids)
+           LIMIT 1`,
+          [cid, row.id, `npc_${row.id}`],
+        );
+        if (used.rows.length) { kept.push(row.name); continue; }
+        await client.query('DELETE FROM campaign_npcs WHERE id=$1', [row.id]);
+        removed += 1;
+      }
+      report.npcs = { added, updated, removed, kept };
+    }
+
+    // ── Journal and diary: a full swap, like the standalone diary import. ──
+    if (Array.isArray(bundle.campaign_journal)) {
+      const had = await client.query(
+        'DELETE FROM campaign_journal_entries WHERE campaign_id=$1 RETURNING id', [cid]);
+      const players = await client.query(
+        'SELECT id, player_name FROM campaign_players WHERE campaign_id=$1', [cid]);
+      const playerIdByRef = Object.fromEntries(players.rows.map((p) => [p.player_name, p.id]));
+      let n = 0;
+      for (const e of bundle.campaign_journal) {
+        const title = journalStr(e.title, 255);
+        const body = journalStr(e.body, 50000);
+        if (!title && !body) continue;
+        await client.query(
+          `INSERT INTO campaign_journal_entries
+             (campaign_id, created_by, player_id, location_id, title, body, category,
+              in_game_day, dm_only, created_at, updated_at)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,
+                   COALESCE($10::timestamp, CURRENT_TIMESTAMP),
+                   COALESCE($10::timestamp, CURRENT_TIMESTAMP))`,
+          [cid, req.session.userId,
+            e.player_ref ? (playerIdByRef[e.player_ref] ?? null) : null,
+            e.location_ref ? (locIdByRef[e.location_ref] ?? null) : null,
+            title, body, journalStr(e.category, 120),
+            journalDay(e.in_game_day), e.dm_only === true, e.created_at || null],
+        );
+        n += 1;
+      }
+      report.journal = { added: n, replaced: had.rows.length };
+    }
+
+    if (Array.isArray(bundle.campaign_diary)) {
+      const had = await client.query(
+        'DELETE FROM campaign_diary_entries WHERE campaign_id=$1 RETURNING id', [cid]);
+      let n = 0;
+      for (const e of bundle.campaign_diary) {
+        await client.query(
+          `INSERT INTO campaign_diary_entries
+             (campaign_id, created_by, title, body, session_no, session_date, status, published_at, chapter)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+          [cid, req.session.userId, e.title, e.body || null, e.session_no ?? null,
+            e.session_date || null, e.status === 'published' ? 'published' : 'draft',
+            e.published_at || null, e.chapter ? String(e.chapter).slice(0, 120) : null],
+        );
+        n += 1;
+      }
+      report.diary = { added: n, replaced: had.rows.length };
+    }
+
+    await client.query('COMMIT');
+    res.json({ success: true, campaign_id: cid, ...report });
   } catch (e) {
     await client.query('ROLLBACK');
     res.status(500).json({ error: e.message });
@@ -6748,6 +7518,36 @@ async function initializeDatabase() {
         is_dm_player BOOLEAN NOT NULL DEFAULT false,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       );
+    `);
+
+    /*
+     * Migrate: a character's name is unique within its campaign,
+     * case-insensitively — the third table to get this rule, after locations
+     * and NPCs, and for the same reason. The bundle refers to a player by
+     * NAME, so two seats called "Davin" collapse into one on import, taking
+     * their inventory, diary and timelines with them.
+     *
+     * Across campaigns a name is free: the same character may be played in
+     * two of them, and that is not a clash.
+     *
+     * RENAMED, not deleted, like the NPC migration: a seat owns a character
+     * sheet, stats, relationships, diary entries and timelines. The id
+     * suffix is what stops the new name clashing with the next renamed row.
+     */
+    await pool.query(`
+      UPDATE campaign_players p
+         SET player_name = p.player_name || ' #' || p.id
+        FROM (
+          SELECT id, ROW_NUMBER() OVER (
+                   PARTITION BY campaign_id, LOWER(player_name) ORDER BY id
+                 ) AS rn
+            FROM campaign_players
+        ) d
+       WHERE d.id = p.id AND d.rn > 1;
+    `);
+    await pool.query(`
+      CREATE UNIQUE INDEX IF NOT EXISTS campaign_players_campaign_name_unique
+      ON campaign_players (campaign_id, LOWER(player_name));
     `);
 
     // Campaign-User assignments (which user plays which player in which campaign)
@@ -7399,6 +8199,84 @@ async function initializeDatabase() {
     // always DM-only on the public map). Column kept in place to avoid a destructive drop.
     await pool.query(`
       ALTER TABLE campaign_npcs ADD COLUMN IF NOT EXISTS path_public BOOLEAN NOT NULL DEFAULT false;
+    `);
+
+    /*
+     * Migrate: NPC names unique per campaign, case-insensitively.
+     *
+     * The table already had UNIQUE (campaign_id, name), which is exact —
+     * "Grathul" and "grathul" could both exist and then resolve
+     * unpredictably, since every lookup that matters (the bundle's NPC refs,
+     * the cross-connection refs, the `[[Name]]` index) keys on the NAME.
+     * Locations settled this long ago with a LOWER(name) index; this brings
+     * NPCs into line.
+     *
+     * RENAMED, not deleted — the opposite of what the locations migration
+     * did. A location was a name and a description; an NPC carries prose the
+     * DM wrote, and its id is referenced by character_relationships and by
+     * `npc_<id>` actor tokens in timeline entries. Deleting the loser of a
+     * case clash would silently orphan those. The id suffix is what
+     * guarantees the new name cannot collide with another renamed row.
+     */
+    await pool.query(`
+      UPDATE campaign_npcs n
+         SET name = n.name || ' #' || n.id
+        FROM (
+          SELECT id, ROW_NUMBER() OVER (
+                   PARTITION BY campaign_id, LOWER(name) ORDER BY id
+                 ) AS rn
+            FROM campaign_npcs
+        ) d
+       WHERE d.id = n.id AND d.rn > 1;
+    `);
+    await pool.query(`
+      CREATE UNIQUE INDEX IF NOT EXISTS campaign_npcs_campaign_name_unique
+      ON campaign_npcs (campaign_id, LOWER(name));
+    `);
+
+    /*
+     * Migrate: NPCs become a managed thing rather than a bare name — the same
+     * shape as a location, which is what they are from the DM's side.
+     *
+     * `is_public` DEFAULTS TO FALSE, the opposite of campaign_locations.
+     * Locations default to visible because they always were; NPCs have never
+     * been visible to a player at all, so defaulting to true would publish
+     * every NPC a DM has ever named the moment they upgrade. False keeps
+     * today's behaviour exactly and lets the DM reveal them one at a time,
+     * which is the point of the feature.
+     *
+     * Three text fields, with different audiences:
+     *   description  — who they are. Shown to players once the NPC is public,
+     *                  exactly as a location's description is.
+     *   public_info  — what the party has learned. Shown on the same terms.
+     *   private_info — the DM's secrets. NEVER sent to a player, which is why
+     *                  the player branch of every query below names its
+     *                  columns instead of using SELECT *.
+     */
+    await pool.query(`
+      ALTER TABLE campaign_npcs ADD COLUMN IF NOT EXISTS description  TEXT;
+    `);
+    await pool.query(`
+      ALTER TABLE campaign_npcs ADD COLUMN IF NOT EXISTS public_info  TEXT;
+    `);
+    await pool.query(`
+      ALTER TABLE campaign_npcs ADD COLUMN IF NOT EXISTS private_info TEXT;
+    `);
+    await pool.query(`
+      ALTER TABLE campaign_npcs ADD COLUMN IF NOT EXISTS is_public BOOLEAN NOT NULL DEFAULT false;
+    `);
+    /*
+     * Where they are NOW. A single column, not a history table: an NPC's
+     * movement over time already exists — timeline events tagged `npc_<id>`
+     * are what the journey map draws their path from — and a second,
+     * unconnected history would be two answers to one question.
+     *
+     * ON DELETE SET NULL: deleting a location should not delete the people
+     * who were standing in it.
+     */
+    await pool.query(`
+      ALTER TABLE campaign_npcs ADD COLUMN IF NOT EXISTS current_location_id
+        INTEGER REFERENCES campaign_locations(id) ON DELETE SET NULL;
     `);
 
     // Migrate: location visibility (is_public)

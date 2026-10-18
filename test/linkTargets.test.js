@@ -26,10 +26,23 @@ describe('what a player may resolve', () => {
     expect(body).toMatch(/\$\{isDM \? '' : 'AND is_public = true'\}/);
   });
 
-  it('sends a player no NPCs at all', () => {
-    // Not "filtered to the visible ones" — there is no such column.
-    expect(body).toMatch(/isDM\s*\?\s*pool\.query\(/);
-    expect(body).toMatch(/Promise\.resolve\(\{ rows: \[\] \}\)/);
+  it('sends a player only the NPCs that have been revealed', () => {
+    // This used to assert "no NPCs at all", because campaign_npcs had no
+    // visibility column. It has one now, and NPCs follow the same rule as
+    // locations: filtered in SQL, not in the client.
+    expect(body).toMatch(/FROM campaign_npcs[\s\S]{0,120}\$\{isDM \? '' : 'AND is_public = true'\}/);
+    expect(body).not.toMatch(/Promise\.resolve\(\{ rows: \[\] \}\)/);
+  });
+
+  it('keeps private_info out of the index entirely', () => {
+    // Not even for the DM. This payload is fetched once per campaign to
+    // drive an autocomplete and then sits in browser memory; the NPCs tab is
+    // where secrets are read.
+    expect(body).not.toMatch(/private_info/);
+  });
+
+  it('carries what the popover renders, so it needs no second request', () => {
+    expect(body).toMatch(/SELECT id, name, description, public_info, is_public\s*\n?\s*FROM campaign_npcs/);
   });
 
   it('decides DM-ness from the campaign row, not the session role alone', () => {
