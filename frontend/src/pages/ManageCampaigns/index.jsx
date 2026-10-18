@@ -24,6 +24,7 @@ import PlayersTab              from './tabs/PlayersTab';
 import LocationsTab            from './tabs/LocationsTab';
 import { TimelinesTab, SettingsTab } from './tabs/OtherTabs';
 import NpcsTab from './tabs/NpcsTab';
+import SessionsPanel from '@/pages/Sessions/SessionsPanel';
 import { CharTreeTab }         from './tabs/CharTreeTab';
 import JournalTab              from './tabs/JournalTab';
 import SearchTab               from './tabs/SearchTab';
@@ -299,6 +300,8 @@ export default function ManageCampaigns() {
             campaignName={currentCampaign.name}
           />
         );
+      case 'sessions':
+        return <SessionsPanel key={currentId} campaignId={currentId} />;
       case 'search':
         return <SearchTab campaignId={currentId} />;
       case 'settings':

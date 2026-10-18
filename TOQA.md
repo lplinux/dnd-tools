@@ -13,6 +13,88 @@ PC Sheet / Journey Map / Manage Campaign fix batch that went with it.
 
 ---
 
+## Session prep: the three loose ends
+
+All three were written down as open questions when the feature shipped. Each is now built,
+covered by tests that were each proved to fail when the guard is reverted, and exercised live
+against a scratch Postgres (34 checks).
+
+### Skipped now cascades
+
+- [ ] **Mark a parent card Skipped** — every sub-card beneath it, to any depth, should go
+      skipped with it, the same way Done already did.
+- [ ] **Mark a parent On-Going, Ready or In-Preparation** — those must still change only the
+      card you clicked. A parent is on-going precisely because one child is and the rest are
+      not, and that distinction is the reason the other three do not cascade.
+
+### Dragging between sections
+
+- [ ] **Drag a beat into *What happened*.** The strip at the foot of each section is the
+      target, and it should now appear for a drag that started anywhere — it is the only
+      target an empty section has, and *What happened* usually is empty.
+- [ ] **It should be labelled "Move to …"** when the drag came from another section, and
+      unlabelled when you are just reordering within the one you are in.
+- [ ] **Its sub-cards must come too.** Drag a card that has a couple of levels under it and
+      check they all land in the new section — a child left behind would simply disappear
+      from the page.
+- [ ] **Reordering within a section should be exactly as it was.** This is the regression
+      risk: the renumbering now runs against the *destination* list.
+- [ ] **Dropping a card inside its own subtree is still refused.**
+- [ ] **A played session still freezes** — no dragging at all until it is marked Prepared.
+
+### Still Running vs. What happened
+
+- [ ] **Mark a card On-Going, see it in a later session's Still Running, then drag it into
+      *What happened*.** It should leave Still Running — it is a record now, not a thread.
+      The count beside the session in the list should agree.
+
+### What happened → the Campaign Journal
+
+- [ ] **📖 To journal** on the *What happened* heading. It should appear only when that
+      section has cards, and **also on a played session** — that is when you would use it.
+- [ ] **The checkbox is an opt-in.** Left alone, the entries land DM-only; a player should
+      see nothing. Tick "let the players read these" and they should.
+- [ ] **Sub-cards fold into the body** as nested bullets, not as separate entries.
+- [ ] **Click it twice.** The second run should write nothing and say so, not double the
+      journal.
+- [ ] **The session keeps every card** — this copies, it never moves.
+- [ ] **No card from the other three sections** should ever appear in the journal.
+- [ ] Filed under `Session N` by default; the in-game day is optional, and **day 0 is a real
+      date** in this epoch, so it should survive as 0 rather than vanishing.
+
+### Marking a session Played
+
+- [ ] With *What happened* **empty**, it should warn first and explain that Played is
+      read-only. Cancelling should leave the session Prepared.
+- [ ] With notes written, no warning — straight to the generate-next offer as before.
+
+### The page no longer jumps
+
+- [ ] **Scroll down, edit a card, save.** The page should stay where it is, with the same
+      cards expanded. This was the bug: it went back to the top and collapsed everything.
+- [ ] **Same for deleting**, including a card with sub-cards — they should all disappear
+      without a reload.
+- [ ] **Add a sub-card to a collapsed parent** — the parent should open so you can see it.
+- [ ] **The section headings should stay visible** while their cards scroll under them, and
+      the state menu must still open *over* a heading, not behind it.
+
+### The campaign bundle carries the prep
+
+- [ ] **Export a campaign and reimport it.** The sessions, their cards, the nesting and the
+      states should all come back. The confirmation now names how many sessions and cards
+      arrived.
+- [ ] **An older bundle with no prep in it should still import**, landing zero sessions
+      rather than erroring.
+- [ ] **The `campaign-sessions` file is unchanged** and still the way to move prep between
+      campaigns without the players and maps.
+
+Note for later, not a QA item: the bundle still declares **version 5** although it now carries
+a `sessions` key. Nothing reads that number — the import is field-driven — and the unmerged
+`npc-management-feature` branch has already claimed 6. It is in `TODO.md` to reconcile when
+those branches meet.
+
+---
+
 ## Rules lookups on a pinned item card
 
 ### Already proved live

@@ -15,6 +15,7 @@ import { pcApi }          from '@/api/pc';
 import { compressImage }  from '@/components/map/compressImage';
 import { importJourneyMap } from '@/api/importJourneyMap';
 import { diaryApi }       from '@/api/diary';
+import { sessionsApi }    from '@/api/sessions';
 import { useConfirm }     from '@/contexts/ConfirmContext';
 import { downloadBundle } from '@/api/downloadBundle';
 
@@ -165,6 +166,12 @@ export function useManageCampaigns() {
         if (Array.isArray(data.locations)) parts.push(`${data.locations.length} location${data.locations.length === 1 ? '' : 's'}`);
         if (Array.isArray(data.campaign_journal)) parts.push(`${data.campaign_journal.length} journal entries`);
         if (Array.isArray(data.campaign_diary)) parts.push(`${data.campaign_diary.length} diary entries`);
+        // Named, because a matched session is REPLACED whole — its cards
+        // deleted and rebuilt — and that is the most destructive thing in
+        // this list.
+        if (Array.isArray(data.sessions) && data.sessions.length) {
+          parts.push(`${data.sessions.length} session${data.sessions.length === 1 ? '' : 's'} of prep (matched ones replaced whole)`);
+        }
         const held = [];
         if (Array.isArray(data.players) && data.players.length) held.push('player sheets');
         if (Array.isArray(data.journey_maps) && data.journey_maps.length) held.push('maps');
@@ -172,8 +179,11 @@ export function useManageCampaigns() {
           [
             `Replace ${parts.join(', ') || 'nothing'} in "${target.name}" with what is in this file?`,
             'Anything the file does not carry is left alone.',
-            held.length ? `Its ${held.join(' and ')} will NOT be imported.` : null,
-            'Choose Cancel to import it as a separate new campaign instead.',
+            held.length
+              ? `Its ${held.join(' and ')} are NOT merged — there is no safe way to match `
+                + 'them to what is already here. Import as a new campaign to keep them.'
+              : null,
+            'Choose Cancel to import it as a separate new campaign instead, with everything in it.',
           ].filter(Boolean).join('\n\n'),
           { title: `Import into ${target.name}`, confirmLabel: 'Replace' },
         );
@@ -188,6 +198,7 @@ export function useManageCampaigns() {
             r.locations && `locations: ${r.locations.added} added, ${r.locations.updated} updated`,
             r.journal && `journal: ${r.journal.added}`,
             r.diary && `diary: ${r.diary.added}`,
+            r.sessions && `sessions: ${r.sessions.added} added, ${r.sessions.replaced} replaced`,
           ].filter(Boolean).join(' · ');
           toast(`Imported into ${target.name} — ${bits || 'nothing to do'}.`);
           // Said plainly rather than buried: an NPC something still points at
@@ -229,9 +240,36 @@ export function useManageCampaigns() {
       } catch (e) { toast(e.message, 'error'); }
       return { done: true };
     }
+    /*
+     * Session prep. Merges by session number rather than replacing the lot —
+     * a DM importing session 25 should not lose the twenty-four they have —
+     * so the question is about what will be OVERWRITTEN, and names which.
+     */
+    if (type === 'campaign-sessions') {
+      try {
+        const incoming = (data.sessions || []).length;
+        const existing = (await sessionsApi.list(currentId).catch(() => [])) || [];
+        const nums = new Set(existing.map((e) => e.session_no).filter((n) => n != null));
+        const clashes = (data.sessions || [])
+          .map((x) => x?.session_no).filter((n) => n != null && nums.has(n));
+        const ok = await confirm(
+          [
+            `Import ${incoming} session${incoming === 1 ? '' : 's'} into this campaign?`,
+            clashes.length
+              ? `Session${clashes.length === 1 ? '' : 's'} ${clashes.join(', ')} already exist and will be REPLACED — their cards are deleted and rebuilt from the file.`
+              : 'None of them clash with what is already there.',
+          ].join('\n\n'),
+          { title: 'Import session prep', confirmLabel: clashes.length ? 'Replace' : 'Import' },
+        );
+        if (!ok) return { done: true };
+        const r = await sessionsApi.importAll(currentId, data);
+        toast(`Sessions imported — ${r.added} added, ${r.replaced} replaced, ${r.cards} cards.`);
+      } catch (e) { toast(e.message, 'error'); }
+      return { done: true };
+    }
     if (type === 'pc-sheet') return { need: 'pc-sheet', bundle: data };
     if (type === 'timeline') return { need: 'timeline', bundle: data };
-    toast('Unrecognized file — expected a campaign, journey-map, pc-sheet, timeline or campaign-diary export.', 'error');
+    toast('Unrecognized file — expected a campaign, journey-map, pc-sheet, timeline, campaign-diary or campaign-sessions export.', 'error');
     return { done: true };
   }, [currentId, campaigns, reloadCampaigns, reload, toast, confirm]);
 

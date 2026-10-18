@@ -232,14 +232,34 @@ describe('child ids are scoped to their parent', () => {
 });
 
 describe('export carve-outs are explicit', () => {
-  it('the campaign diary export opts in to trashed campaigns', () => {
-    const r = routes().find((x) => x.path === '/api/campaign-diary/:campaignId/export');
-    expect(r).toBeDefined();
+  /*
+   * Routes allowed to read a TRASHED campaign, each because it exists so a
+   * DM can take a copy out before purging. Both are read-only; a write
+   * route reaching for this would be reviving data in a deleted campaign,
+   * which is the thing the list is here to make someone notice.
+   */
+  const MAY_READ_TRASHED = [
+    '/api/campaign-diary/:campaignId/export',
+    '/api/campaigns/:campaignId/sessions/export',
+  ];
+
+  it.each(MAY_READ_TRASHED)('%s opts in to trashed campaigns', (path) => {
+    const r = routes().find((x) => x.path === path);
+    expect(r, `${path} not found`).toBeDefined();
     expect(r.body).toContain('includeTrashed: true');
+  });
+
+  it.each(MAY_READ_TRASHED)('%s only reads', (path) => {
+    const r = routes().find((x) => x.path === path);
+    expect(r.method).toBe('GET');
+    for (const write of ['INSERT INTO', 'UPDATE ', 'DELETE FROM']) {
+      expect(r.body, `${path} writes while reaching into the trash`).not.toContain(write);
+    }
   });
 
   it('nothing else passes includeTrashed', () => {
     const hits = (source.match(/includeTrashed:\s*true/g) ?? []).length;
-    expect(hits, 'a new includeTrashed caller appeared — is it really read-only?').toBe(1);
+    expect(hits, 'a new includeTrashed caller appeared — is it really read-only?')
+      .toBe(MAY_READ_TRASHED.length);
   });
 });

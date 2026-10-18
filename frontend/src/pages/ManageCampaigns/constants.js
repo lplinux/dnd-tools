@@ -36,6 +36,10 @@ export const TABS = [
   { id: 'npcs',      label: '🧟 NPCs',      count: true  },
   { id: 'timelines', label: '📜 Timelines', count: true  },
   { id: 'chartree',  label: '🌳 Char Tree', count: false },
+  // Session prep — the DM's plan for one sitting. No count: it loads its own
+  // data, like the journal, and a badge blank until you open the tab is
+  // worse than no badge.
+  { id: 'sessions',  label: '🗓 Sessions',  count: false },
   // The shared journal, from the DM's side — the DM-only entries included.
   // No count: it loads its own data, and a badge that is always blank until
   // you open the tab is worse than no badge.

@@ -13,6 +13,234 @@ The newest tag is `1.0.0`. Anything above it is marked *Unreleased* until it is 
 
 ## [1.0.1] – Unreleased
 
+### Added — Session prep
+
+A **🗓 Sessions** tab in Manage Campaigns: the DM's plan for one sitting, and what came of it.
+DM-only, all of it — there is no player-facing counterpart anywhere, which is the point, since
+this is where the twist lives.
+
+A session has a number, a title, a date and a status (**prepared** or **played**). Its notes
+are cards, in the order a session is actually used:
+
+- **Where we left off** — the short version of last time, to read aloud.
+- **Before it begins** — what you need ready: statblocks, handouts, a map.
+- **The session** — things that could happen. Nothing here has to.
+- **What happened** — written during or after; the raw material a diary entry comes from.
+
+Every card carries a **state** — in preparation, ready, on-going, done, skipped — changed with
+one click to open the picker and one to choose, never a trip into a form. It has its own route
+for that, because a PUT omitting the title would blank it and flipping a card to Done is the
+most frequent write the feature has. **Cards nest** as deep as the DM's own notes do, so a beat
+can carry its own "if they refuse"; deleting one takes its subtree, because a beat's detail has
+no life of its own. `[[Cross-links]]` work in every card body.
+
+**"Still running" is a view, not a section.** Any card marked on-going shows up in every *later*
+session until someone changes its state, and marking it done clears it everywhere at once.
+Carrying a thread forward by copying it is how you end up with two of it, one of them quietly
+stale — so the section has no "add" and is read-only in place, labelled with where the thread
+came from.
+
+It looks backwards in the **campaign's own order**, not clock time: a DM writing session 12
+before session 11 should still see 11's threads in 12, and 12's must not leak back into 11.
+
+Deliberately not the campaign diary. The diary is the finished account the table reads; this is
+the working document behind it.
+
+#### Reading a session of a hundred cards
+
+Six changes from first real use, with 258 cards of actual prep in the page.
+
+**Sections open shut**, each with its card count in the heading, so a closed
+section still tells you whether it is worth opening. Four sections open at once was
+a page nobody could find anything in.
+
+**Marking a card done takes its sub-cards with it.** Finishing a beat and leaving three
+half-ticked details underneath is just a second chore. Only `done` cascades — a parent is
+on-going precisely because one child is and the rest are not, and cascading that would erase
+the distinction. It is one recursive statement rather than a walk from the client, bounded at
+fifty levels because `parent_id` is a tree by construction and not by constraint.
+
+**Skipped cascades too.** It did not at first, because only Done had been asked for — but the
+two mean the same thing to a DM reading the page, and leaving skipped per-card meant abandoning
+a beat and then ticking its three details off one by one. The other three still do not cascade,
+and that asymmetry is the point.
+
+**Changing a state no longer refetches the session.** It did, which remounted every card and
+threw the DM back to the top of the page — mid-session, while they were ticking something off,
+which is the worst possible moment. The route now returns every row it changed and the page
+patches those in place.
+
+**A finished card folds itself away**, and **Expand deliberately skips the finished ones** —
+re-opening fifty done beats is not what anyone means by "expand all". That needed open/closed
+to move out of the card and into the page, since local state inside a card cannot be told to
+skip anything.
+
+**The state menu is opaque again.** A finished card used to dim its whole box, and the menu
+inside it inherited that. It fades its text instead.
+
+**"What happened" has no state control and is never greyed.** Those are things that actually
+happened at the table; preparing or skipping one after the fact is a question with a single
+answer.
+
+#### Running a session from the page
+
+**A played session is read-only.** Cards, states and drag all freeze until it is marked
+Prepared again — a finished night is a record, and editing it should take a deliberate act
+rather than a stray click in last month's notes. The page says so, instead of just not
+responding. **Still Running is hidden** on one too: it is a working view of what is live, and
+the rows are untouched, only the view is gone.
+
+**Marking a session played offers to build the next one**, because that is the moment the DM
+knows what survived. Ready and on-going cards carry into *The session*, in-preparation ones
+into *Before it begins*, and *What happened* becomes a single recap card to read aloud. Done
+and skipped carry nothing. It **copies** — the played session keeps its record — and the
+confirmation names the counts first.
+
+**The whole tree comes with a live card.** A live sub-beat under a finished one is meaningless
+on its own — *"if they refuse"* with nothing to refuse — so every ancestor of a carrying card
+carries too, keeping its own state so it is visibly already done. Finished *leaves* are still
+dropped: only the connective tissue between a root and something live earns its place.
+
+That also means a tree gets **one section**, decided by what is live inside it rather than by
+its root — a tree holding anything ready or on-going is a thing that might happen, so it goes
+to *The session*; a tree that is only in-preparation is still work to do. Splitting a tree
+across the two is the thing this avoids.
+
+An earlier version promoted such a card to the root instead. That kept the thread and threw
+away what it was part of. And the version before that carried *What happened* twice: once as
+prose and again as cards, putting every event of last session into next session's plan.
+
+**Drag and drop.** A strip between cards reorders among siblings; dropping onto a card makes
+it a sub-card. The two are separate targets rather than halves of one, because a card is both a
+neighbour and a possible parent and halves make that a guess. Dropping a card inside its own
+subtree is refused — that would detach the branch and leave rows nothing ever renders again.
+
+**And a card may now cross sections.** This was refused at first, on the grounds that a card
+means something because of where it sits. That is true, and it turned out to be the argument
+for allowing it: a beat that actually happened belongs in *What happened*, and the DM should
+be able to say so by dragging it rather than retyping it. The strip at the foot of each section
+is the target, and it shows for any drag — it is the only one an empty section has, and *What
+happened* is usually empty.
+
+**The subtree goes with it**, which is the load-bearing half. A child's section is its parent's
+everywhere else in the feature, so moving a card without its descendants would leave them in a
+section their parent has left, where nothing renders them at all.
+
+One consequence worth naming: a card dragged into *What happened* keeps whatever state it had,
+so an on-going thread could have arrived there and gone on announcing itself as still running
+in every later session. **Still Running now ignores *What happened*** — those cards are a
+record, not a thread — and so does the count beside each session in the list.
+
+**Search and a state filter**, inside the session. A matching card keeps its whole subtree,
+because you searched for the card and its detail is what you wanted to read; a card kept only
+because something beneath it matched is dimmed as the path to a hit. Filtering opens the
+sections that have one, or a match behind a shut heading reads as "no results".
+
+**Still Running now updates in place.** Those rows come from other sessions, so patching the
+session's own items left a thread you had just closed sitting there until a reload.
+
+**Neither does saving a card.** Saving called the same reload, which swapped the whole panel
+for a spinner — the list unmounted, the page jumped back to the top and every expanded card
+shut, mid-session, while the DM was writing in one. It patches the row instead. Deleting had
+the identical fault and the same fix, mirroring the server's cascade to sub-cards rather than
+refetching. A new sub-card also opens its parent, which otherwise swallowed it.
+
+**The section headings float.** A long section used to scroll past unlabelled. They sit at
+`z-20` — over the cards, deliberately under the state menu at `z-50`, which would otherwise
+have its clicks eaten.
+
+**Marking a session Played warns when *What happened* is empty**, and asks *before* the write.
+Played makes the session read-only, so doing it the other way round left the DM to work out
+that they had to mark it Prepared again before they could type the notes they were about to
+type.
+
+#### What happened → the Campaign Journal
+
+The same night was being written down twice: once as the DM's private record in *What
+happened*, and again in the Journal so the table could read it. **📖 To journal** on that
+section's heading copies the first into the second.
+
+**One entry per card**, with its sub-cards folded into the body as bullets — a sub-card is
+detail about its parent, not a separate event, so splitting them would file four entries for
+one thing that happened. Only *What happened* is ever read: the other three sections are a
+plan, and publishing a plan as a record of the night gives away what has not happened yet.
+
+**It copies.** The session keeps everything, because a played session being a record is the
+whole point of it.
+
+**DM-only unless you say otherwise.** These are the DM's own notes, so publishing them is the
+deliberate act and the box is an opt-in that says what it does rather than naming the column.
+Un-ticked, the entries land hidden and can be published one at a time from the Journal.
+
+**Clicking twice is safe** — a card whose title is already in the campaign's journal is
+skipped, and the toast says how many. People click twice, and a convert button that silently
+doubles the journal is worse than one that does nothing the second time.
+
+Offered on a played session too: copying reads the prep, it does not edit it, so read-only has
+no say — and after the night is played is exactly when you would want it.
+
+#### Merging a bundle into an existing campaign
+
+**The prep now merges too.** The campaign bundle grew a `sessions` key and this path did not,
+so a merge quietly dropped it — and it was not even listed among the things the dialog says it
+refuses, because that list is written by hand. It goes through `importSessionList`, the same
+function the `campaign-sessions` file and the whole-campaign restore use, so three paths cannot
+drift apart. A session matched by number is **replaced whole**, which the confirmation now
+names: it is the most destructive thing in that dialog, and agreeing to "replace 3 NPCs" should
+not cost you a session's cards.
+
+**Player sheets and maps are still refused, and now say why.** It read as a defect — "will NOT
+be imported", with no reason. They are refused because there is no safe way to match them to
+what is already there: a seat, its user assignment, its stats, its inventory and its timelines
+all have to agree, and guessing wrong overwrites a character. Sessions have such a rule, which
+is why they can merge and these cannot. The dialog now says that, and points at importing as a
+new campaign — which carries everything.
+
+#### Export and import
+
+Session prep has its own file type, **`campaign-sessions`**, for the same reason the diary and
+the journey maps have theirs: a DM moving prep between campaigns should not drag players and
+maps along. **💾 Export** sits in the Sessions tab; import goes through the usual hub in
+Settings, which sniffs the file type.
+
+**The whole-campaign bundle now carries the prep as well.** It did not, and that was wrong in a
+quiet way: the campaign bundle is the whole-world backup, so a restore silently returned a
+campaign with every session's planning gone. Both sides go through the *same* two helpers the
+`campaign-sessions` file uses — two importers would drift, and the one with fewer tests would
+be the one a backup went through. The prep is written last and inside the campaign's own
+transaction, so a bundle that fails anywhere above leaves none of it behind.
+
+The bundle version stays at **5** even though it carries a new key. Compatibility here is
+field-driven and not version-driven — the import reads `sessions = []` and never looks at the
+number — and a bundle without the key still restores, simply with no prep in it.
+
+**The import MERGES, which is the one way it differs from the diary import.** A diary is a
+single document and importing one replaces it; sessions are a running series, and a DM
+importing session 25 should not lose the twenty-four they already have. Identity is the
+session **number**, falling back to the **title** — a session that matches is replaced whole,
+so importing the same file twice leaves the same thing rather than doubling it. The
+confirmation names which numbers will be overwritten.
+
+Items are **nested** in the file and carry **no database ids**: a file is read by people and
+diffed by tools, and `children` survives both while a flat list keyed on ids survives neither.
+A hand-edited bundle cannot smuggle a card into the wrong place — a child takes its parent's
+section on import exactly as it does through the UI, and an unknown state or section is clamped
+rather than stored.
+
+The export opts in to trashed campaigns, like the diary's, so prep can be taken out before a
+purge. That carve-out list is now two routes and the test names both, and additionally asserts
+each is read-only.
+
+**Not built yet:** Campaign Pendings, the campaign-level backlog of ideas — deferred by
+agreement, and noted in `TODO.md`. Card reordering is also not in: the `position` column exists
+and ordering is stable, but there is no drag yet.
+
+Verified against a scratch Postgres — 28 checks covering nesting, the section-inheritance rule,
+the on-going view in both directions, cascade on delete, and a player being refused at every
+route. Plus 24 static tests and 10 on the flat-rows-to-tree step, with four guards re-broken to
+confirm each check fails.
+
+
 ### Added — rules lookups on a pinned item card
 
 Open an item from the inventory and its **weapon properties** and **damage type** are clickable,
