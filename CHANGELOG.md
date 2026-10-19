@@ -154,6 +154,95 @@ Played makes the session read-only, so doing it the other way round left the DM 
 that they had to mark it Prepared again before they could type the notes they were about to
 type.
 
+### API tokens, and one knob for TLS
+
+#### Running behind a reverse proxy
+
+`cookie.secure` and `app.set('trust proxy')` were two settings that had to be changed together
+by hand, documented as such and never exercised. Each alone is a fault that does not present as
+one — secure without a proxy makes the browser withhold the session cookie so nobody can log in
+and nothing says why; a proxy without secure sends that cookie over the last hop in clear.
+
+They are now derived from **`TRUST_PROXY_HOPS`**, which defaults to `0` — today's behaviour
+exactly, plain HTTP with no proxy. Set it to the number of proxies in front and both flip
+together. A hop **count** rather than a boolean, because `trust proxy: true` trusts the whole
+chain, which makes `X-Forwarded-For` caller-controlled and so hands anyone a way past the login
+limiter by varying one header.
+
+The proxy has to send `X-Forwarded-Proto: https`, or Express still considers the connection
+insecure. The server now prints which mode it booted in, since every way of getting this wrong
+otherwise shows up as "nobody can log in".
+
+#### API tokens
+
+A second credential for your account, minted from the **Account menu** in the header and shown
+exactly once — the server keeps only a sha256 of it, the same contract as an invite link.
+
+It sits with the account rather than inside a campaign, because that is what it belongs to: one
+token reaches every campaign you can, and a control living in one campaign's settings implies a
+limit that does not exist. (`/user-panel` would have been the other candidate and is admin-only,
+so a DM could not have reached it.) The dropdown is 260px, so the entry opens a dialog instead
+of growing the menu.
+
+```
+curl -H "Authorization: Bearer dnd_…" http://localhost:3080/api/campaigns
+```
+
+Nothing else had to change to make this work, which is the whole reason it is small: the token
+resolves to a stand-in session carrying the user's id, role and username, so every existing
+route accepts it untouched and keeps its own authorization checks. Because the withholding
+rules live in SQL rather than in the UI, a token cannot read past them — a player's token gets
+a player's view, and was tested getting a 403 on DM-only session prep.
+
+**It never creates a session.** `express-session` is skipped for a token request, so no entry
+is written to the in-memory store and no cookie comes back; otherwise every call from a script
+would leave one behind.
+
+**It is exempt from CSRF — keyed on the resolved token, never on the header being present.**
+Exempting it is correct, because a browser does not attach an `Authorization` header by itself
+and so there is nothing to ride; keying it on the header would have let anyone opt out of CSRF
+by sending one.
+
+Three things a token may never do, whatever its scope:
+
+- **DELETE anything.** It is for updating a campaign, not removing one.
+- **Touch `/api/tokens`.** A leaked write token would otherwise mint its own replacement and
+  revoke the ones you would use to lock it out.
+- **Touch `/api/auth` or `/api/users`** — changing the account's password from a credential the
+  account holder may not know exists.
+
+Scope is `read` or `read + update`, enforced in the route and by a CHECK constraint. Revoking
+sets `revoked_at` rather than deleting the row, so a token found in a log later is still
+nameable, and unknown, expired and revoked all answer the same way so none of them confirms a
+token was once real. Guessing is throttled on the same window the invite links use.
+
+#### `GET /api/discover`
+
+A client had to be told the routes. Now it can ask, and the answer is **derived from Express's
+own router** rather than from a list kept beside it — a hand-written index of 167 routes is
+wrong within a week, and wrong in the worst way, because it is the thing a client trusts
+instead of reading the code. The only hand-written part is a dozen lines of prose naming what
+each `/api/` prefix is for, shared with the startup banner so the two cannot disagree.
+
+**It answers for the caller, not in the abstract.** Every route carries `allowed`, and when
+false a `why`: the role it needs, or which of the token rules refuses it. An assistant reads
+the list once instead of discovering the rules by being refused one call at a time.
+
+```json
+{ "method": "PUT",    "path": "/api/campaigns/:campaignId/npcs/:npcId", "allowed": true }
+{ "method": "DELETE", "path": "/api/campaigns/:id", "allowed": false,
+  "why": "API tokens cannot delete" }
+```
+
+For a write token today: 167 routes, 129 of them callable.
+
+**The absolute refusals are reported before the role one.** No role makes `DELETE` reachable
+from a token, so leading with "needs role: admin" would send a client off to fix the wrong
+thing; the role reason is the actionable one, so it comes last.
+
+Roles come from the gates themselves — `requireAuth` and `requireRole` now carry their own
+`roles` — rather than from a second table that would drift from the first.
+
 #### What happened → the Campaign Journal
 
 The same night was being written down twice: once as the DM's private record in *What

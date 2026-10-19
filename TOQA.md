@@ -13,6 +13,47 @@ PC Sheet / Journey Map / Manage Campaign fix batch that went with it.
 
 ---
 
+## API tokens, and the TLS switch
+
+### Tokens
+
+- [ ] **Account menu (header) → API Tokens.** It should open a dialog, and be reachable from
+      any page and by any logged-in user, not just a DM.
+- [ ] **Create one, copy it, close the box** — it should never be shown again, and the list
+      should never show the secret.
+- [ ] It should **no longer appear** in Manage Campaigns → ⚙️ Settings.
+- [ ] **Use it**: `curl -H "Authorization: Bearer dnd_…" http://localhost:3080/api/campaigns`.
+      No cookie, no CSRF header, should just work.
+- [ ] **A read-only token should refuse a PUT**, and **neither scope should be able to DELETE**.
+- [ ] **Revoke one** — whatever was using it should stop immediately.
+- [ ] **`used` should fill in** after a call (within a minute; it is written at most once a
+      minute on purpose).
+- [ ] The three things it must refuse: `/api/tokens`, `/api/auth/change-password`, `/api/users`.
+- [ ] **The browser must be unaffected** — logging in, editing, and CSRF should behave exactly
+      as before.
+
+### Discovery
+
+- [ ] **`curl -H "Authorization: Bearer dnd_…" .../api/discover`** — should list every route
+      with `allowed` true or false, and a `why` on each refusal.
+- [ ] **The same call with a read-only token** should mark every POST/PUT/PATCH refused.
+- [ ] **Anonymous should get 401.**
+- [ ] **As a player** (session), DM-only routes should read `needs role: dm or admin`.
+- [ ] Spot-check the promise: pick a route it marks `allowed` and call it; pick one it refuses
+      and confirm it really is refused.
+
+### TLS
+
+Nothing to do locally: `TRUST_PROXY_HOPS` defaults to `0`, which is the current behaviour.
+Worth one check at boot that it still says *"Plain HTTP, no proxy"*.
+
+- [ ] When you do put it behind a proxy: set `TRUST_PROXY_HOPS=1`, make the proxy send
+      `X-Forwarded-Proto: https`, and confirm the boot line says *Behind 1 proxy hop(s); secure
+      cookies ON*. The session cookie should then carry `Secure`. (Verified here against a
+      simulated proxy, but your real one is the test that counts.)
+
+---
+
 ## Session prep: the three loose ends
 
 All three were written down as open questions when the feature shipped. Each is now built,
