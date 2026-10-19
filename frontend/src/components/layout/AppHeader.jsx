@@ -10,6 +10,9 @@
  *   - Username + role badge
  *   - Theme selector (Dark / Light / Slate swatches)
  *   - Change Password form
+ *   - API tokens (opens a dialog — the dropdown is 260px and the panel is a
+ *     form plus a list, so it would not fit and should not be cramped into
+ *     a menu either)
  *   - Logout button
  *
  * Props:
@@ -22,11 +25,12 @@
 
 import { useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ChevronDown, LogOut, KeyRound, ArrowLeft } from 'lucide-react';
+import { ChevronDown, LogOut, KeyRound, ArrowLeft, Terminal } from 'lucide-react';
 
 import { useAuth }  from '@/hooks/useAuth';
 import { useTheme } from '@/hooks/useTheme';
-import { Button, Badge, FormField } from '@/components/ui';
+import { Button, Badge, FormField, Modal } from '@/components/ui';
+import ApiTokensPanel from '@/components/ApiTokensPanel';
 
 /** Theme swatch button used inside the account dropdown */
 function ThemeSwatch({ id, label, swatch, active, onSelect }) {
@@ -56,7 +60,7 @@ function ThemeSwatch({ id, label, swatch, active, onSelect }) {
 }
 
 /** Account dropdown rendered as a floating panel */
-function AccountMenu({ user, onClose }) {
+function AccountMenu({ user, onClose, onOpenTokens }) {
   const { logout, changePassword } = useAuth();
   const { theme, setTheme, themes } = useTheme();
   const navigate = useNavigate();
@@ -152,6 +156,15 @@ function AccountMenu({ user, onClose }) {
 
       <div className="h-px bg-border" />
 
+      {/* API tokens. A dialog rather than more of this panel: it is a form
+          and a list, and this menu is 260px wide. */}
+      <Button variant="default" onClick={() => { onClose(); onOpenTokens(); }}>
+        <Terminal size={12} className="inline mr-1" />
+        API Tokens
+      </Button>
+
+      <div className="h-px bg-border" />
+
       {/* Logout */}
       <Button variant="danger" onClick={handleLogout}>
         <LogOut size={12} className="inline mr-1" />
@@ -171,6 +184,7 @@ export default function AppHeader({
   const { user } = useAuth();
   const navigate = useNavigate();
   const [menuOpen, setMenuOpen] = useState(false);
+  const [tokensOpen, setTokensOpen] = useState(false);
   const wrapRef = useRef(null);
 
   function handleBack() {
@@ -226,7 +240,11 @@ export default function AppHeader({
                   className="fixed inset-0 z-40"
                   onClick={() => setMenuOpen(false)}
                 />
-                <AccountMenu user={user} onClose={() => setMenuOpen(false)} />
+                <AccountMenu
+                  user={user}
+                  onClose={() => setMenuOpen(false)}
+                  onOpenTokens={() => setTokensOpen(true)}
+                />
               </>
             )}
           </div>
@@ -237,6 +255,17 @@ export default function AppHeader({
           </Button>
         )}
       </div>
+
+      {/* Account-level, so it hangs off the header rather than any one page.
+          Mounted on every page but rendered only when open. */}
+      <Modal
+        open={tokensOpen}
+        onClose={() => setTokensOpen(false)}
+        title="🔑 API Tokens"
+        className="max-w-2xl"
+      >
+        <ApiTokensPanel />
+      </Modal>
     </header>
   );
 }

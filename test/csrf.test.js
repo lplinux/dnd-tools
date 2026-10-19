@@ -124,7 +124,14 @@ describe('mutating methods are guarded', () => {
 });
 
 describe('where it sits in the stack', () => {
-  const sessionAt = appSource.indexOf('app.use(session({');
+  /*
+   * The MOUNT, not the definition: express-session is built as
+   * `sessionMiddleware` and then mounted conditionally, because a request
+   * carrying an API token skips it and brings its own `req.session`. The
+   * property under test is unchanged — the CSRF guard must sit after the
+   * session is mounted and before any route.
+   */
+  const sessionAt = appSource.indexOf('sessionMiddleware(req, res, next)');
   const csrfAt    = appSource.indexOf('const CSRF_SAFE_METHODS');
   const firstRoute = Math.min(
     ...['app.get(', 'app.post(', 'app.put(', 'app.patch(', 'app.delete(']
@@ -133,6 +140,7 @@ describe('where it sits in the stack', () => {
   );
 
   it('runs after the session middleware, since it reads req.session', () => {
+    expect(sessionAt, 'the session mount was not found').toBeGreaterThan(-1);
     expect(csrfAt).toBeGreaterThan(sessionAt);
   });
 
@@ -189,7 +197,14 @@ describe('the frontend agrees with the server', () => {
   });
 
   it('sends the header name the server reads', () => {
-    const name = appSource.match(/req\.get\('([^']+)'\)/)[1];
+    /*
+     * Read out of the CSRF GUARD, not out of the first `req.get` in the
+     * file — the API-token middleware now reads `Authorization` and sits
+     * above it, which made this assert the wrong header entirely.
+     */
+    const guard = appSource.slice(appSource.indexOf('const expected = req.session.csrfToken;'));
+    const name = guard.match(/req\.get\('([^']+)'\)/)[1];
+    expect(name).toBe('X-CSRF-Token');
     expect(clientSource).toContain(`headers['${name}']`);
   });
 

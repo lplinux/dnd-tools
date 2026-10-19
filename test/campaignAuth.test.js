@@ -105,6 +105,13 @@ const EXEMPT = new Map([
   // before purging. Uses its own inline `dm_user_id` query, deliberately
   // without a deleted_at filter.
   ['GET /api/campaigns/:id/export', /dm_user_id=\$2/],
+  /*
+   * An API token belongs to an ACCOUNT, not a campaign, so none of the
+   * campaign helpers apply. Its ownership check is the `user_id` in the
+   * statement itself: you may only revoke your own, and a row belonging to
+   * anyone else simply does not match.
+   */
+  ['DELETE /api/tokens/:id', /WHERE id=\$1 AND user_id=\$2/],
 ]);
 
 describe('every id-bearing route checks ownership', () => {

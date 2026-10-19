@@ -713,6 +713,10 @@ silently blanked: accepting it would confirm that the guessed id exists. The che
 |---|---|---|---|
 | GET | `/api/campaigns/:id/export` | dm | Full campaign bundle (`type: campaign`) — session prep included |
 | POST | `/api/campaigns/import` | dm | Restore a campaign bundle as a new campaign |
+| GET | `/api/discover` | auth | Every route with `allowed`/`why` **for this caller**, read off Express's router |
+| GET | `/api/tokens` | auth | Your API tokens (never the secret) |
+| POST | `/api/tokens` | auth | Mint one — the raw token is in this response and nowhere else |
+| DELETE | `/api/tokens/:id` | auth | Revoke one of your own |
 | GET | `/api/campaigns/:campaignId/sessions/export` | dm/admin | Session prep bundle (`type: campaign-sessions`) |
 | POST | `/api/campaigns/:campaignId/sessions/import` | dm/admin | Merge a session-prep bundle by session number |
 | POST | `/api/campaigns/:campaignId/sessions/:sessionId/to-journal` | dm/admin | Copy *What happened* into the Campaign Journal |
@@ -811,19 +815,63 @@ sides name `window.location.origin` on every send and ignore any message whose `
 it. A whole stat block crosses that bridge in both directions; `'*'` would hand it to whatever
 document happened to be in the frame.
 
-### Two settings off on purpose
+### Running behind TLS — one knob
 
-Both must change together with the deployment, not on their own. Turning either on against the current setup breaks the app or weakens it.
+`cookie.secure` and `trust proxy` used to be two settings that had to be changed together by
+hand, which is a footgun: each one alone is a fault that does not look like a fault. They are
+now derived from a single environment variable.
 
-| Setting | State | Why, and what has to be true first |
-|---|---|---|
-| `cookie.secure` | `false` | The app is served over plain HTTP on a published port with no TLS. Setting it alone makes the browser withhold the session cookie, so nobody can log in. Needs TLS terminating in front of the app first. |
-| `app.set('trust proxy')` | never called | There is no reverse proxy. Setting it **without** one is worse than leaving it off: `X-Forwarded-For` becomes attacker-controlled, so `req.ip` does too, and the login limiter can be bypassed by varying one header. Needs a proxy that strips and sets that header. |
+```
+TRUST_PROXY_HOPS=0   (default)  plain HTTP, no proxy — the local setup
+TRUST_PROXY_HOPS=1              one reverse proxy terminating TLS
+```
 
-So, if a reverse proxy with TLS is ever put in front of this: set `trust proxy` to the number of
-proxy hops, set `NODE_ENV=production` (never set today), and make `cookie.secure` conditional on
-it — all three, in that order. The login limiter's IP keying silently degrades to one shared
-bucket for every client if the first is missed, which locks everybody out at once.
+Setting it to a positive number does both: `app.set('trust proxy', n)` and `cookie.secure =
+true`. There is no way to get one without the other, which is the point.
+
+| Getting it wrong | What happens |
+|---|---|
+| `secure` without a proxy | The browser withholds the session cookie. Nobody can log in, and there is no error to explain why. |
+| A proxy without `secure` | The session cookie crosses the last hop in clear — the thing TLS was added for. |
+| `trust proxy: true` | The whole chain is trusted, so `X-Forwarded-For` is caller-controlled, so `req.ip` is, so the login limiter is bypassed by varying one header. **Hence a hop count, not a boolean.** |
+
+The proxy must set `X-Forwarded-Proto: https`, or Express still considers the connection
+insecure and withholds the cookie. The server prints which mode it is in at boot, because
+every one of these failures otherwise presents as "nobody can log in".
+
+`INSECURE_COOKIES_BEHIND_PROXY=true` is an escape hatch for a proxy that does **not** terminate
+TLS (an overlay network, TLS ending further out). It is named to discourage casual use and
+should be left alone in a normal deployment.
+
+### API tokens
+
+A second credential for an account, so a script or an assistant can read and update a running
+instance instead of hand-editing a bundle. `api_tokens` holds a sha256 of the token and never
+the token: it is shown once at creation, exactly like an invite link.
+
+What makes it cheap is that nothing else had to change. The token resolves to a stand-in
+`req.session` carrying `userId`, `role` and `username`, so all of the existing routes accept it
+unaltered and every `requireRole` / `dmOwnsCampaign` / `canAccessCampaign` check still runs. The
+withholding rules live in SQL, so a token cannot read past them either — a player's token gets a
+player's view.
+
+- **It bypasses the session store entirely.** `express-session` is mounted conditionally and
+  skipped for a token request, so no row is written and no `Set-Cookie` comes back. Otherwise
+  every call from a script would leave a session behind in `MemoryStore`.
+- **It is exempt from CSRF**, keyed on the *resolved token* and never on the header being
+  present. That is safe because a browser never attaches an `Authorization` header by itself,
+  so there is nothing for an attacker to ride — but keying it on the header would let anyone
+  opt out of CSRF by sending one.
+- **Three refusals, whatever the scope**: any `DELETE`; `/api/tokens` (or a leaked write token
+  mints its own replacement and revokes the ones you would use to lock it out); and
+  `/api/auth` and `/api/users`.
+- **`GET /api/discover`** reports the whole surface as it applies to the caller. It is derived
+  from `app.router.stack`, so it cannot drift from the code; the gates tag themselves with
+  their `roles` so the role column is not a second table either. Token refusals are reported
+  ahead of role refusals, because no role makes them reachable.
+- Scope is `read` or `write`, constrained by a CHECK as well as in the route. Revoking sets
+  `revoked_at` rather than deleting, so a token seen in a log later is still nameable, and
+  unknown, expired and revoked all give one answer so none of them confirms a token was real.
 
 What is in place:
 

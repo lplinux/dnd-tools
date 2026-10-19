@@ -9,12 +9,11 @@ Only open work lives here. Everything that is built and waiting on your QA moved
 
 Standing rule for this repo: findings get written down, not scheduled. The campaign-ownership
 and trash-sealing items are **done**, and so are the three that stood here — unvalidated stats
-JSON, no login throttling, no CSRF. All of it is in `TOQA.md`. What is left is what turned up
-*while* doing them, and none of it was in scope:
+JSON, no login throttling, no CSRF — and now the TLS pair as well: `cookie.secure` and
+`trust proxy` are one knob, `TRUST_PROXY_HOPS`, so neither can be set without the other. All of
+it is in `TOQA.md`. What is left is what turned up *while* doing them, and none of it was in
+scope:
 
-- [ ] **`cookie.secure` and `trust proxy` are both deliberately off**, and must be turned on
-      together if this ever goes behind TLS or a reverse proxy. Neither is a defect today and
-      turning either on alone breaks things — see the deployment note in `ARCH.md`.
 - [ ] **Tailwind 4 migration — five build-time advisories, no patched release.** `braces`,
       `micromatch`, `chokidar` and `fast-glob` are all reached through `tailwindcss`, and there
       is **no patched release** for them — `braces` is vulnerable at `<=3.0.3` and 3.0.3 is the
@@ -101,8 +100,6 @@ through cross-links and the Campaign Links tab, gated on having met them. What r
 - [ ] A campaign can export a bundle larger than the 50 MB import limit (`express.json`), so a
       big enough campaign produces a backup it cannot restore. The dominant payload is base64
       map and portrait images. A 413 currently surfaces as Express's HTML error page.
-- [ ] **Invite links still have no email** — the link is copied to the clipboard and sent by
-      hand, as agreed. Everything else about them shipped; see the CHANGELOG.
 
 ### Campaign Diary and other modals
 
@@ -172,10 +169,3 @@ The detail is in `CHANGELOG.md`; the QA checklist is in `TOQA.md`.
 
 A feature/section to track DM notes for ways of evolve characters. Extra things (spell, learnings, information, etc) and how to get them. Use my notes on Obsidian as reference.
 
-### 3. Application API
-
-- [ ] A DM could generate a token for API authentication
-- [ ] API should allow read campaigns. I'd like this so AI could connect to a running instance and fetch information or write updates instead of messing up with a json
-      - [ ] I might ask AI to insert into the Campaign Journey every time I update the summaries
-      - [ ] I might ask to update the session prep
-      - [ ] I might ask to update NPCs and locations descriptions
