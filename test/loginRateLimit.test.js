@@ -201,7 +201,10 @@ describe('the login route wires it up', () => {
 
 describe('the session cookie', () => {
   it('sets sameSite explicitly rather than leaning on the browser default', () => {
-    const at  = appSource.indexOf('app.use(session({');
+    // Built as a named middleware now, then mounted conditionally so an
+    // API-token request can skip it. The cookie config is unchanged.
+    const at  = appSource.indexOf('const sessionMiddleware = session({');
+    expect(at, 'the session config was not found').toBeGreaterThan(-1);
     const cfg = appSource.slice(at, at + 1200);
     expect(cfg).toMatch(/sameSite:\s*'lax'/);
   });

@@ -50,6 +50,39 @@ const pool = new Pool({
   database: process.env.DB_NAME || 'dndtools'
 });
 
+/*
+ * ── Running behind TLS ────────────────────────────────────────────────────
+ *
+ * ONE KNOB, because the danger here is the two settings moving apart.
+ *
+ *   TRUST_PROXY_HOPS=0  (default)  plain HTTP, no proxy — local development
+ *   TRUST_PROXY_HOPS=1             one reverse proxy terminating TLS
+ *
+ * `cookie.secure` is DERIVED from it rather than configured separately.
+ * Either one alone is a fault that does not look like one:
+ *
+ *   secure without a proxy  → the browser withholds the session cookie and
+ *                             nobody can log in, with no error to explain it.
+ *   proxy without secure    → the session cookie crosses the last hop in
+ *                             clear, which is the thing TLS was added for.
+ *   trust proxy set too high → `X-Forwarded-For` becomes caller-controlled,
+ *                             so `req.ip` does too, and the login limiter is
+ *                             bypassed by varying one header.
+ *
+ * The HOP COUNT, not a boolean: `trust proxy: true` trusts the whole chain
+ * and re-opens that last hole. Count the proxies that actually sit in front.
+ */
+const TRUST_PROXY_HOPS = parseInt(process.env.TRUST_PROXY_HOPS || '0', 10) || 0;
+/*
+ * The escape hatch, named so nobody sets it casually: a proxy that does NOT
+ * terminate TLS (an overlay network, or TLS ending further out). Normal TLS
+ * deployments must leave this alone.
+ */
+const SECURE_COOKIES = TRUST_PROXY_HOPS > 0
+  && process.env.INSECURE_COOKIES_BEHIND_PROXY !== 'true';
+
+if (TRUST_PROXY_HOPS > 0) app.set('trust proxy', TRUST_PROXY_HOPS);
+
 // Middleware
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
@@ -84,17 +117,117 @@ app.get('/api/docs/:module', async (req, res) => {
   } catch { res.status(404).json({ error: 'No documentation found' }); }
 });
 
+/*
+ * ── API tokens ────────────────────────────────────────────────────────────
+ *
+ * A second credential for an account. It grants exactly what its owner
+ * already has and nothing more: every route keeps its own `requireRole`,
+ * `dmOwnsCampaign` and `canAccessCampaign` checks, and the withholding rules
+ * live in SQL, so a token cannot read past them.
+ *
+ * Three things it may NOT do, whatever its scope:
+ *
+ *   DELETE anything     — a token is for updating a campaign, not removing
+ *                         one. Asked for explicitly, and cheap to keep.
+ *   touch /api/tokens   — otherwise a leaked write token mints itself a
+ *                         replacement and revokes the ones you would use to
+ *                         lock it out. Privilege escalation, plainly.
+ *   touch /api/auth/*   — changing the account's password from a token the
+ *                         account holder may not know exists.
+ *
+ * Nor does it create a session. The cookie and this are separate doors.
+ */
+const API_TOKEN_PREFIX = 'dnd_';
+const mintApiToken = () => API_TOKEN_PREFIX + crypto.randomBytes(32).toString('base64url');
+const hashApiToken = (t) => crypto.createHash('sha256').update(String(t)).digest('hex');
+
+/** Routes a token may never reach, whatever its scope. */
+const TOKEN_FORBIDDEN = [/^\/api\/tokens(\/|$)/, /^\/api\/auth(\/|$)/, /^\/api\/users(\/|$)/];
+
+const bearerFrom = (req) => {
+  const h = req.get('Authorization') || '';
+  const m = /^Bearer\s+(\S+)$/i.exec(h);
+  return m ? m[1] : null;
+};
+
+app.use(async (req, res, next) => {
+  const raw = bearerFrom(req);
+  if (!raw) return next();
+
+  // Scanning costs something, keyed on IP alone: the token IS the identity,
+  // so there is no account to pair it with. Same window as the invites.
+  const now = Date.now();
+  const key = `apitoken:${req.ip}`;
+  const wait = loginRetryAfter(key, now, INVITE_MAX_FAILURES);
+  if (wait) return res.status(429).json({ error: `Too many attempts. Try again in ${Math.ceil(wait / 60)} minute(s).` });
+
+  try {
+    const r = await pool.query(
+      `SELECT t.*, u.role, u.username FROM api_tokens t
+         JOIN users u ON u.id = t.user_id
+        WHERE t.token_hash = $1
+          AND t.revoked_at IS NULL
+          AND (t.expires_at IS NULL OR t.expires_at > NOW())`,
+      [hashApiToken(raw)],
+    );
+    const tok = r.rows[0];
+    if (!tok) {
+      recordLoginFailure(key, now);
+      // One answer for unknown, revoked and expired alike — saying which
+      // would confirm that a token was once real.
+      return res.status(401).json({ error: 'Invalid API token' });
+    }
+
+    if (req.method === 'DELETE') {
+      return res.status(403).json({ error: 'API tokens cannot delete', code: 'ETOKENSCOPE' });
+    }
+    if (TOKEN_FORBIDDEN.some((re) => re.test(req.path))) {
+      return res.status(403).json({ error: 'That route is not reachable with an API token', code: 'ETOKENROUTE' });
+    }
+    if (tok.scope === 'read' && !CSRF_SAFE_METHODS.includes(req.method)) {
+      return res.status(403).json({ error: 'This token is read-only', code: 'ETOKENSCOPE' });
+    }
+
+    req.apiToken = tok;
+    /*
+     * A STAND-IN session, not a real one. Routes read `req.session.userId`,
+     * `.role` and `.username` — all three, which is why setting only the id
+     * made every route that consults the role 403 — so supplying a plain
+     * object makes all of them work untouched.
+     *
+     * It is a plain object on purpose: express-session is skipped entirely
+     * for this request (see below), so nothing is written to the store and
+     * no Set-Cookie goes back. Otherwise every call from a script would
+     * leave a session behind in MemoryStore for a client that has no use
+     * for one.
+     */
+    req.session = { userId: tok.user_id, role: tok.role, username: tok.username };
+
+    // Written at most once a minute. It exists so a forgotten token is
+    // visible in the UI, which does not need second-level accuracy and is
+    // not worth a row update on every GET.
+    if (!tok.last_used_at || now - new Date(tok.last_used_at).getTime() > 60000) {
+      pool.query('UPDATE api_tokens SET last_used_at = NOW() WHERE id=$1', [tok.id])
+        .catch(() => { /* a stale timestamp must never fail the request */ });
+    }
+    return next();
+  } catch (e) { return res.status(500).json({ error: e.message }); }
+});
+
 // Session management
-app.use(session({
+//
+// SKIPPED for a request that arrived with a valid API token: that request
+// already has a stand-in `req.session` and wants neither a store entry nor
+// a cookie. Everything else goes through it exactly as before.
+const sessionMiddleware = session({
   secret: process.env.SESSION_SECRET || 'change-this-in-production',
   resave: false,
   saveUninitialized: true,
   cookie: {
-    // `secure` stays false: the app is served over plain HTTP on a published
-    // port with no TLS and no reverse proxy (docker-compose.yml), so turning it
-    // on would break every session immediately. See ARCH.md for what has to be
-    // true first.
-    secure: false,
+    // Derived from TRUST_PROXY_HOPS — see the comment above. Off by default,
+    // which is plain HTTP and the local setup; on the moment a proxy is
+    // declared, because that proxy is what terminates TLS.
+    secure: SECURE_COOKIES,
     httpOnly: true,
     // Explicit rather than relying on the browser default. Lax already blocks
     // cross-site POST/PUT/PATCH/DELETE, and it is the layer the CSRF tokens sit
@@ -103,7 +236,8 @@ app.use(session({
     sameSite: 'lax',
     maxAge: 24 * 60 * 60 * 1000
   }
-}));
+});
+app.use((req, res, next) => (req.apiToken ? next() : sessionMiddleware(req, res, next)));
 
 // ============================================
 // CSRF PROTECTION
@@ -142,6 +276,13 @@ function csrfToken(req) {
 
 app.use((req, res, next) => {
   if (CSRF_SAFE_METHODS.includes(req.method)) return next();
+  /*
+   * A bearer token is exempt, and only a bearer token. CSRF exists because
+   * a browser attaches COOKIES by itself — it will never attach this header
+   * on a cross-site request, so there is nothing for an attacker to ride.
+   * Keyed on the resolved token, never on the header being present.
+   */
+  if (req.apiToken) return next();
 
   const expected = req.session.csrfToken;
   const given    = req.get('X-CSRF-Token');
@@ -168,26 +309,36 @@ app.use((req, res, next) => {
 // AUTH MIDDLEWARE
 // ============================================
 
+/*
+ * The two gates carry their own `roles`, so /api/discover can report what a
+ * route needs instead of a second hand-written table drifting away from the
+ * first. Metadata only — nothing reads it at request time.
+ */
 const requireAuth = (req, res, next) => {
   if (!req.session.userId) {
     return res.status(401).json({ error: 'Unauthorized' });
   }
   next();
 };
+requireAuth.roles = ['any signed-in user'];
 
-const requireRole = (roles) => async (req, res, next) => {
-  if (!req.session.userId) {
-    return res.status(401).json({ error: 'Unauthorized' });
-  }
-  try {
-    const result = await pool.query('SELECT role FROM users WHERE id = $1', [req.session.userId]);
-    if (result.rows.length === 0 || !roles.includes(result.rows[0].role)) {
-      return res.status(403).json({ error: 'Access denied' });
+const requireRole = (roles) => {
+  const gate = async (req, res, next) => {
+    if (!req.session.userId) {
+      return res.status(401).json({ error: 'Unauthorized' });
     }
-    next();
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
+    try {
+      const result = await pool.query('SELECT role FROM users WHERE id = $1', [req.session.userId]);
+      if (result.rows.length === 0 || !roles.includes(result.rows[0].role)) {
+        return res.status(403).json({ error: 'Access denied' });
+      }
+      next();
+    } catch (error) {
+      res.status(500).json({ error: error.message });
+    }
+  };
+  gate.roles = roles;
+  return gate;
 };
 
 
@@ -210,7 +361,8 @@ const requireRole = (roles) => async (req, res, next) => {
  * app, and a restart clearing the counters grants exactly the same forgiveness
  * a restart already grants every session.
  *
- * `req.ip` is the socket address because `trust proxy` is deliberately unset —
+ * `req.ip` is the socket address unless TRUST_PROXY_HOPS declares a proxy, in
+ * which case Express resolves it from exactly that many X-Forwarded-For hops —
  * see ARCH.md. Putting a reverse proxy in front without setting it collapses
  * every client into one bucket and locks everybody out at once; setting it
  * *without* a proxy in front is worse still, because X-Forwarded-For then
@@ -439,6 +591,207 @@ app.get('/api/auth/user', (req, res) => {
       role: req.session.role
     }
   });
+});
+
+/*
+ * What each group of routes is for.
+ *
+ * Hand-written, and the ONLY hand-written part of /api/discover — the route
+ * list itself is read off Express's own router, so it cannot drift. Groups
+ * change about once a year; individual routes change weekly. Keeping the
+ * stale-prone half this small is the point.
+ *
+ * Shared with the startup banner so the two cannot disagree.
+ */
+const API_GROUPS = [
+  ['/api/auth',               'Auth (login, logout, change-password)'],
+  ['/api/tokens',             'API tokens for your own account'],
+  ['/api/users',              'User management (admin)'],
+  ['/api/campaigns',          'Campaigns, players, locations, NPCs, journal, diary, session prep'],
+  ['/api/player-timelines',   'Timeline CRUD'],
+  ['/api/timeline-public',    'Public read-only timeline'],
+  ['/api/campaign-diary',     'Campaign diary (DM): draft/published, share, export/import'],
+  ['/api/player-diary',       'Per-player private diaries'],
+  ['/api/diary-public',       'Public read-only diary (published only)'],
+  ['/api/pc',                 'PC sheets, relationships, DM notes'],
+  ['/api/pc-public',          'Public read-only PC sheet'],
+  ['/api/journey-maps',       'Journey maps, locations, paths, routes'],
+  ['/api/journey-map-public', 'Public read-only journey map'],
+  ['/api/item-cards',         'The item-card library'],
+  ['/api/pdfs',               'PDF file listing'],
+  ['/api/proxy-image',        'External image proxy'],
+];
+
+// ============================================
+// API TOKENS
+// ============================================
+//
+// Session-authed only — the token middleware refuses `/api/tokens` outright,
+// so a token can never mint or revoke another. You manage your own and only
+// your own: a token grants exactly what its owner has, so there is nothing
+// an admin could usefully do to someone else's that revoking it would not.
+
+/** Your tokens. Never the hash, and never the token — it does not exist here. */
+app.get('/api/tokens', requireAuth, async (req, res) => {
+  try {
+    const r = await pool.query(
+      `SELECT id, name, scope, expires_at, last_used_at, revoked_at, created_at
+         FROM api_tokens WHERE user_id=$1 ORDER BY created_at DESC`,
+      [req.session.userId],
+    );
+    res.json(r.rows);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+/**
+ * Mint one. The raw token is in this response and nowhere else, ever —
+ * the same contract as the invite link, and the reason the UI makes you
+ * copy it before closing.
+ */
+app.post('/api/tokens', requireAuth, async (req, res) => {
+  const { name, scope, expires_in_days: days } = req.body ?? {};
+  const label = journalStr(name, 100) || 'API token';
+  if (!['read', 'write'].includes(scope)) {
+    return res.status(400).json({ error: "Scope must be 'read' or 'write'" });
+  }
+  // Optional, and null means it does not expire. A forgotten token is
+  // visible through last_used_at instead.
+  const n = parseInt(days, 10);
+  const expires = Number.isFinite(n) && n > 0 && n <= 3650 ? n : null;
+  try {
+    const existing = await pool.query(
+      'SELECT count(*)::int AS n FROM api_tokens WHERE user_id=$1 AND revoked_at IS NULL',
+      [req.session.userId],
+    );
+    // A ceiling so a loop cannot fill the table, not a considered limit.
+    if (existing.rows[0].n >= 20) {
+      return res.status(400).json({ error: 'Too many live tokens — revoke one first' });
+    }
+
+    const raw = mintApiToken();
+    const r = await pool.query(
+      `INSERT INTO api_tokens (user_id, name, token_hash, scope, expires_at)
+       VALUES ($1,$2,$3,$4, CASE WHEN $5::int IS NULL THEN NULL
+                                 ELSE NOW() + ($5::int * INTERVAL '1 day') END)
+       RETURNING id, name, scope, expires_at, created_at`,
+      [req.session.userId, label, hashApiToken(raw), scope, expires],
+    );
+    res.json({ ...r.rows[0], token: raw });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+/** Revoke. Kept as a row so a token seen in a log later is still nameable. */
+app.delete('/api/tokens/:id', requireAuth, async (req, res) => {
+  try {
+    const r = await pool.query(
+      `UPDATE api_tokens SET revoked_at = NOW()
+        WHERE id=$1 AND user_id=$2 AND revoked_at IS NULL RETURNING id`,
+      [req.params.id, req.session.userId],
+    );
+    if (!r.rows.length) return res.status(404).json({ error: 'Token not found' });
+    res.json({ success: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+/**
+ * What THIS caller may call.
+ *
+ * DERIVED FROM EXPRESS'S OWN ROUTER, not from a list kept alongside it. A
+ * hand-maintained index of 160-odd routes is wrong within a week, and wrong
+ * in the worst way: it is the thing a client trusts instead of reading the
+ * code. The only hand-written part is API_GROUPS, which is a dozen lines of
+ * prose about prefixes.
+ *
+ * It answers for the CALLER rather than in the abstract. Every route carries
+ * `allowed`, and when false a `why` — role, scope, or one of the token
+ * refusals. An assistant can therefore take the list at face value instead
+ * of discovering the rules by being refused one call at a time.
+ */
+app.get('/api/discover', requireAuth, async (req, res) => {
+  try {
+    const role = req.session.role
+      ?? (await pool.query('SELECT role FROM users WHERE id=$1', [req.session.userId])).rows[0]?.role;
+    const tok = req.apiToken ?? null;
+
+    const stack = app.router?.stack ?? [];
+    const routes = [];
+    for (const layer of stack) {
+      if (!layer.route?.path) continue;
+      const path = String(layer.route.path);
+      if (!path.startsWith('/api/')) continue;
+
+      // The gate tags itself with its roles; null means no gate at all.
+      let roles = null;
+      for (const h of layer.route.stack ?? []) {
+        if (Array.isArray(h.handle?.roles)) { roles = h.handle.roles; break; }
+      }
+
+      for (const method of Object.keys(layer.route.methods)) {
+        const m = method.toUpperCase();
+        if (m === '_ALL') continue;
+
+        /*
+         * Token refusals are reported BEFORE the role, because they are
+         * absolute: no role makes DELETE reachable from a token, so saying
+         * "needs role: admin" there would send a client off to fix the
+         * wrong thing. The role reason is the one worth acting on, so it
+         * comes last and only when nothing unconditional applies.
+         */
+        let why = null;
+        if (tok && m === 'DELETE') {
+          why = 'API tokens cannot delete';
+        } else if (tok && TOKEN_FORBIDDEN.some((re) => re.test(path))) {
+          why = 'not reachable with an API token';
+        } else if (tok && tok.scope === 'read' && !CSRF_SAFE_METHODS.includes(m)) {
+          why = 'this token is read-only';
+        } else if (roles && !roles.includes(role) && !roles.includes('any signed-in user')) {
+          why = `needs role: ${roles.join(' or ')}`;
+        }
+
+        routes.push({
+          method: m,
+          path,
+          roles,
+          group: (API_GROUPS.find(([p]) => path.startsWith(`${p}/`) || path === p) ?? [null])[0],
+          allowed: !why,
+          ...(why ? { why } : {}),
+        });
+      }
+    }
+    routes.sort((a, b) => a.path.localeCompare(b.path) || a.method.localeCompare(b.method));
+
+    res.json({
+      name: 'D&D Tools API',
+      // Not a version of the app: a version of THIS DOCUMENT'S shape, so a
+      // client can tell whether it still understands the answer.
+      discovery_version: 1,
+      you: {
+        username: req.session.username ?? null,
+        role: role ?? null,
+        // How this request authenticated, which decides half the rules below.
+        auth: tok ? 'api-token' : 'session',
+        ...(tok ? { token_name: tok.name, scope: tok.scope } : {}),
+      },
+      // Spelled out rather than left to be inferred from `allowed`, because
+      // these are the rules a client should not have to reverse-engineer.
+      token_limits: tok
+        ? {
+          can_write: tok.scope === 'write',
+          can_delete: false,
+          unreachable_prefixes: ['/api/tokens', '/api/auth', '/api/users'],
+          csrf_required: false,
+        }
+        : null,
+      // How to send one, so a client reading this has the whole contract.
+      auth_header: 'Authorization: Bearer <token>',
+      groups: API_GROUPS.map(([prefix, description]) => ({ prefix, description })),
+      counts: {
+        total: routes.length,
+        allowed: routes.filter((r) => r.allowed).length,
+      },
+      routes,
+    });
+  } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 // ============================================
@@ -8525,6 +8878,41 @@ async function initializeDatabase() {
         ON campaign_invites (campaign_id);
     `);
 
+    /*
+     * API tokens — a second credential for an account, for scripts and for
+     * an assistant talking to a running instance instead of hand-editing a
+     * bundle.
+     *
+     * `token_hash` is sha256 of the raw token and the raw token is NEVER
+     * stored: it is shown once at creation, exactly like an invite link.
+     * Unsalted is right here for the same reason it is right there — the
+     * secret is 256 bits of CSPRNG, so there is no dictionary to defend
+     * against, and the lookup has to be by hash.
+     *
+     * `scope` is 'read' or 'write'. DELETE is refused for BOTH; a token is
+     * for updating a campaign, never for removing one.
+     *
+     * Revoked rather than deleted, so a token that turns up in a log later
+     * can still be identified.
+     */
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS api_tokens (
+        id          SERIAL PRIMARY KEY,
+        user_id     INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        name        VARCHAR(100) NOT NULL,
+        token_hash  VARCHAR(64) NOT NULL UNIQUE,
+        scope       VARCHAR(10) NOT NULL DEFAULT 'read'
+                      CHECK (scope IN ('read','write')),
+        expires_at  TIMESTAMP,
+        last_used_at TIMESTAMP,
+        revoked_at  TIMESTAMP,
+        created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
+    await pool.query(`
+      CREATE INDEX IF NOT EXISTS idx_api_tokens_user ON api_tokens (user_id);
+    `);
+
     // Named player timelines — one player can have multiple timelines
     await pool.query(`
       CREATE TABLE IF NOT EXISTS player_timelines (
@@ -9474,7 +9862,17 @@ app.get('/{*path}', (req, res) => {
 // already-listening server.
 initializeDatabase().then(() => {
   app.listen(PORT, () => {
-    console.log(`\n🎲 D&D Tools running at http://localhost:${PORT}`);
+    console.log(`\n🎲 D&D Tools running at http${SECURE_COOKIES ? 's' : ''}://localhost:${PORT}`);
+    /*
+     * Said at boot, because every way of getting this wrong presents as
+     * "nobody can log in" rather than as an error. See the TRUST_PROXY_HOPS
+     * comment at the top of this file.
+     */
+    if (TRUST_PROXY_HOPS > 0) {
+      console.log(`  🔒 Behind ${TRUST_PROXY_HOPS} proxy hop(s); secure cookies ${SECURE_COOKIES ? 'ON' : 'OFF (INSECURE_COOKIES_BEHIND_PROXY)'}`);
+    } else {
+      console.log('  🔓 Plain HTTP, no proxy. Set TRUST_PROXY_HOPS=1 behind a TLS reverse proxy.');
+    }
     console.log(`\n📋 Page routes:`);
     console.log(`  🔓 Public    : /npc-sheet, /item-cards, /split-view`);
     console.log(`  🔓 Public    : /timeline-public/:token, /journey-map-public/:token, /pc-public/:token`);
@@ -9483,19 +9881,9 @@ initializeDatabase().then(() => {
     console.log(`  👑 DM        : /manage-campaigns, /journey-map, /pdf-viewer`);
     console.log(`  🛠️ Admin     : /user-panel`);
     console.log(`\n🔌 API groups:`);
-    console.log(`  /api/auth/*                       Auth (login, logout, change-password)`);
-    console.log(`  /api/users/*                      User management (admin)`);
-    console.log(`  /api/campaigns/*                  Campaigns, players, locations, meta`);
-    console.log(`  /api/player-timelines/*           Timeline CRUD`);
-    console.log(`  /api/timeline-public/:token       Public read-only timeline`);
-    console.log(`  /api/campaign-diary/*             Campaign diary (DM): draft/published, share, export/import`);
-    console.log(`  /api/player-diary/*               Per-player private diaries`);
-    console.log(`  /api/diary-public/:token          Public read-only diary (published only)`);
-    console.log(`  /api/pc/*                         PC sheets, relationships, DM notes`);
-    console.log(`  /api/pc-public/:token             Public read-only PC sheet`);
-    console.log(`  /api/journey-maps/*               Journey maps, locations, paths, routes`);
-    console.log(`  /api/journey-map-public/:token    Public read-only journey map`);
-    console.log(`  /api/pdfs                         PDF file listing`);
-    console.log(`  /api/proxy-image                  External image proxy`);
+    for (const [prefix, what] of API_GROUPS) {
+      console.log(`  ${prefix.padEnd(26)}  ${what}`);
+    }
+    console.log(`\n  GET /api/discover                 what THIS caller may call, derived live`);
   });
 });
