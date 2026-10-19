@@ -8488,6 +8488,162 @@ app.post('/api/campaigns/:campaignId/import-into', requireRole(['dm', 'admin']),
 });
 
 // ============================================
+// CHARACTER EVOLUTION / LEARNING PATHS
+// ============================================
+//
+// DM-ONLY, with no player-facing counterpart at all. This is what each
+// character could become and what it would cost — most of it is next
+// session's plot, and a player route would be a way to read it early.
+//
+// Modelled on session prep deliberately: the DM's notes are a bullet tree
+// per character, so the storage is a card tree per character, and the rules
+// that keep that tree sane are the same ones.
+
+const PATH_CATEGORIES = ['path', 'teacher', 'homebrew'];
+const PATH_STATES = ['idea', 'open', 'in-progress', 'done'];
+
+/** One card, scoped to its campaign so an id alone can never reach it. */
+async function pathCard(id, campaignId) {
+  const r = await pool.query(
+    'SELECT * FROM character_paths WHERE id=$1 AND campaign_id=$2', [id, campaignId],
+  );
+  return r.rows[0] ?? null;
+}
+
+/**
+ * Everything for a campaign, flat, with the character each card belongs to.
+ *
+ * Flat with `parent_id`, like the session read route: nesting here would
+ * mean choosing a depth limit on the server, and a DM's notes nest as deep
+ * as they nest.
+ */
+app.get('/api/campaigns/:campaignId/paths', requireRole(['dm', 'admin']), async (req, res) => {
+  const { campaignId } = req.params;
+  try {
+    if (!await dmOwnsCampaign(campaignId, req.session.userId, req.session.role))
+      return res.status(403).json({ error: 'Access denied' });
+    const r = await pool.query(
+      `SELECT * FROM character_paths WHERE campaign_id=$1
+        ORDER BY position ASC, id ASC`, [campaignId],
+    );
+    res.json({ items: r.rows });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/api/campaigns/:campaignId/paths', requireRole(['dm', 'admin']), async (req, res) => {
+  const { campaignId } = req.params;
+  const { parent_id: parentId = null, player_id: playerId = null,
+    category, title, body, state } = req.body ?? {};
+  try {
+    if (!await dmOwnsCampaign(campaignId, req.session.userId, req.session.role))
+      return res.status(403).json({ error: 'Access denied' });
+
+    let parent = null;
+    if (parentId != null) {
+      parent = await pathCard(parentId, campaignId);
+      if (!parent) return res.status(400).json({ error: 'That parent is not in this campaign' });
+    }
+    /*
+     * A child takes its parent's character AND category, whatever the
+     * request says. Either disagreeing would put the row in a group its
+     * parent is not in, where nothing renders it.
+     */
+    const cat = parent ? parent.category
+      : (PATH_CATEGORIES.includes(category) ? category : null);
+    if (!cat) return res.status(400).json({ error: 'Unknown category' });
+    const who = parent ? parent.player_id : (playerId ?? null);
+
+    if (who != null) {
+      // Same campaign, or a DM could hang a card off another table's seat.
+      const ok = await pool.query(
+        'SELECT 1 FROM campaign_players WHERE id=$1 AND campaign_id=$2', [who, campaignId],
+      );
+      if (!ok.rows.length) return res.status(400).json({ error: 'That character is not in this campaign' });
+    }
+
+    const next = await pool.query(
+      `SELECT COALESCE(MAX(position) + 1, 0) AS pos FROM character_paths
+        WHERE campaign_id=$1 AND category=$2
+          AND player_id IS NOT DISTINCT FROM $3
+          AND parent_id IS NOT DISTINCT FROM $4`,
+      [campaignId, cat, who, parentId],
+    );
+    const r = await pool.query(
+      `INSERT INTO character_paths
+         (campaign_id, player_id, parent_id, category, title, body, state, position)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,
+      [campaignId, who, parentId, cat,
+        journalStr(title, 255), journalStr(body, 50000),
+        PATH_STATES.includes(state) ? state : 'idea', next.rows[0].pos],
+    );
+    res.json(r.rows[0]);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+/** Title and body only — the state has its own route, as in session prep. */
+app.put('/api/campaigns/:campaignId/paths/:itemId', requireRole(['dm', 'admin']), async (req, res) => {
+  const { campaignId, itemId } = req.params;
+  const { title, body } = req.body ?? {};
+  try {
+    if (!await dmOwnsCampaign(campaignId, req.session.userId, req.session.role))
+      return res.status(403).json({ error: 'Access denied' });
+    const r = await pool.query(
+      `UPDATE character_paths SET title=$1, body=$2, updated_at=CURRENT_TIMESTAMP
+        WHERE id=$3 AND campaign_id=$4 RETURNING *`,
+      [journalStr(title, 255), journalStr(body, 50000), itemId, campaignId],
+    );
+    if (!r.rows.length) return res.status(404).json({ error: 'Card not found' });
+    res.json(r.rows[0]);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+/**
+ * Just the state.
+ *
+ * `done` CASCADES to sub-cards, for the reason it does in session prep: a
+ * gift that has been given does not leave its three conditions outstanding.
+ * The others are per-card — a parent can be in-progress precisely because
+ * one child is.
+ */
+app.patch('/api/campaigns/:campaignId/paths/:itemId/state', requireRole(['dm', 'admin']), async (req, res) => {
+  const { campaignId, itemId } = req.params;
+  const { state } = req.body ?? {};
+  if (!PATH_STATES.includes(state)) return res.status(400).json({ error: 'Unknown state' });
+  try {
+    if (!await dmOwnsCampaign(campaignId, req.session.userId, req.session.role))
+      return res.status(403).json({ error: 'Access denied' });
+    const cascade = state === 'done';
+    const r = await pool.query(
+      `WITH RECURSIVE sub AS (
+         SELECT id, 0 AS depth FROM character_paths WHERE id=$2 AND campaign_id=$3
+         UNION ALL
+         SELECT c.id, sub.depth + 1 FROM character_paths c
+           JOIN sub ON c.parent_id = sub.id WHERE sub.depth < 50
+       )
+       UPDATE character_paths SET state=$1, updated_at=CURRENT_TIMESTAMP
+        WHERE id IN (SELECT id FROM sub) AND ($4 OR id = $2)
+        RETURNING *`,
+      [state, itemId, campaignId, cascade],
+    );
+    if (!r.rows.length) return res.status(404).json({ error: 'Card not found' });
+    // Every row that changed, so the page patches itself rather than
+    // refetching and throwing the reader back to the top.
+    res.json({ updated: r.rows });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.delete('/api/campaigns/:campaignId/paths/:itemId', requireRole(['dm', 'admin']), async (req, res) => {
+  try {
+    if (!await dmOwnsCampaign(req.params.campaignId, req.session.userId, req.session.role))
+      return res.status(403).json({ error: 'Access denied' });
+    // Sub-cards go by CASCADE: a condition has no life without its subject.
+    await pool.query('DELETE FROM character_paths WHERE id=$1 AND campaign_id=$2',
+      [req.params.itemId, req.params.campaignId]);
+    res.json({ success: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ============================================
 // EXPORT / IMPORT — PC SHEET
 // ============================================
 
@@ -8911,6 +9067,79 @@ async function initializeDatabase() {
     `);
     await pool.query(`
       CREATE INDEX IF NOT EXISTS idx_api_tokens_user ON api_tokens (user_id);
+    `);
+
+    /*
+     * Character evolution — the DM's notes on how each character can grow.
+     *
+     * PRIVATE TO THE DM. There is no player-facing route anywhere near this
+     * table: it holds what a character could become and what it would cost,
+     * which is most of next session's plot.
+     *
+     * One table for three kinds of note, because the DM's own files are
+     * lists of the same shape — a per-character bullet tree. `category`
+     * keeps them apart:
+     *
+     *   path      what they can learn or earn, and the gate on it
+     *   teacher   who would teach them
+     *   homebrew  anything written for them — a spell, a feature, a gift
+     *
+     * "What the party has revealed" was here briefly and does not belong:
+     * it is a record of what happened, not a way a character grows. It is
+     * a Campaign Journal entry — DM-only, filed under a category of its
+     * own — which the journal already supports with no code.
+     *
+     * `player_id` NULL means the campaign rather than one character, which
+     * a party-wide path or teacher can still use.
+     *
+     * A child belongs to its parent's character AND category, enforced on
+     * every write — a row disagreeing with its parent would render nowhere.
+     */
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS character_paths (
+        id          SERIAL PRIMARY KEY,
+        campaign_id INTEGER NOT NULL REFERENCES campaigns(id) ON DELETE CASCADE,
+        player_id   INTEGER REFERENCES campaign_players(id) ON DELETE CASCADE,
+        parent_id   INTEGER REFERENCES character_paths(id) ON DELETE CASCADE,
+        category    VARCHAR(20) NOT NULL
+                      CHECK (category IN ('path','teacher','homebrew')),
+        title       VARCHAR(255),
+        body        TEXT,
+        state       VARCHAR(20) NOT NULL DEFAULT 'idea'
+                      CHECK (state IN ('idea','open','in-progress','done')),
+        position    INTEGER NOT NULL DEFAULT 0,
+        created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
+    await pool.query(`
+      CREATE INDEX IF NOT EXISTS idx_character_paths_campaign
+        ON character_paths (campaign_id, player_id);
+    `);
+    /*
+     * The category list has changed twice since the table was written, and
+     * a CHECK inside CREATE TABLE IF NOT EXISTS never reaches a database
+     * that already has the table — the same reason columns here are added
+     * with ALTER rather than edited into the CREATE above.
+     *
+     * ORDER MATTERS: drop the constraint first, then move the rows, then
+     * put the new one back. Moving rows while the old constraint is still
+     * in force would be fine, but adding the new one before the rows move
+     * would fail on exactly the rows this exists to rescue.
+     *
+     * Rows are MOVED, never deleted. `revealed` became a Campaign Journal
+     * entry instead; `spell` became `homebrew`, which is what it always
+     * held — a spell, a feature or a gift. Losing a DM's note to a rename
+     * is not a trade worth making.
+     */
+    await pool.query(`
+      ALTER TABLE character_paths DROP CONSTRAINT IF EXISTS character_paths_category_check;
+    `);
+    await pool.query("UPDATE character_paths SET category='path' WHERE category='revealed'");
+    await pool.query("UPDATE character_paths SET category='homebrew' WHERE category='spell'");
+    await pool.query(`
+      ALTER TABLE character_paths ADD CONSTRAINT character_paths_category_check
+        CHECK (category IN ('path','teacher','homebrew'));
     `);
 
     // Named player timelines — one player can have multiple timelines
