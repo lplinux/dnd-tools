@@ -13,6 +13,32 @@ PC Sheet / Journey Map / Manage Campaign fix batch that went with it.
 
 ---
 
+## Character evolution (🌱 Evolution tab)
+
+- [ ] **Manage Campaigns → 🌱 Evolution.** Pick a character along the top; the three groups
+      should each show a count and open on click.
+- [ ] **Add a card in each of the three groups**, nest a sub-card under one, and check the
+      sub-card stays with its parent's character and group.
+- [ ] **There should be no "What they have revealed" group** — that belongs in the Campaign
+      Journal as a DM-only entry under its own category. If you had already added one before
+      this change, it is now under Learning paths, moved rather than deleted, for you to
+      refile.
+- [ ] **The third group reads "✨ Homebrew"**, not "Homebrew spells". Anything you filed there
+      before the rename should still be in it.
+- [ ] **Characters are listed alphabetically**, with 🎲 The party always last.
+- [ ] **Switch character** — the cards should follow the selection, and 🎲 The party should
+      have its own set.
+- [ ] **Mark a parent Done** — its sub-cards should go Done with it. **Mark one Running** —
+      only that card should change.
+- [ ] **Edit a card that is already Done** — the state must survive the edit.
+- [ ] **`[[Calcifer]]` in a body** should resolve to the NPC card, as it does elsewhere.
+- [ ] **Delete a card with sub-cards** — they should all go, without the page reloading or
+      jumping to the top.
+- [ ] **The private bit, worth checking once:** log in as a player and confirm there is no way
+      to reach any of this. There is no route for it, but your eyes are the test that counts.
+
+---
+
 ## API tokens, and the TLS switch
 
 ### Tokens

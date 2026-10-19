@@ -154,6 +154,51 @@ Played makes the session read-only, so doing it the other way round left the DM 
 that they had to mark it Prepared again before they could type the notes they were about to
 type.
 
+### Character evolution — the 🌱 Evolution tab
+
+How each character can grow, and what it costs. **Private to the DM**, and placed in Manage
+Campaigns rather than on the PC sheet for exactly that reason: this is what a character could
+become and most of it is next session's plot, so it belongs on the page a player cannot open
+at all. There is no player-facing route anywhere near the table, and a test asserts it.
+
+**Three kinds of note in one tab**, because the DM's own files are lists of the same shape —
+a bullet tree per character:
+
+| | |
+|---|---|
+| 🌱 **Learning paths** | What they can learn or earn, and the gate on it |
+| 🎓 **Teachers** | Who would teach them |
+| ✨ **Homebrew** | Anything written for this character — a spell, a feature, a gift |
+
+**"What the party has revealed" is deliberately not here.** It was, briefly, and it does not
+belong: it is a record of what happened rather than a way a character grows. It is a Campaign
+Journal entry — DM-only, filed under a category of its own — which the journal already
+supports with no code at all, and which keeps it next to everything else that happened.
+
+Not "Homebrew spells": it holds features and gifts as readily as spells, and the narrower name
+was steering what went into it. The stored value was renamed with the label rather than left as
+`spell`, so the table still says what it holds to whoever reads it next.
+
+**"The party" is still a real selection, not a special case.** A card with no character is
+campaign-wide, for a path or a teacher the whole group shares. In the page that meant
+`undefined` for "not chosen yet", because `null` is a value you can pick. Characters are listed
+**alphabetically**, and the party is appended after them rather than sorted among them — it is
+not one of the characters, and a 🎲 landing between two players reads as though it were.
+
+Cards nest to any depth and carry one of four states — **Idea, Open, Running, Done**. `Idea`
+is the default because half the source notes read "Details TBD", and a half-formed thought
+needs somewhere to live that is visibly not ready. **Done cascades to sub-cards**: a gift that
+has been given does not leave three conditions outstanding. The other three do not, because a
+parent is Running precisely when one child is.
+
+A child always takes its parent's character **and** category, enforced on write. Either
+disagreeing would file the card in a group its parent is not in, where nothing would ever
+render it again. A character from another campaign, or a parent from one, is refused outright.
+
+`[[Cross-links]]` work in every card body, which is how a teacher points at an NPC — the same
+link that already works in the journal, the diary and session prep, rather than a second way
+of naming the same thing.
+
 ### API tokens, and one knob for TLS
 
 #### Running behind a reverse proxy
