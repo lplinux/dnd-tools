@@ -713,6 +713,7 @@ silently blanked: accepting it would confirm that the guessed id exists. The che
 |---|---|---|---|
 | GET | `/api/campaigns/:id/export` | dm | Full campaign bundle (`type: campaign`) — session prep included |
 | POST | `/api/campaigns/import` | dm | Restore a campaign bundle as a new campaign |
+| GET/POST/PUT/PATCH/DELETE | `/api/campaigns/:campaignId/paths…` | dm/admin | Character evolution cards — DM-private |
 | GET | `/api/discover` | auth | Every route with `allowed`/`why` **for this caller**, read off Express's router |
 | GET | `/api/tokens` | auth | Your API tokens (never the secret) |
 | POST | `/api/tokens` | auth | Mint one — the raw token is in this response and nowhere else |
@@ -842,6 +843,50 @@ every one of these failures otherwise presents as "nobody can log in".
 `INSECURE_COOKIES_BEHIND_PROXY=true` is an escape hatch for a proxy that does **not** terminate
 TLS (an overlay network, TLS ending further out). It is named to discourage casual use and
 should be left alone in a normal deployment.
+
+### Character evolution
+
+The DM's notes on how each character can grow, as the 🌱 Evolution tab. **DM-only throughout,
+with no player-facing counterpart** — the table holds what a character could become and what it
+would cost, which is most of the next session's plot.
+
+```
+character_paths
+  id, campaign_id (FK campaigns, CASCADE),
+  player_id (FK campaign_players, CASCADE, NULLABLE),  -- NULL = the party
+  parent_id (FK self, CASCADE, nullable),              -- nests to any depth
+  category CHECK IN ('path','teacher','homebrew'),
+  title, body,
+  state CHECK IN ('idea','open','in-progress','done'),
+  position, created_at, updated_at
+  INDEX (campaign_id, player_id)
+```
+
+One table for three kinds of note because the DM's own files are lists of the same shape.
+A fourth, "what the party has revealed", was dropped on reflection: it is a record of events
+rather than a growth path, and belongs in the Campaign Journal. `spell` was later renamed
+`homebrew`, which is what it always held — a spell, a feature or a gift.
+
+Both changes needed an explicit `DROP CONSTRAINT` / `ADD CONSTRAINT` pass, since a CHECK inside
+`CREATE TABLE IF NOT EXISTS` never reaches a database that already has the table. **The order
+is load-bearing**: drop, then move the rows, then add the new constraint — adding it first
+fails on exactly the rows the migration exists to rescue. Rows are moved, never deleted.
+
+**`player_id` NULL is a value, not a gap**: it means the campaign rather than one character,
+for a path or teacher the whole group shares — so the position query uses `IS NOT DISTINCT
+FROM` and the page distinguishes "the party" from "nothing chosen yet".
+
+**A child takes its parent's character AND category**, enforced on write. Either disagreeing
+would put the row in a group its parent is not in, which renders nowhere. Same rule, same
+reason, as a session card's section.
+
+**`done` cascades to sub-cards; the other three do not** — a gift that has been given does not
+leave three conditions outstanding, while a parent is in-progress precisely because one child
+is. Bounded at fifty levels, because `parent_id` is a tree by construction and not by
+constraint.
+
+Title/body and state have separate routes, in both directions: a PUT cannot move the state and
+the PATCH cannot blank a title.
 
 ### API tokens
 

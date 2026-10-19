@@ -40,6 +40,10 @@ export const TABS = [
   // data, like the journal, and a badge blank until you open the tab is
   // worse than no badge.
   { id: 'sessions',  label: '🗓 Sessions',  count: false },
+  // How each character can grow, and what it costs. DM-private — it is in
+  // this module rather than on the PC sheet precisely because a player
+  // cannot open this module at all. No count, for the reason above.
+  { id: 'evolution', label: '🌱 Evolution', count: false },
   // The shared journal, from the DM's side — the DM-only entries included.
   // No count: it loads its own data, and a badge that is always blank until
   // you open the tab is worse than no badge.

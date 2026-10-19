@@ -165,7 +165,3 @@ The detail is in `CHANGELOG.md`; the QA checklist is in `TOQA.md`.
       exists, the *Pending* and *For later on* headings of the Obsidian prep notes import
       into one labelled parent card under the session's beats.
 
-### 2. Character Evolution / Learning Path
-
-A feature/section to track DM notes for ways of evolve characters. Extra things (spell, learnings, information, etc) and how to get them. Use my notes on Obsidian as reference.
-
