@@ -60,6 +60,8 @@ Touch input and the two overflowing layouts are **done** — see `TOQA.md`. What
       is not usable. Probably wants a different presentation rather than a responsive fix.
 - [ ] **SplitView** — four iframes at ~195px each on a phone. Arguably should just say
       "desktop only" rather than be fixed.
+- [ ] Increase Font size. In general looks too small. Point me first to the files that have the size config and I'll try to change it.
+- [ ] Item Cards "Print set (9)" is kept in cache/memory even after logout and should not
 
 ---
 
@@ -78,7 +80,11 @@ through cross-links and the Campaign Links tab, gated on having met them. What r
 - [ ] **A flag for NPCs that have a stat block** (enemies/allies) versus those that do not, so
       the ones that need a sheet can be told apart from the ones that are just a name and a note.
       The one part of the original idea not built.
-
+- [ ] NPC view should show relationships to DM and to players (only the public ones)
+- [ ] Clic on an NPC or location should show a big card instead (so big text is more readable)
+- [ ] SEEN status should be along the name (so it's faster to hide or show based on the names)
+- [ ] Add also the status between "alive/dead/unknown"
+- [ ] NPC Description should be the only thing a Player should be for now. The rest is only for DM
 
 ### New Module - DM Screen
 #### DM Notes
@@ -101,42 +107,37 @@ through cross-links and the Campaign Links tab, gated on having met them. What r
       big enough campaign produces a backup it cannot restore. The dominant payload is base64
       map and portrait images. A 413 currently surfaces as Express's HTML error page.
 
-### Campaign Diary and other modals
+### Modals and type — **done**, see the CHANGELOG
 
-- [ ] When open an entry, it should fit the whole screen and not just a small column. Same for editing or adding a new entry (the modal is too small)
+The entry dialogs are full screen, the timeline event form is two columns, and the type scale
+is rooted at 16px with nothing below 10.4px. What is left of the original survey:
 
-Every `<Modal>` call site, surveyed. `Modal.jsx` defaults to **`max-w-md` (448px)** and each
-site may override it via `className`. Sizes below are what they are *today*. Nothing here is
-changed yet — pick what should widen.
+- [ ] **`SrdInfo.jsx:77`** — SRD rules text at the 448px default. Left alone by choice; raise
+      it if spell descriptions feel cramped in use.
+- [ ] **The remaining non-responsive two-column grids**: `ManageCampaigns/tabs/OtherTabs.jsx:229`
+      (a 3-col date picker), `NpcSheet/index.jsx:741` and `:808` (inline styles, so unreachable
+      by a Tailwind prefix — they need classes), and `timeline.css:325` `.fg`. The two in
+      `Timeline/Modals.jsx` are fixed.
+- [ ] **Viewport-unit jitter** — `85vh`/`88vh`/`92vh` on modals resize as the mobile address
+      bar hides and reappears. Nothing uses `dvh`. The new full-screen dialogs inherit this.
 
-**One thing worth knowing before choosing:** the entry-reading modal is a single shared
-component, `Diary/EntryList.jsx:150`. The Campaign Diary, every player diary, the PC Sheet 📔
-tab and the Journal all read through it, so that one line covers four surfaces at once.
-
-Also undecided: whether "full screen" means a real `95vw/92vh` like the distance matrix, or
-just a larger cap such as `max-w-4xl`. Reading wants the former; edit forms probably want the
-latter, since a 1600px-wide text input is unpleasant to type in.
-
-*Long-form prose — what this TODO is about:*
-
-| File | What it is | Today |
-|---|---|---|
-| `Diary/EntryList.jsx:150` | **Reading an entry** — shared by Campaign Diary, player diaries, PC Sheet 📔, Journal | `max-w-2xl` |
-| `Diary/EntryModal.jsx:57` | New/edit diary entry (campaign + player) | `max-w-2xl` |
-| `Journal/JournalPanel.jsx:329` | New/edit journal entry | `max-w-2xl` |
-| `Sessions/SessionsPanel.jsx:608` | New/edit session card — markdown body | **default** |
-| `components/SrdInfo.jsx:77` | SRD rules text — spells, item descriptions | **default** |
+---|---|---|
+| `Diary/EntryList.jsx:150` | **Reading an entry** — shared by Campaign Diary, player diaries, PC Sheet 📔, Journal | `max-w-2xl` | Change to `95vw/92vh`
+| `Diary/EntryModal.jsx:57` | New/edit diary entry (campaign + player) | `max-w-2xl` | Change to `95vw/92vh`
+| `Journal/JournalPanel.jsx:329` | New/edit journal entry | `max-w-2xl` | Change to `95vw/92vh`
+| `Sessions/SessionsPanel.jsx:608` | New/edit session card — markdown body | **default** | Change to `95vw/92vh`
+| `components/SrdInfo.jsx:77` | SRD rules text — spells, item descriptions | **default** | Leave as is
 
 *Many fields, cramped at 448px:*
 
 | File | What it is |
 |---|---|
-| `ManageCampaigns/tabs/NpcsTab.jsx:214` | Edit NPC — **three textareas** (description, public, private) plus name and location |
-| `ManageCampaigns/tabs/LocationsTab.jsx:275` | Edit Location — also listed above for its non-responsive 2-col grid |
-| `ManageCampaigns/tabs/CharTreeTab.jsx:830` | Add/edit cross-connection |
-| `PcSheet/components/RelationModal.jsx:49` | Add/edit relationship |
-| `Timeline/Modals.jsx:258` and `:192` | Edit event / read event — also listed above for its 2-col grid |
-| `PcSheet/tabs/InventoryTab.jsx:690`, `:772` | Item editor, grant from library |
+| `ManageCampaigns/tabs/NpcsTab.jsx:214` | Edit NPC — **three textareas** (description, public, private) plus name and location |  Double the size so description is bigger
+| `ManageCampaigns/tabs/LocationsTab.jsx:275` | Edit Location — also listed above for its non-responsive 2-col grid | Leave it as is
+| `ManageCampaigns/tabs/CharTreeTab.jsx:830` | Add/edit cross-connection | Leave it as is
+| `PcSheet/components/RelationModal.jsx:49` | Add/edit relationship | Leave it as is
+| `Timeline/Modals.jsx:258` and `:192` | Edit event / read event — also listed above for its 2-col grid | Convert into multiple columns and transform it into `95vw/92vh`
+| `PcSheet/tabs/InventoryTab.jsx:690`, `:772` | Item editor, grant from library | Leave it as is
 
 *Already wide — nothing to do:* `JourneyMap/modals/DistanceMatrixModal.jsx:29` (`95vw × 92vh`,
 the only true full-screen one), `Home.jsx:144` and `JourneyMap/modals/WaypointEventModal.jsx:63`
@@ -164,4 +165,5 @@ The detail is in `CHANGELOG.md`; the QA checklist is in `TOQA.md`.
       agreement when the feature was scoped, and still the only part not built. Until it
       exists, the *Pending* and *For later on* headings of the Obsidian prep notes import
       into one labelled parent card under the session's beats.
+- [ ] Cambiar de fecha en sessions y que haya algún mensaje de eventos próximos basado en el timeline
 

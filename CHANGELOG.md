@@ -154,7 +154,51 @@ Played makes the session read-only, so doing it the other way round left the DM 
 that they had to mark it Prepared again before they could type the notes they were about to
 type.
 
-### Character evolution — the 🌱 Evolution tab
+### Changed — full-screen dialogs, and a type scale with a floor
+
+**Entries open full screen.** Reading one, and writing one, were both 672px columns on a
+1920px display. The reading dialog is a single shared component, so that one change covers the
+Campaign Diary, every player diary, the PC Sheet's diary tab and the Journal at once; the diary
+and journal editors, the session-card editor and both timeline event dialogs went with it.
+
+**The prose keeps a readable measure inside it.** The dialog is 95vw so a long entry has room,
+but text set across 1800px cannot be read — the eye loses the line on the way back. The entry
+body is capped at 80ch and centred: about 1280px here, nearly twice the column it replaces and
+still a line you can track.
+
+**Their text boxes grew to match.** A 92vh dialog holding a six-row textarea is a wide empty
+window, so the session card went to 16 rows, the journal to 18 and the diary to 20.
+
+**The timeline event form is two columns** — the scalar fields on the left, the two tall
+pick-lists on the right, which also got their height back. Eleven field groups in one column
+was a form you scrolled to fill in. Its date grid and the shared one above it moved from inline
+styles to classes, so a breakpoint can finally reach them; inline, they stayed two columns at
+phone width.
+
+**Small dialogs stayed small.** Confirms, login, Manage HP and a dozen others are a few short
+fields, and widening them only spreads three inputs across a wall. The NPC editor is the one
+in between: three textareas, so it doubled rather than going full screen.
+
+#### Type
+
+**The rem basis moved from 15px to 16px.** Every size in the app is rem-based, so this is the
+one place the whole scale can move at once — and 15px quietly overrode a reader who had set
+their own default. Body text goes 13.1px → 14px.
+
+**Nothing renders below 10.4px any more.** The smallest tiers were 8px, 8.8px, 9px and a stray
+9.9px — uppercase micro-labels that had drifted in over time, 80 of them. They are all 0.65rem
+or 0.7rem now. A test asserts the floor by computing the smallest value actually used, rather
+than by listing the bad ones: the list version let a 0.62rem and a 0.58rem straight through.
+
+**Print is pinned at the old basis**, because the PC and NPC sheet stylesheets mix rem with
+px/pt — moving it would nudge half of each printed page and leave the other half. Item cards
+are unaffected either way: they size in px, from `cell.fontPx`.
+
+**And an in-entry sub-heading is no longer smaller than the text it introduces.** `###` was
+0.78rem against a 1.02rem body, so it read as a caption. Weight and colour carry the hierarchy
+now; the size only has to clear the body.
+
+### Added — character evolution (🌱 Evolution tab)
 
 How each character can grow, and what it costs. **Private to the DM**, and placed in Manage
 Campaigns rather than on the PC sheet for exactly that reason: this is what a character could
@@ -199,7 +243,7 @@ render it again. A character from another campaign, or a parent from one, is ref
 link that already works in the journal, the diary and session prep, rather than a second way
 of naming the same thing.
 
-### API tokens, and one knob for TLS
+### Added — API tokens, a discovery endpoint, and one knob for TLS
 
 #### Running behind a reverse proxy
 
