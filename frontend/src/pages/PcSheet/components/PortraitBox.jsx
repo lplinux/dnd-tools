@@ -52,7 +52,7 @@ export default function PortraitBox({ charData, playerId, onUpload, onUrlChange,
 
       {/* Controls */}
       <div className="flex flex-col gap-2 flex-1 min-w-[200px]">
-        <div className="font-display text-text-dim text-[0.6rem] uppercase tracking-wider">Portrait</div>
+        <div className="font-display text-text-dim text-[0.7rem] uppercase tracking-wider">Portrait</div>
 
         <div className="flex gap-2">
           <button

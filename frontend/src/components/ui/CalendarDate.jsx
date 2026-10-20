@@ -116,7 +116,7 @@ export default function CalendarDate({
         {clearable && value && (
           <button
             type="button" onClick={() => onChange(null)}
-            className="text-[0.6rem] font-display uppercase tracking-wider text-text-muted hover:text-gold"
+            className="text-[0.7rem] font-display uppercase tracking-wider text-text-muted hover:text-gold"
           >
             Clear {label.toLowerCase()}
           </button>

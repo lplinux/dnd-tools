@@ -26,7 +26,7 @@ function StateChip({ state, onPick }) {
         type="button"
         onClick={() => setOpen((v) => !v)}
         title="Change state"
-        className={`text-[0.6rem] px-1.5 py-0.5 rounded-sm border transition-colors hover:border-[var(--gold)] ${s.cls}`}
+        className={`text-[0.7rem] px-1.5 py-0.5 rounded-sm border transition-colors hover:border-[var(--gold)] ${s.cls}`}
       >
         {s.icon} {s.label}
       </button>
@@ -155,7 +155,7 @@ export default function ItemCard({
           </strong>
 
           {!stateless && (locked
-            ? <span className={`text-[0.6rem] px-1.5 py-0.5 rounded-sm border ${stateOf(item.state).cls}`}>
+            ? <span className={`text-[0.7rem] px-1.5 py-0.5 rounded-sm border ${stateOf(item.state).cls}`}>
                 {stateOf(item.state).icon} {stateOf(item.state).label}
               </span>
             : <StateChip state={item.state} onPick={(next) => actions.setState(item, next)} />)}
@@ -172,7 +172,7 @@ export default function ItemCard({
         </div>
 
         {origin && (
-          <p className="text-[0.6rem] font-display uppercase tracking-wider text-text-muted">
+          <p className="text-[0.7rem] font-display uppercase tracking-wider text-text-muted">
             from {origin}
           </p>
         )}

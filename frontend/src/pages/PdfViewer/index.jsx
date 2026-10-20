@@ -205,7 +205,7 @@ export default function PdfViewer() {
         {/* ── Sidebar toggle ── */}
         <button
           onClick={() => setSidebarOpen(o => !o)}
-          className="flex-shrink-0 w-[18px] bg-surface2 border-r border-border2 flex items-center justify-center text-text-muted hover:bg-border2 hover:text-gold transition-colors text-[0.55rem] writing-mode-vertical order-first"
+          className="flex-shrink-0 w-[18px] bg-surface2 border-r border-border2 flex items-center justify-center text-text-muted hover:bg-border2 hover:text-gold transition-colors text-[0.65rem] writing-mode-vertical order-first"
           title="Toggle sidebar"
           style={{ writingMode: 'vertical-rl', letterSpacing: '0.06em' }}
         >

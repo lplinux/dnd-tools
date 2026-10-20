@@ -237,7 +237,7 @@ export default function LocationsTab({ locations, campaignId, npcs = [], actions
               <tr className="border-b border-border">
                 {/* The blank second column is the map globe. */}
                 {['Name','','Type','Description','Visible',''].map((h, i) => (
-                  <th key={`${h}-${i}`} className="text-left px-2 py-2 font-display text-[0.6rem] uppercase tracking-wider text-text-dim">{h}</th>
+                  <th key={`${h}-${i}`} className="text-left px-2 py-2 font-display text-[0.7rem] uppercase tracking-wider text-text-dim">{h}</th>
                 ))}
               </tr>
             </thead>

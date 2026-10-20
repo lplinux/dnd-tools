@@ -165,7 +165,7 @@ export default function SearchTab({ campaignId }) {
               <button
                 type="button"
                 onClick={() => setShut(allShut ? new Set() : new Set(groups.map((g) => g.kind)))}
-                className="text-[0.6rem] font-display uppercase tracking-wider text-text-muted
+                className="text-[0.7rem] font-display uppercase tracking-wider text-text-muted
                            hover:text-gold"
               >
                 {allShut ? 'Expand all' : 'Collapse all'}
@@ -186,7 +186,7 @@ export default function SearchTab({ campaignId }) {
                 type="button"
                 onClick={() => toggle(g.kind)}
                 aria-expanded={shown}
-                className="w-full font-display uppercase tracking-widest text-[0.62rem] text-gold
+                className="w-full font-display uppercase tracking-widest text-[0.65rem] text-gold
                            border-b border-[var(--gold-dim)] mb-1.5 pb-1 flex items-center gap-2
                            text-left hover:text-[var(--gold)] transition-colors"
               >
@@ -209,7 +209,7 @@ export default function SearchTab({ campaignId }) {
                           <Marked text={h.title} terms={terms} />
                         </span>
                         {h.note && (
-                          <span className="text-[0.6rem] text-text-muted">{h.note}</span>
+                          <span className="text-[0.7rem] text-text-muted">{h.note}</span>
                         )}
                       </span>
                       <span className="block text-[0.72rem] leading-snug mt-0.5">

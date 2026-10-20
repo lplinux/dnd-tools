@@ -88,7 +88,7 @@ export default function EntryList({
                 <h3 className="font-display text-gold text-[0.72rem] uppercase tracking-wider leading-snug line-clamp-2">
                   {e.title}
                 </h3>
-                {metaBits && <div className="text-[0.6rem] text-text-muted mt-0.5">{metaBits}</div>}
+                {metaBits && <div className="text-[0.7rem] text-text-muted mt-0.5">{metaBits}</div>}
                 {e.body && (
                   <p className="text-[0.7rem] text-text-dim leading-snug mt-1.5 line-clamp-3">
                     {excerpt(e.body)}
@@ -110,7 +110,7 @@ export default function EntryList({
                       ? 'Published — on the share link. Click to unpublish.'
                       : 'Draft — not on the share link. Click to publish.'}
                     className={[
-                      'text-[0.58rem] font-display uppercase tracking-wider rounded-sm px-1.5 py-0.5 border transition-colors',
+                      'text-[0.65rem] font-display uppercase tracking-wider rounded-sm px-1.5 py-0.5 border transition-colors',
                       published
                         ? 'bg-[var(--gold-dim)] text-bg border-transparent hover:opacity-80'
                         : 'bg-surface3 text-text-dim border-border2 hover:text-gold',
@@ -152,7 +152,10 @@ export default function EntryList({
         onClose={() => setReading(null)}
         onSubmit={() => setReading(null)}
         title={reading?.title ?? ''}
-        className="max-w-2xl"
+        /* Full screen. One component serves the Campaign Diary, every
+           player diary, the PC Sheet's diary tab and the Journal, so this
+           line is all four of them. */
+        className="!max-w-[95vw] !w-[95vw] !max-h-[92vh]"
       >
         {reading && (
           <>

@@ -69,7 +69,7 @@ const FIELD_CLS = [
 
 const INPUT_CLS = `w-full ${FIELD_CLS}`;
 
-const LABEL_CLS = 'font-display uppercase tracking-wider text-text-dim text-[0.6rem]';
+const LABEL_CLS = 'font-display uppercase tracking-wider text-text-dim text-[0.7rem]';
 
 function Field({ label, children }) {
   return (

@@ -67,7 +67,7 @@ function CampaignSidebar({ campaigns, trashed, currentId, onSelect, onCreate, on
 
       {/* Campaign list */}
       <div className="flex-1 overflow-y-auto">
-        <div className="px-3 py-2 font-display text-text-dim text-[0.6rem] uppercase tracking-widest border-b border-border">
+        <div className="px-3 py-2 font-display text-text-dim text-[0.7rem] uppercase tracking-widest border-b border-border">
           Campaigns
         </div>
         {[...campaigns].sort((a, b) => (a.name || '').localeCompare(b.name || '')).map(c => (
@@ -94,7 +94,7 @@ function CampaignSidebar({ campaigns, trashed, currentId, onSelect, onCreate, on
         <div className="border-t border-border flex-shrink-0 max-h-48 overflow-y-auto">
           <button
             onClick={() => setTrashOpen(o => !o)}
-            className="w-full px-3 py-2 flex items-center gap-1 font-display text-text-dim text-[0.6rem] uppercase tracking-widest hover:text-gold transition-colors"
+            className="w-full px-3 py-2 flex items-center gap-1 font-display text-text-dim text-[0.7rem] uppercase tracking-widest hover:text-gold transition-colors"
           >
             {trashOpen ? <ChevronDown size={11} /> : <ChevronRight size={11} />}
             Trash ({trashed.length})
@@ -105,7 +105,7 @@ function CampaignSidebar({ campaigns, trashed, currentId, onSelect, onCreate, on
               <div className="flex flex-wrap gap-1 mt-1">
                 <Button
                   variant="default"
-                  className="text-[0.6rem] px-1.5 py-0.5"
+                  className="text-[0.7rem] px-1.5 py-0.5"
                   onClick={() => onRestore(c.id, c.name)}
                 >
                   <Undo2 size={10} className="inline mr-1" />Restore
@@ -114,7 +114,7 @@ function CampaignSidebar({ campaigns, trashed, currentId, onSelect, onCreate, on
                     it is the last chance to take a copy before Delete. */}
                 <Button
                   variant="default"
-                  className="text-[0.6rem] px-1.5 py-0.5"
+                  className="text-[0.7rem] px-1.5 py-0.5"
                   onClick={() => onExportTrashed(c.id, c.name)}
                   title="Download a JSON copy before deleting"
                 >
@@ -122,7 +122,7 @@ function CampaignSidebar({ campaigns, trashed, currentId, onSelect, onCreate, on
                 </Button>
                 <Button
                   variant="danger"
-                  className="text-[0.6rem] px-1.5 py-0.5"
+                  className="text-[0.7rem] px-1.5 py-0.5"
                   onClick={async () => {
                     if (!await confirm(
                       `Permanently delete "${c.name}" and ALL its data? This cannot be undone.`,
@@ -136,7 +136,7 @@ function CampaignSidebar({ campaigns, trashed, currentId, onSelect, onCreate, on
             </div>
           ))}
           {trashOpen && (
-            <p className="px-3 pb-2 pt-1 text-[0.6rem] text-text-muted leading-snug">
+            <p className="px-3 pb-2 pt-1 text-[0.7rem] text-text-muted leading-snug">
               Trashed campaigns are hidden from every module and their share links stop working.
               Nothing is deleted until you choose Delete here.
             </p>
@@ -146,14 +146,14 @@ function CampaignSidebar({ campaigns, trashed, currentId, onSelect, onCreate, on
 
       {/* Create form */}
       <div className="border-t border-border p-3 flex-shrink-0 bg-surface2">
-        <div className="font-display text-text-dim text-[0.6rem] uppercase tracking-widest mb-2">
+        <div className="font-display text-text-dim text-[0.7rem] uppercase tracking-widest mb-2">
           New Campaign
         </div>
         <form onSubmit={handleSubmit} className="flex flex-col gap-2">
           <input name="name"        placeholder="e.g., Lost Mines…" required className={inputCls} />
           <textarea name="description" placeholder="Brief description…" rows={2} className={inputCls + ' resize-none'} />
           <div className="flex flex-col gap-0.5">
-            <label className="font-display text-text-muted text-[0.55rem] uppercase tracking-wider">
+            <label className="font-display text-text-muted text-[0.65rem] uppercase tracking-wider">
               Calendar Type <span className="text-danger">(cannot change later)</span>
             </label>
             <select name="calendarType" className={inputCls}>
@@ -201,7 +201,7 @@ function TabBar({ tabs, active, counts, onSelect }) {
           >
             {t.label}
             {t.count && count !== undefined && (
-              <span className="ml-1 text-[0.55rem] text-text-muted">({count})</span>
+              <span className="ml-1 text-[0.65rem] text-text-muted">({count})</span>
             )}
           </button>
         );

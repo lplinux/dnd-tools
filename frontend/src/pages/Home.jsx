@@ -264,11 +264,11 @@ function ModuleCard({ mod, onInfo }) {
       {/* Access badge */}
       <div className="px-4 pb-3">
         {mod.access === 'public' ? (
-          <span className="text-[0.6rem] font-display uppercase tracking-wider text-text-muted border border-border px-1.5 py-0.5 rounded-sm">
+          <span className="text-[0.7rem] font-display uppercase tracking-wider text-text-muted border border-border px-1.5 py-0.5 rounded-sm">
             🔓 Public
           </span>
         ) : (
-          <span className="text-[0.6rem] font-display uppercase tracking-wider text-text-muted border border-border px-1.5 py-0.5 rounded-sm">
+          <span className="text-[0.7rem] font-display uppercase tracking-wider text-text-muted border border-border px-1.5 py-0.5 rounded-sm">
             🔐 {Array.isArray(mod.access) ? mod.access.join(' / ') : mod.access}
           </span>
         )}

@@ -59,7 +59,7 @@ export default function EntryModal({
       onClose={onClose}
       onSubmit={submit}
       title={entry ? '✎ Edit entry' : '＋ New entry'}
-      className="max-w-2xl"
+      className="!max-w-[95vw] !w-[95vw] !max-h-[92vh]"
     >
       <div className="flex flex-col gap-3">
         <FormField label="Title">
@@ -93,7 +93,7 @@ export default function EntryModal({
           ) : (
             <LinkingTextarea
               className={`${FIELD_INPUT} resize-y font-body`}
-              rows={12}
+              rows={20}
               value={form.body}
               targets={targets}
               onChange={(v) => setForm((f) => ({ ...f, body: v }))}

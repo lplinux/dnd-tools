@@ -12,7 +12,7 @@ export default function FormField({ label, error, children, className = '' }) {
   return (
     <div className={`flex flex-col gap-1 ${className}`}>
       {label && (
-        <label className="font-display uppercase tracking-wider text-text-dim text-[0.6rem]">
+        <label className="font-display uppercase tracking-wider text-text-dim text-[0.7rem]">
           {label}
         </label>
       )}

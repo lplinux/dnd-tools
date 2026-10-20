@@ -111,7 +111,7 @@ export default function CrossLinkPopover({ target, at, campaignId, mapPath, onMa
             a player loads leaves hidden ones out entirely — so this badge is
             a reminder to the DM, never a hint to the table. */}
         {target.kind === 'npc' && target.is_public === false && (
-          <p className="text-[0.6rem] font-display uppercase tracking-wider text-text-muted">
+          <p className="text-[0.7rem] font-display uppercase tracking-wider text-text-muted">
             Not met yet · hidden from players
           </p>
         )}
@@ -135,7 +135,7 @@ export default function CrossLinkPopover({ target, at, campaignId, mapPath, onMa
             {target.private_info && (
               <>
                 <hr className="border-[var(--gold-dim)]" />
-                <p className="font-display uppercase tracking-wider text-[0.55rem] text-text-muted">
+                <p className="font-display uppercase tracking-wider text-[0.65rem] text-text-muted">
                   Your notes
                 </p>
                 <Markdown>{target.private_info}</Markdown>
@@ -157,7 +157,7 @@ export default function CrossLinkPopover({ target, at, campaignId, mapPath, onMa
             only revealed NPCs, so this cannot leak one. */}
         {target.kind === 'location' && !!target.here?.length && (
           <div className="flex flex-col gap-1 border-t border-border pt-2">
-            <p className="font-display uppercase tracking-wider text-[0.55rem] text-text-muted">
+            <p className="font-display uppercase tracking-wider text-[0.65rem] text-text-muted">
               Here ({target.here.length})
             </p>
             <div className="flex flex-wrap gap-1">

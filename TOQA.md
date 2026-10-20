@@ -13,6 +13,25 @@ PC Sheet / Journey Map / Manage Campaign fix batch that went with it.
 
 ---
 
+## Full-screen dialogs and the bigger type
+
+This one is all eyes — nothing here can be checked by a test.
+
+- [ ] **Open a diary entry, a journal entry and a session card.** Each should fill the screen,
+      with the entry text in a centred column rather than edge to edge.
+- [ ] **Edit each of them** — the text boxes should be tall, not a thin strip in a big window.
+- [ ] **A timeline event, read and edited.** The form should be two columns on a wide screen
+      and one on a narrow one; the player and connection lists should be taller than before.
+- [ ] **The NPC editor** should be about twice as wide, with roomier description boxes.
+- [ ] **Confirms, login and Manage HP should be unchanged** — small is right for them.
+- [ ] **Everything should read slightly larger**, and the smallest labels — tab counts, state
+      chips, "(you)" — should no longer need squinting.
+- [ ] **Print a PC sheet and an item card.** Both should be exactly as before; print is pinned
+      to the old basis on purpose. This is the one with a real regression risk.
+- [ ] **A `###` heading inside an entry** should look like a heading, not a caption.
+
+---
+
 ## Character evolution (🌱 Evolution tab)
 
 - [ ] **Manage Campaigns → 🌱 Evolution.** Pick a character along the top; the three groups

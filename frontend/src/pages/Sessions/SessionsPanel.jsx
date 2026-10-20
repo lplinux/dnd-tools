@@ -92,11 +92,11 @@ function Section({
             {/* Deliberately skips cards that are done — re-opening fifty
                 finished beats is not what anyone means by "expand all". */}
             <button type="button" onClick={() => onExpandAll(def.id, true)}
-              className="text-[0.55rem] font-display uppercase tracking-wider text-text-muted hover:text-gold">
+              className="text-[0.65rem] font-display uppercase tracking-wider text-text-muted hover:text-gold">
               Expand
             </button>
             <button type="button" onClick={() => onExpandAll(def.id, false)}
-              className="text-[0.55rem] font-display uppercase tracking-wider text-text-muted hover:text-gold">
+              className="text-[0.65rem] font-display uppercase tracking-wider text-text-muted hover:text-gold">
               Collapse
             </button>
           </>
@@ -127,7 +127,7 @@ function Section({
             <div onDragOver={(e) => e.preventDefault()}
               onDrop={(e) => { e.preventDefault(); onMove(drag.id, null, items.length, def.id); }}
               className="h-5 border-2 border-dashed border-[var(--gold-dim)] rounded-sm
-                         flex items-center justify-center text-[0.55rem] font-display
+                         flex items-center justify-center text-[0.65rem] font-display
                          uppercase tracking-wider text-text-muted">
               {drag.section !== def.id && `Move to ${def.label}`}
             </div>
@@ -573,7 +573,7 @@ export default function SessionsPanel({ campaignId }) {
               type="button"
               onClick={toggleStatus}
               title={detail.session.status === 'played' ? 'Mark as still being prepared' : 'Mark as played'}
-              className={`text-[0.6rem] font-display uppercase tracking-wider px-2 py-0.5 rounded-sm border ${
+              className={`text-[0.7rem] font-display uppercase tracking-wider px-2 py-0.5 rounded-sm border ${
                 detail.session.status === 'played'
                   ? 'bg-[var(--gold-dim)] border-[var(--gold)] text-text'
                   : 'bg-surface2 border-border text-text-dim'
@@ -628,7 +628,7 @@ export default function SessionsPanel({ campaignId }) {
                     return next;
                   })}
                   title={`Show only ${st.label}`}
-                  className={`text-[0.6rem] px-1.5 py-0.5 rounded-sm border transition-colors
+                  className={`text-[0.7rem] px-1.5 py-0.5 rounded-sm border transition-colors
                               ${on ? st.cls : 'bg-surface2 border-border text-text-muted hover:text-gold'}`}
                 >
                   {st.icon} {st.label}
@@ -638,7 +638,7 @@ export default function SessionsPanel({ campaignId }) {
             {filtering && (
               <button type="button"
                 onClick={() => { setQuery(''); setStateFilter(new Set()); }}
-                className="text-[0.6rem] font-display uppercase tracking-wider text-text-muted hover:text-gold">
+                className="text-[0.7rem] font-display uppercase tracking-wider text-text-muted hover:text-gold">
                 Clear
               </button>
             )}
@@ -681,7 +681,7 @@ export default function SessionsPanel({ campaignId }) {
                       dmOnly: true,
                       picked: new Set(tree.map((i) => i.id)),
                     })}
-                    className="text-[0.55rem] font-display uppercase tracking-wider
+                    className="text-[0.65rem] font-display uppercase tracking-wider
                                text-text-muted hover:text-gold"
                   >
                     📖 To journal
@@ -737,6 +737,7 @@ export default function SessionsPanel({ campaignId }) {
         open={!!itemForm}
         onClose={() => setItemForm(null)}
         title={itemForm?.id ? 'Edit card' : 'New card'}
+        className="!max-w-[95vw] !w-[95vw] !max-h-[92vh]"
       >
         {itemForm && (
           <div className="flex flex-col gap-3">
@@ -749,7 +750,7 @@ export default function SessionsPanel({ campaignId }) {
                 value={itemForm.body}
                 onChange={(v) => setItemForm((f) => ({ ...f, body: v }))}
                 targets={targets}
-                rows={6}
+                rows={16}
                 className={INPUT}
               />
               <p className="text-text-muted text-[0.7rem] mt-1">

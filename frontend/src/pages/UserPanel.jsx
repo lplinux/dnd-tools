@@ -176,7 +176,7 @@ function UserTable({ users, currentUserId, onRoleChange, onResetPassword, onDele
             {['Username', 'Email', 'Role', 'Created', 'Actions'].map((h) => (
               <th
                 key={h}
-                className="text-left px-3 py-2 font-display uppercase tracking-wider text-text-dim text-[0.6rem]"
+                className="text-left px-3 py-2 font-display uppercase tracking-wider text-text-dim text-[0.7rem]"
               >
                 {h}
               </th>
@@ -189,7 +189,7 @@ function UserTable({ users, currentUserId, onRoleChange, onResetPassword, onDele
               <td className="px-3 py-2.5 font-semibold text-text">
                 {u.username}
                 {u.id === currentUserId && (
-                  <span className="ml-2 text-[0.55rem] text-text-muted font-display uppercase tracking-wider">(you)</span>
+                  <span className="ml-2 text-[0.65rem] text-text-muted font-display uppercase tracking-wider">(you)</span>
                 )}
               </td>
               <td className="px-3 py-2.5 text-text-dim">{u.email || '—'}</td>

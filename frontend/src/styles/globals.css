@@ -92,7 +92,30 @@ body {
   font-family: var(--fb);
   background: var(--bg);
   color: var(--text);
-  font-size: 15px;
+  /*
+   * The rem basis for the whole app, and 16px rather than 15 for two
+   * reasons. It is the browser default, so a reader who has changed their
+   * own default gets what they asked for instead of 94% of it. And every
+   * Tailwind size here is rem-based, so one pixel at the root is the only
+   * place the entire scale can be adjusted at once — at 15px the body text
+   * (`text-sm`) was 13.1px and the labels were 9px, which is small for a
+   * serif with Crimson Text's x-height.
+   */
+  font-size: 16px;
+}
+
+/*
+ * Print stays where it was. The PC sheet and NPC sheet stylesheets mix rem
+ * and px/pt font sizes, so moving the basis would nudge half of each
+ * printed page and leave the other half — and a print regression is
+ * invisible until somebody prints. Item cards are unaffected either way:
+ * they size in px, from `cell.fontPx`.
+ */
+@media print {
+  html,
+  body {
+    font-size: 15px;
+  }
 }
 
 #root {
@@ -332,13 +355,27 @@ body {
 /* The public diary is read for minutes at a time, so it gets a larger size and
    a looser rhythm than the app's dense panels. renderMd bakes its own classes
    into the HTML, so these reach the elements by descent rather than by prop. */
-.diary-read            { font-size: 1.02rem; line-height: 1.7; }
+/*
+ * The entry itself, read in the full-screen dialog.
+ *
+ * MEASURE, not width. The dialog is 95vw so a long entry has room, but
+ * prose set across 1800px is not readable at any size — the eye loses the
+ * line on the way back. 80ch is about 1280px here: far wider than the
+ * 672px column this replaced, and still a line you can track. Centred, so
+ * the extra width is margin on both sides rather than a block pinned left.
+ */
+.diary-read            { font-size: 1.02rem; line-height: 1.7; max-width: 80ch; margin-inline: auto; }
 .diary-read p          { margin-bottom: .85em; }
 .diary-read h1,
 .diary-read h2         { margin-top: 1.4em; }
-/* ### is the in-entry sub-heading. It must read as subordinate to the session
-   title above it, not compete with it. */
-.diary-read h3         { margin-top: 1.3em; font-size: .78rem; opacity: .95; }
+/*
+ * ### is the in-entry sub-heading. It must read as subordinate to the entry
+ * title above it — but it was .78rem against a 1.02rem body, so it came out
+ * SMALLER than the text it introduced and read as a caption. Weight and
+ * colour carry the hierarchy instead; the size only has to clear the body.
+ */
+.diary-read h3         { margin-top: 1.3em; font-size: 1.05rem; font-weight: 600;
+                         color: var(--text); opacity: .95; }
 .diary-read blockquote { margin: 1em 0; }
 .diary-read li         { margin-bottom: .3em; }
 .diary-read strong     { color: var(--text); font-weight: 600; }

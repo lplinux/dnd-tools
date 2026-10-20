@@ -145,7 +145,7 @@ export default function NpcsTab({ npcs, locations = [], campaignId, actions }) {
             <thead>
               <tr className="border-b border-border">
                 {['Name', 'Description', 'Currently at', 'Seen', ''].map((h) => (
-                  <th key={h} className="text-left px-2 py-2 font-display text-[0.6rem] uppercase tracking-wider text-text-dim">{h}</th>
+                  <th key={h} className="text-left px-2 py-2 font-display text-[0.7rem] uppercase tracking-wider text-text-dim">{h}</th>
                 ))}
               </tr>
             </thead>
@@ -216,6 +216,9 @@ export default function NpcsTab({ npcs, locations = [], campaignId, actions }) {
         onClose={() => setForm(null)}
         onSubmit={save}
         title={form?.name ? `Edit ${form.name}` : 'Edit NPC'}
+        /* Three textareas — description, public and private — do not fit
+           in the 448px default. */
+        className="max-w-2xl"
       >
         {form && (
           <div className="flex flex-col gap-3">
@@ -243,21 +246,21 @@ export default function NpcsTab({ npcs, locations = [], campaignId, actions }) {
             </FormField>
 
             <FormField label="Description">
-              <textarea value={form.description} onChange={set('description')} rows={3} className={INPUT_CLS} />
+              <textarea value={form.description} onChange={set('description')} rows={5} className={INPUT_CLS} />
               <p className="text-text-muted text-[0.7rem] mt-1">
                 Who they are. Players see this once the NPC is revealed.
               </p>
             </FormField>
 
             <FormField label="Public info">
-              <textarea value={form.public_info} onChange={set('public_info')} rows={3} className={INPUT_CLS} />
+              <textarea value={form.public_info} onChange={set('public_info')} rows={5} className={INPUT_CLS} />
               <p className="text-text-muted text-[0.7rem] mt-1">
                 What the party has learned. Players see this too.
               </p>
             </FormField>
 
             <FormField label="Private info">
-              <textarea value={form.private_info} onChange={set('private_info')} rows={4} className={INPUT_CLS} />
+              <textarea value={form.private_info} onChange={set('private_info')} rows={6} className={INPUT_CLS} />
               <p className="text-text-muted text-[0.7rem] mt-1">
                 Yours alone. Never sent to a player, revealed or not.
               </p>

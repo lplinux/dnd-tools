@@ -67,7 +67,7 @@ function SearchBox({ value, onChange, placeholder, matched, total }) {
       </div>
       {/* Only once it is filtering — a permanent "12 of 12" is noise. */}
       {value.trim() && (
-        <span className="text-[0.6rem] font-display uppercase tracking-wider text-text-muted">
+        <span className="text-[0.7rem] font-display uppercase tracking-wider text-text-muted">
           {matched} of {total}
         </span>
       )}
@@ -154,7 +154,7 @@ export default function GroupedEntries({
       <div className="flex justify-end -mb-2">
         <button
           onClick={() => setShut(allShut ? new Set() : new Set(groups.map((g) => g.key)))}
-          className="text-[0.6rem] font-display uppercase tracking-wider text-text-muted hover:text-gold"
+          className="text-[0.7rem] font-display uppercase tracking-wider text-text-muted hover:text-gold"
         >
           {allShut ? 'Expand all' : 'Collapse all'}
         </button>

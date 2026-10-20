@@ -20,7 +20,9 @@ function MonthDayYear({ cal, year, midx, day, setYear, setMidx, setDay }) {
   const special = SPECIAL(cal, midx);
   return (
     <>
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+      {/* Classes, not an inline style: a breakpoint prefix cannot reach an
+          inline grid, so this stayed two columns at phone width. */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
         <div>
           <label className={FIELD_LABEL}>Year</label>
           <input className={FIELD_INPUT} type="number" min={1} value={year} onChange={(e) => setYear(e.target.value)} />
@@ -189,13 +191,22 @@ function ViewEventModal({ open, ev, onClose, onOpen, tl }) {
     endLabel = `${formatDuration(ev.durationDays)} → ends ${formatDate(e.year, e.dayOfYear, calType)}`;
   }
   return (
-    <Modal open={open} onClose={onClose} onSubmit={onClose} title={ev.title}>
-      <div className="text-sm leading-7 text-text-dim">
-        <div>📅 <span className="text-text">{formatDate(ev.year, ev.dayOfYear, calType)}</span></div>
-        {endLabel && <div>⏱ <span className="text-text">{endLabel}</span></div>}
-        <div>📍 <span className="text-text">{ev.location}</span></div>
-        <div>👤 {pls.length ? pls.map((p, i) => <span key={p.id} style={{ color: p.color }}>{i ? ', ' : ''}{p.name}</span>) : <span className="text-text-muted">—</span>}</div>
-        {ev.description && <div className="mt-2 italic text-text">&quot;{ev.description}&quot;</div>}
+    <Modal open={open} onClose={onClose} onSubmit={onClose} title={ev.title} className="!max-w-[95vw] !w-[95vw] !max-h-[92vh]">
+      {/* The four facts across the top in columns, the description beneath
+          at full width — it is prose and wants one measure, not a quarter
+          of the screen. */}
+      <div className="text-base leading-7 text-text-dim">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-x-6 gap-y-1">
+          <div>📅 <span className="text-text">{formatDate(ev.year, ev.dayOfYear, calType)}</span></div>
+          {endLabel && <div>⏱ <span className="text-text">{endLabel}</span></div>}
+          <div>📍 <span className="text-text">{ev.location}</span></div>
+          <div>👤 {pls.length ? pls.map((p, i) => <span key={p.id} style={{ color: p.color }}>{i ? ', ' : ''}{p.name}</span>) : <span className="text-text-muted">—</span>}</div>
+        </div>
+        {ev.description && (
+          <div className="mt-4 pt-3 border-t border-border italic text-text max-w-[70ch]">
+            &quot;{ev.description}&quot;
+          </div>
+        )}
       </div>
       <div className="flex justify-end gap-2 mt-4">
         <Button variant="danger" onClick={() => { tl.deleteEvent(ev.id); onClose(); }}>Delete</Button>
@@ -255,15 +266,38 @@ function EditEventModal({ open, ev, onClose, tl }) {
   }
 
   return (
-    <Modal open={open} onClose={onClose} onSubmit={save} title="Edit Event">
+    <Modal open={open} onClose={onClose} onSubmit={save} title="Edit Event" className="!max-w-[95vw] !w-[95vw] !max-h-[92vh]">
+      {/* Two columns at width: the scalar fields on the left, the two tall
+          pick-lists on the right. One column of eleven field groups was a
+          page you had to scroll to fill in. */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-x-6 gap-y-3 items-start">
       <div className="flex flex-col gap-3">
         <div><label className={FIELD_LABEL}>Title</label><input className={FIELD_INPUT} value={form.title} onChange={(e) => set({ title: e.target.value })} /></div>
+        <div><label className={FIELD_LABEL}>Location</label>
+          <select className={FIELD_INPUT} value={form.location} onChange={(e) => set({ location: e.target.value })}>
+            {sortedLocs.map((l) => <option key={l} value={l}>{l}</option>)}
+          </select>
+        </div>
+        {/* Classes rather than an inline style, so the breakpoint prefix can
+            reach it — the inline version stacked at no width at all. */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+          <div><label className={FIELD_LABEL}>Year</label><input className={FIELD_INPUT} type="number" min={1} value={form.year} onChange={(e) => set({ year: e.target.value })} /></div>
+          <div><label className={FIELD_LABEL}>Day</label><input className={FIELD_INPUT} type="number" min={1} max={30} value={special ? 1 : form.day} disabled={special} onChange={(e) => set({ day: e.target.value })} /></div>
+        </div>
+        <div><label className={FIELD_LABEL}>{calType === 'harptos' ? 'Month / Festival' : 'Month'}</label>
+          <select className={FIELD_INPUT} value={form.midx} onChange={(e) => set({ midx: +e.target.value })}>{months.map((m) => <option key={m.value} value={m.value}>{m.label}</option>)}</select>
+        </div>
+        <div><label className={FIELD_LABEL}>Duration <span className="text-text-muted text-[0.72rem]">(1d, 3m, 2y)</span></label><input className={FIELD_INPUT} value={form.dur} onChange={(e) => set({ dur: e.target.value })} /></div>
+        <div><label className={FIELD_LABEL}>Description</label><textarea className={`${FIELD_INPUT} resize-y`} rows={5} value={form.description} onChange={(e) => set({ description: e.target.value })} /></div>
+      </div>
+
+      <div className="flex flex-col gap-3">
         <div>
           <label className={FIELD_LABEL}>Players</label>
           {sortedPlayers.length > 3 && (
             <input className={`${FIELD_INPUT} mb-1`} placeholder="Filter players…" value={playerQuery} onChange={(e) => setPlayerQuery(e.target.value)} />
           )}
-          <div className="pchks" style={{ maxHeight: 120 }}>
+          <div className="pchks" style={{ maxHeight: 240 }}>
             {sortedPlayers.filter((p) => p.name.toLowerCase().includes(playerQuery.trim().toLowerCase())).map((p) => (
               <label key={p.id} className="pcl">
                 <input type="checkbox" checked={form.playerIds.includes(p.id)} onChange={() => toggle('playerIds', p.id)} />
@@ -272,20 +306,6 @@ function EditEventModal({ open, ev, onClose, tl }) {
             ))}
           </div>
         </div>
-        <div><label className={FIELD_LABEL}>Location</label>
-          <select className={FIELD_INPUT} value={form.location} onChange={(e) => set({ location: e.target.value })}>
-            {sortedLocs.map((l) => <option key={l} value={l}>{l}</option>)}
-          </select>
-        </div>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-          <div><label className={FIELD_LABEL}>Year</label><input className={FIELD_INPUT} type="number" min={1} value={form.year} onChange={(e) => set({ year: e.target.value })} /></div>
-          <div><label className={FIELD_LABEL}>Day</label><input className={FIELD_INPUT} type="number" min={1} max={30} value={special ? 1 : form.day} disabled={special} onChange={(e) => set({ day: e.target.value })} /></div>
-        </div>
-        <div><label className={FIELD_LABEL}>{calType === 'harptos' ? 'Month / Festival' : 'Month'}</label>
-          <select className={FIELD_INPUT} value={form.midx} onChange={(e) => set({ midx: +e.target.value })}>{months.map((m) => <option key={m.value} value={m.value}>{m.label}</option>)}</select>
-        </div>
-        <div><label className={FIELD_LABEL}>Duration <span className="text-text-muted text-[0.65rem]">(1d, 3m, 2y)</span></label><input className={FIELD_INPUT} value={form.dur} onChange={(e) => set({ dur: e.target.value })} /></div>
-        <div><label className={FIELD_LABEL}>Description</label><textarea className={`${FIELD_INPUT} resize-y`} rows={2} value={form.description} onChange={(e) => set({ description: e.target.value })} /></div>
         <div>
           <label className={FIELD_LABEL}>Manual connections <span className="text-text-muted text-[0.65rem]">(dashed lines)</span></label>
           {otherEvents.length === 0 && !linkQuery
@@ -293,7 +313,7 @@ function EditEventModal({ open, ev, onClose, tl }) {
             : (
               <>
                 <input className={`${FIELD_INPUT} mb-1`} placeholder="Filter events…" value={linkQuery} onChange={(e) => setLinkQuery(e.target.value)} />
-                <div className="pchks" style={{ maxHeight: 120 }}>
+                <div className="pchks" style={{ maxHeight: 240 }}>
                   {otherEvents.map((e) => {
                     const p0 = (e.playerIds || []).map((id) => tl.db.players.find((x) => x.id === id)).filter(Boolean)[0];
                     return (
@@ -308,6 +328,7 @@ function EditEventModal({ open, ev, onClose, tl }) {
               </>
             )}
         </div>
+      </div>
       </div>
       <div className="flex justify-end gap-2 mt-4">
         <Button variant="ghost" onClick={onClose}>Cancel</Button>

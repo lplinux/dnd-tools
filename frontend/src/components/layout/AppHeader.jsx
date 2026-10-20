@@ -52,7 +52,7 @@ function ThemeSwatch({ id, label, swatch, active, onSelect }) {
           borderColor: active ? 'var(--gold)' : 'var(--border2)',
         }}
       />
-      <span className="font-display uppercase text-[0.5rem] tracking-wider text-text-dim">
+      <span className="font-display uppercase text-[0.65rem] tracking-wider text-text-dim">
         {label}
       </span>
     </button>
@@ -108,7 +108,7 @@ function AccountMenu({ user, onClose, onOpenTokens }) {
 
       {/* Theme */}
       <div>
-        <p className="font-display uppercase tracking-wider text-text-dim text-[0.55rem] mb-1.5">Theme</p>
+        <p className="font-display uppercase tracking-wider text-text-dim text-[0.65rem] mb-1.5">Theme</p>
         <div className="flex gap-1.5">
           {themes.map((t) => (
             <ThemeSwatch
