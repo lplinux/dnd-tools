@@ -125,7 +125,7 @@ export default function LinkingTextarea({
                 {/* Said plainly rather than discovered: picking one spells the
                     name, it does not make a link. */}
                 {o.kind === 'character' && (
-                  <span className="ml-auto text-[0.6rem] text-text-muted">name only</span>
+                  <span className="ml-auto text-[0.7rem] text-text-muted">name only</span>
                 )}
               </button>
             </li>

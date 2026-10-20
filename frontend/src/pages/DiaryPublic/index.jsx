@@ -128,7 +128,7 @@ export default function DiaryPublic() {
 
             <article className="bg-surface2 border border-border rounded-sm p-6 md:p-8">
               {entry.chapter && (
-                <div className="font-display text-[0.6rem] uppercase tracking-[0.2em] text-text-muted mb-2">
+                <div className="font-display text-[0.7rem] uppercase tracking-[0.2em] text-text-muted mb-2">
                   {entry.chapter}
                 </div>
               )}

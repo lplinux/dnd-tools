@@ -49,7 +49,7 @@ export default function PlayerDiaryPanel({
               key={n}
               onClick={() => setActive(n)}
               className={[
-                'px-3 py-2 font-display uppercase tracking-wider text-[0.62rem] whitespace-nowrap',
+                'px-3 py-2 font-display uppercase tracking-wider text-[0.65rem] whitespace-nowrap',
                 'border-r border-border transition-colors flex-shrink-0',
                 n === active
                   ? 'text-gold border-b-2 border-b-gold bg-surface2 -mb-px'

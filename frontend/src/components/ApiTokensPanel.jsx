@@ -139,7 +139,7 @@ export default function ApiTokensPanel() {
             <div key={r.id} className="flex items-center gap-2 text-xs border border-border
                                        rounded-sm px-2 py-1.5 bg-surface">
               <strong className="text-text flex-1 min-w-0 truncate">{r.name}</strong>
-              <span className={`text-[0.6rem] px-1.5 py-0.5 rounded-sm border ${
+              <span className={`text-[0.7rem] px-1.5 py-0.5 rounded-sm border ${
                 r.scope === 'write'
                   ? 'border-[var(--gold)] text-gold'
                   : 'border-border text-text-muted'}`}>

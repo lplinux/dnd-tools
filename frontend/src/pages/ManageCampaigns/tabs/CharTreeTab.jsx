@@ -776,7 +776,7 @@ function ConnRow({ conn, players, relationships, npcs, onEdit, onDelete, onToggl
         <span className="text-gold">{to}</span>
         {conn.notes && <p className="text-text-muted mt-0.5 italic truncate">{conn.notes}</p>}
         {!conn.is_public && (
-          <span className="inline-block mt-0.5 text-[0.55rem] border border-border px-1 rounded-sm text-text-muted">
+          <span className="inline-block mt-0.5 text-[0.65rem] border border-border px-1 rounded-sm text-text-muted">
             🔒 DM only
           </span>
         )}
@@ -1008,7 +1008,7 @@ export function CharTreeTab({ campaignId }) {
                        focus:outline-none focus:border-[var(--gold-dim)]"
           />
           {peopleTerms.length > 0 && (
-            <span className="text-[0.6rem] font-display uppercase tracking-wider text-text-muted">
+            <span className="text-[0.7rem] font-display uppercase tracking-wider text-text-muted">
               {shownPlayers.length} of {players.length} · {shownConns.length} of {crossConnections.length} links
             </span>
           )}

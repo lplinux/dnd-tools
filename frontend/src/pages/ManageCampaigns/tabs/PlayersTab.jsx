@@ -137,7 +137,7 @@ export default function PlayersTab({ players, allUsers, campaignId, actions }) {
       <div className="border border-border rounded-sm bg-surface2/40
                       grid grid-cols-1 md:grid-cols-2 divide-y md:divide-y-0 md:divide-x divide-border">
         <section className="p-3 flex flex-col gap-2">
-          <p className="font-display uppercase tracking-wider text-[0.6rem] text-text-dim">
+          <p className="font-display uppercase tracking-wider text-[0.7rem] text-text-dim">
             Create a character
           </p>
           <div className="flex gap-2 flex-wrap">
@@ -168,7 +168,7 @@ export default function PlayersTab({ players, allUsers, campaignId, actions }) {
             <thead>
               <tr className="border-b border-border">
                 {['Character', 'User', 'Reassign', 'Timeline', 'Sheet', ''].map(h => (
-                  <th key={h} className="text-left px-3 py-2 font-display text-[0.6rem] uppercase tracking-wider text-text-dim">{h}</th>
+                  <th key={h} className="text-left px-3 py-2 font-display text-[0.7rem] uppercase tracking-wider text-text-dim">{h}</th>
                 ))}
               </tr>
             </thead>

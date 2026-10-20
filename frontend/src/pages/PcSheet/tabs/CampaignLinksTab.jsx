@@ -88,7 +88,7 @@ function EntityRow({ icon, row, kind, onOpen }) {
             <span className="text-[0.65rem] text-text-muted">{row.size_type}</span>
           )}
           {row.is_public === false && (
-            <span className="text-[0.6rem] font-display uppercase tracking-wider text-text-muted">
+            <span className="text-[0.7rem] font-display uppercase tracking-wider text-text-muted">
               hidden from players
             </span>
           )}

@@ -118,7 +118,7 @@ export default function SearchResultDetail({
           ← {depth > 1 ? 'Back' : 'Back to results'}
         </Button>
         {depth > 1 && (
-          <span className="text-[0.6rem] text-text-muted">
+          <span className="text-[0.7rem] text-text-muted">
             {depth - 1} step{depth > 2 ? 's' : ''} from the results
           </span>
         )}
@@ -176,7 +176,7 @@ export default function SearchResultDetail({
           {/* A character sheet is several fields rather than one body. */}
           {data.sections?.map((sec) => (
             <section key={sec.label}>
-              <h4 className="font-display uppercase tracking-widest text-[0.6rem] text-gold mt-2 mb-1">
+              <h4 className="font-display uppercase tracking-widest text-[0.7rem] text-gold mt-2 mb-1">
                 {sec.label}
               </h4>
               <p className="text-sm text-text-dim whitespace-pre-wrap">

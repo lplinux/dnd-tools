@@ -228,7 +228,7 @@ function ItemRow({ item, isDM, players, atAttuneLimit, dragHandle, dragging, cha
                 ? blockedWhy
                 : item.attuned ? 'Attuned — click to un-attune' : 'Requires attunement — click to attune'}
               className={[
-                'flex-shrink-0 text-[0.62rem] font-display uppercase tracking-wider px-1.5 py-px rounded-sm border',
+                'flex-shrink-0 text-[0.65rem] font-display uppercase tracking-wider px-1.5 py-px rounded-sm border',
                 item.attuned
                   ? 'text-[#1d6b32] border-[#1d6b32]'
                   : 'text-[var(--gold)] border-[var(--gold-dim)]',
@@ -532,17 +532,17 @@ export default function InventoryTab({
       {/* ── Carry weight header ── */}
       <div className="flex items-stretch gap-3 flex-wrap">
         <div className="border-2 border-border rounded-sm px-3 py-1.5 bg-surface text-center">
-          <p className="font-display uppercase tracking-wider text-[0.55rem] text-text-muted">Current carry weight</p>
+          <p className="font-display uppercase tracking-wider text-[0.65rem] text-text-muted">Current carry weight</p>
           <p className={`font-display text-xl tabular-nums ${over ? 'text-danger' : 'text-text'}`}>{total}</p>
         </div>
         <div className="border-2 border-border rounded-sm px-3 py-1.5 bg-surface text-center">
-          <p className="font-display uppercase tracking-wider text-[0.55rem] text-text-muted">Attuned</p>
+          <p className="font-display uppercase tracking-wider text-[0.65rem] text-text-muted">Attuned</p>
           <p className={`font-display text-xl tabular-nums ${atAttuneLimit ? 'text-gold' : 'text-text'}`}>
             {attunedCount}<span className="text-[0.7rem] text-text-muted">/{ATTUNEMENT_LIMIT}</span>
           </p>
         </div>
         <div className="border-2 border-border rounded-sm px-3 py-1.5 bg-surface text-center">
-          <p className="font-display uppercase tracking-wider text-[0.55rem] text-text-muted">Maximum</p>
+          <p className="font-display uppercase tracking-wider text-[0.65rem] text-text-muted">Maximum</p>
           {/* Derived, not editable. It is STR × 15 and nothing else — a second,
               hand-set copy of the same number is only a way for the two to
               disagree. Change STR on the Stats Sheet and this follows. */}
@@ -571,7 +571,7 @@ export default function InventoryTab({
             ⚔️ Equipped ({equipped.length})
           </h3>
           {isDM && (
-            <Button variant="accent" className="text-[0.6rem] px-1.5 py-0.5"
+            <Button variant="accent" className="text-[0.7rem] px-1.5 py-0.5"
               onClick={() => setAssign(true)}>＋ Grant from library</Button>
           )}
         </header>

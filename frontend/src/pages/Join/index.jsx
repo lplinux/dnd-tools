@@ -124,7 +124,7 @@ export default function Join() {
   return (
     <div className="max-w-md mx-auto py-10 flex flex-col gap-5">
       <header className="text-center flex flex-col gap-1">
-        <p className="font-display uppercase tracking-widest text-text-muted text-[0.6rem]">
+        <p className="font-display uppercase tracking-widest text-text-muted text-[0.7rem]">
           You have been invited to join
         </p>
         <h1 className="font-display uppercase tracking-wider text-gold text-xl">
@@ -145,7 +145,7 @@ export default function Join() {
             type="button"
             onClick={() => { setMode(k); setError(null); }}
             className={[
-              'flex-1 px-3 py-2 font-display uppercase tracking-wider text-[0.62rem] transition-colors',
+              'flex-1 px-3 py-2 font-display uppercase tracking-wider text-[0.65rem] transition-colors',
               k === mode
                 ? 'text-gold border-b-2 border-b-gold bg-surface2 -mb-px'
                 : 'text-text-dim hover:text-gold hover:bg-surface2',

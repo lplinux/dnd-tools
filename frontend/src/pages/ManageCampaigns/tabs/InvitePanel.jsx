@@ -93,7 +93,7 @@ export default function InvitePanel({ campaignId, players = [] }) {
   // the background and the grid cell all belong to the parent.
   return (
     <section className="p-3 flex flex-col gap-2">
-      <p className="font-display uppercase tracking-wider text-[0.6rem] text-text-dim">
+      <p className="font-display uppercase tracking-wider text-[0.7rem] text-text-dim">
         Invite a player
       </p>
 
@@ -145,7 +145,7 @@ export default function InvitePanel({ campaignId, players = [] }) {
 
       {pending.length > 0 && (
         <div className="flex flex-col gap-1">
-          <p className="font-display uppercase tracking-wider text-[0.55rem] text-text-muted">
+          <p className="font-display uppercase tracking-wider text-[0.65rem] text-text-muted">
             Outstanding ({pending.length})
           </p>
           {pending.map((inv) => (

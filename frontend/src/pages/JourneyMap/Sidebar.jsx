@@ -44,7 +44,7 @@ function CollapsibleSection({ title, defaultOpen = false, forceOpen = false, chi
         className="w-full flex items-center justify-between bg-surface2 hover:bg-surface3 px-3 py-2 font-display uppercase tracking-wider text-[0.68rem] text-gold transition-colors select-none"
       >
         {title}
-        <span className={`text-[0.55rem] transition-transform ${open ? '' : '-rotate-90'}`}>▾</span>
+        <span className={`text-[0.65rem] transition-transform ${open ? '' : '-rotate-90'}`}>▾</span>
       </button>
       {open && <div className="p-2 flex flex-col gap-1">{children}</div>}
     </div>

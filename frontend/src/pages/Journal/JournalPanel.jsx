@@ -290,7 +290,7 @@ export default function JournalPanel({
         onLinkClick={openLink}
         toolbar={({ groups, query }) => (
           <>
-            <label className="flex items-center gap-1.5 text-[0.6rem] font-display uppercase
+            <label className="flex items-center gap-1.5 text-[0.7rem] font-display uppercase
                               tracking-wider text-text-muted">
               Group by
               <select
@@ -328,7 +328,7 @@ export default function JournalPanel({
 
       <Modal open={!!form} onClose={() => setForm(null)} onSubmit={save}
         title={form?.id ? '✎ Edit journal entry' : '＋ New journal entry'}
-        className="max-w-2xl">
+        className="!max-w-[95vw] !w-[95vw] !max-h-[92vh]">
         {form && (
           <div className="flex flex-col gap-3">
             <FormField label="Title">
@@ -366,7 +366,7 @@ export default function JournalPanel({
             />
 
             <FormField label="Entry">
-              <LinkingTextarea rows={10} value={form.body} className={`${INPUT_CLS} resize-y`}
+              <LinkingTextarea rows={18} value={form.body} className={`${INPUT_CLS} resize-y`}
                 targets={targets}
                 placeholder={'Markdown works here — **bold**, *italic*, - list.\n'
                   + 'Type [[ to link a location or NPC.'}

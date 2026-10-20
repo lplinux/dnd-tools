@@ -25,7 +25,7 @@ function StateChip({ state, onPick }) {
         type="button"
         onClick={() => setOpen((v) => !v)}
         title="Change state"
-        className={`text-[0.6rem] px-1.5 py-0.5 rounded-sm border ${s.cls} hover:border-[var(--gold)]`}
+        className={`text-[0.7rem] px-1.5 py-0.5 rounded-sm border ${s.cls} hover:border-[var(--gold)]`}
       >
         {s.icon} {s.label}
       </button>
