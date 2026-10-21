@@ -25,6 +25,13 @@ scope:
       declares `^6.1.2`. It clears two advisories and the built CSS is byte-identical, so it
       works — but it is a deliberate semver violation and the first thing to drop if a Tailwind
       patch release ever builds oddly.
+- [ ] **Weapon cards have no field for the weapon TYPE** — dagger, greatsword, warhammer. It
+      is written into the abilities text on most cards, and `~/Documents/Leruhy/tidy-weapon-stats`
+      reports it rather than guessing, because the parenthesised part ("Dagger (Finesse, Light,
+      Thrown 20/60 ft.)") mixes the type with its properties.
+- [ ] **Print: cut marks.** The sheet is centred and the backs line up, but you still cut by
+      eye against the card border. Thin marks in the 7.5 mm margin would make the cut
+      repeatable — and would show at a glance when a printer is shifting the page.
 - [ ] **Print: continuation cards were promised but never built.** `constants.js` and the print
       help text both claimed content "flows across one or more cards" and spills "to another card"
       when it overflows. No such logic exists in `ItemCardPrint.jsx` — a face that still does not
@@ -55,7 +62,6 @@ Touch input and the two overflowing layouts are **done** — see `TOQA.md`. What
       is not usable. Probably wants a different presentation rather than a responsive fix.
 - [ ] **SplitView** — four iframes at ~195px each on a phone. Arguably should just say
       "desktop only" rather than be fixed.
-- [ ] Item Cards "Print set (9)" is kept in cache/memory even after logout and should not
 
 ---
 
@@ -64,21 +70,6 @@ Touch input and the two overflowing layouts are **done** — see `TOQA.md`. What
 Most of this was captured before anything was designed. Where a section has since shipped it
 says so and keeps only what is still open; the built part is in `CHANGELOG.md`, and whatever
 is waiting on your QA is in `TOQA.md`.
-
-### NPC Management — mostly shipped
-
-Most of this section is **done** — see the CHANGELOG. Settled: it is a **tab**, not a module;
-public/private info is withheld server-side like the PC sheet's; and players see revealed NPCs
-through cross-links and the Campaign Links tab, gated on having met them. What remains:
-
-- [ ] **A flag for NPCs that have a stat block** (enemies/allies) versus those that do not, so
-      the ones that need a sheet can be told apart from the ones that are just a name and a note.
-      The one part of the original idea not built.
-- [ ] NPC view should show relationships to DM and to players (only the public ones)
-- [ ] Clic on an NPC or location should show a big card instead (so big text is more readable)
-- [ ] SEEN status should be along the name (so it's faster to hide or show based on the names)
-- [ ] Add also the status between "alive/dead/unknown"
-- [ ] NPC Description should be the only thing a Player should be for now. The rest is only for DM
 
 ### New Module - DM Screen
 #### DM Notes
@@ -94,12 +85,6 @@ through cross-links and the Campaign Links tab, gated on having met them. What r
 
 - [ ] Prepare for Multi-Class
 - [ ] Expand to character creation and level up (automatical, based on D&D rules and not manual)
-
-### Manage Campaign
-
-- [ ] A campaign can export a bundle larger than the 50 MB import limit (`express.json`), so a
-      big enough campaign produces a backup it cannot restore. The dominant payload is base64
-      map and portrait images. A 413 currently surfaces as Express's HTML error page.
 
 ### Modals and type — **done**, see the CHANGELOG
 
@@ -131,5 +116,3 @@ The detail is in `CHANGELOG.md`; the QA checklist is in `TOQA.md`.
       agreement when the feature was scoped, and still the only part not built. Until it
       exists, the *Pending* and *For later on* headings of the Obsidian prep notes import
       into one labelled parent card under the session's beats.
-- [ ] Cambiar de fecha en sessions y que haya algún mensaje de eventos próximos basado en el timeline
-

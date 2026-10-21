@@ -7,11 +7,33 @@ React application, collapsed into one entry. The per-step detail that used to li
 twenty-six *Unreleased* sections is in the git history of this file; what follows is the summary
 worth keeping. The `0.x` entries below it are left exactly as they were.
 
-The newest tag is `1.0.0`. Anything above it is marked *Unreleased* until it is tagged.
+The newest tag is `1.0.1`. Anything above it is marked *Unreleased* until it is tagged.
 
 ---
 
-## [1.0.1] – Unreleased
+## [1.0.1] – 2026-10-21 — Running a session, and a campaign that keeps time
+
+`1.0.0` made the app. This release is about *using* it at the table.
+
+**Preparing and running a session** is the spine of it: a Sessions tab that holds the plan for
+one sitting as cards you work down during play, and a campaign clock those sessions move. A
+session now has an in-game date as well as a real one, marking it played advances the
+campaign's Today marker, and the page answers the question a DM would otherwise have to
+remember unaided — *what else is happening around now?* — by reading the timelines.
+
+**The people in it grew up.** NPCs have a life state, a stat-block flag and their
+relationships; a `[[Name]]` anywhere opens a card for whoever or wherever it names; and one
+search box covers the whole campaign. What a player may see is decided in SQL on the way out,
+never by hiding it on the page — and a journal entry that names something hidden is withheld
+whole rather than half-told.
+
+**Characters, printing and the API.** An Evolution tab for what each character has learned, a
+rebuilt print path for the journal, the diary and a card sheet that is now actually centred,
+and account-wide API tokens with a discovery endpoint so the library can be driven from a
+script.
+
+Every schema change is additive, so an existing install upgrades by pulling and restarting —
+see **Upgrading 1.0.0 → 1.0.1** at the end of this entry.
 
 ### Added — Session prep
 
@@ -153,6 +175,164 @@ have its clicks eaten.
 Played makes the session read-only, so doing it the other way round left the DM to work out
 that they had to mark it Prepared again before they could type the notes they were about to
 type.
+
+### Added — weapon mastery, and a stat block you can scan
+
+**Mastery** is a field on a weapon card now — the 2024 property (Cleave, Graze, Nick, Push,
+Sap, Slow, Topple, Vex) — shown beside the properties on both the preview and the printed
+face. Its own column rather than another entry in the comma-separated properties: a weapon has
+many properties and exactly one mastery, and burying it in that list is what had DMs typing it
+into the abilities text instead. A select, not free text, because there is no ninth.
+
+**Damage type takes several values.** It was a single-value combobox, which a hammer that is
+bludgeoning sealed and fire unsealed could only express by typing both into one box and losing
+the lookups. Chips now, like the properties, with each term still resolving on its own.
+
+**`damage` and `damage_type` widened to 255.** 60 characters truncated a real card mid-word —
+*"1d12 slashing (base), plus additional effects based on the moon"* — silently, which is the
+worst way to lose text.
+
+**The stat labels carry the weight.** *Damage*, *Type*, *Properties*, *Mastery*, *AC* are
+bolder than their values on both faces, so the block is scanned down its left edge for the line
+you want rather than read. The value keeps the body colour: the label is signposting, not the
+information.
+
+### Fixed — the card sheet was not centred, and the backs missed the fronts
+
+Measured, not guessed: the print sheet was rendered to PDF with headless Chrome and the card
+borders read straight out of the content stream.
+
+**The old sheet sat 11.7 mm off centre horizontally and 27.1 mm vertically**, and the second
+sheet's bottom row **spilled onto a page of its own** — 3 cards, then 6. The cause was leaning
+on `@page { margin: 6mm }` with `align-content: start`: the position of the cards was decided
+by the browser's Margins dropdown rather than by the page, and the real printable area is
+smaller than the 285 mm that assumed.
+
+**The page box is now the sheet.** `@page` margin is zero and `.ic-print-page` is exactly
+210 × 297 mm with the grid centred on both axes, so the cards are placed by this CSS and not
+by the print dialog. Measured after: **7.41 mm and 7.48 mm at the sides, 13.49 mm and 13.64 mm
+top and bottom** — and the second sheet within 0.12 mm of the first, which is what lets the
+backs fall on the fronts. A single card centres the same way, at 73.5 / 104.5 mm.
+
+Two consequences worth knowing. **"Default" and "None" now produce an identical sheet**, since
+Chrome resolves Default to the CSS margin — those are two of the three options, and the two
+that were tried. **"Minimum" still shifts everything**, because it adds the printer's own
+margin on top. The help beside the Print Set button now names all of that, along with Scale →
+100% rather than "Fit to printable area", which silently shrinks the cards.
+
+The 7.5 mm of clear paper at the tightest edge is well outside any consumer printer's
+unprintable border, so "None" does not clip.
+
+### Added — a session's in-game date, and what the timeline says is near it
+
+A session now carries **when it happens in the world**, separate from the evening you played
+it. The two drift apart constantly: a session played in October can fall on 30 Hammer, and
+three sittings can be one day in the world. It is the same absolute-day integer the timelines,
+the journal and the today marker already use, so a date set here formats identically
+everywhere, and it is picked with the same calendar control the journal uses — the one that
+knows a Harptos festival is a one-day month.
+
+**Marking a session played now asks when it happened**, and moves the campaign's Today marker
+to that answer. It defaults to where the campaign already is, falling back to the session's
+own date so an undated campaign opens on something rather than blank.
+
+**One date, not two.** There was briefly a second field for the finish, on the reasoning that
+a session spans days — the party leaves on the 310th and arrives on the 315th. True, and not
+worth a field: a DM says *"session 26 happened on 18 Marpenoth"*, and two pickers in the edit
+dialog asked a question nobody had. One date is what marking a session played records, what
+moves the clock, and what the timeline panel reads.
+
+**The clock moves on the server, in the same transaction as the status.** Two calls from the
+page would leave a window where the session is played and the campaign is still yesterday, and
+putting the rule in the route means it holds however the status changes — including from a
+script. It is gated on *both* a date being set and the session ending up played: dating a
+session still being prepped is planning rather than time passing, and a status flip with no
+date says nothing about when.
+
+**Edit shows the date that was actually saved**, so a session dated by marking it played opens
+with it filled in rather than blank, and changing it there moves the Today marker too. Going
+the other way — played back to prepared — sends no date at all, so un-marking a session cannot
+quietly erase the one it has.
+
+**And an unset date now looks unset.** With no value the month fell back to index 0 and the day
+to 1, so "no date" rendered as an empty year beside *Hammer* and *1* — which reads as 1 Hammer
+with the year missing rather than as nothing at all. Both selects carry a "—" until a date
+exists. That is the shared control, so the Journal's date picker gains it too.
+
+The warning about an empty *What happened* moved inside that dialog instead of being a second
+box in front of it. Same thing said at the same moment, one question instead of two. Going the
+other way asks nothing, because nothing finished.
+
+**Set the in-game date and the session says what else is going on.** The reason the date is worth having:
+the DM writes *"the goblins attack around the 30 of Hammer"* into a timeline months before it
+matters, and then has to remember it unaided on the night. The session now asks the timeline
+instead, and lists what falls in the next thirty days.
+
+**It OVERLAPS rather than starting after.** An event that began before the date and is still
+running is the most relevant kind there is — a siege the party walked into is not upcoming, it
+is happening — so those come first and are labelled *under way* rather than given a countdown.
+Each line says whose timeline it came from: the party's, a character's, or one of the DM's.
+
+Nothing is shown when there is nothing near. An empty "nothing coming up" box on every session
+would be noise, and the absence of news is not news.
+
+One tidy along the way: the absolute-day-to-written-date conversion existed as a private copy
+in the journal and was about to be copied again, so it moved into the calendar module.
+
+### Fixed — a print set that outlived a sign-out, and a backup that could not be restored
+
+**The Item Cards print set survived logging out.** It lives in `sessionStorage` so it survives
+a reload mid-batch, which also meant it survived a sign-out: on a shared machine the next
+person to sign in on that tab inherited a queue of someone else's cards, including ones their
+table has not been shown. Signing out now clears it, from both stores — it used to live in
+`localStorage` and an old copy may still be there. Preferences are deliberately left alone:
+the theme and the SplitView and Timeline profiles belong to the browser, not the account.
+
+**A campaign could export a backup it would then refuse to restore.** Exports are unbounded,
+imports are capped at 50 MB, and the only moment that became apparent was the one where you
+needed the backup. Three changes: the ceiling is named once as **`BODY_LIMIT_MB`** and can be
+raised by environment; the download says so **at export time**, naming the size and the limit,
+while still saving the file — a backup you cannot restore through the UI beats no backup; and
+an oversized body now answers in **JSON instead of Express's HTML error page**, which the
+client could not parse, so a restore that was too large reported "Unexpected token <".
+Malformed JSON gets the same treatment.
+
+### Added — NPCs: a stat-block flag, a life state, and their relationships
+
+**Seen moved next to the name.** Revealing people after a session means reading down the list
+of names, and the eye was three columns away from the thing being read.
+
+**A stat-block flag.** The distinction a DM actually draws: an enemy or an ally who will be
+rolled for, versus a name with a note attached. Most are the second, so the default is off and
+the flag marks the exception.
+
+**Alive, dead or unknown**, with a 💀 beside the name — in the list and on the card. They began
+as `†` and `?`, which read as punctuation at the end of a name; a dagger is a weapon before it
+is a death notice, and a skull is unambiguous scanning down a list, which is the whole job.
+Both carry a label, so they are not only legible to people reading glyphs.
+
+`unknown` is the DM saying the party has reason to wonder, which is why the default is *alive*
+rather than *unknown* — an NPC nobody has thought about is not a mystery. Only the dead and the
+unknown are marked; a badge on every row would say nothing. An unrecognised value is clamped
+rather than rejected, so a stale client cannot cost the DM their edit.
+
+**An NPC's relationships, on their card.** Its own route rather than a column on the list,
+which is forty rows of which almost none are open. **A player sees only the public edges**, and
+only once they have met the NPC — and an edge pointing at someone they have *not* met is
+dropped rather than blanked, because a nameless edge still says "there is somebody here".
+
+**What a player sees is unchanged: the description and the public info**, both on the card.
+The two new fields are withheld along with `private_info` — whether the DM has rolled a stat
+block, and whether they privately consider someone dead, are answers the table is supposed to
+find out in play.
+
+The editor's hint now names *where* a player reads public info — on the card, not in the NPCs
+table, which lists name, description and location only. That distinction is why the field
+looked as though it was not reaching anyone.
+
+**And the card a click opens is a card, not a tooltip** — 288px of 12px text was the wrong
+shape for a description somebody wants to read, and for a player it is the only view of an NPC
+there is.
 
 ### Changed — full-screen dialogs, and a type scale with a floor
 
@@ -1198,6 +1378,25 @@ returns one, so filling it later is a server change and nothing else.
 
 Verified live: a second, unshared map named *"SECRET — the Ultheon approach"* appears nowhere in
 a player's response; a non-member gets 403; and every path handed to the player resolves 200.
+
+### Upgrading 1.0.0 → 1.0.1
+
+Pull and restart. Nothing is dropped or renamed: every schema change is
+`ALTER TABLE … ADD COLUMN IF NOT EXISTS`, and the one `DROP COLUMN` in the migrations removes
+a column that only ever existed between two commits on this branch, folding its value into the
+column that replaced it first.
+
+Three environment variables are new, all optional and all defaulting to the old behaviour:
+
+| Variable | Default | What it does |
+|---|---|---|
+| `TRUST_PROXY_HOPS` | `0` | Number of reverse proxies in front of the app. Set to `1` behind a TLS terminator — otherwise rate limiting reads the proxy's own address as every client's, and the session cookie is not marked `Secure`. |
+| `INSECURE_COOKIES_BEHIND_PROXY` | unset | Escape hatch. `TRUST_PROXY_HOPS > 0` turns on `Secure` cookies by itself; set this to `true` only for a proxy that terminates something other than TLS, which will otherwise log you straight back out. |
+| `BODY_LIMIT_MB` | `50` | Request body cap. Raise it if a campaign has grown a backup larger than this; the export side is uncapped, and the app now warns at export time when a bundle will not fit back through it. |
+
+API tokens are created per account under **Account → API tokens** and shown once. They are
+hashed at rest, so a lost token is regenerated rather than recovered — keep one in an
+environment variable, not in a file in the repo.
 
 ---
 
