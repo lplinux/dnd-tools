@@ -17,6 +17,15 @@
  * backups that cannot be ordered are hard to trust.
  */
 
+/**
+ * The server's import ceiling, in MB — `BODY_LIMIT_MB` in app.js.
+ *
+ * Mirrored rather than fetched: every export goes through this module, and
+ * a round trip to learn a constant before saving a file the user already
+ * asked for is not worth it. A test asserts the two still agree.
+ */
+export const IMPORT_LIMIT_MB = 50;
+
 /** Lowercase, hyphenated, ASCII-ish — safe on every filesystem. */
 export function slugify(s) {
   return String(s ?? '')
@@ -56,10 +65,17 @@ export function saveBlob(blob, meta) {
   a.download = bundleFilename(meta);
   a.click();
   URL.revokeObjectURL(a.href);
-  return a.download;
+  return { name: a.download, bytes: blob.size, oversize: blob.size > IMPORT_LIMIT_MB * 1024 * 1024 };
 }
 
-/** Serialise, name and save. */
+/**
+ * Serialise, name and save.
+ *
+ * Returns the size alongside the name so a caller can say when the file it
+ * just saved is too large to import again. The file is still written — a
+ * backup you cannot restore through the UI is worth more than no backup,
+ * and it can be restored by raising the server's limit.
+ */
 export function downloadBundle(bundle, meta) {
   const blob = new Blob([JSON.stringify(bundle, null, 2)], { type: 'application/json' });
   return saveBlob(blob, meta);

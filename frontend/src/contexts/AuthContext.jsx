@@ -16,6 +16,15 @@ import { authApi } from '@/api/auth';
 
 const AuthContext = createContext(null);
 
+/**
+ * Keys that belong to one sitting and must not outlive a sign-out.
+ *
+ * Cleared from BOTH stores: the print set used to live in localStorage and
+ * a browser that has not been used since the move still has the old copy,
+ * which the Item Cards page reads once and offers to rescue.
+ */
+const PER_SITTING_KEYS = ['ic-print-tray', 'ic-migrated'];
+
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true); // true while the initial session check runs
@@ -48,8 +57,27 @@ export function AuthProvider({ children }) {
   }
 
   /** Log out the current user. */
+  /*
+   * Signing out clears what this sitting left in the browser as well as the
+   * server session.
+   *
+   * The print set is the one that matters: it lives in sessionStorage so it
+   * survives a reload mid-batch, which also meant it survived a LOGOUT — on
+   * a shared machine the next person to sign in on that tab inherited a
+   * queue of someone else's cards, including ones their table has not been
+   * shown.
+   *
+   * Listed explicitly rather than clearing the lot. `hc-theme` and the
+   * SplitView and Timeline profiles are preferences belonging to the
+   * browser, not to the account, and wiping them on sign-out would be a
+   * small hostility. The SRD cache is public reference data.
+   */
   async function logout() {
     await authApi.logout();
+    for (const key of PER_SITTING_KEYS) {
+      try { sessionStorage.removeItem(key); } catch { /* private mode */ }
+      try { localStorage.removeItem(key); } catch { /* ditto */ }
+    }
     setUser(null);
   }
 

@@ -83,9 +83,46 @@ const SECURE_COOKIES = TRUST_PROXY_HOPS > 0
 
 if (TRUST_PROXY_HOPS > 0) app.set('trust proxy', TRUST_PROXY_HOPS);
 
+/*
+ * How large a request body may be.
+ *
+ * It is the IMPORT ceiling, and exports are not bounded by anything — so a
+ * campaign can produce a backup it will then refuse to restore. The payload
+ * is dominated by base64 map and portrait images, which only grow. Raising
+ * this is not free (the whole body is buffered in memory), so instead the
+ * number is named once here, mirrored by the client in
+ * `api/downloadBundle.js`, and the download warns when a bundle goes over.
+ * A test asserts the two numbers still agree.
+ */
+const BODY_LIMIT_MB = parseInt(process.env.BODY_LIMIT_MB || '50', 10) || 50;
+
 // Middleware
-app.use(express.json({ limit: '50mb' }));
-app.use(express.urlencoded({ extended: true, limit: '50mb' }));
+app.use(express.json({ limit: `${BODY_LIMIT_MB}mb` }));
+app.use(express.urlencoded({ extended: true, limit: `${BODY_LIMIT_MB}mb` }));
+
+/*
+ * Body-parser failures, as JSON.
+ *
+ * Both of these used to fall through to Express's default handler, which
+ * sends an HTML error page — so the client's `response.json()` threw on the
+ * HTML and the user got "Unexpected token <" instead of "that file is too
+ * big". An import is exactly where a legible error matters: the person is
+ * usually restoring something.
+ */
+app.use((err, req, res, next) => {
+  if (err?.type === 'entity.too.large') {
+    return res.status(413).json({
+      error: `That file is larger than the ${BODY_LIMIT_MB} MB import limit. `
+        + 'Raise BODY_LIMIT_MB on the server to restore it.',
+      code: 'EPAYLOADTOOLARGE',
+      limit_mb: BODY_LIMIT_MB,
+    });
+  }
+  if (err?.type === 'entity.parse.failed') {
+    return res.status(400).json({ error: 'That file is not valid JSON', code: 'EBADJSON' });
+  }
+  return next(err);
+});
 
 // ── Static file serving ───────────────────────────────────────────────────────
 //

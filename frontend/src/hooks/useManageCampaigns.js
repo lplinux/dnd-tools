@@ -17,7 +17,7 @@ import { importJourneyMap } from '@/api/importJourneyMap';
 import { diaryApi }       from '@/api/diary';
 import { sessionsApi }    from '@/api/sessions';
 import { useConfirm }     from '@/contexts/ConfirmContext';
-import { downloadBundle } from '@/api/downloadBundle';
+import { downloadBundle, IMPORT_LIMIT_MB } from '@/api/downloadBundle';
 
 export function useManageCampaigns() {
   const { toast } = useToast();
@@ -124,11 +124,27 @@ export function useManageCampaigns() {
     toast(`"${name}" permanently deleted.`);
   }, [reloadTrash, toast]);
 
+  /*
+   * Said at EXPORT time, not at restore.
+   *
+   * Exports are unbounded and imports are capped, so a big enough campaign
+   * produces a backup it will refuse to take back — and the only moment
+   * that used to become apparent was the one where you needed it. The file
+   * is still saved: a backup you cannot restore through the UI beats no
+   * backup, and raising BODY_LIMIT_MB restores it.
+   */
+  const warnIfOversize = useCallback((r) => {
+    if (!r?.oversize) return;
+    toast(`Saved ${r.name} — but at ${(r.bytes / 1024 / 1024).toFixed(0)} MB it is over the `
+      + `${IMPORT_LIMIT_MB} MB import limit, so it cannot be restored here without raising `
+      + 'BODY_LIMIT_MB on the server. The bulk is map and portrait images.');
+  }, [toast]);
+
   const exportCampaign = useCallback(async () => {
     if (!currentId) return;
     const data = await campaignsApi.exportCampaign(currentId);
-    downloadBundle(data, { module: 'campaign', name: currentCampaign?.name });
-  }, [currentId, currentCampaign]);
+    warnIfOversize(downloadBundle(data, { module: 'campaign', name: currentCampaign?.name }));
+  }, [currentId, currentCampaign, warnIfOversize]);
 
   // Same export, by explicit id, for a campaign in the trash. `exportCampaign`
   // above can only ever reach `currentId`, which comes from the live list — so
@@ -136,8 +152,8 @@ export function useManageCampaigns() {
   // the server deliberately keeps the export route open on trashed campaigns.
   const exportTrashed = useCallback(async (id, name) => {
     const data = await campaignsApi.exportCampaign(id);
-    downloadBundle(data, { module: 'campaign', name });
-  }, []);
+    warnIfOversize(downloadBundle(data, { module: 'campaign', name }));
+  }, [warnIfOversize]);
 
   // Central importer: sniff `bundle.type` and route. `campaign` restores a NEW
   // campaign (unchanged path); the others merge into the SELECTED campaign — and
