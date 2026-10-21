@@ -38,7 +38,7 @@ import {
 import { magicItemToCard } from '@/data/srdMap';
 
 import {
-  ITEM_TYPES, RARITIES, ARMOR_TYPES,
+  ITEM_TYPES, RARITIES, ARMOR_TYPES, MASTERIES,
   WEAPON_TYPES, ARMOR_TYPES_TRIGGER, CONSUMABLE_TYPES,
   defaultForm, isFormDirty,
 } from './constants';
@@ -105,6 +105,7 @@ export default function ItemCards() {
   const [form, setForm] = useState(defaultForm);
   // The ten SRD weapon properties, for the comma-separated field below.
   const weaponProperties = useSrdNames('weapon-properties');
+  const damageTypes = useSrdNames('damage-types');
   const previewRef = useRef(null);
   const importRef  = useRef(null);
   const confirm    = useConfirm();
@@ -662,17 +663,23 @@ export default function ItemCards() {
                   <input type="text" value={form.damage}     onChange={set('damage')}     placeholder="e.g., 1d8+2"     className={INPUT_CLS} />
                 </Field>
                 <Field label="Damage Type">
-                  {/* One value, so the whole-field combobox fits. 13 SRD
-                      damage types, and still free text for a homebrew one.
-                      No ⓘ: it sat outside the field's box, and the lookup
-                      belongs on the card, where you read the item. */}
-                  <SrdCombobox
-                    value={form.damageType}
-                    onChange={(v) => setForm((f) => ({ ...f, damageType: v }))}
+                  {/* Chips, like Properties. It was a single-value combobox,
+                      which a weapon that deals two kinds of damage — a
+                      hammer that is bludgeoning sealed and fire unsealed —
+                      had no way to express except by typing both into one
+                      box and losing the lookups. Stored comma-separated,
+                      the same as properties. */}
+                  <TagInput
+                    options={damageTypes}
+                    values={splitList(form.damageType)}
+                    onAdd={(v) => setForm((f) => ({
+                      ...f, damageType: joinList([...splitList(f.damageType), v]),
+                    }))}
+                    onRemove={(v) => setForm((f) => ({
+                      ...f, damageType: joinList(removeOne(splitList(f.damageType), v)),
+                    }))}
                     srdResource="damage-types"
-                    info={false}
-                    placeholder="e.g., Slashing"
-                    inputClassName={INPUT_CLS}
+                    placeholder="Slashing, Fire…"
                   />
                 </Field>
                 <Field label="Properties">
@@ -695,6 +702,15 @@ export default function ItemCards() {
                     srdResource="weapon-properties"
                     placeholder="Light, Finesse…"
                   />
+                </Field>
+                <Field label="Mastery">
+                  {/* A select, not chips: a weapon has exactly one mastery,
+                      and a free-text box would invite typing a ninth that
+                      does not exist. */}
+                  <select value={form.mastery} onChange={set('mastery')} className={INPUT_CLS}>
+                    <option value="">—</option>
+                    {MASTERIES.map((m) => <option key={m} value={m}>{m}</option>)}
+                  </select>
                 </Field>
               </div>
             )}

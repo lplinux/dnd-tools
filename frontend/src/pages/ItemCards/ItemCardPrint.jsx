@@ -31,15 +31,19 @@ function frontHtml(form) {
   let h = `<div class="pc-name">${esc(form.name || 'Item Name')}</div>`
         + `<div class="pc-type">${esc(form.type || 'Item')} (Rarity: ${esc(rarityLabel)}${attune})</div>`;
   const stats = [];
+  // The label carries the weight here too, so a printed card can be
+  // scanned down its left edge rather than read.
+  const k = (label, value) => `<span class="pc-k">${label}:</span> ${value}`;
   if (form.type === 'Weapon') {
-    if (form.damage) stats.push(`Damage: ${esc(form.damage)}`);
-    if (form.damageType) stats.push(`Type: ${esc(form.damageType)}`);
-    if (form.properties) stats.push(`Properties: ${esc(form.properties)}`);
+    if (form.damage) stats.push(k('Damage', esc(form.damage)));
+    if (form.damageType) stats.push(k('Type', esc(form.damageType)));
+    if (form.properties) stats.push(k('Properties', esc(form.properties)));
+    if (form.mastery) stats.push(k('Mastery', esc(form.mastery)));
   } else if (form.type === 'Armor') {
-    if (form.acBonus) stats.push(`AC: ${esc(form.acBonus)}`);
-    if (form.armorType) stats.push(`Armor Type: ${esc(form.armorType)}`);
+    if (form.acBonus) stats.push(k('AC', esc(form.acBonus)));
+    if (form.armorType) stats.push(k('Armor Type', esc(form.armorType)));
   } else if ((form.type === 'Consumable' || form.type === 'Potion') && parseInt(form.uses) > 0) {
-    stats.push(`Uses: ${'◯ '.repeat(parseInt(form.uses)).trim()}`);
+    stats.push(k('Uses', '◯ '.repeat(parseInt(form.uses)).trim()));
   }
   if (stats.length) h += `<div class="pc-stats">${stats.map((s) => `<div class="pc-stat">${s}</div>`).join('')}</div>`;
   const flavor = (form.flavor || '').trim();
@@ -174,6 +178,11 @@ export default function ItemCardPrint({ cards, cols = 1, perPage = 1 }) {
         .ic-print-measure .pc-type, .ic-face .pc-type { font-size: .9em; color: #555; margin-bottom: 5px; }
         .ic-print-measure .pc-stat, .ic-face .pc-stat { color: #333; }
         .ic-print-measure .pc-stats, .ic-face .pc-stats { margin-bottom: 5px; }
+        /* Matches the preview's .ic-k — the label is signposting, the
+           value keeps the body colour. Both faces are measured with this
+           same CSS, so the auto-fit sees the bolder text too.
+           (No backticks in here: this block is a template literal.) */
+        .ic-print-measure .pc-k, .ic-face .pc-k { font-weight: 700; color: #1a1a1a; }
         .ic-print-measure .pc-flavor, .ic-face .pc-flavor { font-style: italic; color: #444;
           background: #f3efe6; border-left: 2px solid #b8a15e; padding: 5px 6px; margin-bottom: 6px; }
         .ic-print-measure .pc-abilities, .ic-face .pc-abilities { margin-bottom: 4px; }

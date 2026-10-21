@@ -40,6 +40,7 @@ export function rowToForm(row) {
     attunement: !!row.attunement,
     damage:     row.damage ?? '',
     damageType: row.damage_type ?? '',
+    mastery:    row.mastery ?? '',
     properties: row.properties ?? '',
     acBonus:    row.ac_bonus ?? '',
     armorType:  row.armor_type ?? '',

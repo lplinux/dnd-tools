@@ -73,6 +73,7 @@ const cardFormOf = (i) => ({
   flavor: i.card_flavor ?? '', abilities: i.card_abilities ?? '',
   attunement: !!i.card_attunement, damage: i.card_damage ?? '',
   damageType: i.card_damage_type ?? '', properties: i.card_properties ?? '',
+  mastery: i.card_mastery ?? '',
   acBonus: i.card_ac_bonus ?? '', armorType: i.card_armor_type ?? '',
   uses: i.card_uses ?? '', weight: i.card_weight ?? '',
 });

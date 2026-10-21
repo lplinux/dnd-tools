@@ -3536,6 +3536,7 @@ const INV_SELECT = `
   c.damage      AS card_damage,
   c.damage_type AS card_damage_type,
   c.properties  AS card_properties,
+  c.mastery     AS card_mastery,
   c.ac_bonus    AS card_ac_bonus,
   c.armor_type  AS card_armor_type,
   c.uses        AS card_uses,
@@ -3982,7 +3983,7 @@ const RARITY_IDS = ['common', 'uncommon', 'rare', 'veryrare', 'legendary', 'arti
 
 /** The card columns, in the order every INSERT/UPDATE below uses. */
 const CARD_COLS = ['name', 'type', 'rarity', 'flavor', 'abilities', 'attunement',
-  'damage', 'damage_type', 'properties', 'ac_bonus', 'armor_type', 'uses', 'weight',
+  'damage', 'damage_type', 'properties', 'mastery', 'ac_bonus', 'armor_type', 'uses', 'weight',
   'evolves_from'];
 
 /** How far a chain may run. A guard against a cycle, not a design limit. */
@@ -4188,9 +4189,10 @@ function cardValues(b) {
     str(b.flavor, 20000),
     sanitizeAbilities(b.abilities),
     !!b.attunement,
-    str(b.damage, 60),
-    str(b.damageType ?? b.damage_type, 60),
+    str(b.damage, 255),
+    str(b.damageType ?? b.damage_type, 255),
     str(b.properties, 255),
+    str(b.mastery, 60),
     str(b.acBonus ?? b.ac_bonus, 20),
     str(b.armorType ?? b.armor_type, 20),
     Number.isFinite(uses) && uses > 0 ? uses : null,
@@ -9597,9 +9599,10 @@ async function initializeDatabase() {
         flavor      TEXT,
         abilities   TEXT,
         attunement  BOOLEAN NOT NULL DEFAULT false,
-        damage      VARCHAR(60),
-        damage_type VARCHAR(60),
+        damage      VARCHAR(255),
+        damage_type VARCHAR(255),
         properties  VARCHAR(255),
+        mastery     VARCHAR(60),
         ac_bonus    VARCHAR(20),
         armor_type  VARCHAR(20),
         uses        INTEGER,
@@ -9613,6 +9616,30 @@ async function initializeDatabase() {
     // those to whole pounds makes the carry total visibly wrong.
     await pool.query(`
       ALTER TABLE item_cards ADD COLUMN IF NOT EXISTS weight NUMERIC(8,2);
+    `);
+    /*
+     * Weapon mastery — the 2024 property (Cleave, Graze, Nick, Push, Sap,
+     * Slow, Topple, Vex). Its own column rather than another entry in the
+     * comma-separated `properties`: a weapon has many properties and
+     * exactly one mastery, and burying it in the list is what made the DM
+     * type it by hand into the abilities text.
+     */
+    await pool.query(`
+      ALTER TABLE item_cards ADD COLUMN IF NOT EXISTS mastery VARCHAR(60);
+    `);
+    /*
+     * `damage` and `damage_type` hold a LIST now — a hammer that is
+     * bludgeoning sealed and fire unsealed needs both — so they get the
+     * same width as the properties beside them. 60 was already too tight:
+     * "1d12 slashing (base), plus additional effects based on the moon
+     * phase" lost its tail silently. Widening a varchar is not a rewrite
+     * and never fails on existing rows.
+     */
+    await pool.query(`
+      ALTER TABLE item_cards ALTER COLUMN damage TYPE VARCHAR(255);
+    `);
+    await pool.query(`
+      ALTER TABLE item_cards ALTER COLUMN damage_type TYPE VARCHAR(255);
     `);
 
     // Migrate: evolving items. A card may declare the card it grew out of,
