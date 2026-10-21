@@ -19,7 +19,9 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ChevronDown, ChevronRight, Plus, Trash2 } from 'lucide-react';
 
-import { Button, Modal, FormField, Spinner } from '@/components/ui';
+import { Button, Modal, FormField, Spinner,
+  CalendarDate, absDayFromParts, partsFromAbsDay } from '@/components/ui';
+import { inGameDate } from '@/data/calendar';
 import { useToast } from '@/hooks/useToast';
 import { useConfirm } from '@/contexts/ConfirmContext';
 import { sessionsApi } from '@/api/sessions';
@@ -145,7 +147,9 @@ function Section({
   );
 }
 
-export default function SessionsPanel({ campaignId }) {
+export default function SessionsPanel({
+  campaignId, calendarType = 'harptos', todayMarker = null, onTodayMarkerChanged,
+}) {
   const { toast } = useToast();
   const confirm = useConfirm();
   const [sessions, setSessions] = useState([]);
@@ -171,6 +175,10 @@ export default function SessionsPanel({ campaignId }) {
   const [drag, setDrag] = useState(null);   // { id, section } while dragging
   // { category, day, dmOnly, picked:Set } while the convert dialog is open
   const [journalForm, setJournalForm] = useState(null);
+  // { in_game_day, days, events } for the session on screen, or null.
+  const [upcoming, setUpcoming] = useState(null);
+  // { date } while the "mark it played" dialog is open.
+  const [playedForm, setPlayedForm] = useState(null);
 
   const openLink = useCallback(({ kind, id }, e) => {
     const rows = kind === 'npc' ? targets.npcs : targets.locations;
@@ -216,6 +224,24 @@ export default function SessionsPanel({ campaignId }) {
   }, [campaignId, currentId, fail]);
 
   useEffect(() => { loadDetail(); }, [loadDetail]);
+
+  /*
+   * What the timeline says is near this session's in-game date.
+   *
+   * Keyed on the DATE as well as the session, so moving a session redraws
+   * the list rather than leaving the old one under a new date. Its own
+   * fetch because it reads the timelines, which the session route has no
+   * business joining.
+   */
+  const when = detail?.session?.in_game_day ?? null;
+  useEffect(() => {
+    if (!campaignId || !currentId || when == null) { setUpcoming(null); return undefined; }
+    let alive = true;
+    sessionsApi.upcoming(campaignId, currentId)
+      .then((u) => { if (alive) setUpcoming(u); })
+      .catch(() => { /* the session is still readable without it */ });
+    return () => { alive = false; };
+  }, [campaignId, currentId, when]);
 
   // Memoised because `expandAll` depends on it; a fresh [] every render
   // would rebuild that callback every render for nothing.
@@ -279,36 +305,64 @@ export default function SessionsPanel({ campaignId }) {
   async function saveMeta() {
     setBusy(true);
     try {
-      await sessionsApi.update(campaignId, metaForm.id, metaForm);
+      const saved = await sessionsApi.update(campaignId, metaForm.id, {
+        ...metaForm,
+        // The pickers edit { year, midx, day }; the server stores the one
+        // absolute integer the timelines and the journal already use.
+        in_game_day: absDayFromParts(metaForm.date, calendarType),
+      });
       setMetaForm(null);
       await loadList();
       await loadDetail();
+      // Editing the finish date of a played session moves the clock, the
+      // same as marking it played does — the server says when it did.
+      if (saved?.today_marker !== undefined) onTodayMarkerChanged?.();
     } catch (e) { fail(e); } finally { setBusy(false); }
   }
 
-  async function toggleStatus() {
-    const next = detail.session.status === 'played' ? 'prepared' : 'played';
+  /*
+   * Marking a session played asks when it FINISHED in the world, and the
+   * campaign's clock follows that answer.
+   *
+   * A dialog rather than a confirm, because there is something to fill in
+   * — and the "nothing written under What happened" warning lives inside
+   * it rather than as a second box in front of it. Both are still shown
+   * before anything is written: played makes the session read-only, and a
+   * DM who marks it before writing their notes has to work out that they
+   * must set it back to Prepared to type anything.
+   *
+   * Going the other way — played back to prepared — asks nothing. Nothing
+   * finished, so there is no date to record and no clock to move.
+   */
+  function toggleStatus() {
+    // No date argument: un-marking must not erase the one already there.
+    if (detail.session.status === 'played') { void setStatus('prepared'); return; }
+    setPlayedForm({
+      // Defaults to where the campaign already is. The session's own start
+      // date is the fallback, so an undated campaign still opens on
+      // something sensible rather than blank.
+      date: partsFromAbsDay(todayMarker ?? detail.session.in_game_day ?? null, calendarType),
+    });
+  }
 
-    /*
-     * Asked BEFORE the write, not after. Played makes the session
-     * read-only, so a DM who marks it before writing their notes has to
-     * work out that they must set it back to Prepared to type anything —
-     * which is exactly the moment they are least likely to want a puzzle.
-     */
-    if (next === 'played' && !items.some((i) => i.section === 'outcome')) {
-      const ok = await confirm(
-        'Nothing is written under "What happened" yet.\n\n'
-        + 'A played session is read-only, so you would have to mark it Prepared '
-        + 'again before you could add the notes.',
-        { title: 'Mark it played anyway?', confirmLabel: 'Mark it played' },
-      );
-      if (!ok) return;
-    }
-
+  async function setStatus(next, day) {
     try {
-      await sessionsApi.update(campaignId, detail.session.id, { ...detail.session, status: next });
+      const saved = await sessionsApi.update(campaignId, detail.session.id, {
+        ...detail.session,
+        status: next,
+        // `undefined` means "leave it" — only the played dialog supplies a
+        // date, and passing null here would clear the session's own.
+        ...(day !== undefined ? { in_game_day: day } : {}),
+      });
+      setPlayedForm(null);
       await loadList();
       await loadDetail();
+      /*
+       * The server moves `today_marker` in the same transaction as the
+       * status, so the page asks for it back rather than setting it. Only
+       * when it actually changed — the response says so.
+       */
+      if (saved?.today_marker !== undefined) onTodayMarkerChanged?.();
 
       /*
        * Marking a session played is the moment the DM knows what survived
@@ -569,6 +623,11 @@ export default function SessionsPanel({ campaignId }) {
                 {String(detail.session.session_date).slice(0, 10)}
               </span>
             )}
+            {detail.session.in_game_day != null && (
+              <span className="text-[0.7rem] text-gold" title="In-game date">
+                🗓 {inGameDate(detail.session.in_game_day, calendarType)}
+              </span>
+            )}
             <button
               type="button"
               onClick={toggleStatus}
@@ -587,6 +646,7 @@ export default function SessionsPanel({ campaignId }) {
               title: detail.session.title ?? '',
               session_date: detail.session.session_date
                 ? String(detail.session.session_date).slice(0, 10) : '',
+              date: partsFromAbsDay(detail.session.in_game_day, calendarType),
             })}>Edit</Button>
             <Button variant="danger" onClick={removeSession} title="Delete this session">
               <Trash2 size={12} />
@@ -643,6 +703,47 @@ export default function SessionsPanel({ campaignId }) {
               </button>
             )}
           </div>
+
+          {/*
+            * What the timeline says is going on around this date.
+            *
+            * Only when there is a date AND something near it — an empty
+            * "nothing coming up" box on every session would be noise, and
+            * the absence of news is not news.
+            */}
+          {upcoming?.events?.length > 0 && (
+            <section className="border border-[var(--gold-dim)] rounded-sm bg-[var(--gold-glow)] p-2.5">
+              <h3 className="font-display uppercase tracking-widest text-[0.65rem] text-gold mb-1.5">
+                ⏳ Around this date
+                <span className="text-text-muted normal-case tracking-normal ml-1.5">
+                  (next {upcoming.days} days)
+                </span>
+              </h3>
+              <ul className="flex flex-col gap-1">
+                {upcoming.events.map((e) => (
+                  <li key={e.id} className="text-[0.8rem] text-text-dim flex items-baseline gap-2 flex-wrap">
+                    {/* Something already under way leads with that, because
+                        it is not a thing to remember later — it is the
+                        situation the party is walking into. */}
+                    <span className={`flex-shrink-0 font-display uppercase tracking-wider text-[0.65rem]
+                                      ${e.running ? 'text-gold' : 'text-text-muted'}`}>
+                      {e.running
+                        ? 'under way'
+                        : e.days_away === 0 ? 'today' : `in ${e.days_away}d`}
+                    </span>
+                    <strong className="text-text">{e.title}</strong>
+                    {e.location && <span className="text-text-muted">· {e.location}</span>}
+                    <span className="text-text-muted text-[0.7rem]">
+                      {inGameDate(Number(e.abs_day), calendarType)}
+                      {/* Whose timeline it came from — the party's, a
+                          character's, or one of the DM's own. */}
+                      {e.is_party ? ' · the party' : e.player_name ? ` · ${e.player_name}` : ''}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          )}
 
           {SECTIONS.map((def) => {
             const tree = filterTree(items, def.id, query, stateFilter);
@@ -844,6 +945,50 @@ export default function SessionsPanel({ campaignId }) {
         )}
       </Modal>
 
+      <Modal
+        open={!!playedForm}
+        onClose={() => setPlayedForm(null)}
+        title="✓ Mark this session as played"
+        className="max-w-lg"
+      >
+        {playedForm && (
+          <div className="flex flex-col gap-3">
+            {/* The warning that used to be its own confirm in front of this
+                one. Same thing said at the same moment, one box instead of
+                two — and it is a note, not a question, because the date
+                below is the question. */}
+            {!items.some((i) => i.section === 'outcome') && (
+              <p className="text-[0.8rem] text-text border border-[var(--gold-dim)]
+                            bg-[var(--gold-glow)] rounded-sm p-2.5">
+                Nothing is written under <strong>What happened</strong> yet. A played session is
+                read-only, so you would have to mark it Prepared again before you could add the
+                notes.
+              </p>
+            )}
+
+            <CalendarDate
+              value={playedForm.date}
+              onChange={(date) => setPlayedForm((f) => ({ ...f, date }))}
+              calType={calendarType}
+              label="finished on"
+              hint="When the session ended in the world. Saving moves the campaign's Today
+                    marker to this date, so the timelines and everything else move with it."
+            />
+
+            <div className="flex gap-2 justify-end">
+              <Button variant="ghost" onClick={() => setPlayedForm(null)}>Cancel</Button>
+              <Button
+                variant="accent"
+                loading={busy}
+                onClick={() => setStatus('played', absDayFromParts(playedForm.date, calendarType))}
+              >
+                Mark it played
+              </Button>
+            </div>
+          </div>
+        )}
+      </Modal>
+
       <Modal open={!!metaForm} onClose={() => setMetaForm(null)} onSubmit={saveMeta} title="Edit session">
         {metaForm && (
           <div className="flex flex-col gap-3">
@@ -858,7 +1003,24 @@ export default function SessionsPanel({ campaignId }) {
             <FormField label="Date played">
               <input type="date" value={metaForm.session_date} className={INPUT}
                 onChange={(e) => setMetaForm((f) => ({ ...f, session_date: e.target.value }))} />
+              <p className="text-text-muted text-[0.7rem] mt-1">
+                The real evening you sat down. Separate from the in-game date below — a
+                session played in October can fall on 30 Hammer, and three sittings can be
+                one day in the world.
+              </p>
             </FormField>
+            {/* ONE in-game date. Marking the session played sets it, the
+                timeline panel reads it, and on a played session changing
+                it moves the campaign's Today marker. */}
+            <CalendarDate
+              value={metaForm.date}
+              onChange={(date) => setMetaForm((f) => ({ ...f, date }))}
+              calType={calendarType}
+              label="in-game date"
+              hint="When it happens in the world. The timeline will say what else is going on
+                    around then — and once the session is played, this is where the campaign's
+                    Today marker sits."
+            />
             <div className="flex gap-2 justify-end">
               <Button variant="ghost" onClick={() => setMetaForm(null)}>Cancel</Button>
               <Button variant="accent" loading={busy} onClick={saveMeta}>Save</Button>

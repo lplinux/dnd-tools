@@ -231,7 +231,7 @@ export default function ManageCampaigns() {
     addPlayer, deletePlayer, reassignPlayer, createTimeline,
     addLocation, editLocation, deleteLocation, toggleLocVisibility,
     addNpcs, editNpc, toggleNpcVisibility, deleteNpc,
-    saveTodayMarker, deleteCampaign, restoreCampaign, purgeCampaign, exportTrashed,
+    saveTodayMarker, refreshMeta, deleteCampaign, restoreCampaign, purgeCampaign, exportTrashed,
   } = mc;
 
   // Tab content switcher
@@ -302,7 +302,15 @@ export default function ManageCampaigns() {
           />
         );
       case 'sessions':
-        return <SessionsPanel key={currentId} campaignId={currentId} />;
+        return (
+          <SessionsPanel
+            key={currentId}
+            campaignId={currentId}
+            calendarType={currentCampaign.calendar_type ?? 'harptos'}
+            todayMarker={meta?.today_marker != null ? parseInt(meta.today_marker, 10) : null}
+            onTodayMarkerChanged={refreshMeta}
+          />
+        );
       case 'evolution':
         return <EvolutionPanel key={currentId} campaignId={currentId} players={players} />;
       case 'search':

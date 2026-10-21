@@ -417,6 +417,19 @@ export function useManageCampaigns() {
     setMeta(m ?? {});
   }, [currentId]);
 
+  /*
+   * Re-read the campaign's clock.
+   *
+   * Marking a session played advances `today_marker` on the SERVER, inside
+   * the same transaction as the status change — so the page has to ask for
+   * it back rather than being told. Separate from `saveTodayMarker`, which
+   * is the DM setting it by hand.
+   */
+  const refreshMeta = useCallback(async () => {
+    if (!currentId) return;
+    setMeta((await campaignsApi.getMeta(currentId)) ?? {});
+  }, [currentId]);
+
   // ── Char-tree connections ─────────────────────────────────────────────────
   const addConnection = useCallback(async (data) => {
     await campaignsApi.addCharConnection(currentId, data);
@@ -463,7 +476,7 @@ export function useManageCampaigns() {
     addNpcs, editNpc, toggleNpcVisibility, deleteNpc,
 
     // Settings
-    saveTodayMarker,
+    saveTodayMarker, refreshMeta,
 
     // Char-tree
     addConnection, editConnection, deleteConnection, toggleConnVisibility,

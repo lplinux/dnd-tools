@@ -25,7 +25,7 @@ import { Button, Modal, FormField, Spinner, CalendarDate,
   absDayFromParts, partsFromAbsDay } from '@/components/ui';
 import { campaignsApi } from '@/api/campaigns';
 import { useToast } from '@/hooks/useToast';
-import { formatDate, fromAbsDay } from '@/data/calendar';
+import { inGameDate } from '@/data/calendar';
 import GroupedEntries from '@/pages/Diary/GroupedEntries';
 import { openNotesPrint } from '@/pages/Diary/printNotes';
 import LinkingTextarea from '@/components/LinkingTextarea';
@@ -71,13 +71,6 @@ const INPUT_CLS = [
 const blank = () => ({
   id: null, title: '', body: '', category: '', location_id: '', date: null, dm_only: false,
 });
-
-/** The in-game date, rendered on whichever calendar the campaign runs. */
-function inGameDate(absD, calType) {
-  if (absD == null) return null;
-  const { year, dayOfYear } = fromAbsDay(absD, calType);
-  return formatDate(year, dayOfYear, calType);
-}
 
 /** The real-world stamp. Short — the in-game date is the interesting one. */
 function writtenOn(iso) {
