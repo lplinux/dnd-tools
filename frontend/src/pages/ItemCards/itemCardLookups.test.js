@@ -60,8 +60,10 @@ describe('what is clickable', () => {
     expect(list.slice(0, 600)).toMatch(/split\(','\)/);
   });
 
-  it('and the damage type', () => {
-    expect(PREVIEW).toMatch(/<Term lookups=\{lookups\} resource="damage-types"/);
+  it('and each damage type separately', () => {
+    // A list now, like the properties: a weapon that is bludgeoning sealed
+    // and fire unsealed has two, and each still wants its own lookup.
+    expect(PREVIEW).toMatch(/<TermList lookups=\{lookups\} resource="damage-types"/);
   });
 
   it('but not a name the SRD does not have', () => {
@@ -100,11 +102,18 @@ describe('Escape closes a pinned inventory card', () => {
   });
 });
 
-describe('the Item Card form has no \u24d8 on its damage type', () => {
+describe('the \u24d8-less combobox', () => {
   const COMBO = read('../../components/SrdCombobox.jsx');
 
-  it('the form asks for completion without the button', () => {
-    expect(CREATOR).toMatch(/srdResource="damage-types"\s*\n\s*info=\{false\}/);
+  it('is no longer how damage types are entered', () => {
+    /*
+     * They are chips now, so there is no combobox on that field to carry
+     * an \u24d8 either way. The option it was given remains, for the callers
+     * below — this assertion moved rather than being deleted, because the
+     * behaviour it guards is still real.
+     */
+    expect(CREATOR).not.toMatch(/srdResource="damage-types"\s*\n\s*info=\{false\}/);
+    expect(CREATOR).toMatch(/srdResource="damage-types"/);
   });
 
   it('and the combobox honours that', () => {
@@ -119,17 +128,31 @@ describe('the Item Card form has no \u24d8 on its damage type', () => {
 describe('lists are edited as chips, not as comma-separated text', () => {
   const SPELLS = read('../NpcSheet/SpellSection.jsx');
 
-  /** The whole <TagInput …/> element, rather than a guessed character window. */
-  const tagInput = (src) => {
-    const i = src.indexOf('<TagInput');
-    expect(i, 'no TagInput at all').toBeGreaterThan(-1);
-    return src.slice(i, src.indexOf('/>', i) + 2);
+  /**
+   * The whole <TagInput …/> element, rather than a guessed character window.
+   *
+   * `resource` picks which one: the card form grew a second when damage
+   * types became a list, and taking the first silently asserted the wrong
+   * field.
+   */
+  const tagInput = (src, resource) => {
+    const at = resource
+      ? src.lastIndexOf('<TagInput', src.indexOf(`srdResource="${resource}"`))
+      : src.indexOf('<TagInput');
+    expect(at, `no TagInput for ${resource ?? 'anything'}`).toBeGreaterThan(-1);
+    return src.slice(at, src.indexOf('/>', at) + 2);
   };
 
   it('item properties use the same editor as damage resistances', () => {
-    const el = tagInput(CREATOR);
+    const el = tagInput(CREATOR, 'weapon-properties');
     expect(el).toMatch(/srdResource="weapon-properties"/);
     expect(el).toMatch(/options=\{weaponProperties\}/);
+    expect(el).toMatch(/onRemove=/);
+  });
+
+  it('and so do damage types, now that a weapon can deal two', () => {
+    const el = tagInput(CREATOR, 'damage-types');
+    expect(el).toMatch(/options=\{damageTypes\}/);
     expect(el).toMatch(/onRemove=/);
   });
 

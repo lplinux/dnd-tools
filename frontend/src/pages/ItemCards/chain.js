@@ -193,7 +193,7 @@ export function libraryGroups(cards, { query = '', rarity = '' } = {}, rarityOrd
  */
 const BUNDLE_FIELDS = [
   'name', 'type', 'rarity', 'flavor', 'abilities', 'attunement',
-  'damage', 'damage_type', 'properties', 'ac_bonus', 'armor_type',
+  'damage', 'damage_type', 'properties', 'mastery', 'ac_bonus', 'armor_type',
   'uses', 'weight',
 ];
 

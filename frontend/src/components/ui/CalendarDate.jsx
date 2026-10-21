@@ -64,6 +64,15 @@ export default function CalendarDate({
   value, onChange, calType = 'harptos', label = 'Date', hint, clearable = true,
 }) {
   const months = useMemo(() => monthOptions(calType), [calType]);
+  /*
+   * No date at all is a state this control has to be able to LOOK like.
+   *
+   * With `value` null the month fell back to index 0 and the day to 1, so
+   * an unset date rendered as a blank year beside "Hammer" and "1" — which
+   * reads as 1 Hammer with the year missing, rather than as nothing. The
+   * selects carry a "—" option while that is the case.
+   */
+  const unset = value == null;
   const special = calType === 'harptos' && !!HARPTOS[value?.midx ?? 0]?.sp;
   const max = daysInMonth(value?.midx ?? 0, value?.year, calType);
 
@@ -92,9 +101,10 @@ export default function CalendarDate({
         </FormField>
         <FormField label={calType === 'harptos' ? 'Month / festival' : 'Month'}>
           <select
-            className={CLS} value={value?.midx ?? 0}
+            className={CLS} value={unset ? '' : value.midx}
             onChange={(e) => set({ midx: Number(e.target.value) })}
           >
+            {unset && <option value="">—</option>}
             {months.map((m) => <option key={m.value} value={m.value}>{m.label}</option>)}
           </select>
         </FormField>
@@ -103,9 +113,10 @@ export default function CalendarDate({
         {!special && (
           <FormField label="Day">
             <select
-              className={CLS} value={value?.day ?? 1}
+              className={CLS} value={unset ? '' : value.day}
               onChange={(e) => set({ day: Number(e.target.value) })}
             >
+              {unset && <option value="">—</option>}
               {days.map((d) => <option key={d} value={d}>{d}</option>)}
             </select>
           </FormField>

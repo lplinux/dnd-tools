@@ -91,6 +91,19 @@ export function formatDate(year, doy, calType) {
 }
 
 /** Month/festival <option> data for the active calendar. */
+/**
+ * An absolute day → the date as the campaign's calendar writes it.
+ *
+ * The pairing of `fromAbsDay` and `formatDate` that every caller wants, in
+ * one place: the journal had its own copy and the session panel was about
+ * to grow a second.
+ */
+export function inGameDate(absD, calType) {
+  if (absD == null) return null;
+  const { year, dayOfYear } = fromAbsDay(absD, calType);
+  return formatDate(year, dayOfYear, calType);
+}
+
 export function monthOptions(calType) {
   if (calType === 'harptos') return HARPTOS.map((p, i) => ({ value: i, label: `${p.name}${p.sp ? ' ✦' : ''}` }));
   return GREG_MONTHS.map((m, i) => ({ value: i, label: m }));

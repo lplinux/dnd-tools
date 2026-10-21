@@ -83,9 +83,46 @@ const SECURE_COOKIES = TRUST_PROXY_HOPS > 0
 
 if (TRUST_PROXY_HOPS > 0) app.set('trust proxy', TRUST_PROXY_HOPS);
 
+/*
+ * How large a request body may be.
+ *
+ * It is the IMPORT ceiling, and exports are not bounded by anything — so a
+ * campaign can produce a backup it will then refuse to restore. The payload
+ * is dominated by base64 map and portrait images, which only grow. Raising
+ * this is not free (the whole body is buffered in memory), so instead the
+ * number is named once here, mirrored by the client in
+ * `api/downloadBundle.js`, and the download warns when a bundle goes over.
+ * A test asserts the two numbers still agree.
+ */
+const BODY_LIMIT_MB = parseInt(process.env.BODY_LIMIT_MB || '50', 10) || 50;
+
 // Middleware
-app.use(express.json({ limit: '50mb' }));
-app.use(express.urlencoded({ extended: true, limit: '50mb' }));
+app.use(express.json({ limit: `${BODY_LIMIT_MB}mb` }));
+app.use(express.urlencoded({ extended: true, limit: `${BODY_LIMIT_MB}mb` }));
+
+/*
+ * Body-parser failures, as JSON.
+ *
+ * Both of these used to fall through to Express's default handler, which
+ * sends an HTML error page — so the client's `response.json()` threw on the
+ * HTML and the user got "Unexpected token <" instead of "that file is too
+ * big". An import is exactly where a legible error matters: the person is
+ * usually restoring something.
+ */
+app.use((err, req, res, next) => {
+  if (err?.type === 'entity.too.large') {
+    return res.status(413).json({
+      error: `That file is larger than the ${BODY_LIMIT_MB} MB import limit. `
+        + 'Raise BODY_LIMIT_MB on the server to restore it.',
+      code: 'EPAYLOADTOOLARGE',
+      limit_mb: BODY_LIMIT_MB,
+    });
+  }
+  if (err?.type === 'entity.parse.failed') {
+    return res.status(400).json({ error: 'That file is not valid JSON', code: 'EBADJSON' });
+  }
+  return next(err);
+});
 
 // ── Static file serving ───────────────────────────────────────────────────────
 //
@@ -3499,6 +3536,7 @@ const INV_SELECT = `
   c.damage      AS card_damage,
   c.damage_type AS card_damage_type,
   c.properties  AS card_properties,
+  c.mastery     AS card_mastery,
   c.ac_bonus    AS card_ac_bonus,
   c.armor_type  AS card_armor_type,
   c.uses        AS card_uses,
@@ -3945,7 +3983,7 @@ const RARITY_IDS = ['common', 'uncommon', 'rare', 'veryrare', 'legendary', 'arti
 
 /** The card columns, in the order every INSERT/UPDATE below uses. */
 const CARD_COLS = ['name', 'type', 'rarity', 'flavor', 'abilities', 'attunement',
-  'damage', 'damage_type', 'properties', 'ac_bonus', 'armor_type', 'uses', 'weight',
+  'damage', 'damage_type', 'properties', 'mastery', 'ac_bonus', 'armor_type', 'uses', 'weight',
   'evolves_from'];
 
 /** How far a chain may run. A guard against a cycle, not a design limit. */
@@ -4151,9 +4189,10 @@ function cardValues(b) {
     str(b.flavor, 20000),
     sanitizeAbilities(b.abilities),
     !!b.attunement,
-    str(b.damage, 60),
-    str(b.damageType ?? b.damage_type, 60),
+    str(b.damage, 255),
+    str(b.damageType ?? b.damage_type, 255),
     str(b.properties, 255),
+    str(b.mastery, 60),
     str(b.acBonus ?? b.ac_bonus, 20),
     str(b.armorType ?? b.armor_type, 20),
     Number.isFinite(uses) && uses > 0 ? uses : null,
@@ -5550,7 +5589,18 @@ app.delete('/api/campaigns/:campaignId/journal/:entryId', requireAuth, async (re
 // away with `SELECT *` because nothing on that table is secret; campaign_npcs
 // has `private_info`, so a star here would hand the DM's secrets to the table.
 
-/** Columns a player may see. The absence of private_info is the whole point. */
+/**
+ * Columns a player may see. The absence of private_info is the whole point.
+ *
+ * `public_info` belongs here: it is what the party has worked out, and the
+ * cross-link card is where they read it. It was briefly removed on the
+ * belief that players were not getting it — they were; it is simply not a
+ * column in the DM's NPC table, which is where that was being checked.
+ *
+ * `has_sheet` and `life_state` ARE withheld, and deliberately: whether the
+ * DM has rolled a stat block, and whether they privately consider someone
+ * dead, are answers the table is supposed to find out in play.
+ */
 const NPC_PLAYER_COLUMNS = `n.id, n.name, n.description, n.public_info, n.is_public`;
 
 /**
@@ -5624,7 +5674,8 @@ app.post('/api/campaigns/:campaignId/npcs', requireRole(['dm', 'admin']), async 
  * through a column nobody would think to audit.
  */
 app.put('/api/campaigns/:campaignId/npcs/:npcId', requireRole(['dm', 'admin']), async (req, res) => {
-  const { name, description, public_info, private_info, current_location_id } = req.body ?? {};
+  const { name, description, public_info, private_info, current_location_id,
+    has_sheet: hasSheet, life_state: lifeState } = req.body ?? {};
   const { campaignId, npcId } = req.params;
   if (!name || !String(name).trim()) return res.status(400).json({ error: 'Name required' });
 
@@ -5646,11 +5697,16 @@ app.put('/api/campaigns/:campaignId/npcs/:npcId', requireRole(['dm', 'admin']), 
 
     const r = await pool.query(
       `UPDATE campaign_npcs
-          SET name=$1, description=$2, public_info=$3, private_info=$4, current_location_id=$5
-        WHERE id=$6 AND campaign_id=$7
+          SET name=$1, description=$2, public_info=$3, private_info=$4, current_location_id=$5,
+              has_sheet=$6,
+              -- Clamped rather than rejected: an unknown value here is a
+              -- stale client, and refusing the whole edit over it would
+              -- lose the DM's text.
+              life_state = CASE WHEN $7::text IN ('alive','dead','unknown') THEN $7 ELSE life_state END
+        WHERE id=$8 AND campaign_id=$9
         RETURNING *`,
       [String(name).trim(), description || null, public_info || null, private_info || null,
-        locId, npcId, campaignId],
+        locId, hasSheet === true, lifeState ?? null, npcId, campaignId],
     );
     if (!r.rows.length) return res.status(404).json({ error: 'NPC not found' });
     res.json(r.rows[0]);
@@ -5663,6 +5719,95 @@ app.put('/api/campaigns/:campaignId/npcs/:npcId', requireRole(['dm', 'admin']), 
 });
 
 /** Reveal or hide. Its own route, mirroring the locations toggle. */
+/**
+ * Who this NPC is connected to, for their card.
+ *
+ * Its own route rather than a column on the list: the list is forty rows
+ * and almost none of them are open, so the edges are fetched when a card is
+ * actually read.
+ *
+ * A PLAYER GETS ONLY THE PUBLIC EDGES, and only once they have met the NPC
+ * — `character_relationships.is_public` is the DM's switch for "the table
+ * knows about this one". The other end is resolved to a name here, and an
+ * edge whose other end is an NPC the player has not met is dropped
+ * entirely: naming an unmet person is the same leak as naming their
+ * location.
+ */
+app.get('/api/campaigns/:campaignId/npcs/:npcId/relationships', requireRole(['dm', 'player']), async (req, res) => {
+  const { campaignId, npcId } = req.params;
+  try {
+    if (!await canAccessCampaign(campaignId, req.session.userId, req.session.role))
+      return res.status(403).json({ error: 'Access denied' });
+    const isDM = await isCampaignDm(campaignId, req.session.userId, req.session.role);
+
+    const self = await pool.query(
+      'SELECT id, is_public FROM campaign_npcs WHERE id=$1 AND campaign_id=$2', [npcId, campaignId],
+    );
+    if (!self.rows.length) return res.status(404).json({ error: 'NPC not found' });
+    // An unmet NPC has no card for a player, so it has no edges either.
+    if (!isDM && !self.rows[0].is_public) return res.status(403).json({ error: 'Access denied' });
+
+    const r = await pool.query(
+      `SELECT cr.id, cr.label, cr.notes, cr.is_public,
+              CASE WHEN cr.from_entity_type='npc' AND cr.from_entity_id=$2
+                   THEN cr.to_entity_type ELSE cr.from_entity_type END   AS other_type,
+              CASE WHEN cr.from_entity_type='npc' AND cr.from_entity_id=$2
+                   THEN cr.to_entity_id   ELSE cr.from_entity_id   END   AS other_id,
+              cr.from_entity_id = $2 AND cr.from_entity_type='npc'       AS outgoing
+         FROM character_relationships cr
+        WHERE cr.campaign_id = $1
+          AND ((cr.from_entity_type='npc' AND cr.from_entity_id=$2)
+            OR (cr.to_entity_type='npc'   AND cr.to_entity_id=$2))
+          AND ($3 OR cr.is_public = true)
+        ORDER BY cr.created_at ASC`,
+      [campaignId, npcId, isDM],
+    );
+
+    // Names, resolved in two queries rather than per row.
+    const npcIds = r.rows.filter((x) => x.other_type === 'npc').map((x) => x.other_id);
+    const playerIds = r.rows.filter((x) => x.other_type === 'player').map((x) => x.other_id);
+    const [npcs, players] = await Promise.all([
+      npcIds.length
+        ? pool.query('SELECT id, name, is_public FROM campaign_npcs WHERE campaign_id=$1 AND id = ANY($2::int[])',
+          [campaignId, npcIds])
+        : { rows: [] },
+      playerIds.length
+        ? pool.query('SELECT id, player_name FROM campaign_players WHERE campaign_id=$1 AND id = ANY($2::int[])',
+          [campaignId, playerIds])
+        : { rows: [] },
+    ]);
+    const npcById = new Map(npcs.rows.map((x) => [x.id, x]));
+    const playerById = new Map(players.rows.map((x) => [x.id, x]));
+
+    const out = [];
+    for (const e of r.rows) {
+      let name = null;
+      if (e.other_type === 'npc') {
+        const hit = npcById.get(e.other_id);
+        // Dropped, not blanked: an unnamed edge still says "there is
+        // somebody here", which is the thing being withheld.
+        if (!hit || (!isDM && !hit.is_public)) continue;
+        name = hit.name;
+      } else if (e.other_type === 'player') {
+        name = playerById.get(e.other_id)?.player_name ?? null;
+        if (!name) continue;
+      } else {
+        continue;   // 'relationship' nodes are char-tree scaffolding
+      }
+      out.push({
+        id: e.id,
+        label: e.label,
+        other_type: e.other_type,
+        other_id: e.other_id,
+        other_name: name,
+        outgoing: e.outgoing,
+        ...(isDM ? { notes: e.notes, is_public: e.is_public } : {}),
+      });
+    }
+    res.json(out);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 app.patch('/api/campaigns/:campaignId/npcs/:npcId/visibility', requireRole(['dm', 'admin']), async (req, res) => {
   try {
     if (!await dmOwnsCampaign(req.params.campaignId, req.session.userId, req.session.role))
@@ -5786,39 +5931,76 @@ app.get('/api/campaigns/:campaignId/sessions', requireRole(['dm', 'admin']), asy
 });
 
 app.post('/api/campaigns/:campaignId/sessions', requireRole(['dm', 'admin']), async (req, res) => {
-  const { session_no: no, title, session_date: date } = req.body ?? {};
+  const { session_no: no, title, session_date: date, in_game_day: inGameDay } = req.body ?? {};
   try {
     if (!await dmOwnsCampaign(req.params.campaignId, req.session.userId, req.session.role))
       return res.status(403).json({ error: 'Access denied' });
     const n = parseInt(no, 10);
     const r = await pool.query(
-      `INSERT INTO campaign_sessions (campaign_id, created_by, session_no, title, session_date)
-       VALUES ($1,$2,$3,$4,$5) RETURNING *`,
+      `INSERT INTO campaign_sessions (campaign_id, created_by, session_no, title, session_date, in_game_day)
+       VALUES ($1,$2,$3,$4,$5,$6) RETURNING *`,
       [req.params.campaignId, req.session.userId,
-        Number.isFinite(n) ? n : null, journalStr(title, 255), date || null],
+        Number.isFinite(n) ? n : null, journalStr(title, 255), date || null,
+        journalDay(inGameDay)],
     );
     res.json(r.rows[0]);
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 app.put('/api/campaigns/:campaignId/sessions/:sessionId', requireRole(['dm', 'admin']), async (req, res) => {
-  const { session_no: no, title, session_date: date, status } = req.body ?? {};
+  const { session_no: no, title, session_date: date, status,
+    in_game_day: inGameDay } = req.body ?? {};
+  const client = await pool.connect();
   try {
     if (!await dmOwnsCampaign(req.params.campaignId, req.session.userId, req.session.role))
       return res.status(403).json({ error: 'Access denied' });
     const n = parseInt(no, 10);
-    const r = await pool.query(
+    await client.query('BEGIN');
+    const r = await client.query(
       `UPDATE campaign_sessions
           SET session_no=$1, title=$2, session_date=$3,
               status = CASE WHEN $4::text IN ('prepared','played') THEN $4 ELSE status END,
+              in_game_day=$5,
               updated_at = CURRENT_TIMESTAMP
-        WHERE id=$5 AND campaign_id=$6 RETURNING *`,
+        WHERE id=$6 AND campaign_id=$7 RETURNING *`,
       [Number.isFinite(n) ? n : null, journalStr(title, 255), date || null,
-        status ?? null, req.params.sessionId, req.params.campaignId],
+        status ?? null,
+        // journalDay, never `|| null`: the epoch puts year 1 day 1 at ZERO,
+        // so a falsy test would silently drop a real date.
+        journalDay(inGameDay),
+        req.params.sessionId, req.params.campaignId],
     );
-    if (!r.rows.length) return res.status(404).json({ error: 'Session not found' });
-    res.json(r.rows[0]);
-  } catch (e) { res.status(500).json({ error: e.message }); }
+    if (!r.rows.length) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'Session not found' });
+    }
+
+    /*
+     * A played session with a date moves the campaign's clock to it.
+     *
+     * Here rather than in the page, so the rule holds however the status
+     * is changed — including from a script. Gated on the date being set
+     * AND the session ending up played: the marker moves because the night
+     * happened on a day, not merely because a status flipped, and dating a
+     * session still being prepped is planning rather than time passing.
+     */
+    const saved = r.rows[0];
+    let marker;
+    if (saved.in_game_day != null && saved.status === 'played') {
+      const m = await client.query(
+        `INSERT INTO campaign_meta (campaign_id, today_marker) VALUES ($1,$2)
+         ON CONFLICT (campaign_id) DO UPDATE SET today_marker = EXCLUDED.today_marker
+         RETURNING today_marker`,
+        [req.params.campaignId, saved.in_game_day],
+      );
+      marker = m.rows[0]?.today_marker;
+    }
+    await client.query('COMMIT');
+    res.json({ ...saved, ...(marker !== undefined ? { today_marker: marker } : {}) });
+  } catch (e) {
+    await client.query('ROLLBACK');
+    res.status(500).json({ error: e.message });
+  } finally { client.release(); }
 });
 
 app.delete('/api/campaigns/:campaignId/sessions/:sessionId', requireRole(['dm', 'admin']), async (req, res) => {
@@ -6308,6 +6490,74 @@ app.patch('/api/campaigns/:campaignId/sessions/:sessionId/items/:itemId/move', r
  * the client uses when nesting — losing a live thread because the beat
  * above it finished would be the worst possible failure here.
  */
+/**
+ * What the timeline says is coming, around this session's in-game date.
+ *
+ * The reason the date is worth setting at all: the DM writes "the goblins
+ * attack around the 30 of Hammer" into a timeline months before it matters,
+ * and then has to remember it unaided on the night. This asks the timeline
+ * instead.
+ *
+ * OVERLAP, not "starts after". An event that began before this date and is
+ * still running is the most relevant kind there is — a siege the party
+ * walked into is not upcoming, it is happening — so the test is whether
+ * [start, start+duration) meets the window at all.
+ *
+ * The absolute day is computed here rather than stored: `(year - 1) * 365 +
+ * day_of_year` is the same arithmetic `absDay` does on the client, and
+ * duplicating the column would be a second thing to keep in step.
+ *
+ * DM-only, like the rest of the Sessions tab. It reads every timeline in
+ * the campaign — party, DM and player — because the DM prepping a night
+ * wants all of it, and says which each came from.
+ */
+app.get('/api/campaigns/:campaignId/sessions/:sessionId/upcoming', requireRole(['dm', 'admin']), async (req, res) => {
+  const { campaignId, sessionId } = req.params;
+  const asked = parseInt(req.query.days, 10);
+  const window = Number.isFinite(asked) && asked > 0 && asked <= 3650 ? asked : 30;
+  try {
+    if (!await dmOwnsCampaign(campaignId, req.session.userId, req.session.role))
+      return res.status(403).json({ error: 'Access denied' });
+
+    const session = await sessionOf(sessionId, campaignId);
+    if (!session) return res.status(404).json({ error: 'Session not found' });
+    // No date, nothing to be near. Not an error: most sessions are prepped
+    // before anyone decides when they happen.
+    if (session.in_game_day == null) return res.json({ in_game_day: null, days: window, events: [] });
+
+    const from = session.in_game_day;
+    const to = from + window;
+    const r = await pool.query(
+      `SELECT e.id, e.title, e.description, e.location, e.year, e.day_of_year,
+              e.duration_days, e.is_party,
+              ((e.year - 1) * 365 + e.day_of_year) AS abs_day,
+              p.player_name, t.name AS timeline_name
+         FROM player_timeline_entries e
+         LEFT JOIN campaign_players p ON p.id = e.player_id
+         LEFT JOIN player_timelines t ON t.id = e.timeline_id
+        WHERE e.campaign_id = $1
+          -- Overlap: the event's span meets [from, to].
+          AND ((e.year - 1) * 365 + e.day_of_year) <= $3
+          AND ((e.year - 1) * 365 + e.day_of_year + GREATEST(e.duration_days, 1) - 1) >= $2
+        ORDER BY abs_day ASC, e.created_at ASC
+        LIMIT 100`,
+      [campaignId, from, to],
+    );
+
+    res.json({
+      in_game_day: from,
+      days: window,
+      events: r.rows.map((e) => ({
+        ...e,
+        // Negative means it started before this session and is still
+        // running — the page leads with those rather than burying them.
+        days_away: Number(e.abs_day) - from,
+        running: Number(e.abs_day) < from,
+      })),
+    });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 app.post('/api/campaigns/:campaignId/sessions/:sessionId/generate-next', requireRole(['dm', 'admin']), async (req, res) => {
   const { campaignId, sessionId } = req.params;
   const CARRY = { 'ready': 'beats', 'on-going': 'beats', 'in-preparation': 'prep' };
@@ -9349,9 +9599,10 @@ async function initializeDatabase() {
         flavor      TEXT,
         abilities   TEXT,
         attunement  BOOLEAN NOT NULL DEFAULT false,
-        damage      VARCHAR(60),
-        damage_type VARCHAR(60),
+        damage      VARCHAR(255),
+        damage_type VARCHAR(255),
         properties  VARCHAR(255),
+        mastery     VARCHAR(60),
         ac_bonus    VARCHAR(20),
         armor_type  VARCHAR(20),
         uses        INTEGER,
@@ -9365,6 +9616,30 @@ async function initializeDatabase() {
     // those to whole pounds makes the carry total visibly wrong.
     await pool.query(`
       ALTER TABLE item_cards ADD COLUMN IF NOT EXISTS weight NUMERIC(8,2);
+    `);
+    /*
+     * Weapon mastery — the 2024 property (Cleave, Graze, Nick, Push, Sap,
+     * Slow, Topple, Vex). Its own column rather than another entry in the
+     * comma-separated `properties`: a weapon has many properties and
+     * exactly one mastery, and burying it in the list is what made the DM
+     * type it by hand into the abilities text.
+     */
+    await pool.query(`
+      ALTER TABLE item_cards ADD COLUMN IF NOT EXISTS mastery VARCHAR(60);
+    `);
+    /*
+     * `damage` and `damage_type` hold a LIST now — a hammer that is
+     * bludgeoning sealed and fire unsealed needs both — so they get the
+     * same width as the properties beside them. 60 was already too tight:
+     * "1d12 slashing (base), plus additional effects based on the moon
+     * phase" lost its tail silently. Widening a varchar is not a rewrite
+     * and never fails on existing rows.
+     */
+    await pool.query(`
+      ALTER TABLE item_cards ALTER COLUMN damage TYPE VARCHAR(255);
+    `);
+    await pool.query(`
+      ALTER TABLE item_cards ALTER COLUMN damage_type TYPE VARCHAR(255);
     `);
 
     // Migrate: evolving items. A card may declare the card it grew out of,
@@ -9431,6 +9706,57 @@ async function initializeDatabase() {
      * sessions, is one indexed read rather than a join back through
      * campaign_sessions on every page load.
      */
+    /*
+     * WHEN the session happens in the world, as an absolute day — the same
+     * integer the timelines, the journal and `campaign_meta.today_marker`
+     * use, so a date set here formats identically everywhere else.
+     *
+     * Separate from `session_date`, which is the real-world evening you
+     * played. The two drift apart constantly: a session played in October
+     * can be set on 30 Hammer, and three sittings can be one in-game day.
+     * Nullable, because a session being prepped often has no date yet.
+     */
+    await pool.query(`
+      ALTER TABLE campaign_sessions ADD COLUMN IF NOT EXISTS in_game_day INTEGER;
+    `);
+    /*
+     * ONE in-game date per session, not two.
+     *
+     * There was briefly a separate `in_game_end_day`, on the reasoning that
+     * a session spans days — the party leaves on the 310th and arrives on
+     * the 315th. True, and not worth a second field: a DM says "session 26
+     * happened on 18 Marpenoth", and two pickers in the edit dialog asked
+     * a question nobody had. `in_game_day` is that one date. It is what
+     * marking a session played records, what moves the campaign's clock,
+     * and what the timeline panel reads.
+     *
+     * Anything the second column held is folded into the first before it
+     * goes, and only where the first is empty — the end date is the better
+     * answer when both exist, but an existing start date is a thing the DM
+     * typed.
+     *
+     * Guarded on the column EXISTING, which is most databases' answer: the
+     * second column lived only in an unreleased build, so on a fresh
+     * install it never existed and a bare UPDATE naming it is a parse-time
+     * error that stops initDb dead — no tables, no server. `DROP COLUMN IF
+     * EXISTS` below needs no such guard; UPDATE has no IF EXISTS form.
+     */
+    await pool.query(`
+      DO $$
+      BEGIN
+        IF EXISTS (
+          SELECT 1 FROM information_schema.columns
+           WHERE table_name = 'campaign_sessions' AND column_name = 'in_game_end_day'
+        ) THEN
+          UPDATE campaign_sessions SET in_game_day = in_game_end_day
+           WHERE in_game_day IS NULL AND in_game_end_day IS NOT NULL;
+        END IF;
+      END $$;
+    `);
+    await pool.query(`
+      ALTER TABLE campaign_sessions DROP COLUMN IF EXISTS in_game_end_day;
+    `);
+
     await pool.query(`
       CREATE TABLE IF NOT EXISTS campaign_session_items (
         id          SERIAL PRIMARY KEY,
@@ -9885,6 +10211,34 @@ async function initializeDatabase() {
     await pool.query(`
       ALTER TABLE campaign_npcs ADD COLUMN IF NOT EXISTS current_location_id
         INTEGER REFERENCES campaign_locations(id) ON DELETE SET NULL;
+    `);
+    /*
+     * Does this one need a stat block?
+     *
+     * The distinction the DM actually draws: an enemy or an ally who will
+     * be rolled for, versus a name with a note attached. Most NPCs are the
+     * second, so the default is false and the flag marks the exception.
+     */
+    await pool.query(`
+      ALTER TABLE campaign_npcs ADD COLUMN IF NOT EXISTS has_sheet BOOLEAN NOT NULL DEFAULT false;
+    `);
+    /*
+     * Alive, dead, or nobody knows.
+     *
+     * `unknown` is not a missing value — it is the DM saying the party has
+     * reason to wonder, which is different from an NPC nobody has thought
+     * about. That is why the default is `alive` rather than `unknown`.
+     */
+    await pool.query(`
+      ALTER TABLE campaign_npcs ADD COLUMN IF NOT EXISTS life_state VARCHAR(10)
+        NOT NULL DEFAULT 'alive';
+    `);
+    await pool.query(`
+      ALTER TABLE campaign_npcs DROP CONSTRAINT IF EXISTS campaign_npcs_life_state_check;
+    `);
+    await pool.query(`
+      ALTER TABLE campaign_npcs ADD CONSTRAINT campaign_npcs_life_state_check
+        CHECK (life_state IN ('alive','dead','unknown'));
     `);
 
     // Migrate: location visibility (is_public)

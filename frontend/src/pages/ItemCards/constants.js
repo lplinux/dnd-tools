@@ -21,6 +21,15 @@ export const RARITIES = [
 export const ARMOR_TYPES = ['Light', 'Medium', 'Heavy'];
 
 /**
+ * The 2024 weapon masteries.
+ *
+ * Hardcoded rather than fetched: they are not in the 5.1 SRD the other
+ * term lists resolve against, so there is nothing to look them up in.
+ * Eight of them, and the list has not moved since it was published.
+ */
+export const MASTERIES = ['Cleave', 'Graze', 'Nick', 'Push', 'Sap', 'Slow', 'Topple', 'Vex'];
+
+/**
  * Printable-card geometry. A poker-sized item card with two faces: Front, then
  * Back. Auto-fit measures each face and picks the largest whole pixel size
  * between MAX and MIN at which it fits.
@@ -74,6 +83,9 @@ export function defaultForm() {
     damage:     '',
     damageType: '',
     properties: '',
+    // One mastery per weapon, unlike properties — so a plain value, not a
+    // comma-separated list.
+    mastery:    '',
     // Armor
     acBonus:    '',
     armorType:  '',

@@ -725,27 +725,154 @@ describe('What happened becomes journal entries', () => {
 
 describe('marking a session played', () => {
   const panel = readFileSync(path.join(root, 'frontend/src/pages/Sessions/SessionsPanel.jsx'), 'utf8');
-  const fn = panel.slice(panel.indexOf('async function toggleStatus()'),
-    panel.indexOf('async function toggleStatus()') + 1400);
+  const toggle = panel.slice(panel.indexOf('function toggleStatus()'),
+    panel.indexOf('async function setStatus('));
 
-  it('warns when nothing is written under What happened', () => {
-    expect(fn).toMatch(/!items\.some\(\(i\) => i\.section === 'outcome'\)/);
-  });
-
-  it('and asks BEFORE the write, not after', () => {
+  it('asks when it finished, rather than just flipping a flag', () => {
     /*
-     * Played makes the session read-only. Asking afterwards would leave
-     * the DM having to work out that they must mark it Prepared again
-     * before they can type the notes they were about to type.
+     * A dialog, because there is something to fill in. The warning that
+     * used to be its own confirm in front of it now lives inside the same
+     * box — one question instead of two.
      */
-    const ask = fn.indexOf('Mark it played anyway?');
-    const write = fn.indexOf('sessionsApi.update(');
-    expect(ask).toBeGreaterThan(-1);
-    expect(ask, 'the warning comes after the status is written').toBeLessThan(write);
+    expect(toggle).toMatch(/setPlayedForm\(\{/);
+    expect(panel).toMatch(/title="✓ Mark this session as played"/);
   });
 
-  it('and says why it matters, not just that it is empty', () => {
-    expect(fn).toMatch(/read-only/);
+  it('and writes NOTHING until it is answered', () => {
+    /*
+     * The structural version of "asked before the write": opening the
+     * dialog cannot save, so the question must come first. This used to
+     * be an index comparison inside one function, which stopped meaning
+     * anything once the two were separated.
+     */
+    expect(toggle).not.toMatch(/sessionsApi\.update\(/);
+    expect(panel).toMatch(/onClick=\{\(\) => setStatus\('played', absDayFromParts\(playedForm\.date, calendarType\)\)\}/);
+  });
+
+  it('defaults the date to where the campaign already is', () => {
+    // The today marker, falling back to the session's own start so an
+    // undated campaign still opens on something rather than blank.
+    expect(toggle).toMatch(/partsFromAbsDay\(todayMarker \?\? detail\.session\.in_game_day \?\? null, calendarType\)/);
+  });
+
+  it('still warns when nothing is written under What happened', () => {
+    const modal = panel.slice(panel.indexOf('Mark this session as played'),
+      panel.indexOf('Edit session'));
+    expect(modal).toMatch(/!items\.some\(\(i\) => i\.section === 'outcome'\)/);
+    expect(modal).toMatch(/read-only/);
+  });
+
+  it('and un-marking asks nothing, nor erases the date', () => {
+    /*
+     * No date argument at all. Passing null here would have cleared the
+     * session's own in-game date on the way back to Prepared — the two
+     * share one column now.
+     */
+    expect(toggle).toMatch(/void setStatus\('prepared'\); return;/);
+    expect(toggle).not.toMatch(/setStatus\('prepared', null\)/);
+    const panel2 = readFileSync(path.join(root, 'frontend/src/pages/Sessions/SessionsPanel.jsx'), 'utf8');
+    expect(panel2).toMatch(/\.\.\.\(day !== undefined \? \{ in_game_day: day \} : \{\}\)/);
+  });
+});
+
+describe("a played session moves the campaign's clock", () => {
+  const put = route("app.put('/api/campaigns/:campaignId/sessions/:sessionId'");
+  const panel = readFileSync(path.join(root, 'frontend/src/pages/Sessions/SessionsPanel.jsx'), 'utf8');
+
+  it('there is ONE in-game date, not a start and a finish', () => {
+    /*
+     * A second column was added on the reasoning that a session spans
+     * days. True, and not worth a field: a DM says "session 26 happened
+     * on 18 Marpenoth", and two pickers asked a question nobody had.
+     */
+    expect(source).toMatch(/DROP COLUMN IF EXISTS in_game_end_day/);
+    expect(put).toMatch(/in_game_day=\$5,/);
+    expect(put).not.toMatch(/in_game_end_day/);
+  });
+
+  it('and what the second one held is folded in, not dropped', () => {
+    // Only where the first is empty: an existing start date was typed by
+    // the DM, and the end date is the better answer only in its absence.
+    expect(source).toMatch(/UPDATE campaign_sessions SET in_game_day = in_game_end_day\s*\n\s*WHERE in_game_day IS NULL AND in_game_end_day IS NOT NULL;/);
+  });
+
+  it('but only if that column is still there to fold', () => {
+    /*
+     * UPDATE has no IF EXISTS form, and a statement naming a column that
+     * does not exist fails at parse time — before the WHERE can decide
+     * there are no rows to touch. So the bare UPDATE took initDb down on
+     * every database that had already run it once (the DROP below having
+     * removed the column), and on every fresh install, where the second
+     * column never existed at all. No tables, no server.
+     */
+    const fold = source.slice(source.indexOf('ALTER TABLE campaign_sessions ADD COLUMN IF NOT EXISTS in_game_day'),
+      source.indexOf('DROP COLUMN IF EXISTS in_game_end_day'));
+    expect(fold).toMatch(/IF EXISTS \(\s*\n\s*SELECT 1 FROM information_schema\.columns/);
+    expect(fold).toMatch(/table_name = 'campaign_sessions' AND column_name = 'in_game_end_day'/);
+    // The UPDATE inside the guard, not beside it.
+    expect(fold.indexOf('THEN')).toBeLessThan(fold.indexOf('UPDATE campaign_sessions'));
+  });
+
+  it('day zero survives as a date', () => {
+    expect(put).toMatch(/journalDay\(inGameDay\)/);
+    expect(put).not.toMatch(/inGameDay \|\|/);
+  });
+
+  it('the marker moves on the SERVER, in the same transaction', () => {
+    /*
+     * So the rule holds however the status is changed — including from a
+     * script. Two client calls would leave a window where the session is
+     * played and the clock is not.
+     */
+    expect(put).toMatch(/await client\.query\('BEGIN'\)/);
+    expect(put).toMatch(/INSERT INTO campaign_meta \(campaign_id, today_marker\)/);
+    expect(put).toMatch(/ON CONFLICT \(campaign_id\) DO UPDATE SET today_marker/);
+    expect(put).toMatch(/ROLLBACK/);
+  });
+
+  it('only for a played session with a date', () => {
+    // Dating a session still being prepped is planning, not time passing;
+    // and a status flip with no date says nothing about when.
+    expect(put).toMatch(/if \(saved\.in_game_day != null && saved\.status === 'played'\)/);
+  });
+
+  it('and the page is told, rather than guessing', () => {
+    expect(put).toMatch(/\.\.\.\(marker !== undefined \? \{ today_marker: marker \} : \{\}\)/);
+    expect(panel).toMatch(/if \(saved\?\.today_marker !== undefined\) onTodayMarkerChanged\?\.\(\);/);
+  });
+});
+
+describe('Edit shows the date that was actually saved', () => {
+  const panel = readFileSync(path.join(root, 'frontend/src/pages/Sessions/SessionsPanel.jsx'), 'utf8');
+  const cal = readFileSync(path.join(root, 'frontend/src/components/ui/CalendarDate.jsx'), 'utf8');
+
+  it('one picker, reading the one column', () => {
+    expect(panel).toMatch(/date: partsFromAbsDay\(detail\.session\.in_game_day, calendarType\)/);
+    expect(panel).toMatch(/label="in-game date"/);
+    expect(panel).not.toMatch(/label="in-game date — starts"/);
+    expect(panel).not.toMatch(/endDate/);
+  });
+
+  it('and saving sends it back', () => {
+    const fn = panel.slice(panel.indexOf('async function saveMeta()'),
+      panel.indexOf('async function saveMeta()') + 900);
+    expect(fn).toMatch(/in_game_day: absDayFromParts\(metaForm\.date, calendarType\)/);
+  });
+
+  it('with the clock following an edit to a played session', () => {
+    const fn = panel.slice(panel.indexOf('async function saveMeta()'),
+      panel.indexOf('async function saveMeta()') + 1200);
+    expect(fn).toMatch(/if \(saved\?\.today_marker !== undefined\) onTodayMarkerChanged\?\.\(\);/);
+  });
+
+  it('and an unset date LOOKS unset', () => {
+    /*
+     * With no value the month fell back to index 0 and the day to 1, so
+     * "no date" rendered as a blank year beside Hammer and 1 — which reads
+     * as 1 Hammer with the year missing rather than as nothing at all.
+     */
+    expect(cal).toMatch(/const unset = value == null;/);
+    expect(cal).toMatch(/\{unset && <option value="">—<\/option>\}/);
   });
 });
 
@@ -892,5 +1019,87 @@ describe('the campaign bundle carries the prep', () => {
     // Silence would hide a bundle that carried none.
     expect(imp).toMatch(/sessions: sessionsIn\.added/);
     expect(imp).toMatch(/session_cards: sessionsIn\.cards/);
+  });
+});
+
+describe("a session's in-game date, and what the timeline says is near it", () => {
+  const up = route("app.get('/api/campaigns/:campaignId/sessions/:sessionId/upcoming'");
+  const put = route("app.put('/api/campaigns/:campaignId/sessions/:sessionId'");
+  const post = route("app.post('/api/campaigns/:campaignId/sessions'");
+  const panel = readFileSync(path.join(root, 'frontend/src/pages/Sessions/SessionsPanel.jsx'), 'utf8');
+
+  it('is a separate column from the evening you played', () => {
+    /*
+     * They drift apart constantly: a session played in October can fall on
+     * 30 Hammer, and three sittings can be one day in the world.
+     */
+    expect(source).toMatch(/ALTER TABLE campaign_sessions ADD COLUMN IF NOT EXISTS in_game_day INTEGER/);
+    expect(put).toMatch(/session_date=\$3/);
+    expect(put).toMatch(/in_game_day=\$5/);
+  });
+
+  it('and day ZERO is a real date, on create and on update', () => {
+    // The epoch puts year 1 day 1 at zero, so `|| null` would drop it.
+    expect(put).toMatch(/journalDay\(inGameDay\)/);
+    expect(post).toMatch(/journalDay\(inGameDay\)/);
+    for (const body of [put, post]) expect(body).not.toMatch(/inGameDay \|\|/);
+  });
+
+  it('the window OVERLAPS rather than starting after', () => {
+    /*
+     * An event that began before this date and is still running is the
+     * most relevant kind there is — a siege the party walked into is not
+     * upcoming, it is happening.
+     */
+    expect(up).toMatch(/\+ GREATEST\(e\.duration_days, 1\) - 1\) >= \$2/);
+    expect(up).toMatch(/e\.day_of_year\) <= \$3/);
+  });
+
+  it('and computes the absolute day rather than storing a second copy', () => {
+    // The same arithmetic absDay does on the client.
+    expect(up).toMatch(/\(\(e\.year - 1\) \* 365 \+ e\.day_of_year\)/);
+  });
+
+  it('an undated session is empty, not an error', () => {
+    // Most sessions are prepped before anyone decides when they happen.
+    expect(up).toMatch(/if \(session\.in_game_day == null\) return res\.json\(\{ in_game_day: null/);
+  });
+
+  it('the window is bounded and falls back', () => {
+    expect(up).toMatch(/Number\.isFinite\(asked\) && asked > 0 && asked <= 3650 \? asked : 30/);
+    expect(up).toMatch(/LIMIT 100/);
+  });
+
+  it('and it is DM-only, like the rest of the tab', () => {
+    expect(up).toMatch(/requireRole\(\['dm', 'admin'\]\)/);
+    expect(up).toMatch(/await dmOwnsCampaign\(/);
+  });
+
+  it('the page refetches when the DATE changes, not just the session', () => {
+    // Otherwise moving a session leaves the old list under a new date.
+    expect(panel).toMatch(/const when = detail\?\.session\?\.in_game_day \?\? null;/);
+    expect(panel).toMatch(/\}, \[campaignId, currentId, when\]\);/);
+  });
+
+  it('and says nothing at all when there is nothing near', () => {
+    // An empty "nothing coming up" box on every session is noise.
+    expect(panel).toMatch(/upcoming\?\.events\?\.length > 0 && \(/);
+  });
+
+  it('leading with what is already under way', () => {
+    expect(panel).toMatch(/e\.running\s*\n?\s*\? 'under way'/);
+  });
+});
+
+describe('one date formatter, not three', () => {
+  it('lives in the calendar module', () => {
+    const cal = readFileSync(path.join(root, 'frontend/src/data/calendar.js'), 'utf8');
+    expect(cal).toMatch(/export function inGameDate\(absD, calType\)/);
+  });
+
+  it('and the journal uses it instead of its own copy', () => {
+    const j = readFileSync(path.join(root, 'frontend/src/pages/Journal/JournalPanel.jsx'), 'utf8');
+    expect(j).toMatch(/import \{ inGameDate \} from '@\/data\/calendar'/);
+    expect(j).not.toMatch(/^function inGameDate\(/m);
   });
 });

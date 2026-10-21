@@ -13,6 +13,87 @@ PC Sheet / Journey Map / Manage Campaign fix batch that went with it.
 
 ---
 
+## Item cards: mastery, damage types, labels
+
+- [ ] **Edit a weapon.** There is a **Mastery** select under Properties, offering the eight.
+      Pick one; it should show on the card beside the properties, and on a printed card.
+- [ ] **Damage Type is chips now** — add two (say Fire and Cold) and check both resolve to an
+      SRD lookup on the card, separately.
+- [ ] **A long damage line should survive.** Paste something over 60 characters and reopen the
+      card; it used to be cut off mid-word.
+- [ ] **The labels should read as labels** — bolder than their values, on the preview and on
+      the printed card.
+- [ ] **Print a card** and confirm nothing about the layout moved.
+
+---
+
+## The card sheet, on real paper
+
+Geometry verified by measuring a headless-Chrome PDF — but a real printer is the only test
+that counts, and this is the item worth spending a sheet on.
+
+- [ ] **Print Set → Save as PDF first.** The 3×3 block should sit centred: about 7.5 mm clear
+      at the sides, 13.5 mm top and bottom, and all nine cards on one sheet.
+- [ ] **Compare the Fronts page and the Backs page** — the grids should be in exactly the same
+      place, mirrored left-to-right.
+- [ ] **Then on paper, two-sided, long edge, Margins Default or None, Scale 100%.** Hold a
+      sheet to the light: the borders should line up.
+- [ ] **Try Margins → Minimum once** to see it shift, so you know what the wrong setting looks
+      like.
+- [ ] **A single card** should land in the middle of the page.
+
+---
+
+## A session's in-game date
+
+- [ ] **Edit a session** — there are two dates, and only two: *Date played* (the real evening)
+      and ONE *in-game date* picker. Set the in-game one; it should show beside the title with
+      a 🗓.
+- [ ] **Put a timeline event a few days after that date** — it should appear under *Around
+      this date*, counted in days.
+- [ ] **An event that started before and is still running** should appear too, labelled
+      *under way* rather than counted.
+- [ ] **An event months away should not appear.** The window is the next 30 days.
+- [ ] **Move the session's date** — the list should redraw for the new date, not keep the old.
+- [ ] **A session with no in-game date** should show no panel at all, and no error.
+- [ ] **Mark a session played.** It should ask for the in-world date, defaulted to the
+      campaign's Today marker, and warn in the same box if *What happened* is empty.
+- [ ] **After saving**, Settings → Today Marker should read the date you gave.
+- [ ] **Mark it Prepared again** — no question, the marker should stay where it was, **and the
+      session should keep its date**. Re-open Edit to check; un-marking used to be able to
+      clear it.
+- [ ] **Edit a played session's date** — the marker should follow the correction.
+- [ ] **Open Edit on a session you marked played.** The in-game date should be the one you
+      gave in that dialog, in the single picker.
+- [ ] **Open Edit on a session with no in-game date** — the year, month and day should all
+      read "—", not a blank year beside "Hammer 1".
+- [ ] **The Journal's date picker** should behave the same way; it shares the control.
+- [ ] **The journal's dates should be unchanged** — it now shares the session's formatter.
+
+---
+
+## NPCs, and two data fixes
+
+- [ ] **Sign out with cards in the Item Cards print set**, then sign in as someone else in the
+      same tab. The set should be empty. Your theme should be unchanged.
+- [ ] **Export a campaign.** If it is over 50 MB you should get a warning naming the size — and
+      the file should still be saved.
+- [ ] **Try importing something too large** (or set `BODY_LIMIT_MB=1` and import anything). The
+      error should be a readable sentence, not "Unexpected token <".
+- [ ] **The NPCs tab**: the eye sits next to each name; dead NPCs show a 💀 skull, unknown a
+      question mark, and the living nothing at all. Hovering either should name it.
+- [ ] **Open a dead NPC's card** — the same skull should sit beside the name there.
+- [ ] **Edit an NPC** — Status and Stat block are in the form, and saving keeps them.
+- [ ] **Open an NPC card** — it should be noticeably bigger and easier to read than before.
+- [ ] **As a player**: a revealed NPC's card should show the description **and the public
+      info** — that is what the party has worked out, and the card is where they read it. No
+      private notes, no status, no stat-block marker.
+- [ ] **Relationships on a card** — the DM sees all of them with notes; a player sees only the
+      ones you have marked public in the Char Tree, and none pointing at someone they have not
+      met.
+
+---
+
 ## Full-screen dialogs and the bigger type
 
 This one is all eyes — nothing here can be checked by a test.

@@ -53,11 +53,20 @@ describe('private_info never reaches a player', () => {
   });
 
   it('and the player column list leaves it out', () => {
+    /*
+     * Description and public_info reach a player; the rest does not.
+     *
+     * `has_sheet` and `life_state` are the new ones to keep out: whether
+     * the DM has rolled a stat block, and whether they privately consider
+     * someone dead, are answers the table finds out in play.
+     */
     const decl = source.slice(source.indexOf('const NPC_PLAYER_COLUMNS'),
       source.indexOf('const NPC_PLAYER_LOCATION'));
-    expect(decl).not.toMatch(/private_info/);
     expect(decl).toMatch(/n\.description/);
     expect(decl).toMatch(/n\.public_info/);
+    for (const col of ['private_info', 'has_sheet', 'life_state']) {
+      expect(decl, `${col} must not reach a player`).not.toMatch(new RegExp(`n\\.${col}`));
+    }
   });
 
   it('the cross-link index omits it for everyone, DM included', () => {
@@ -153,11 +162,20 @@ describe('the current location cannot point out of the campaign', () => {
 
   it('and the verified id is what gets stored, not the input', () => {
     expect(put).toMatch(/locId = loc\.rows\[0\]\.id/);
-    expect(put).toMatch(/locId, npcId, campaignId/);
+    // `locId` reaches the parameter list; the raw input never does.
+    expect(put).toMatch(/\blocId,/);
+    expect(put).not.toMatch(/current_location_id, npcId/);
   });
 
   it('the update is scoped by campaign as well as by id', () => {
-    expect(put).toMatch(/WHERE id=\$6 AND campaign_id=\$7/);
+    /*
+     * Positional, so it moves whenever a column is added — matched on the
+     * LAST two placeholders rather than on fixed numbers, which is the
+     * property that actually matters.
+     */
+    const m = /WHERE id=\$(\d+) AND campaign_id=\$(\d+)/.exec(put);
+    expect(m, 'the update is not scoped by campaign').not.toBeNull();
+    expect(Number(m[2])).toBe(Number(m[1]) + 1);
   });
 
   it('a duplicate name answers 409 rather than a 500', () => {
@@ -231,5 +249,158 @@ describe('the DM search reaches the new fields', () => {
     const grp = source.slice(source.indexOf("group('npc', 'NPCs'"));
     expect(grp.slice(0, 400)).toMatch(/\['description', r\.description\]/);
     expect(grp.slice(0, 400)).toMatch(/\['private_info', r\.private_info\]/);
+  });
+});
+
+describe('a stat block, and whether they are still alive', () => {
+  const put = route("app.put('/api/campaigns/:campaignId/npcs/:npcId'");
+
+  it('both columns exist, with the defaults that say what they mean', () => {
+    /*
+     * `has_sheet` defaults FALSE because most NPCs are a name and a note,
+     * so the flag marks the exception. `life_state` defaults ALIVE rather
+     * than unknown, because "unknown" is the DM saying the party has
+     * reason to wonder — not an NPC nobody has thought about yet.
+     */
+    expect(source).toMatch(/ADD COLUMN IF NOT EXISTS has_sheet BOOLEAN NOT NULL DEFAULT false/);
+    expect(source).toMatch(/ADD COLUMN IF NOT EXISTS life_state VARCHAR\(10\)\s*\n\s*NOT NULL DEFAULT 'alive'/);
+  });
+
+  it('and the life state is constrained in the database', () => {
+    // Added separately, because a CHECK inside ADD COLUMN IF NOT EXISTS
+    // never lands on a table that already has the column.
+    expect(source).toMatch(/ADD CONSTRAINT campaign_npcs_life_state_check\s*\n\s*CHECK \(life_state IN \('alive','dead','unknown'\)\)/);
+  });
+
+  it('an unknown life state is clamped, not rejected', () => {
+    // Refusing the whole edit over a stale client would lose the DM's text.
+    expect(put).toMatch(/life_state = CASE WHEN \$7::text IN \('alive','dead','unknown'\) THEN \$7 ELSE life_state END/);
+  });
+
+  it('and has_sheet is coerced rather than trusted', () => {
+    expect(put).toMatch(/hasSheet === true/);
+  });
+});
+
+describe('an NPC\'s relationships', () => {
+  const rel = route("app.get('/api/campaigns/:campaignId/npcs/:npcId/relationships'");
+
+  it('is its own route, not a column on the list', () => {
+    // Forty rows, almost none of them open.
+    expect(rel).toMatch(/requireRole\(\['dm', 'player'\]\)/);
+    expect(rel).toMatch(/await canAccessCampaign\(/);
+  });
+
+  it('a player gets only the public edges', () => {
+    expect(rel).toMatch(/AND \(\$3 OR cr\.is_public = true\)/);
+  });
+
+  it('and none at all for an NPC they have not met', () => {
+    // No card, so no edges — the same gate as the card itself.
+    expect(rel).toMatch(/if \(!isDM && !self\.rows\[0\]\.is_public\) return res\.status\(403\)/);
+  });
+
+  it('an edge to an unmet NPC is DROPPED, not blanked', () => {
+    /*
+     * A nameless edge still says "there is somebody here", which is the
+     * thing being withheld — the same reasoning as nulling a hidden
+     * location's id along with its name.
+     */
+    expect(rel).toMatch(/if \(!hit \|\| \(!isDM && !hit\.is_public\)\) continue;/);
+  });
+
+  it('and notes stay with the DM', () => {
+    expect(rel).toMatch(/\.\.\.\(isDM \? \{ notes: e\.notes, is_public: e\.is_public \} : \{\}\)/);
+  });
+
+  it('resolves names in two queries, not one per row', () => {
+    expect(rel).toMatch(/id = ANY\(\$2::int\[\]\)/);
+  });
+});
+
+describe('the NPC list', () => {
+  const tab = readFileSync(path.join(root, 'frontend/src/pages/ManageCampaigns/tabs/NpcsTab.jsx'), 'utf8');
+
+  it('puts Seen beside the name, not in its own column', () => {
+    // Revealing people after a session means reading down the names, and
+    // the eye was three columns away from the thing being read.
+    expect(tab).not.toMatch(/'Name', 'Description', 'Currently at', 'Seen'/);
+    expect(tab).toMatch(/'Name', 'Description', 'Currently at', ''/);
+    const nameCell = tab.slice(tab.indexOf('Seen sits WITH the name'), tab.indexOf('</td>', tab.indexOf('Seen sits WITH the name')));
+    expect(nameCell).toMatch(/toggleNpcVisibility/);
+  });
+
+  it('marks the dead and the unknown, but not the living', () => {
+    // Almost everyone is alive; a badge on every row would say nothing.
+    expect(tab).toMatch(/alive:\s*\{ label: 'Alive',\s*Icon: null/);
+    expect(tab).toMatch(/dead:\s*\{ label: 'Dead',\s*Icon: Skull/);
+    expect(tab).toMatch(/unknown:\s*\{ label: 'Unknown',\s*Icon: CircleHelp/);
+  });
+
+  it('with an ICON, not a glyph', () => {
+    /*
+     * These began as `†` and `?`, which read as punctuation at the end of
+     * a name — a dagger is a weapon before it is a death notice. A skull
+     * is unambiguous scanning down a list, which is the whole job.
+     */
+    expect(tab).toMatch(/import \{[^}]*Skull[^}]*\} from 'lucide-react'/);
+    expect(tab).toMatch(/function LifeMark\(\{ state, size = 13 \}\)/);
+    expect(tab).toMatch(/<LifeMark state=\{n\.life_state\} \/>/);
+    expect(tab).not.toMatch(/mark: '†'/);
+  });
+
+  it('and it is readable without seeing it', () => {
+    // A bare icon beside a name says nothing to a screen reader, and
+    // nothing on hover either.
+    expect(tab).toMatch(/aria-label=\{life\.label\}/);
+    expect(tab).toMatch(/title=\{life\.label\}/);
+  });
+
+  it('and says who needs a stat block', () => {
+    expect(tab).toMatch(/n\.has_sheet && \(/);
+    expect(tab).toMatch(/has_sheet: form\.has_sheet/);
+    expect(tab).toMatch(/life_state: form\.life_state/);
+  });
+
+  it('says WHERE a player reads public info, not just that they can', () => {
+    /*
+     * The field was briefly removed from the player's view on the belief
+     * that it was not reaching them. It was — through the cross-link card,
+     * not through this table, which lists name, description and location.
+     * The hint now names the card, so the next person checking does not
+     * reach the same wrong conclusion.
+     */
+    expect(tab).toMatch(/Players see this too, on the card/);
+    expect(tab).toMatch(/not in the\s*\n?\s*table above/);
+  });
+});
+
+describe('the card a click opens', () => {
+  const pop = readFileSync(path.join(root, 'frontend/src/components/CrossLinkPopover.jsx'), 'utf8');
+
+  it('is a card, not a tooltip', () => {
+    // 288px of 12px text is the wrong shape for a description — and for a
+    // player it is the only view of an NPC there is.
+    expect(pop).toMatch(/w-\[30rem\]/);
+    expect(pop).not.toMatch(/\bw-72\b/);
+  });
+
+  it('and its text is readable', () => {
+    expect(pop).toMatch(/text-\[0\.9rem\] leading-relaxed/);
+  });
+
+  it('shows the same dead/unknown marker beside the name', () => {
+    expect(pop).toMatch(/dead:\s*\{ label: 'Dead',\s*Icon: Skull/);
+    expect(pop).toMatch(/target\.kind === 'npc' && LIFE\[target\.life_state\]\?\.Icon/);
+  });
+
+  it('which cannot leak, because the field never reaches a player', () => {
+    /*
+     * No role check here on purpose: the server omits `life_state` from a
+     * player's NPC row, so the branch simply cannot render for them — the
+     * same way `private_info` decides its own branch in this file.
+     */
+    expect(source).toMatch(/const NPC_PLAYER_COLUMNS = `n\.id, n\.name, n\.description, n\.public_info, n\.is_public`/);
+    expect(pop).not.toMatch(/isDM|role ===/);
   });
 });

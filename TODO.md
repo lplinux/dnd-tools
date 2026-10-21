@@ -25,6 +25,13 @@ scope:
       declares `^6.1.2`. It clears two advisories and the built CSS is byte-identical, so it
       works — but it is a deliberate semver violation and the first thing to drop if a Tailwind
       patch release ever builds oddly.
+- [ ] **Weapon cards have no field for the weapon TYPE** — dagger, greatsword, warhammer. It
+      is written into the abilities text on most cards, and `~/Documents/Leruhy/tidy-weapon-stats`
+      reports it rather than guessing, because the parenthesised part ("Dagger (Finesse, Light,
+      Thrown 20/60 ft.)") mixes the type with its properties.
+- [ ] **Print: cut marks.** The sheet is centred and the backs line up, but you still cut by
+      eye against the card border. Thin marks in the 7.5 mm margin would make the cut
+      repeatable — and would show at a glance when a printer is shifting the page.
 - [ ] **Print: continuation cards were promised but never built.** `constants.js` and the print
       help text both claimed content "flows across one or more cards" and spills "to another card"
       when it overflows. No such logic exists in `ItemCardPrint.jsx` — a face that still does not
@@ -47,21 +54,14 @@ Touch input and the two overflowing layouts are **done** — see `TOQA.md`. What
       plus an 18px `.sb-toggle` rail); it just is not wired to a breakpoint.
 - [ ] **PdfViewer** defaults its 240px sidebar open (`sidebarOpen = true`), so it opens wrong on
       a phone. One line — default it from a width check.
-- [ ] **Non-responsive two-column form grids** in six modals: `Diary/EntryModal.jsx:75`,
-      `ManageCampaigns/tabs/OtherTabs.jsx:229` (a 3-col date picker), `Timeline/Modals.jsx:23,280`
-      and `NpcSheet/index.jsx:741` (both **inline styles**, so unreachable by a Tailwind prefix —
-      they need a class), and `timeline.css:325` `.fg`.
-- [ ] **Viewport-unit jitter** — `85vh`/`88vh`/`92vh` on modals resize as the mobile address bar
-      hides and reappears. Nothing in the app uses `dvh`. (Timeline's `100vh`, the worst case,
-      is already fixed.)
+      *(The remaining form grids and the `dvh` jitter are listed under "Modals and type" below,
+      where the rest of that survey lives.)*
 - [ ] **`PcPublic.jsx:32`** — a 120px portrait in a `flex` row with no `flex-wrap`.
 - [ ] **`CharTreeTab.jsx`** draws at a hard-coded `H = 560`.
 - [ ] **The distance matrix** is an N×N `white-space: nowrap` table — it scrolls on a phone but
       is not usable. Probably wants a different presentation rather than a responsive fix.
 - [ ] **SplitView** — four iframes at ~195px each on a phone. Arguably should just say
       "desktop only" rather than be fixed.
-- [ ] Increase Font size. In general looks too small. Point me first to the files that have the size config and I'll try to change it.
-- [ ] Item Cards "Print set (9)" is kept in cache/memory even after logout and should not
 
 ---
 
@@ -70,21 +70,6 @@ Touch input and the two overflowing layouts are **done** — see `TOQA.md`. What
 Most of this was captured before anything was designed. Where a section has since shipped it
 says so and keeps only what is still open; the built part is in `CHANGELOG.md`, and whatever
 is waiting on your QA is in `TOQA.md`.
-
-### NPC Management — mostly shipped
-
-Most of this section is **done** — see the CHANGELOG. Settled: it is a **tab**, not a module;
-public/private info is withheld server-side like the PC sheet's; and players see revealed NPCs
-through cross-links and the Campaign Links tab, gated on having met them. What remains:
-
-- [ ] **A flag for NPCs that have a stat block** (enemies/allies) versus those that do not, so
-      the ones that need a sheet can be told apart from the ones that are just a name and a note.
-      The one part of the original idea not built.
-- [ ] NPC view should show relationships to DM and to players (only the public ones)
-- [ ] Clic on an NPC or location should show a big card instead (so big text is more readable)
-- [ ] SEEN status should be along the name (so it's faster to hide or show based on the names)
-- [ ] Add also the status between "alive/dead/unknown"
-- [ ] NPC Description should be the only thing a Player should be for now. The rest is only for DM
 
 ### New Module - DM Screen
 #### DM Notes
@@ -101,12 +86,6 @@ through cross-links and the Campaign Links tab, gated on having met them. What r
 - [ ] Prepare for Multi-Class
 - [ ] Expand to character creation and level up (automatical, based on D&D rules and not manual)
 
-### Manage Campaign
-
-- [ ] A campaign can export a bundle larger than the 50 MB import limit (`express.json`), so a
-      big enough campaign produces a backup it cannot restore. The dominant payload is base64
-      map and portrait images. A 413 currently surfaces as Express's HTML error page.
-
 ### Modals and type — **done**, see the CHANGELOG
 
 The entry dialogs are full screen, the timeline event form is two columns, and the type scale
@@ -120,34 +99,6 @@ is rooted at 16px with nothing below 10.4px. What is left of the original survey
       `Timeline/Modals.jsx` are fixed.
 - [ ] **Viewport-unit jitter** — `85vh`/`88vh`/`92vh` on modals resize as the mobile address
       bar hides and reappears. Nothing uses `dvh`. The new full-screen dialogs inherit this.
-
----|---|---|
-| `Diary/EntryList.jsx:150` | **Reading an entry** — shared by Campaign Diary, player diaries, PC Sheet 📔, Journal | `max-w-2xl` | Change to `95vw/92vh`
-| `Diary/EntryModal.jsx:57` | New/edit diary entry (campaign + player) | `max-w-2xl` | Change to `95vw/92vh`
-| `Journal/JournalPanel.jsx:329` | New/edit journal entry | `max-w-2xl` | Change to `95vw/92vh`
-| `Sessions/SessionsPanel.jsx:608` | New/edit session card — markdown body | **default** | Change to `95vw/92vh`
-| `components/SrdInfo.jsx:77` | SRD rules text — spells, item descriptions | **default** | Leave as is
-
-*Many fields, cramped at 448px:*
-
-| File | What it is |
-|---|---|
-| `ManageCampaigns/tabs/NpcsTab.jsx:214` | Edit NPC — **three textareas** (description, public, private) plus name and location |  Double the size so description is bigger
-| `ManageCampaigns/tabs/LocationsTab.jsx:275` | Edit Location — also listed above for its non-responsive 2-col grid | Leave it as is
-| `ManageCampaigns/tabs/CharTreeTab.jsx:830` | Add/edit cross-connection | Leave it as is
-| `PcSheet/components/RelationModal.jsx:49` | Add/edit relationship | Leave it as is
-| `Timeline/Modals.jsx:258` and `:192` | Edit event / read event — also listed above for its 2-col grid | Convert into multiple columns and transform it into `95vw/92vh`
-| `PcSheet/tabs/InventoryTab.jsx:690`, `:772` | Item editor, grant from library | Leave it as is
-
-*Already wide — nothing to do:* `JourneyMap/modals/DistanceMatrixModal.jsx:29` (`95vw × 92vh`,
-the only true full-screen one), `Home.jsx:144` and `JourneyMap/modals/WaypointEventModal.jsx:63`
-(both `max-w-lg`).
-
-*Small by nature — leave them:* confirm dialogs (`ConfirmContext.jsx:45`), login
-(`Home.jsx:192`), Manage HP (`NpcSheet/index.jsx:806`), Set Today Marker (×2), New Timeline
-(×2), Add Player, Add Location, Filter by date, Share Map, New Journey Map, Name Path,
-Distance, Import PC Sheet/Timeline, Give item, User Panel. Each is a few short fields;
-widening only spreads three inputs across a wall.
 
 ---
 
@@ -165,5 +116,3 @@ The detail is in `CHANGELOG.md`; the QA checklist is in `TOQA.md`.
       agreement when the feature was scoped, and still the only part not built. Until it
       exists, the *Pending* and *For later on* headings of the Obsidian prep notes import
       into one labelled parent card under the session's beats.
-- [ ] Cambiar de fecha en sessions y que haya algún mensaje de eventos próximos basado en el timeline
-

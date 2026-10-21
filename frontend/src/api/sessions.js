@@ -23,6 +23,8 @@ export const sessionsApi = {
   moveItem:   (cid, sid, id, to)    => client.patch(`/campaigns/${cid}/sessions/${sid}/items/${id}/move`, to),
   /** Build the next session's prep from this one's leftovers. */
   generateNext: (cid, sid)          => client.post(`/campaigns/${cid}/sessions/${sid}/generate-next`, {}),
+  /** What the timeline says is near this session's in-game date. */
+  upcoming:   (cid, sid, days)      => client.get(`/campaigns/${cid}/sessions/${sid}/upcoming${days ? `?days=${days}` : ''}`),
   /** Copy "What happened" into the Campaign Journal. */
   toJournal:  (cid, sid, data)      => client.post(`/campaigns/${cid}/sessions/${sid}/to-journal`, data),
 

@@ -77,7 +77,7 @@ function TermList({ lookups, resource, value, slugs }) {
 const ItemCardPreview = forwardRef(function ItemCardPreview({ form, lookups = false }, ref) {
   const {
     name, type, rarity, flavor, attunement,
-    damage, damageType, properties,
+    damage, damageType, properties, mastery,
     acBonus, armorType,
     uses,
     abilities,
@@ -100,7 +100,7 @@ const ItemCardPreview = forwardRef(function ItemCardPreview({ form, lookups = fa
   const attunementText = attunement ? ' — Requires Attunement' : '';
   const typeLabel = `${displayType} (Rarity: ${rarityLabel}${attunementText})`;
 
-  const showWeapon = type === 'Weapon'   && (damage || damageType || properties);
+  const showWeapon = type === 'Weapon'   && (damage || damageType || properties || mastery);
   const showArmor  = type === 'Armor'    && (acBonus || armorType);
   const showUses   = (type === 'Consumable' || type === 'Potion') && parseInt(uses) > 0;
   const hasStats   = showWeapon || showArmor || showUses;
@@ -118,6 +118,11 @@ const ItemCardPreview = forwardRef(function ItemCardPreview({ form, lookups = fa
         .ic-name { font-family: var(--fd); font-size: 2.286em; color: var(--gold); margin-bottom: 0.286em; font-weight: 600; }
         .ic-type { font-size: 0.929em; color: var(--text-dim); margin-bottom: 0.429em; }
         .ic-stat { font-size: 0.929em; color: var(--text-dim); margin-bottom: 0.286em; }
+        /* The label carries the weight, so the block can be scanned down
+           the left edge for the line you want instead of being read. The
+           value keeps the body colour — the label is signposting, not the
+           information. */
+        .ic-stat > .ic-k { font-weight: 600; color: var(--text); }
         .ic-flavor { font-style: italic; color: var(--text-dim); margin-bottom: 0.571em; padding: 0.571em; background: var(--surface3); border-left: 0.143em solid var(--gold-dim); }
         .ic-abilities { font-size: 0.929em; color: var(--text); white-space: normal; line-height: 1.6; }
         .ic-abilities ul { padding-left: 1.3em; margin: 0.143em 0; list-style: disc; }
@@ -147,30 +152,52 @@ const ItemCardPreview = forwardRef(function ItemCardPreview({ form, lookups = fa
           <div style={{ marginBottom: '0.571em' }}>
             {showWeapon && (
               <>
-                {damage     && <div className="ic-stat">Damage: {damage}</div>}
+                {damage     && (
+                  <div className="ic-stat"><span className="ic-k">Damage:</span> {damage}</div>
+                )}
                 {damageType && (
                   <div className="ic-stat">
-                    Type: <Term lookups={lookups} resource="damage-types"
-                      name={damageType} slugs={dmgSlugs} />
+                    <span className="ic-k">Type:</span>{' '}
+                    {/* A LIST now, like the properties below it — a weapon
+                        can deal two kinds of damage, and each still wants
+                        its own lookup. */}
+                    <TermList lookups={lookups} resource="damage-types"
+                      value={damageType} slugs={dmgSlugs} />
                   </div>
                 )}
                 {properties && (
                   <div className="ic-stat">
-                    Properties: <TermList lookups={lookups} resource="weapon-properties"
+                    <span className="ic-k">Properties:</span>{' '}
+                    <TermList lookups={lookups} resource="weapon-properties"
                       value={properties} slugs={propSlugs} />
                   </div>
+                )}
+                {/* Beside the properties, because that is where you look
+                    for how the weapon behaves — but on its own line and
+                    not in the list, since a weapon has one mastery and
+                    many properties. No SRD lookup: the 2024 masteries are
+                    not in the 5.1 SRD the rest of these terms resolve
+                    against, so a link would always fail. */}
+                {mastery && (
+                  <div className="ic-stat"><span className="ic-k">Mastery:</span> {mastery}</div>
                 )}
               </>
             )}
             {showArmor && (
               <>
-                {acBonus   && <div className="ic-stat">AC: {acBonus}</div>}
-                {armorType && <div className="ic-stat">Armor Type: {armorType}</div>}
+                {acBonus   && (
+                  <div className="ic-stat"><span className="ic-k">AC:</span> {acBonus}</div>
+                )}
+                {armorType && (
+                  <div className="ic-stat"><span className="ic-k">Armor Type:</span> {armorType}</div>
+                )}
               </>
             )}
             {showUses && (
               <div style={{ marginTop: '0.429em', display: 'flex', alignItems: 'center', gap: '0.286em' }}>
-                <span className="ic-stat" style={{ marginBottom: 0 }}>Uses:</span>
+                <span className="ic-stat" style={{ marginBottom: 0 }}>
+                  <span className="ic-k">Uses:</span>
+                </span>
                 {Array.from({ length: usesCount }, (_, i) => <UseCircle key={i} />)}
               </div>
             )}
