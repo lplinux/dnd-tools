@@ -11,17 +11,54 @@
  *   Public info  — what the party has learned. Same terms.
  *   Private info — never leaves the server for a player.
  *
+ * Both of the first two reach a player through the cross-link CARD, not
+ * through this table — which lists name, description and location only.
+ * That is worth knowing before concluding a field is not reaching them.
+ *
  * Bulk add stays, because naming six NPCs before a session is still the
  * common case and a modal per name would be worse. Everything else is filled
  * in later, when they turn out to matter.
  */
 
 import { useMemo, useState } from 'react';
-import { Eye, EyeOff, MapPin, Pencil, Trash2 } from 'lucide-react';
+import { Eye, EyeOff, MapPin, Pencil, Trash2, Swords, Skull, CircleHelp } from 'lucide-react';
 
 import { Button, Modal, FormField } from '@/components/ui';
 import CrossLinkPopover from '@/components/CrossLinkPopover';
 import { useConfirm } from '@/contexts/ConfirmContext';
+
+/**
+ * Alive, dead, or nobody knows.
+ *
+ * `unknown` is the DM saying the party has reason to wonder — not a blank.
+ * Only `alive` is left unmarked in the list, because almost everyone is and
+ * a badge on every row would say nothing.
+ *
+ * Icons rather than the `†` and `?` these started as: a dagger is a weapon
+ * before it is a death notice, and both read as punctuation at the end of a
+ * name. A skull is unambiguous at a glance down a list, which is the whole
+ * job — and it carries a title and a label for anyone not reading glyphs.
+ */
+const LIFE = {
+  alive:   { label: 'Alive',   Icon: null,       cls: '' },
+  dead:    { label: 'Dead',    Icon: Skull,      cls: 'text-danger' },
+  unknown: { label: 'Unknown', Icon: CircleHelp, cls: 'text-text-muted' },
+};
+
+/** The marker beside a name, or nothing at all for the living. */
+function LifeMark({ state, size = 13 }) {
+  const life = LIFE[state];
+  if (!life?.Icon) return null;
+  const { Icon } = life;
+  return (
+    <Icon
+      size={size}
+      className={`${life.cls} flex-shrink-0`}
+      aria-label={life.label}
+      title={life.label}
+    />
+  );
+}
 
 const INPUT_CLS = 'w-full bg-surface2 border border-border2 text-text px-2 py-1.5 rounded-sm text-sm focus:outline-none focus:border-[var(--gold-dim)]';
 
@@ -74,6 +111,8 @@ export default function NpcsTab({ npcs, locations = [], campaignId, actions }) {
       public_info: n.public_info ?? '',
       private_info: n.private_info ?? '',
       current_location_id: n.current_location_id ?? '',
+      has_sheet: !!n.has_sheet,
+      life_state: n.life_state ?? 'alive',
     });
   }
 
@@ -88,6 +127,8 @@ export default function NpcsTab({ npcs, locations = [], campaignId, actions }) {
         public_info: form.public_info,
         private_info: form.private_info,
         current_location_id: form.current_location_id || null,
+        has_sheet: form.has_sheet,
+        life_state: form.life_state,
       });
       setForm(null);
     } catch (e) {
@@ -144,7 +185,7 @@ export default function NpcsTab({ npcs, locations = [], campaignId, actions }) {
           <table className="w-full text-sm font-body border-collapse">
             <thead>
               <tr className="border-b border-border">
-                {['Name', 'Description', 'Currently at', 'Seen', ''].map((h) => (
+                {['Name', 'Description', 'Currently at', ''].map((h) => (
                   <th key={h} className="text-left px-2 py-2 font-display text-[0.7rem] uppercase tracking-wider text-text-dim">{h}</th>
                 ))}
               </tr>
@@ -158,12 +199,39 @@ export default function NpcsTab({ npcs, locations = [], campaignId, actions }) {
                   {/* The name and description open the card; the controls to
                       their right keep their own handlers and are not nested
                       inside this one. */}
-                  <td
-                    className="px-2 py-2 cursor-pointer"
-                    onClick={(e) => setCard({ target: { ...n, kind: 'npc' }, at: { x: e.clientX, y: e.clientY } })}
-                    title={`Read ${n.name}`}
-                  >
-                    <strong className="text-text">{n.name}</strong>
+                  {/* Seen sits WITH the name, not in a column of its own:
+                      revealing a handful of people after a session means
+                      reading down the names, and the eye was three columns
+                      away from the thing being read. */}
+                  <td className="px-2 py-2">
+                    <span className="flex items-center gap-2">
+                      <button
+                        onClick={() => actions.toggleNpcVisibility(n.id)}
+                        title={n.is_public
+                          ? 'The party has met them — click to hide again'
+                          : 'Not met yet — click to reveal'}
+                        aria-label={n.is_public ? `Hide ${n.name}` : `Reveal ${n.name}`}
+                        className={`flex-shrink-0 px-1.5 py-0.5 rounded-sm border transition-colors ${
+                          n.is_public
+                            ? 'bg-[var(--gold-dim)] border-border2 text-text'
+                            : 'bg-surface2 border-border text-text-muted'
+                        }`}
+                      >
+                        {n.is_public ? <Eye size={12} /> : <EyeOff size={12} />}
+                      </button>
+                      <strong
+                        className="text-text cursor-pointer"
+                        onClick={(e) => setCard({ target: { ...n, kind: 'npc' }, at: { x: e.clientX, y: e.clientY } })}
+                        title={`Read ${n.name}`}
+                      >
+                        {n.name}
+                      </strong>
+                      <LifeMark state={n.life_state} />
+                      {n.has_sheet && (
+                        <Swords size={11} className="text-text-muted flex-shrink-0"
+                          aria-label="Has a stat block" />
+                      )}
+                    </span>
                   </td>
                   <td
                     className="px-2 py-2 text-text-dim text-xs max-w-[220px] truncate cursor-pointer"
@@ -175,22 +243,6 @@ export default function NpcsTab({ npcs, locations = [], campaignId, actions }) {
                     {n.location_name
                       ? <span className="inline-flex items-center gap-1"><MapPin size={10} />{n.location_name}</span>
                       : '—'}
-                  </td>
-                  <td className="px-2 py-2 text-center">
-                    <button
-                      onClick={() => actions.toggleNpcVisibility(n.id)}
-                      title={n.is_public
-                        ? 'The party has met them — click to hide again'
-                        : 'Not met yet — click to reveal'}
-                      aria-label={n.is_public ? `Hide ${n.name}` : `Reveal ${n.name}`}
-                      className={`text-xs px-2 py-0.5 rounded-sm border transition-colors ${
-                        n.is_public
-                          ? 'bg-[var(--gold-dim)] border-border2 text-text'
-                          : 'bg-surface2 border-border text-text-muted'
-                      }`}
-                    >
-                      {n.is_public ? <Eye size={12} /> : <EyeOff size={12} />}
-                    </button>
                   </td>
                   <td className="px-2 py-2 whitespace-nowrap">
                     <div className="flex gap-1">
@@ -245,6 +297,25 @@ export default function NpcsTab({ npcs, locations = [], campaignId, actions }) {
               </p>
             </FormField>
 
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <FormField label="Status">
+                <select value={form.life_state} onChange={set('life_state')} className={INPUT_CLS}>
+                  {Object.entries(LIFE).map(([id, v]) => (
+                    <option key={id} value={id}>{v.label}</option>
+                  ))}
+                </select>
+              </FormField>
+              <FormField label="Stat block">
+                {/* The distinction the DM actually draws: someone who will be
+                    rolled for, versus a name with a note. */}
+                <label className="flex items-center gap-2 text-sm text-text-dim pt-1.5">
+                  <input type="checkbox" checked={form.has_sheet}
+                    onChange={(e) => setForm((f) => ({ ...f, has_sheet: e.target.checked }))} />
+                  Needs a sheet (enemy or ally)
+                </label>
+              </FormField>
+            </div>
+
             <FormField label="Description">
               <textarea value={form.description} onChange={set('description')} rows={5} className={INPUT_CLS} />
               <p className="text-text-muted text-[0.7rem] mt-1">
@@ -255,7 +326,8 @@ export default function NpcsTab({ npcs, locations = [], campaignId, actions }) {
             <FormField label="Public info">
               <textarea value={form.public_info} onChange={set('public_info')} rows={5} className={INPUT_CLS} />
               <p className="text-text-muted text-[0.7rem] mt-1">
-                What the party has learned. Players see this too.
+                What the party has learned. Players see this too, on the card — not in the
+                table above, which shows the description only.
               </p>
             </FormField>
 

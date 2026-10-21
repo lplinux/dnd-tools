@@ -5587,7 +5587,18 @@ app.delete('/api/campaigns/:campaignId/journal/:entryId', requireAuth, async (re
 // away with `SELECT *` because nothing on that table is secret; campaign_npcs
 // has `private_info`, so a star here would hand the DM's secrets to the table.
 
-/** Columns a player may see. The absence of private_info is the whole point. */
+/**
+ * Columns a player may see. The absence of private_info is the whole point.
+ *
+ * `public_info` belongs here: it is what the party has worked out, and the
+ * cross-link card is where they read it. It was briefly removed on the
+ * belief that players were not getting it — they were; it is simply not a
+ * column in the DM's NPC table, which is where that was being checked.
+ *
+ * `has_sheet` and `life_state` ARE withheld, and deliberately: whether the
+ * DM has rolled a stat block, and whether they privately consider someone
+ * dead, are answers the table is supposed to find out in play.
+ */
 const NPC_PLAYER_COLUMNS = `n.id, n.name, n.description, n.public_info, n.is_public`;
 
 /**
@@ -5661,7 +5672,8 @@ app.post('/api/campaigns/:campaignId/npcs', requireRole(['dm', 'admin']), async 
  * through a column nobody would think to audit.
  */
 app.put('/api/campaigns/:campaignId/npcs/:npcId', requireRole(['dm', 'admin']), async (req, res) => {
-  const { name, description, public_info, private_info, current_location_id } = req.body ?? {};
+  const { name, description, public_info, private_info, current_location_id,
+    has_sheet: hasSheet, life_state: lifeState } = req.body ?? {};
   const { campaignId, npcId } = req.params;
   if (!name || !String(name).trim()) return res.status(400).json({ error: 'Name required' });
 
@@ -5683,11 +5695,16 @@ app.put('/api/campaigns/:campaignId/npcs/:npcId', requireRole(['dm', 'admin']), 
 
     const r = await pool.query(
       `UPDATE campaign_npcs
-          SET name=$1, description=$2, public_info=$3, private_info=$4, current_location_id=$5
-        WHERE id=$6 AND campaign_id=$7
+          SET name=$1, description=$2, public_info=$3, private_info=$4, current_location_id=$5,
+              has_sheet=$6,
+              -- Clamped rather than rejected: an unknown value here is a
+              -- stale client, and refusing the whole edit over it would
+              -- lose the DM's text.
+              life_state = CASE WHEN $7::text IN ('alive','dead','unknown') THEN $7 ELSE life_state END
+        WHERE id=$8 AND campaign_id=$9
         RETURNING *`,
       [String(name).trim(), description || null, public_info || null, private_info || null,
-        locId, npcId, campaignId],
+        locId, hasSheet === true, lifeState ?? null, npcId, campaignId],
     );
     if (!r.rows.length) return res.status(404).json({ error: 'NPC not found' });
     res.json(r.rows[0]);
@@ -5700,6 +5717,95 @@ app.put('/api/campaigns/:campaignId/npcs/:npcId', requireRole(['dm', 'admin']), 
 });
 
 /** Reveal or hide. Its own route, mirroring the locations toggle. */
+/**
+ * Who this NPC is connected to, for their card.
+ *
+ * Its own route rather than a column on the list: the list is forty rows
+ * and almost none of them are open, so the edges are fetched when a card is
+ * actually read.
+ *
+ * A PLAYER GETS ONLY THE PUBLIC EDGES, and only once they have met the NPC
+ * — `character_relationships.is_public` is the DM's switch for "the table
+ * knows about this one". The other end is resolved to a name here, and an
+ * edge whose other end is an NPC the player has not met is dropped
+ * entirely: naming an unmet person is the same leak as naming their
+ * location.
+ */
+app.get('/api/campaigns/:campaignId/npcs/:npcId/relationships', requireRole(['dm', 'player']), async (req, res) => {
+  const { campaignId, npcId } = req.params;
+  try {
+    if (!await canAccessCampaign(campaignId, req.session.userId, req.session.role))
+      return res.status(403).json({ error: 'Access denied' });
+    const isDM = await isCampaignDm(campaignId, req.session.userId, req.session.role);
+
+    const self = await pool.query(
+      'SELECT id, is_public FROM campaign_npcs WHERE id=$1 AND campaign_id=$2', [npcId, campaignId],
+    );
+    if (!self.rows.length) return res.status(404).json({ error: 'NPC not found' });
+    // An unmet NPC has no card for a player, so it has no edges either.
+    if (!isDM && !self.rows[0].is_public) return res.status(403).json({ error: 'Access denied' });
+
+    const r = await pool.query(
+      `SELECT cr.id, cr.label, cr.notes, cr.is_public,
+              CASE WHEN cr.from_entity_type='npc' AND cr.from_entity_id=$2
+                   THEN cr.to_entity_type ELSE cr.from_entity_type END   AS other_type,
+              CASE WHEN cr.from_entity_type='npc' AND cr.from_entity_id=$2
+                   THEN cr.to_entity_id   ELSE cr.from_entity_id   END   AS other_id,
+              cr.from_entity_id = $2 AND cr.from_entity_type='npc'       AS outgoing
+         FROM character_relationships cr
+        WHERE cr.campaign_id = $1
+          AND ((cr.from_entity_type='npc' AND cr.from_entity_id=$2)
+            OR (cr.to_entity_type='npc'   AND cr.to_entity_id=$2))
+          AND ($3 OR cr.is_public = true)
+        ORDER BY cr.created_at ASC`,
+      [campaignId, npcId, isDM],
+    );
+
+    // Names, resolved in two queries rather than per row.
+    const npcIds = r.rows.filter((x) => x.other_type === 'npc').map((x) => x.other_id);
+    const playerIds = r.rows.filter((x) => x.other_type === 'player').map((x) => x.other_id);
+    const [npcs, players] = await Promise.all([
+      npcIds.length
+        ? pool.query('SELECT id, name, is_public FROM campaign_npcs WHERE campaign_id=$1 AND id = ANY($2::int[])',
+          [campaignId, npcIds])
+        : { rows: [] },
+      playerIds.length
+        ? pool.query('SELECT id, player_name FROM campaign_players WHERE campaign_id=$1 AND id = ANY($2::int[])',
+          [campaignId, playerIds])
+        : { rows: [] },
+    ]);
+    const npcById = new Map(npcs.rows.map((x) => [x.id, x]));
+    const playerById = new Map(players.rows.map((x) => [x.id, x]));
+
+    const out = [];
+    for (const e of r.rows) {
+      let name = null;
+      if (e.other_type === 'npc') {
+        const hit = npcById.get(e.other_id);
+        // Dropped, not blanked: an unnamed edge still says "there is
+        // somebody here", which is the thing being withheld.
+        if (!hit || (!isDM && !hit.is_public)) continue;
+        name = hit.name;
+      } else if (e.other_type === 'player') {
+        name = playerById.get(e.other_id)?.player_name ?? null;
+        if (!name) continue;
+      } else {
+        continue;   // 'relationship' nodes are char-tree scaffolding
+      }
+      out.push({
+        id: e.id,
+        label: e.label,
+        other_type: e.other_type,
+        other_id: e.other_id,
+        other_name: name,
+        outgoing: e.outgoing,
+        ...(isDM ? { notes: e.notes, is_public: e.is_public } : {}),
+      });
+    }
+    res.json(out);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 app.patch('/api/campaigns/:campaignId/npcs/:npcId/visibility', requireRole(['dm', 'admin']), async (req, res) => {
   try {
     if (!await dmOwnsCampaign(req.params.campaignId, req.session.userId, req.session.role))
@@ -9922,6 +10028,34 @@ async function initializeDatabase() {
     await pool.query(`
       ALTER TABLE campaign_npcs ADD COLUMN IF NOT EXISTS current_location_id
         INTEGER REFERENCES campaign_locations(id) ON DELETE SET NULL;
+    `);
+    /*
+     * Does this one need a stat block?
+     *
+     * The distinction the DM actually draws: an enemy or an ally who will
+     * be rolled for, versus a name with a note attached. Most NPCs are the
+     * second, so the default is false and the flag marks the exception.
+     */
+    await pool.query(`
+      ALTER TABLE campaign_npcs ADD COLUMN IF NOT EXISTS has_sheet BOOLEAN NOT NULL DEFAULT false;
+    `);
+    /*
+     * Alive, dead, or nobody knows.
+     *
+     * `unknown` is not a missing value — it is the DM saying the party has
+     * reason to wonder, which is different from an NPC nobody has thought
+     * about. That is why the default is `alive` rather than `unknown`.
+     */
+    await pool.query(`
+      ALTER TABLE campaign_npcs ADD COLUMN IF NOT EXISTS life_state VARCHAR(10)
+        NOT NULL DEFAULT 'alive';
+    `);
+    await pool.query(`
+      ALTER TABLE campaign_npcs DROP CONSTRAINT IF EXISTS campaign_npcs_life_state_check;
+    `);
+    await pool.query(`
+      ALTER TABLE campaign_npcs ADD CONSTRAINT campaign_npcs_life_state_check
+        CHECK (life_state IN ('alive','dead','unknown'));
     `);
 
     // Migrate: location visibility (is_public)

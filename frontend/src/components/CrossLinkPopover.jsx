@@ -25,9 +25,20 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 
+import { Skull, CircleHelp } from 'lucide-react';
+
 import { Button, Markdown } from '@/components/ui';
 import { placeCard } from '@/data/placeCard';
 import { campaignsApi } from '@/api/campaigns';
+
+/**
+ * Dead or unknown, beside the name. Mirrors the NPC list's marker, and
+ * only ever renders for a DM — `life_state` is withheld from players.
+ */
+const LIFE = {
+  dead:    { label: 'Dead',    Icon: Skull,      cls: 'text-danger' },
+  unknown: { label: 'Unknown', Icon: CircleHelp, cls: 'text-text-muted' },
+};
 
 /**
  * @param {{kind:string,id:number,name:string,description?:string}|null} target
@@ -89,8 +100,11 @@ export default function CrossLinkPopover({ target, at, campaignId, mapPath, onMa
         ref={ref}
         role="dialog"
         aria-label={target.name}
-        className="fixed z-[60] w-72 max-w-[calc(100vw-2rem)] bg-surface2 border
-                   border-[var(--gold-dim)] rounded-sm shadow-xl p-3 flex flex-col gap-2"
+        /* A CARD, not a tooltip. It was 288px of 12px text, which is the
+           wrong shape for a description somebody wants to read — and for a
+           player it is the only view of an NPC there is. */
+        className="fixed z-[60] w-[30rem] max-w-[calc(100vw-2rem)] bg-surface2 border
+                   border-[var(--gold-dim)] rounded-sm shadow-xl p-4 flex flex-col gap-2.5"
         style={pos
           ? { left: pos.left, top: pos.top }
           // Off-screen for the measuring pass, so it is never seen unplaced.
@@ -98,7 +112,15 @@ export default function CrossLinkPopover({ target, at, campaignId, mapPath, onMa
       >
         <div className="flex items-baseline gap-2">
           <span aria-hidden="true">{target.kind === 'npc' ? '🧟' : '📍'}</span>
-          <h4 className="font-display text-gold text-sm flex-1 min-w-0 truncate">{target.name}</h4>
+          <h4 className="font-display text-gold text-base flex-1 min-w-0 truncate">{target.name}</h4>
+          {/* Dead, or nobody knows. No gate needed: `life_state` is only
+              sent to a DM, so for a player the field is absent and nothing
+              renders — the same way private_info decides its own branch. */}
+          {target.kind === 'npc' && LIFE[target.life_state]?.Icon && (() => {
+            const { Icon, label, cls } = LIFE[target.life_state];
+            return <Icon size={14} className={`${cls} flex-shrink-0 self-center`}
+              aria-label={label} title={label} />;
+          })()}
           <button type="button" onClick={onClose} aria-label="Close"
             className="text-text-muted hover:text-gold text-sm leading-none">✕</button>
         </div>
@@ -117,7 +139,7 @@ export default function CrossLinkPopover({ target, at, campaignId, mapPath, onMa
         )}
 
         {(target.description || target.public_info || target.private_info) ? (
-          <div className="text-[0.75rem] text-text-dim max-h-64 overflow-y-auto flex flex-col gap-1.5">
+          <div className="text-[0.9rem] leading-relaxed text-text-dim max-h-[22rem] overflow-y-auto flex flex-col gap-2">
             {target.description && <Markdown>{target.description}</Markdown>}
             {/* An NPC's fields are different things — who they are, what the
                 party has worked out, and what only the DM knows — so they are
@@ -143,7 +165,7 @@ export default function CrossLinkPopover({ target, at, campaignId, mapPath, onMa
             )}
           </div>
         ) : (
-          <p className="text-[0.7rem] text-text-muted italic">
+          <p className="text-[0.8rem] text-text-muted italic">
             {target.kind === 'npc'
               ? 'No notes on this one yet.'
               : 'No description yet.'}
