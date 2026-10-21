@@ -126,12 +126,29 @@ export default function ItemCardPrint({ cards, cols = 1, perPage = 1 }) {
   }, [cardsKey, cols, perPage]);
 
   const dims = { width: `${CARD.widthMM}mm`, height: `${CARD.heightMM}mm` };
+  /*
+   * THE PAGE IS THE SHEET, and the grid is centred on it.
+   *
+   * It used to lean on `@page { margin: 6mm }` and start at the top, which
+   * left the position of the cards in the hands of the browser's Margins
+   * dropdown. Measured out of a headless-Chrome PDF, that put the block
+   * 11.7mm off centre horizontally and 27.1mm vertically — and the second
+   * sheet's rows spilled across a page break, because the real printable
+   * area is smaller than 285mm.
+   *
+   * With the page box set to A4 and the margin to zero, the cards are
+   * placed by this CSS rather than by the print dialog: 7.5mm of clear
+   * paper at the sides and 13.5mm top and bottom for a 3x3 sheet. Both
+   * well outside any printer's unprintable edge, so "None" does not clip,
+   * and identical on every sheet — which is what makes the backs line up
+   * with the fronts.
+   */
   const gridStyle = {
     display: 'grid',
     gridTemplateColumns: `repeat(${cols}, ${CARD.widthMM}mm)`,
     gap: '3mm',
     justifyContent: 'center',
-    alignContent: 'start',
+    alignContent: 'center',
   };
 
   return (
@@ -140,7 +157,9 @@ export default function ItemCardPrint({ cards, cols = 1, perPage = 1 }) {
         .ic-print-root { position: absolute; left: -99999px; top: 0; }
         .ic-print-measure { position: absolute; left: -99999px; top: 0; visibility: hidden;
           box-sizing: content-box; line-height: 1.4; font-family: Georgia, 'Times New Roman', serif; }
-        .ic-print-page { }
+        .ic-print-page {
+          width: 210mm; height: 297mm; box-sizing: border-box; overflow: hidden;
+        }
         .ic-face { box-sizing: border-box; background: #fff; color: #1a1a1a; border-radius: 6px;
           overflow: hidden; display: flex; flex-direction: column; line-height: 1.4;
           font-family: Georgia, 'Times New Roman', serif; }
@@ -169,7 +188,13 @@ export default function ItemCardPrint({ cards, cols = 1, perPage = 1 }) {
           .ic-print-root { position: absolute !important; left: 0 !important; top: 0 !important; }
           .ic-print-page { page-break-after: always; break-after: page; }
           .ic-print-page:last-child { page-break-after: auto; break-after: auto; }
-          @page { size: A4 portrait; margin: 6mm; }
+          /*
+           * Zero, so Chrome's "Default" margin option resolves to this and
+           * behaves the same as "None" — two of the three settings then
+           * give an identical sheet. "Minimum" still adds the printer's own
+           * and shifts everything; the Print Set help says so.
+           */
+          @page { size: A4 portrait; margin: 0; }
         }
       `}</style>
 
