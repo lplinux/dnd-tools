@@ -254,11 +254,12 @@ describe('surveys travel with their history', () => {
 });
 
 describe('the bundle version', () => {
-  it('is 9', () => {
+  it('is 10', () => {
     // 6 added the NPC detail fields and the journal; 7 the session prep;
-    // 8 each NPC's stat block; 9 the surveys, with their whole history.
-    // Documentary only — see the next test.
-    expect(exp).toMatch(/version: 9/);
+    // 8 each NPC's stat block; 9 the surveys, with their whole history;
+    // 10 a file that may be PARTIAL, naming its `parts`. Documentary only
+    // — see the next test.
+    expect(exp).toMatch(/version: 10/);
   });
 
   it('is never read by the import', () => {
@@ -338,3 +339,182 @@ describe('credentials never travel', () => {
   });
 });
 
+describe('exporting part of a campaign — the route', () => {
+  it('validates ?parts= before running a single query', () => {
+    // A typo on a curl command must not export less than was meant.
+    expect(exp.indexOf('const sel = resolveParts(req.query.parts)'))
+      .toBeLessThan(exp.indexOf('try {'));
+    expect(exp).toMatch(/if \(sel\.unknown\.length\) \{\s*\n\s*return res\.status\(400\)/);
+  });
+
+  it('builds the whole bundle once and selects from it', () => {
+    // One shape, so the pure selection in lib/campaignParts.js is the only
+    // thing that decides what a partial file contains.
+    expect(exp).toMatch(/const full = \{/);
+    expect(exp).toMatch(/const out = selectParts\(full, sel\.parts\)/);
+  });
+
+  it('and says which parts it added because something needed them', () => {
+    expect(exp).toMatch(/if \(sel\.added\.length\) out\.parts_added = sel\.added;/);
+  });
+
+  it('the catalogue is served, so there is one list', () => {
+    expect(source).toMatch(/app\.get\('\/api\/campaign-export-parts', requireRole\(\['dm', 'admin'\]\)/);
+  });
+});
+
+describe('an unresolved timeline actor is dropped, not stored raw', () => {
+  it('resolveToken answers null when a name does not resolve', () => {
+    /*
+     * It returned the token unchanged, so `npc_Grathul` landed where an
+     * `npc_<id>` belongs. Full exports never triggered it; a partial one —
+     * timelines without their NPCs — would have every time. Verified live:
+     * with the old fallback put back, `npc_Grathul` is stored.
+     */
+    const fn = imp.slice(imp.indexOf('const resolveToken = (tok) => {'), imp.indexOf('for (const { playerId, timelines } of playerPassB)'));
+    for (const p of ['self', 'cp', 'rel', 'npc']) {
+      expect(fn, p).toMatch(new RegExp(`return [a-z]+ \\? \`${p}_\\$\\{[a-z]+\\}\` : null;`));
+    }
+  });
+
+  it('and BOTH call sites drop the nulls', () => {
+    // The second one is wrapped in its own lambda for dm_self; missing it
+    // would have put NULLs into a text[] instead.
+    expect(imp).toMatch(/\.map\(resolveToken\)\.filter\(Boolean\)/);
+    expect(imp).toMatch(/return resolveToken\(tok\);\s*\n\s*\}\)\.filter\(Boolean\)/);
+  });
+});
+
+describe('import-into stops dropping things without a word', () => {
+  const into = (() => {
+    const at = source.indexOf("app.post('/api/campaigns/:campaignId/import-into'");
+    return source.slice(at, source.indexOf('\n});', at));
+  })();
+
+  it("names Char Tree connections among what it will not merge", () => {
+    expect(into).toMatch(/\['cross_connections', 'Char Tree connections'\]/);
+  });
+
+  it('brings NPC stat blocks, through the validator, only when the key is present', () => {
+    expect(into).toMatch(/RETURNING id`,\s*\n\s*\[cid, name,/);
+    expect(into).toMatch(/const sheet = typeof n === 'string' \? null : n\?\.sheet;/);
+    expect(into).toMatch(/\[up\.rows\[0\]\.id, JSON\.stringify\(validateStats\(sheet\)\)\]/);
+  });
+
+  it("resolves a location name against what the campaign ALREADY has", () => {
+    /*
+     * The case partial export exists for: NPCs from one group, merged into
+     * a campaign with the same world. Without this, every one of them had
+     * its location wiped, because the file carried no locations to match.
+     */
+    expect(into).toMatch(/const locIdByRef = Object\.fromEntries\(\(await client\.query\(\s*\n\s*'SELECT id, name FROM campaign_locations WHERE campaign_id=\$1'/);
+  });
+
+  it('ADDS surveys, never replaces them, and skips one already here', () => {
+    // Replacing would delete runs and answers — the history.
+    expect(into).toMatch(/const fresh = bundle\.surveys\.filter\(\(sv\) => sv\?\.title && !have\.has/);
+    expect(into).toMatch(/report\.surveys = \{ added, skipped_existing: dup \}/);
+    expect(into).not.toMatch(/DELETE FROM campaign_surveys/);
+  });
+});
+
+describe('importing under a name already in use', () => {
+  it('is refused, with a free name to suggest', () => {
+    expect(imp).toMatch(/if \(await campaignNameTaken\(client, req\.session\.userId, name\)\)/);
+    expect(imp).toMatch(/code: 'NAME_TAKEN', suggestion/);
+  });
+
+  it('compares the way a person would — case and spaces ignored', () => {
+    expect(source).toMatch(/AND LOWER\(TRIM\(name\)\) = LOWER\(TRIM\(\$2\)\)/);
+  });
+
+  it('only among campaigns you can see, and only your own', () => {
+    // The Trash is not selectable, and another DM's "Leruhy" is not yours.
+    const fn = source.slice(source.indexOf('async function campaignNameTaken'), source.indexOf('async function freeCampaignName'));
+    expect(fn).toMatch(/WHERE dm_user_id = \$1 AND deleted_at IS NULL/);
+  });
+
+  it('checked INSIDE the transaction, under a lock, so two at once cannot both pass', () => {
+    /*
+     * There is no unique index — existing installs may hold duplicates an
+     * index would refuse to build on — so the lock is what makes this hold.
+     * Verified live: two simultaneous imports, one 200 and one 409.
+     */
+    expect(imp.indexOf('await lockCampaignNames(client, req.session.userId)'))
+      .toBeLessThan(imp.indexOf('campaignNameTaken(client'));
+    expect(imp.indexOf("query('BEGIN')")).toBeLessThan(imp.indexOf('lockCampaignNames'));
+    expect(source).toMatch(/pg_advisory_xact_lock\(hashtext\('campaign-names'\), \$1\)/);
+  });
+});
+
+describe('replacing a campaign with a file', () => {
+  it('trashes the old one in the SAME transaction as the import', () => {
+    // So an import that fails halfway leaves it exactly where it was.
+    // Verified live with a file whose location name overflows its column.
+    const trash = imp.indexOf('UPDATE campaigns SET deleted_at = NOW()');
+    expect(trash).toBeGreaterThan(imp.indexOf("query('BEGIN')"));
+    expect(trash).toBeLessThan(imp.indexOf("query('COMMIT')"));
+  });
+
+  it('only one of your own, and only a live one', () => {
+    expect(imp).toMatch(/WHERE id = \$1 AND dm_user_id = \$2 AND deleted_at IS NULL/);
+  });
+
+  it('Trash, not purge — the replace can be undone', () => {
+    expect(imp).not.toMatch(/DELETE FROM campaigns/);
+  });
+
+  it('and the name check comes AFTER the trash', () => {
+    // Otherwise replacing "Leruhy" with a file called "Leruhy" clashes
+    // with the very campaign it is replacing.
+    expect(imp.indexOf('UPDATE campaigns SET deleted_at = NOW()'))
+      .toBeLessThan(imp.indexOf('campaignNameTaken(client'));
+  });
+});
+
+describe('restoring from the Trash', () => {
+  const restore = (() => {
+    const at = source.indexOf("app.post('/api/campaigns/:id/restore'");
+    return source.slice(at, source.indexOf('\n});', at));
+  })();
+
+  it('renames rather than refuses when the name is taken', () => {
+    /*
+     * Restore is the undo for a replace, and the replace took the name —
+     * so this collides every time it matters. Refusing would make the undo
+     * unusable exactly then.
+     */
+    expect(restore).toMatch(/renamed = await freeCampaignName\(client, req\.session\.userId, row\.name, id\)/);
+    expect(restore).toMatch(/renamed_to: renamed/);
+  });
+});
+
+describe('the import dialog', () => {
+  const hook = readFileSync(path.join(root, 'frontend/src/hooks/useManageCampaigns.js'), 'utf8');
+  const dialog = readFileSync(path.join(root, 'frontend/src/pages/ManageCampaigns/ImportChoiceDialog.jsx'), 'utf8');
+
+  it('replaces a WHOLE file, but only merges a partial one', () => {
+    // Replacing a campaign with a slice of one would destroy everything the
+    // slice does not carry.
+    expect(dialog).toMatch(/\{sameName && !isPartial && \(/);
+    expect(dialog).toMatch(/\{sameName && isPartial && \(/);
+  });
+
+  it('will not create one under a name already taken', () => {
+    expect(dialog).toMatch(/disabled=\{!name\.trim\(\) \|\| taken\}/);
+  });
+
+  it('asks again with the server\'s suggestion when the server refuses', () => {
+    // The list on the page can be stale; the server has the last word.
+    expect(hook).toMatch(/if \(e\.code === 'NAME_TAKEN'\) \{\s*\n\s*suggestion = e\.body\?\.suggestion \?\? null;/);
+    expect(hook).toMatch(/continue;/);
+  });
+
+  it('asks nothing when nothing clashes and no campaign is open', () => {
+    expect(hook).toMatch(/const choice = \(!sameName && !selected\)\s*\n\s*\? \{ action: 'new', name: fileName \}/);
+  });
+
+  it('and the API client keeps the body a refusal came with', () => {
+    expect(readFileSync(path.join(root, 'frontend/src/api/client.js'), 'utf8')).toMatch(/err\.body {3}= body;/);
+  });
+});

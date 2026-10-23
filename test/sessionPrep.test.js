@@ -634,12 +634,16 @@ describe('merging a bundle into an EXISTING campaign', () => {
 
   it('names the prep in the confirmation, since a match is replaced whole', () => {
     // The most destructive thing in that dialog. Unnamed, the DM agrees to
-    // "replace 3 NPCs" and loses a session's cards.
-    expect(hook).toMatch(/session\$\{data\.sessions\.length === 1 \? '' : 's'\} of prep \(matched ones replaced whole\)/);
+    // "replace 3 NPCs" and loses a session's cards. Built by mergeSummary
+    // now, which the import dialog reads.
+    expect(hook).toMatch(/\$\{n\(data\.sessions, 'session'\)\} of prep \(matched ones replaced whole\)/);
   });
 
   it('and says WHY the rest is refused, not merely that it is', () => {
-    expect(hook).toMatch(/no safe way to match/);
+    // In the dialog since the confirm() became one; the toast after a
+    // merge still says how to keep them.
+    const dialog = readFileSync(path.join(root, 'frontend/src/pages/ManageCampaigns/ImportChoiceDialog.jsx'), 'utf8');
+    expect(dialog).toMatch(/no safe way to match/);
     expect(hook).toMatch(/Import as a new campaign to keep them/);
   });
 

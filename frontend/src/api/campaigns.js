@@ -15,8 +15,16 @@ export const campaignsApi = {
   listTrashed: ()        => client.get('/campaigns/trash'),
   restore: (id)          => client.post(`/campaigns/${id}/restore`),
   purge:   (id)          => client.del(`/campaigns/${id}/purge`),
-  exportCampaign: (id)   => client.get(`/campaigns/${id}/export`),
-  importCampaign: (data) => client.post('/campaigns/import', data),
+  // `parts` omitted = the whole campaign, as every export always was.
+  exportCampaign: (id, parts) => client.get(parts?.length
+    ? `/campaigns/${id}/export?parts=${encodeURIComponent(parts.join(','))}`
+    : `/campaigns/${id}/export`),
+  // The list a campaign export can be cut into. Served, so there is one.
+  exportParts:  ()      => client.get('/campaign-export-parts'),
+  // `replace` puts this file IN PLACE of that campaign, which goes to the
+  // Trash in the same transaction — so a failed import leaves it untouched.
+  importCampaign: (data, { replace } = {}) => client.post(
+    replace ? `/campaigns/import?replace=${encodeURIComponent(replace)}` : '/campaigns/import', data),
   /**
    * Import a bundle INTO an existing campaign, replacing only the sections
    * the file carries. The sibling of importCampaign, which always makes a

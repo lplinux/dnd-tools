@@ -5,7 +5,7 @@
  * Returns everything the page and its sub-components need.
  */
 
-import { useCallback, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import { useAsync }       from '@/hooks/useAsync';
 import { useToast }       from '@/hooks/useToast';
 import { campaignsApi }   from '@/api/campaigns';
@@ -18,6 +18,57 @@ import { diaryApi }       from '@/api/diary';
 import { sessionsApi }    from '@/api/sessions';
 import { useConfirm }     from '@/contexts/ConfirmContext';
 import { downloadBundle, IMPORT_LIMIT_MB } from '@/api/downloadBundle';
+
+/** Campaign names compare the way the server compares them. */
+const sameCampaignName = (a, b) =>
+  String(a ?? '').trim().toLowerCase() === String(b ?? '').trim().toLowerCase();
+
+/**
+ * "Leruhy" → "Leruhy (2)", the first free one among these campaigns. The
+ * server does the same with the last word, and its answer wins when the two
+ * disagree — this one is only the name the dialog opens with.
+ */
+function freeName(campaigns, name) {
+  const base = String(name).trim().replace(/\s+\(\d+\)$/, '');
+  for (let n = 2; n < 1000; n += 1) {
+    const candidate = `${base} (${n})`;
+    if (!campaigns.some((c) => sameCampaignName(c.name, candidate))) return candidate;
+  }
+  return `${base} (copy)`;
+}
+
+/**
+ * What merging this file into a campaign would do, in words, for the
+ * dialog. The counts are the whole point: "Replace?" with no numbers is not
+ * a decision anyone can make, and this one can delete.
+ */
+function mergeSummary(data) {
+  const n = (arr, one, many = `${one}s`) => `${arr.length} ${arr.length === 1 ? one : many}`;
+  const replaces = [];
+  if (Array.isArray(data.npcs)) replaces.push(n(data.npcs, 'NPC'));
+  if (Array.isArray(data.locations)) replaces.push(n(data.locations, 'location'));
+  if (Array.isArray(data.campaign_journal)) replaces.push(n(data.campaign_journal, 'journal entry', 'journal entries'));
+  if (Array.isArray(data.campaign_diary)) replaces.push(n(data.campaign_diary, 'diary entry', 'diary entries'));
+  // Named, because a matched session is REPLACED whole — its cards deleted
+  // and rebuilt — and that is the most destructive thing in this list.
+  if (Array.isArray(data.sessions) && data.sessions.length) {
+    replaces.push(`${n(data.sessions, 'session')} of prep (matched ones replaced whole)`);
+  }
+  // ADDED rather than replaced: replacing a survey would delete its history.
+  const adds = [];
+  if (Array.isArray(data.surveys) && data.surveys.length) {
+    adds.push(`${n(data.surveys, 'survey')} (ones already there by title are skipped)`);
+  }
+  // Everything the server will NOT merge, named before the click.
+  const held = [];
+  if (Array.isArray(data.players) && data.players.length) held.push('player sheets');
+  if (Array.isArray(data.journey_maps) && data.journey_maps.length) held.push('maps');
+  if (Array.isArray(data.dm_timelines) && data.dm_timelines.length) held.push('DM timelines');
+  if (Array.isArray(data.party_events) && data.party_events.length) held.push('party events');
+  if (Array.isArray(data.item_cards) && data.item_cards.length) held.push('item cards');
+  if (Array.isArray(data.cross_connections) && data.cross_connections.length) held.push('Char Tree connections');
+  return { replaces, adds, held };
+}
 
 export function useManageCampaigns() {
   const { toast } = useToast();
@@ -111,9 +162,13 @@ export function useManageCampaigns() {
   }, [currentId, currentCampaign, reloadCampaigns, reloadTrash, toast]);
 
   const restoreCampaign = useCallback(async (id, name) => {
-    await campaignsApi.restore(id);
+    const r = await campaignsApi.restore(id);
     await Promise.all([reloadCampaigns(), reloadTrash()]);
-    toast(`"${name}" restored.`);
+    // Renamed when the name is in use by now — which it always is after an
+    // import replaced this campaign, because that import took its name.
+    toast(r?.renamed_to
+      ? `"${name}" restored as "${r.renamed_to}" — another campaign has that name now.`
+      : `"${name}" restored.`);
   }, [reloadCampaigns, reloadTrash, toast]);
 
   // The irreversible one. Only the trash list needs reloading — a purged
@@ -140,10 +195,18 @@ export function useManageCampaigns() {
       + 'BODY_LIMIT_MB on the server. The bulk is map and portrait images.');
   }, [toast]);
 
-  const exportCampaign = useCallback(async () => {
-    if (!currentId) return;
-    const data = await campaignsApi.exportCampaign(currentId);
-    warnIfOversize(downloadBundle(data, { module: 'campaign', name: currentCampaign?.name }));
+  /*
+   * With no `parts`, the whole campaign — the backup, unchanged. With them,
+   * part of it, saved under its own filename prefix so a folder of exports
+   * says which files are whole: `campaign-…` versus `campaign-part-…`.
+   */
+  const exportCampaign = useCallback(async (parts) => {
+    if (!currentId) return null;
+    const data = await campaignsApi.exportCampaign(currentId, parts);
+    warnIfOversize(downloadBundle(data, {
+      module: parts?.length ? 'campaign-part' : 'campaign', name: currentCampaign?.name,
+    }));
+    return data;
   }, [currentId, currentCampaign, warnIfOversize]);
 
   // Same export, by explicit id, for a campaign in the trash. `exportCampaign`
@@ -159,6 +222,24 @@ export function useManageCampaigns() {
   // campaign (unchanged path); the others merge into the SELECTED campaign — and
   // pc-sheet/timeline need a target player, so they return a `need` for the page to
   // resolve with a modal, then call importPcSheetInto / importTimelineInto.
+  /*
+   * The import dialog, as a promise. `importFile` awaits an answer the way
+   * it used to await `confirm()`; the page renders ImportChoiceDialog from
+   * `importAsk` and calls `answerImport` with the choice, or null to cancel.
+   */
+  const [importAsk, setImportAsk] = useState(null);
+  const importResolve = useRef(null);
+  const askImport = useCallback((question) => new Promise((resolve) => {
+    importResolve.current = resolve;
+    setImportAsk(question);
+  }), []);
+  const answerImport = useCallback((choice) => {
+    setImportAsk(null);
+    const resolve = importResolve.current;
+    importResolve.current = null;
+    resolve?.(choice);
+  }, []);
+
   const importFile = useCallback(async (file) => {
     let data;
     try { data = JSON.parse(await file.text()); }
@@ -167,68 +248,87 @@ export function useManageCampaigns() {
 
     if (type === 'campaign') {
       /*
-       * Two things a campaign file can mean, so it asks rather than guessing:
-       * restore it as a NEW campaign, or merge it into the one on screen.
+       * What to do with it is asked in ImportChoiceDialog, because there are
+       * up to three answers and one needs a name: replace the campaign this
+       * file has the name of, merge it into the one on screen, or make a new
+       * one — under a name that is not already taken.
        *
-       * The counts are the whole point of the question. "Replace?" with no
-       * numbers is not a decision anyone can make, and this one can delete —
-       * the same reasoning the diary import below was built on.
+       * Nothing to ask when nothing clashes and no campaign is open: that is
+       * a plain import, as it always was.
        */
-      const target = currentId ? campaigns.find((c) => String(c.id) === String(currentId)) : null;
-      let into = false;
-      if (target) {
-        const parts = [];
-        if (Array.isArray(data.npcs)) parts.push(`${data.npcs.length} NPC${data.npcs.length === 1 ? '' : 's'}`);
-        if (Array.isArray(data.locations)) parts.push(`${data.locations.length} location${data.locations.length === 1 ? '' : 's'}`);
-        if (Array.isArray(data.campaign_journal)) parts.push(`${data.campaign_journal.length} journal entries`);
-        if (Array.isArray(data.campaign_diary)) parts.push(`${data.campaign_diary.length} diary entries`);
-        // Named, because a matched session is REPLACED whole — its cards
-        // deleted and rebuilt — and that is the most destructive thing in
-        // this list.
-        if (Array.isArray(data.sessions) && data.sessions.length) {
-          parts.push(`${data.sessions.length} session${data.sessions.length === 1 ? '' : 's'} of prep (matched ones replaced whole)`);
-        }
-        const held = [];
-        if (Array.isArray(data.players) && data.players.length) held.push('player sheets');
-        if (Array.isArray(data.journey_maps) && data.journey_maps.length) held.push('maps');
-        into = await confirm(
-          [
-            `Replace ${parts.join(', ') || 'nothing'} in "${target.name}" with what is in this file?`,
-            'Anything the file does not carry is left alone.',
-            held.length
-              ? `Its ${held.join(' and ')} are NOT merged — there is no safe way to match `
-                + 'them to what is already here. Import as a new campaign to keep them.'
-              : null,
-            'Choose Cancel to import it as a separate new campaign instead, with everything in it.',
-          ].filter(Boolean).join('\n\n'),
-          { title: `Import into ${target.name}`, confirmLabel: 'Replace' },
-        );
-      }
-      try {
-        if (into) {
-          const r = await campaignsApi.importIntoCampaign(currentId, data);
-          await reload();
-          await reloadCampaigns();
-          const bits = [
-            r.npcs && `NPCs: ${r.npcs.added} added, ${r.npcs.updated} updated${r.npcs.removed ? `, ${r.npcs.removed} removed` : ''}`,
-            r.locations && `locations: ${r.locations.added} added, ${r.locations.updated} updated`,
-            r.journal && `journal: ${r.journal.added}`,
-            r.diary && `diary: ${r.diary.added}`,
-            r.sessions && `sessions: ${r.sessions.added} added, ${r.sessions.replaced} replaced`,
-          ].filter(Boolean).join(' · ');
-          toast(`Imported into ${target.name} — ${bits || 'nothing to do'}.`);
-          // Said plainly rather than buried: an NPC something still points at
-          // is kept on purpose, and the DM has to decide what to do with it.
-          if (r.npcs?.kept?.length) {
-            toast(`Kept ${r.npcs.kept.length} NPC(s) the file omits — still used by a timeline or the char tree: ${r.npcs.kept.slice(0, 5).join(', ')}.`);
+      const fileName = String(data.campaign?.name ?? '').trim() || 'Imported campaign';
+      const isPartial = data.partial === true;
+      const summary = mergeSummary(data);
+      let suggestion = null;
+      for (;;) {
+        const sameName = campaigns.find((c) => sameCampaignName(c.name, fileName)) ?? null;
+        const selected = currentId ? campaigns.find((c) => String(c.id) === String(currentId)) : null;
+        const choice = (!sameName && !selected)
+          ? { action: 'new', name: fileName }
+          : await askImport({
+            fileName, sameName, selected, isPartial,
+            partsCount: Array.isArray(data.parts) ? data.parts.length : 0,
+            summary,
+            suggestion: suggestion ?? (sameName ? freeName(campaigns, fileName) : null),
+          });
+        if (!choice) return { done: true };
+
+        try {
+          if (choice.action === 'merge') {
+            const into = campaigns.find((c) => String(c.id) === String(choice.id));
+            const r = await campaignsApi.importIntoCampaign(choice.id, data);
+            await reload();
+            await reloadCampaigns();
+            const bits = [
+              r.npcs && `NPCs: ${r.npcs.added} added, ${r.npcs.updated} updated${r.npcs.removed ? `, ${r.npcs.removed} removed` : ''}`,
+              r.locations && `locations: ${r.locations.added} added, ${r.locations.updated} updated`,
+              r.journal && `journal: ${r.journal.added}`,
+              r.diary && `diary: ${r.diary.added}`,
+              r.sessions && `sessions: ${r.sessions.added} added, ${r.sessions.replaced} replaced`,
+              r.surveys && `surveys: ${r.surveys.added} added`,
+            ].filter(Boolean).join(' · ');
+            toast(`Imported into ${into?.name ?? 'the campaign'} — ${bits || 'nothing to do'}.`);
+            if (r.surveys?.skipped_existing?.length) {
+              toast(`Skipped ${r.surveys.skipped_existing.length} survey(s) already here: ${r.surveys.skipped_existing.slice(0, 5).join(', ')}.`);
+            }
+            // The server's own list of what it would not merge.
+            if (r.skipped?.length) {
+              toast(`Not merged: ${r.skipped.join(', ')}. Import as a new campaign to keep them.`);
+            }
+            // Said plainly rather than buried: an NPC something still points
+            // at is kept on purpose, and the DM has to decide about it.
+            if (r.npcs?.kept?.length) {
+              toast(`Kept ${r.npcs.kept.length} NPC(s) the file omits — still used by a timeline or the char tree: ${r.npcs.kept.slice(0, 5).join(', ')}.`);
+            }
+          } else if (choice.action === 'replace') {
+            const old = campaigns.find((c) => String(c.id) === String(choice.id));
+            await campaignsApi.importCampaign(
+              { ...data, campaign: { ...data.campaign, name: fileName } }, { replace: choice.id });
+            await Promise.all([reloadCampaigns(), reloadTrash()]);
+            toast(`Replaced "${old?.name ?? fileName}". The previous one is in the Trash if you need it back.`);
+          } else {
+            await campaignsApi.importCampaign({ ...data, campaign: { ...data.campaign, name: choice.name } });
+            await reloadCampaigns();
+            toast(`Imported as a new campaign, "${choice.name}".`);
           }
-        } else {
-          await campaignsApi.importCampaign(data);
-          await reloadCampaigns();
-          toast('Campaign imported as a new campaign.');
+          return { done: true };
+        } catch (e) {
+          /*
+           * The server has the last word on names — the list here can be
+           * stale, and another tab may have just made one. When it refuses,
+           * it sends a free name back, and the question is asked again with
+           * that name filled in rather than ending in an error.
+           */
+          if (e.code === 'NAME_TAKEN') {
+            suggestion = e.body?.suggestion ?? null;
+            await reloadCampaigns();
+            toast(e.message, 'error');
+            continue;
+          }
+          toast(e.message, 'error');
+          return { done: true };
         }
-      } catch (e) { toast(e.message, 'error'); }
-      return { done: true };
+      }
     }
     if (!currentId) { toast('Select a campaign first to import this file into.', 'error'); return { done: true }; }
     if (type === 'journey-map') {
@@ -287,7 +387,7 @@ export function useManageCampaigns() {
     if (type === 'timeline') return { need: 'timeline', bundle: data };
     toast('Unrecognized file — expected a campaign, journey-map, pc-sheet, timeline, campaign-diary or campaign-sessions export.', 'error');
     return { done: true };
-  }, [currentId, campaigns, reloadCampaigns, reload, toast, confirm]);
+  }, [currentId, campaigns, reloadCampaigns, reloadTrash, reload, toast, confirm, askImport]);
 
   const importPcSheetInto = useCallback(async (playerId, bundle) => {
     try { await pcApi.importSheet(playerId, bundle); await reload(); toast('PC sheet imported.'); }
@@ -463,6 +563,7 @@ export function useManageCampaigns() {
   return {
     // Data
     allUsers, campaigns, trashedCampaigns, currentCampaign, currentId,
+    importAsk, answerImport,
     players, locations, npcs, timelines, meta,
     loading,
 

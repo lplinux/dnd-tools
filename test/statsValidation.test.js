@@ -198,8 +198,10 @@ describe('validateStats rejects what it should', () => {
 
 describe('every write to stats_json goes through the validator', () => {
   it('has no remaining unvalidated write', () => {
-    // Five writes now: the character PUT and the NPC sheet PUT, plus three
-    // that take the blob from an uploaded file. Hardening only the PUTs
+    // Six writes now: the character PUT and the NPC sheet PUT, plus four
+    // that take the blob from an uploaded file — the new-campaign import
+    // writes both kinds, and import-into writes NPC sheets since it stopped
+    // dropping them. Hardening only the PUTs
     // would leave the import paths as a back door — a bundle is a file a
     // person can edit, so what is in it is no more trusted than a request.
     //
@@ -214,7 +216,7 @@ describe('every write to stats_json goes through the validator', () => {
       .map(m => m[1])
       .filter(a => /stats|req\.body|sheet/.test(a));
 
-    expect(writes.length).toBe(5);
+    expect(writes.length).toBe(6);
     for (const arg of writes) expect(arg).toMatch(/^validateStats\(/);
   });
 });

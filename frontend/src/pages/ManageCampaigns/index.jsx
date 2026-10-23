@@ -30,6 +30,7 @@ import { CharTreeTab }         from './tabs/CharTreeTab';
 import JournalTab              from './tabs/JournalTab';
 import SearchTab               from './tabs/SearchTab';
 import SurveysPanel            from '@/pages/Surveys/SurveysPanel';
+import ImportChoiceDialog      from './ImportChoiceDialog';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Campaign sidebar
@@ -233,6 +234,7 @@ export default function ManageCampaigns() {
     addLocation, editLocation, deleteLocation, toggleLocVisibility,
     addNpcs, editNpc, toggleNpcVisibility, deleteNpc,
     saveTodayMarker, refreshMeta, deleteCampaign, restoreCampaign, purgeCampaign, exportTrashed,
+    importAsk, answerImport,
   } = mc;
 
   // Tab content switcher
@@ -446,6 +448,11 @@ export default function ManageCampaigns() {
           </div>
         </div>
       </Modal>
+
+      {/* Replace, merge, or new — asked whenever a campaign file's name is
+          taken or a campaign is open. `campaigns` is passed so the name
+          field can say "taken" as you type. */}
+      <ImportChoiceDialog ask={importAsk} campaigns={campaigns} onAnswer={answerImport} />
     </>
   );
 }

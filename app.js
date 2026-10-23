@@ -1,4 +1,10 @@
 require('dotenv').config();
+/*
+ * The one local module: choosing which parts of a campaign to export. Kept
+ * out of this file so its tests can RUN it rather than read it — see the
+ * header of lib/campaignParts.js.
+ */
+const { PARTS: CAMPAIGN_PARTS, resolveParts, selectParts } = require('./lib/campaignParts');
 const express    = require('express');
 const path       = require('path');
 const fs         = require('fs');               // sync methods (existsSync, etc.)
@@ -1054,6 +1060,44 @@ app.get('/api/campaigns/trash', requireRole(['dm']), async (req, res) => {
   }
 });
 
+/*
+ * Campaign names, per DM, among the campaigns they can SEE.
+ *
+ * Two live campaigns called "Leruhy" made every list in the app ambiguous —
+ * the sidebar, the PC Sheet's campaign selector, an import's "replace this?"
+ * — and the import was the usual way to get a second one. Case-insensitive,
+ * like NPC and location names. The trash does not count: nothing there is
+ * selectable, and a restore that would collide is renamed on the way back.
+ *
+ * Not a unique index. Existing installs may already hold duplicates, and an
+ * index would refuse to build on them; the import and the restore check
+ * instead, under an advisory lock so two at once cannot both pass.
+ */
+async function campaignNameTaken(db, userId, name, exceptId = null) {
+  const r = await db.query(
+    `SELECT 1 FROM campaigns
+      WHERE dm_user_id = $1 AND deleted_at IS NULL
+        AND LOWER(TRIM(name)) = LOWER(TRIM($2))
+        AND ($3::int IS NULL OR id <> $3)
+      LIMIT 1`,
+    [userId, name, exceptId]);
+  return r.rows.length > 0;
+}
+
+/** "Leruhy" → "Leruhy (2)", "Leruhy (3)" … whichever is free first. */
+async function freeCampaignName(db, userId, name, exceptId = null) {
+  const base = String(name).trim().replace(/\s+\(\d+\)$/, '');
+  for (let n = 2; n < 1000; n += 1) {
+    const candidate = `${base} (${n})`;
+    if (!await campaignNameTaken(db, userId, candidate, exceptId)) return candidate;
+  }
+  return `${base} (${Date.now()})`;
+}
+
+/** Serialise name checks for one DM, for the rest of this transaction. */
+const lockCampaignNames = (client, userId) =>
+  client.query("SELECT pg_advisory_xact_lock(hashtext('campaign-names'), $1)", [userId]);
+
 app.delete('/api/campaigns/:id', requireRole(['dm']), async (req, res) => {
   const { id } = req.params;
 
@@ -1079,8 +1123,31 @@ app.post('/api/campaigns/:id/restore', requireRole(['dm']), async (req, res) => 
       return res.status(403).json({ error: 'Cannot restore campaign' });
     }
 
-    await pool.query('UPDATE campaigns SET deleted_at = NULL WHERE id = $1', [id]);
-    res.json({ success: true });
+    /*
+     * Restoring is the undo for an import that REPLACED a campaign — the old
+     * one went to the Trash and the new one took its name — so this is the
+     * case that collides every single time. Renamed rather than refused:
+     * refusing would make the undo unusable exactly when it is needed, and
+     * the response names what it is called now.
+     */
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      await lockCampaignNames(client, req.session.userId);
+      const row = (await client.query('SELECT name FROM campaigns WHERE id = $1', [id])).rows[0];
+      let renamed = null;
+      if (row && await campaignNameTaken(client, req.session.userId, row.name, id)) {
+        renamed = await freeCampaignName(client, req.session.userId, row.name, id);
+      }
+      await client.query(
+        'UPDATE campaigns SET deleted_at = NULL, name = COALESCE($2, name) WHERE id = $1',
+        [id, renamed]);
+      await client.query('COMMIT');
+      res.json({ success: true, ...(renamed ? { renamed_to: renamed } : {}) });
+    } catch (e) {
+      await client.query('ROLLBACK');
+      throw e;
+    } finally { client.release(); }
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -8438,6 +8505,19 @@ app.get('/api/pdfs', requireRole(['dm']), async (req, res) => {
 // Export a full campaign snapshot (players, locations, meta, npcs)
 app.get('/api/campaigns/:id/export', requireRole(['dm']), async (req, res) => {
   const { id } = req.params;
+  /*
+   * `?parts=npcs,locations` exports part of the campaign; no `parts` means
+   * all of it, which is every export ever made before this existed. An
+   * unknown name is a 400 rather than ignored — a typo on a curl command
+   * must not quietly produce a smaller file than was meant.
+   */
+  const sel = resolveParts(req.query.parts);
+  if (sel.unknown.length) {
+    return res.status(400).json({
+      error: `Unknown part(s): ${sel.unknown.join(', ')}`,
+      parts: CAMPAIGN_PARTS.map((x) => x.id),
+    });
+  }
   try {
     // DELIBERATELY no `deleted_at IS NULL` here, and deliberately not routed
     // through dmOwnsCampaign: export must keep working on a TRASHED campaign so
@@ -8850,14 +8930,22 @@ app.get('/api/campaigns/:id/export', requireRole(['dm']), async (req, res) => {
     // After playerRefById is built — the responses name their player.
     const surveysOut = await surveysForExport(id, playerRefById);
 
-    res.json({
+    /*
+     * Built whole, then cut. The queries above are not skipped for a part
+     * that is left out — export is rare, and building one shape and
+     * selecting from it is what lets the selection be a pure function the
+     * tests can run. Reading every table to write some of them is the
+     * price of not having two export paths that drift apart.
+     */
+    const full = {
       // 5 adds `item_cards` and per-player `inventory`. 6 adds the NPC detail
       // fields and `campaign_journal`. 7 adds `sessions`, the prep. 8 adds
       // each NPC's `sheet`, its stat block. 9 adds `surveys`, with every
       // asking and every answer — the history is the feature. Older bundles
       // still import: every key here is additive and the import defaults
       // each one, so nothing reads this number — see the import side.
-      version: 9,
+      // 10: a file may be PARTIAL, and carries `parts` naming what it is.
+      version: 10,
       exported_at: new Date().toISOString(),
       type: 'campaign',
       item_cards: cardsOut,
@@ -8909,24 +8997,76 @@ app.get('/api/campaigns/:id/export', requireRole(['dm']), async (req, res) => {
       campaign_diary: diaryRes.rows,
       sessions: sessionsOut,
       surveys: surveysOut,
-    });
+    };
+    const out = selectParts(full, sel.parts);
+    // Which parts came along because something asked for them needs them,
+    // so the dialog can say so rather than the file being a surprise.
+    if (sel.added.length) out.parts_added = sel.added;
+    res.json(out);
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+/**
+ * The parts a campaign export can be cut into, for the export dialog and
+ * for anyone driving it with an API token. Served rather than duplicated in
+ * the frontend, so there is one list and it cannot drift.
+ */
+app.get('/api/campaign-export-parts', requireRole(['dm', 'admin']), (req, res) => {
+  res.json(CAMPAIGN_PARTS);
+});
+
+// Import a full campaign snapshot — creates everything fresh, resolves all refs to new DB IDs
 app.post('/api/campaigns/import', requireRole(['dm']), async (req, res) => {
   const bundle = req.body;
   if (bundle.type !== 'campaign') return res.status(400).json({ error: 'Not a campaign export file' });
   const { campaign, players = [], locations = [], npcs = [], cross_connections = [], journey_maps = [], dm_timelines = [], party_events = [], campaign_diary = [], campaign_journal = [], sessions = [], surveys = [] } = bundle;
-  if (!campaign?.name) return res.status(400).json({ error: 'Missing campaign name' });
+  if (!campaign?.name || !String(campaign.name).trim()) return res.status(400).json({ error: 'Missing campaign name' });
+  const name = String(campaign.name).trim();
+
+  /*
+   * `?replace=<id>` restores this file IN PLACE of an existing campaign: that
+   * one goes to the Trash and the import takes its name. In the SAME
+   * transaction, so an import that fails halfway leaves the old campaign
+   * exactly where it was rather than trashed with nothing to show for it —
+   * and Trash, not purge, so the replace can be undone.
+   */
+  const replaceId = req.query.replace ? parseInt(req.query.replace, 10) : null;
+  if (req.query.replace && !Number.isInteger(replaceId)) {
+    return res.status(400).json({ error: 'replace must be a campaign id' });
+  }
 
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
+    await lockCampaignNames(client, req.session.userId);
+
+    if (replaceId) {
+      const gone = await client.query(
+        `UPDATE campaigns SET deleted_at = NOW()
+          WHERE id = $1 AND dm_user_id = $2 AND deleted_at IS NULL
+          RETURNING id`,
+        [replaceId, req.session.userId]);
+      if (!gone.rows.length) {
+        await client.query('ROLLBACK');
+        return res.status(404).json({ error: 'The campaign to replace is not one of yours, or is already in the Trash' });
+      }
+    }
+
+    // After the replaced one is trashed, so replacing "Leruhy" with a file
+    // called "Leruhy" is not refused for clashing with itself.
+    if (await campaignNameTaken(client, req.session.userId, name)) {
+      const suggestion = await freeCampaignName(client, req.session.userId, name);
+      await client.query('ROLLBACK');
+      return res.status(409).json({
+        error: `You already have a campaign called "${name}"`,
+        code: 'NAME_TAKEN', suggestion,
+      });
+    }
 
     // 1. Campaign + meta
     const campRes = await client.query(
       'INSERT INTO campaigns (name, description, dm_user_id) VALUES ($1,$2,$3) RETURNING id',
-      [campaign.name, campaign.description || '', req.session.userId]
+      [name, campaign.description || '', req.session.userId]
     );
     const newId = campRes.rows[0].id;
     await client.query(
@@ -9187,25 +9327,36 @@ app.post('/api/campaigns/import', requireRole(['dm']), async (req, res) => {
     // ── Pass B ──────────────────────────────────────────────────────────────
     // Now playerIdByRef and relIdByRef contain ALL players and relationships,
     // so cp_<name> and rel_<name> tokens resolve correctly for every entry.
+    /*
+     * A timeline actor, from its name in the file to its id here — or NULL
+     * when it does not resolve, and the caller drops it.
+     *
+     * It used to return the token unchanged, which stored `npc_Grathul`
+     * where an `npc_<id>` belongs: a row that parses to NaN wherever actors
+     * are read. A full export never triggered it, because every name it
+     * carries is also in the file. A partial one — timelines without their
+     * NPCs — would have, every time. The export strips such actors too
+     * (lib/campaignParts.js), but a bundle is a file a person can edit.
+     */
     const resolveToken = (tok) => {
       const parts = tok.split('_');
       const prefix = parts[0];
       const val = parts.slice(1).join('_');
       if (prefix === 'self') {
         const pid = playerIdByRef[val];
-        return pid ? `self_${pid}` : tok;
+        return pid ? `self_${pid}` : null;
       }
       if (prefix === 'cp') {
         const pid = playerIdByRef[val];
-        return pid ? `cp_${pid}` : tok;
+        return pid ? `cp_${pid}` : null;
       }
       if (prefix === 'rel') {
         const rid = relIdByRef[val];
-        return rid ? `rel_${rid}` : tok;
+        return rid ? `rel_${rid}` : null;
       }
       if (prefix === 'npc') {
         const nid = npcIdByName[val];
-        return nid ? `npc_${nid}` : tok;
+        return nid ? `npc_${nid}` : null;
       }
       return tok;
     };
@@ -9218,7 +9369,7 @@ app.post('/api/campaigns/import', requireRole(['dm']), async (req, res) => {
         );
         const tlId = tlRes.rows[0].id;
         for (const e of (tl.entries || [])) {
-          const playerIds = (e.player_id_refs || []).map(resolveToken);
+          const playerIds = (e.player_id_refs || []).map(resolveToken).filter(Boolean);
           await client.query(
             `INSERT INTO player_timeline_entries
                (campaign_id, player_id, timeline_id, created_by, title, description, location, year, day_of_year, duration_days, player_ids)
@@ -9257,7 +9408,7 @@ app.post('/api/campaigns/import', requireRole(['dm']), async (req, res) => {
           const playerIds = (e.player_id_refs || []).map(tok => {
             if (tok === 'dm_self') return `self_${dmPlayerId}`;
             return resolveToken(tok);
-          });
+          }).filter(Boolean);   // an actor that did not resolve is dropped, not stored as NULL
           await client.query(
             `INSERT INTO player_timeline_entries
                (campaign_id, player_id, timeline_id, created_by, title, description, location, year, day_of_year, duration_days, player_ids)
@@ -9445,6 +9596,8 @@ app.post('/api/campaigns/import', requireRole(['dm']), async (req, res) => {
     res.json({
       success: true,
       campaign_id: newId,
+      // The campaign this import took the place of, now in the Trash.
+      ...(replaceId ? { replaced: replaceId } : {}),
       sessions: sessionsIn.added,
       surveys: surveysIn,
       session_cards: sessionsIn.cards,
@@ -9501,17 +9654,30 @@ app.post('/api/campaigns/:campaignId/import-into', requireRole(['dm', 'admin']),
 
     const cid = parseInt(campaignId, 10);
     const report = { locations: null, npcs: null, journal: null, diary: null,
-      sessions: null, skipped: [] };
+      sessions: null, surveys: null, skipped: [] };
     for (const [key, why] of [['players', 'player sheets, stats and timelines'],
       ['journey_maps', 'maps'], ['dm_timelines', 'DM timelines'],
-      ['party_events', 'party events'], ['item_cards', 'gear']]) {
+      ['party_events', 'party events'], ['item_cards', 'gear'],
+      // Missing from this list until now, so a file carrying them had them
+      // dropped without a word — the one thing this route promises not to do.
+      ['cross_connections', 'Char Tree connections']]) {
       if (Array.isArray(bundle[key]) && bundle[key].length) report.skipped.push(why);
     }
 
     await client.query('BEGIN');
 
     // ── Locations ──
-    const locIdByRef = {};
+    /*
+     * Seeded with the locations this campaign ALREADY has, so a reference
+     * by name resolves even when the file carries no locations of its own.
+     * That is the case partial export exists for — NPCs or a journal from
+     * one group, merged into a campaign with the same world — and without
+     * this, every NPC in such a file would have its location wiped. The
+     * file's own locations, upserted below, overlay these.
+     */
+    const locIdByRef = Object.fromEntries((await client.query(
+      'SELECT id, name FROM campaign_locations WHERE campaign_id=$1', [cid],
+    )).rows.map((r) => [r.name, r.id]));
     if (Array.isArray(bundle.locations)) {
       let added = 0; let updated = 0;
       for (const l of bundle.locations) {
@@ -9559,14 +9725,15 @@ app.post('/api/campaigns/:campaignId/import-into', requireRole(['dm', 'admin']),
         const before = await client.query(
           'SELECT id FROM campaign_npcs WHERE campaign_id=$1 AND LOWER(name)=LOWER($2)', [cid, name]);
         const ref = typeof n === 'string' ? null : n?.current_location_ref;
-        await client.query(
+        const up = await client.query(
           `INSERT INTO campaign_npcs
              (campaign_id, name, description, public_info, private_info, is_public, current_location_id)
            VALUES ($1,$2,$3,$4,$5,$6,$7)
            ON CONFLICT (campaign_id, LOWER(name)) DO UPDATE SET
              name=EXCLUDED.name, description=EXCLUDED.description,
              public_info=EXCLUDED.public_info, private_info=EXCLUDED.private_info,
-             is_public=EXCLUDED.is_public, current_location_id=EXCLUDED.current_location_id`,
+             is_public=EXCLUDED.is_public, current_location_id=EXCLUDED.current_location_id
+           RETURNING id`,
           [cid, name,
             (typeof n === 'string' ? null : n?.description) || null,
             (typeof n === 'string' ? null : n?.public_info) || null,
@@ -9574,6 +9741,21 @@ app.post('/api/campaigns/:campaignId/import-into', requireRole(['dm', 'admin']),
             (typeof n === 'string' ? false : n?.is_public === true),
             ref ? (locIdByRef[ref] ?? null) : null],
         );
+        /*
+         * The stat block, which this route used to drop without a word —
+         * it was added to the new-campaign import and missed here. Same rule
+         * as there: only when the key is PRESENT, so a file from before
+         * sheets existed leaves the one already here alone.
+         */
+        const sheet = typeof n === 'string' ? null : n?.sheet;
+        if (sheet && typeof sheet === 'object' && !Array.isArray(sheet)) {
+          await client.query(
+            `INSERT INTO npc_sheets (npc_id, stats_json) VALUES ($1, $2)
+             ON CONFLICT (npc_id) DO UPDATE SET
+                   stats_json = EXCLUDED.stats_json, updated_at = CURRENT_TIMESTAMP`,
+            [up.rows[0].id, JSON.stringify(validateStats(sheet))],
+          );
+        }
         if (before.rows.length) updated += 1; else added += 1;
       }
 
@@ -9673,6 +9855,34 @@ app.post('/api/campaigns/:campaignId/import-into', requireRole(['dm', 'admin']),
      */
     if (Array.isArray(bundle.sessions) && bundle.sessions.length) {
       report.sessions = await importSessionList(client, cid, req.session.userId, bundle.sessions);
+    }
+
+    /*
+     * Surveys are ADDED, never replaced — unlike everything above.
+     *
+     * Replacing a survey means deleting its runs and answers, which is the
+     * history the feature exists to keep; no file should be able to do that
+     * as a side effect of importing something else. One whose title is
+     * already here is skipped and named, so importing the same file twice
+     * does not ask the table the same thing twice.
+     *
+     * Results name players by character, matched against the seats this
+     * campaign already has. An answer from someone with no seat here keeps
+     * its numbers and loses its name, which is what a partial export
+     * without players does anyway.
+     */
+    if (Array.isArray(bundle.surveys) && bundle.surveys.length) {
+      const have = new Set((await client.query(
+        'SELECT LOWER(title) AS t FROM campaign_surveys WHERE campaign_id=$1', [cid],
+      )).rows.map((r) => r.t));
+      const fresh = bundle.surveys.filter((sv) => sv?.title && !have.has(String(sv.title).trim().toLowerCase()));
+      const dup = bundle.surveys.filter((sv) => sv?.title && have.has(String(sv.title).trim().toLowerCase()))
+        .map((sv) => sv.title);
+      const seats = await client.query(
+        'SELECT id, player_name FROM campaign_players WHERE campaign_id=$1', [cid]);
+      const seatByName = Object.fromEntries(seats.rows.map((r) => [r.player_name, r.id]));
+      const added = await importSurveyList(client, cid, req.session.userId, fresh, seatByName);
+      report.surveys = { added, skipped_existing: dup };
     }
 
     await client.query('COMMIT');

@@ -58,6 +58,10 @@ function agent() {
   };
 }
 
+
+/** The same file, under another campaign name. */
+const renamed = (b, name) => ({ ...b, campaign: { ...b.campaign, name } });
+
 describe.skipIf(!DSN)('campaign bundle round-trip', () => {
   let server, db, dm, seeded, bundle, imported;
 
@@ -151,7 +155,9 @@ describe.skipIf(!DSN)('campaign bundle round-trip', () => {
     seeded = { cid, openLoc, hiddenLoc, npcId, seatId, dmUserId };
 
     bundle = (await dm.req('GET', `/campaigns/${cid}/export`)).body;
-    const res = await dm.req('POST', '/campaigns/import', bundle);
+    // Under its own name: the source campaign still exists, and an import
+    // under a name already in use is refused (see the last test here).
+    const res = await dm.req('POST', '/campaigns/import', renamed(bundle, 'Round trip — restored'));
     expect(res.status, `import failed: ${JSON.stringify(res.body)}`).toBe(200);
     imported = res.body.campaign_id;
   }, 90000);
@@ -163,8 +169,18 @@ describe.skipIf(!DSN)('campaign bundle round-trip', () => {
 
   // ── The bundle itself ────────────────────────────────────────────────────
 
-  it('is version 6', () => {
-    expect(bundle.version).toBe(6);
+  it('is at least version 6, the one that added what this file checks', () => {
+    /*
+     * It said `toBe(6)` and went stale at 7, unnoticed, because this file
+     * only runs with ROUNDTRIP_DB set. The exact number is pinned by
+     * campaignBundle.test.js, which runs every time; this one only needs
+     * the bundle to be new enough to carry the NPC fields and the journal.
+     */
+    expect(bundle.version).toBeGreaterThanOrEqual(6);
+  });
+
+  it('and an unfiltered export is a whole one', () => {
+    expect(bundle.partial).toBe(false);
   });
 
   it('carries every NPC field', () => {
@@ -304,7 +320,7 @@ describe.skipIf(!DSN)('campaign bundle round-trip', () => {
       npcs: bundle.npcs.map((n) => ({ name: n.name })),
     };
     delete old.campaign_journal;
-    const res = await dm.req('POST', '/campaigns/import', old);
+    const res = await dm.req('POST', '/campaigns/import', renamed(old, 'Round trip — from v5'));
     expect(res.status).toBe(200);
     const legacy = res.body.campaign_id;
 
@@ -339,11 +355,21 @@ describe.skipIf(!DSN)('campaign bundle round-trip', () => {
   });
 
   it('imports twice without collision', async () => {
-    const res = await dm.req('POST', '/campaigns/import', bundle);
+    // Twice, under two names: the property is that no row id or unique
+    // constraint collides between two copies of one file.
+    const res = await dm.req('POST', '/campaigns/import', renamed(bundle, 'Round trip — second copy'));
     expect(res.status).toBe(200);
     const [{ count }] = await rows(
       'SELECT count(*)::int FROM campaign_npcs WHERE campaign_id=$1', [res.body.campaign_id],
     );
     expect(count).toBe(3);
+  });
+
+  it('but not under a name that is already in use', async () => {
+    // Two campaigns with one name made every list in the app a guess.
+    const res = await dm.req('POST', '/campaigns/import', bundle);
+    expect(res.status).toBe(409);
+    expect(res.body.code).toBe('NAME_TAKEN');
+    expect(res.body.suggestion).toMatch(/\(\d+\)$/);
   });
 });
