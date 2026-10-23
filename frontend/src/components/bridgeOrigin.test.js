@@ -1,5 +1,5 @@
 /**
- * pages/PcSheet/tabs/bridgeOrigin.test.js
+ * components/bridgeOrigin.test.js
  *
  * The stat-sheet bridge must name its peer origin, never `'*'`.
  *
@@ -10,6 +10,11 @@
  *
  * Both documents are served by this app, so pinning costs nothing — which is
  * exactly why leaving it as `'*'` was indefensible rather than a trade-off.
+ *
+ * Moved here from pages/PcSheet/tabs when the bridge did. There is one host
+ * now, shared by the character sheet and an NPC's stat block, which is the
+ * point: two copies of this would have drifted and only one of them would
+ * have been guarded by this file.
  */
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'fs';
@@ -20,8 +25,8 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 const src = (p) => readFileSync(path.resolve(here, p), 'utf8');
 const strip = (t) => t.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');
 
-const PARENT = strip(src('./index.jsx'));
-const IFRAME = strip(src('../../NpcSheet/index.jsx'));
+const PARENT = strip(src('./StatsSheetFrame.jsx'));
+const IFRAME = strip(src('../pages/NpcSheet/index.jsx'));
 
 describe('no send uses a wildcard target origin', () => {
   for (const [name, code] of [['the host tab', PARENT], ['the embedded sheet', IFRAME]]) {

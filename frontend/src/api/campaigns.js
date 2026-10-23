@@ -62,6 +62,15 @@ export const campaignsApi = {
   updateNpc:  (cid, nid, d) => client.put(`/campaigns/${cid}/npcs/${nid}`, d),
   toggleNpcVis: (cid, nid) => client.patch(`/campaigns/${cid}/npcs/${nid}/visibility`),
   removeNpc:  (cid, nid)   => client.del(`/campaigns/${cid}/npcs/${nid}`),
+  // Edges to players and other NPCs. Its own request rather than a column
+  // on the list: the list is one query over every NPC in the campaign, and
+  // this is wanted for exactly the one whose card is open. A player gets
+  // only the public edges, and none pointing at an NPC they have not met.
+  npcRelationships: (cid, nid) => client.get(`/campaigns/${cid}/npcs/${nid}/relationships`),
+  // The NPC's stat block. DM-only, all three — a player never asks for one.
+  npcSheet:       (cid, nid)    => client.get(`/campaigns/${cid}/npcs/${nid}/sheet`),
+  saveNpcSheet:   (cid, nid, d) => client.put(`/campaigns/${cid}/npcs/${nid}/sheet`, d),
+  deleteNpcSheet: (cid, nid)    => client.del(`/campaigns/${cid}/npcs/${nid}/sheet`),
 
   // ── Meta ──────────────────────────────────────────────
   getMeta:    (cid)      => client.get(`/campaigns/${cid}/meta`),

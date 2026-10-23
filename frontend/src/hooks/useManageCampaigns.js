@@ -404,6 +404,16 @@ export function useManageCampaigns() {
     setNpcs(prev => prev.map(n => (n.id === nid ? { ...n, ...row } : n)));
   }, [currentId]);
 
+  /*
+   * Patch one NPC in place. Used when something OTHER than the NPC row
+   * changed what the list shows — creating or deleting its stat block
+   * flips `has_sheet`, which is derived server-side. A refetch would
+   * remount the table under an open modal and lose the scroll position.
+   */
+  const patchNpc = useCallback((nid, patch) => {
+    setNpcs(prev => prev.map(n => (n.id === nid ? { ...n, ...patch } : n)));
+  }, []);
+
   const deleteNpc = useCallback(async (nid) => {
     await campaignsApi.removeNpc(currentId, nid);
     await reload();
@@ -473,7 +483,7 @@ export function useManageCampaigns() {
     uploadLocationImage, clearLocationImage,
 
     // NPC actions
-    addNpcs, editNpc, toggleNpcVisibility, deleteNpc,
+    addNpcs, editNpc, toggleNpcVisibility, deleteNpc, patchNpc,
 
     // Settings
     saveTodayMarker, refreshMeta,

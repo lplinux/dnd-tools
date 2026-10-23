@@ -45,7 +45,7 @@ const imp = handlerCode('post', '/api/campaigns/import');
 
 describe('the export carries the NPC fields', () => {
   it('selects all of them, not just the name', () => {
-    expect(exp).toMatch(/SELECT id, name, description, public_info, private_info, is_public, current_location_id\s*\n?\s*FROM campaign_npcs/);
+    expect(exp).toMatch(/SELECT n\.id, n\.name, n\.description, n\.public_info, n\.private_info, n\.is_public,\s*\n\s*n\.current_location_id, s\.stats_json/);
     expect(exp, 'the old name-only query is still there')
       .not.toMatch(/SELECT id, name FROM campaign_npcs/);
   });
@@ -180,11 +180,41 @@ describe('the journal import', () => {
   });
 });
 
+describe("an NPC's stat block travels with it", () => {
+  it('the export joins the sheet rather than making a second pass', () => {
+    // Most NPCs have none; the ones that do are the reason a restore must
+    // not lose them.
+    expect(exp).toMatch(/LEFT JOIN npc_sheets s ON s\.npc_id = n\.id/);
+  });
+
+  it('and emits `sheet` only when there IS one', () => {
+    // Absent, not null: the import has to tell "no stat block" from "an
+    // empty one", the same distinction the GET route makes with `exists`.
+    expect(exp).toMatch(/\.\.\.\(n\.stats_json \? \{ sheet: n\.stats_json \} : \{\}\)/);
+  });
+
+  it('the import validates it, like any other write to that column', () => {
+    // A bundle is a file a person can edit, so it is no more trusted here
+    // than a request body is on the PUT.
+    expect(imp).toMatch(/INSERT INTO npc_sheets \(npc_id, stats_json\)/);
+    expect(imp).toMatch(/JSON\.stringify\(validateStats\(sheet\)\)/);
+  });
+
+  it('and leaves an existing sheet alone when the key is absent', () => {
+    /*
+     * An import can target a campaign that already exists. A bundle
+     * written before sheets existed carries no `sheet` key, and must not
+     * be read as "delete the stat block that is there".
+     */
+    expect(imp).toMatch(/if \(sheet && typeof sheet === 'object' && !Array\.isArray\(sheet\)\)/);
+  });
+});
+
 describe('the bundle version', () => {
-  it('is 7', () => {
-    // 6 added the NPC detail fields and the journal; 7 adds the session
-    // prep. Documentary only — see the next test.
-    expect(exp).toMatch(/version: 7/);
+  it('is 8', () => {
+    // 6 added the NPC detail fields and the journal; 7 the session prep;
+    // 8 each NPC's stat block. Documentary only — see the next test.
+    expect(exp).toMatch(/version: 8/);
   });
 
   it('is never read by the import', () => {

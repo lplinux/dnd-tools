@@ -173,15 +173,24 @@ export default function SearchResultDetail({
             )}
           </div>
 
-          {/* A character sheet is several fields rather than one body. */}
+          {/* A character sheet is several fields rather than one body, and
+              they are not all the same KIND of text: the two Information
+              fields are markdown, the four short boxes are plain. Each
+              section says which, defaulting to plain for any caller that
+              does not. */}
           {data.sections?.map((sec) => (
             <section key={sec.label}>
               <h4 className="font-display uppercase tracking-widest text-[0.7rem] text-gold mt-2 mb-1">
                 {sec.label}
               </h4>
-              <p className="text-sm text-text-dim whitespace-pre-wrap">
-                <Marked text={sec.value} terms={terms} />
-              </p>
+              {sec.format === 'markdown' ? (
+                <Body format="markdown" value={sec.value} terms={terms}
+                  links={links} onLinkClick={followLink} />
+              ) : (
+                <p className="text-sm text-text-dim whitespace-pre-wrap">
+                  <Marked text={sec.value} terms={terms} />
+                </p>
+              )}
             </section>
           ))}
         </article>

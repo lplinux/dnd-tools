@@ -170,7 +170,10 @@ function PcPrintDoc({
             <h3>DM Notes</h3>
             {notes.map((n) => (
               <div key={n.id} className="pc-print-note">
-                <div className="pc-print-text">{n.content}</div>
+                {/* Markdown, matching the DM Notes tab. The printed copy
+                    showing asterisks the screen resolves is the same split
+                    that made the search view worth fixing. */}
+                <Markdown className="pc-print-text">{n.content}</Markdown>
                 {/* The Visible/Hidden status only means anything to the DM —
                     every note on a player's copy is one shared with them. */}
                 {isDM && (
@@ -208,11 +211,22 @@ function PcPrintDoc({
 }
 
 /** A whole page for one long text field, omitted entirely when empty. */
+/*
+ * Public and Private Information, printed.
+ *
+ * Markdown, matching the screen. These two are the long prose fields of the
+ * sheet — unlike Story/Traits/Flaws/Goals, which are plain by design and go
+ * through PrintBlock as strings. pc-print.css neutralises the renderer's
+ * colour classes, so the structure survives and the palette does not.
+ */
 function PrintSection({ title, body }) {
   if (!body || !String(body).trim()) return null;
   return (
     <section className="pc-print-section">
-      <PrintBlock title={title}>{body}</PrintBlock>
+      <div className="pc-print-block">
+        <h3>{title}</h3>
+        <Markdown className="pc-print-text">{body}</Markdown>
+      </div>
     </section>
   );
 }

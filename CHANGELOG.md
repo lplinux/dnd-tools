@@ -11,6 +11,104 @@ The newest tag is `1.0.1`. Anything above it is marked *Unreleased* until it is 
 
 ---
 
+## [Unreleased]
+
+### Added — NPCs get stat blocks of their own
+
+An NPC can hold a **stat block** now, without becoming a character. The sword
+beside a name on the NPCs tab opens it: faint when there is none and it offers to
+start one, gold when there is. It is the same editor the PC sheet embeds, so the
+SRD creature import works here too — pulling a goblin and editing it down is
+faster than typing one.
+
+**A side table, not a PC sheet per NPC.** Giving an NPC a character sheet would
+mean giving it a player seat, which would drag it into the seat list, user
+assignments, diaries, timelines, inventory and the bundle — all to record an AC.
+`npc_sheets` holds one row per NPC that has one, cascades when the NPC goes, and
+costs nothing for the many that never will. The blob goes through the same
+validator a character's stats do.
+
+**`has_sheet` is derived rather than stored.** It was a checkbox meaning "this one
+needs a stat block"; now the row is the answer, and two sources of truth would have
+disagreed the first time somebody made a sheet without ticking the box. Whatever the
+checkbox recorded is folded into an empty sheet — which is what the tick meant — and
+the column goes.
+
+**The iframe bridge now lives in one place.** The character sheet and an NPC's stat
+block are the same editor over different storage, and the bridge has enough sharp
+edges — the print copy stealing the on-screen frame's messages, an empty payload
+being a silent no-op — that a second copy would have drifted within a release.
+
+**The stat block travels in the campaign bundle** (version 8), emitted only for the
+NPCs that have one. A backup that silently dropped them would be the same class of
+bug as the NPC fields regression.
+
+### Added — clicking an NPC shows who they are connected to
+
+The card a `[[Name]]` opens now lists their relationships, with the direction the
+edge points and the label the DM wrote on the Char Tree. A player sees only the
+public ones, never the notes, and never an edge pointing at an NPC they have not
+met — a nameless edge still says somebody is there.
+
+The route and its gate shipped in 1.0.1 with no caller, so none of it was reachable.
+This is the half that was missing.
+
+### Added — filtering the NPC list
+
+By place, by alive/dead/unknown, and by whether the party has met them, on top of
+the search box. All three ride on the row the list already fetched, so none of it
+costs a request. The place list is built from the NPCs rather than from every
+location, so it cannot offer somewhere that would return nothing, and "no location"
+is its own choice — "who is unplaced" is a real question. An empty result now says
+which empty it is, rather than sending you off to write an NPC you already have.
+
+### Changed — the last big text boxes render markdown
+
+**DM notes**, **inventory item notes** and **timeline event descriptions** rendered
+their own asterisks. They are the longest things written in the app after the diary,
+and they were the last three still doing it. The search view's `bodyFormat` moved with
+them: the same note rendered two ways reads as two different notes.
+
+**A character's Public and Private Information** now do too, in all three places
+they are read: the public share page, the printed sheet and the search detail. They
+had no in-app read view of their own, which is how the split went unnoticed — the
+only way to see them rendered was to open the share link.
+
+That meant the search card needed a format **per section** rather than one for the
+whole character: the two Information fields are prose, while Story, Traits, Flaws
+and Goals are short boxes that stay plain. Both editors now say markdown works, since
+a bare textarea gives no hint and there is no rendered view to discover it from.
+
+The printed DM notes were missed in the first pass and render markdown now as well,
+matching their tab.
+
+Truncated list previews deliberately stay raw — one line of a note cut mid-sentence
+with its markup resolved is worse than the plain text.
+
+### Changed — granting an item from the library sorts, searches and names the tier
+
+The picker listed the library newest-first, which is the right order for a library
+you are building and the wrong one for a list you are looking something up in. It
+sorts by name now, and searches name, type and rarity once there are more than seven
+to scroll.
+
+**Evolving items say which rung they are** — *tier 2 of 3*. Granting a later tier
+straight out is a real choice, but the tiers of one item are often near-identical by
+name, so without it the list read as three copies of the same sword.
+
+### Fixed — closing an NPC's stat block turned the page black
+
+`<Modal open={!!x}>` evaluates its children before Modal is called, so the body
+still ran on the render where closing set `x` to null — and the companion state it
+checked instead had not been cleared yet, because that happens in an effect. Reading
+`sheetFor.id` there threw, and with no error boundary above it the whole page went.
+
+The fix is one guard, but the test sweeps **every** modal in the app for the same
+shape, because this is a pattern that reads as correct and the next one written from
+memory would have had it too. The other ten were already right.
+
+---
+
 ## [1.0.1] – 2026-10-21 — Running a session, and a campaign that keeps time
 
 `1.0.0` made the app. This release is about *using* it at the table.

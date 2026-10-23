@@ -5196,7 +5196,8 @@ app.get('/api/campaigns/:campaignId/search/:kind/:id', requireRole(['dm', 'admin
                          LEFT JOIN campaign_players cp ON cp.id = e.player_id
                         WHERE e.campaign_id = $1 AND e.id = $2`);
         if (!r) break;
-        r = { title: r.title || '(untitled)', body: r.description, bodyFormat: 'text',
+        // Markdown, matching how the timeline's own event dialog reads it.
+        r = { title: r.title || '(untitled)', body: r.description, bodyFormat: 'markdown',
           meta: meta(['Whose', r.player_name || 'the party'], ['Where', r.location],
             ['Year', r.year], ['Day of year', r.day_of_year],
             ['Lasts', r.duration_days && `${r.duration_days} day(s)`]) };
@@ -5210,12 +5211,22 @@ app.get('/api/campaigns/:campaignId/search/:kind/:id', requireRole(['dm', 'admin
                          JOIN campaign_players cp ON cp.id = pc.player_id
                         WHERE cp.campaign_id = $1 AND pc.player_id = $2`);
         if (!r) break;
+        /*
+         * Per-SECTION format, not one for the whole card.
+         *
+         * Public and Private Information are the sheet's long prose fields
+         * and render as markdown on the sheet, in print and on the public
+         * share page. Story, Traits, Flaws and Goals are short plain-text
+         * boxes and stay plain. One `bodyFormat` for all six would have had
+         * to be wrong for one group or the other.
+         */
         r = { title: r.name || r.player_name, body: null, bodyFormat: 'text',
-          sections: [['Story', r.story], ['Traits', r.traits], ['Flaws', r.flaws],
-            ['Goals', r.goals], ['Public info', r.public_info],
-            ['Private info', r.private_info]]
+          sections: [['Story', r.story, 'text'], ['Traits', r.traits, 'text'],
+            ['Flaws', r.flaws, 'text'], ['Goals', r.goals, 'text'],
+            ['Public info', r.public_info, 'markdown'],
+            ['Private info', r.private_info, 'markdown']]
             .filter(([, v]) => v && String(v).trim())
-            .map(([label, value]) => ({ label, value: String(value) })),
+            .map(([label, value, format]) => ({ label, value: String(value), format })),
           meta: meta(['Played by', r.player_name]) };
         break;
       case 'dm-note':
@@ -5225,7 +5236,10 @@ app.get('/api/campaigns/:campaignId/search/:kind/:id', requireRole(['dm', 'admin
                          JOIN campaign_players cp ON cp.id = pc.player_id
                         WHERE cp.campaign_id = $1 AND n.id = $2`);
         if (!r) break;
-        r = { title: `Note on ${r.player_name}`, body: r.content, bodyFormat: 'text',
+        // Markdown, matching the DM Notes tab. The two must agree: a search
+        // result that renders the asterisks the tab resolves reads as a
+        // different note.
+        r = { title: `Note on ${r.player_name}`, body: r.content, bodyFormat: 'markdown',
           meta: meta(['About', r.player_name],
             ['Visible to', r.dm_visible ? 'the player too' : 'you only']) };
         break;
@@ -5599,7 +5613,9 @@ app.delete('/api/campaigns/:campaignId/journal/:entryId', requireAuth, async (re
  *
  * `has_sheet` and `life_state` ARE withheld, and deliberately: whether the
  * DM has rolled a stat block, and whether they privately consider someone
- * dead, are answers the table is supposed to find out in play.
+ * dead, are answers the table is supposed to find out in play. `has_sheet`
+ * is now derived from `npc_sheets` rather than stored, and the player query
+ * simply does not join it.
  */
 const NPC_PLAYER_COLUMNS = `n.id, n.name, n.description, n.public_info, n.is_public`;
 
@@ -5626,7 +5642,10 @@ app.get('/api/campaigns/:campaignId/npcs', requireRole(['dm', 'player']), async 
     // reveal that he is standing in a place they have not found.
     const r = await pool.query(
       isDM
-        ? `SELECT n.*, l.name AS location_name
+        // `has_sheet` is EXISTS rather than a join: the sheet blob is a
+        // kilobyte of JSON per NPC and the list needs only the yes/no.
+        ? `SELECT n.*, l.name AS location_name,
+                  EXISTS (SELECT 1 FROM npc_sheets s WHERE s.npc_id = n.id) AS has_sheet
              FROM campaign_npcs n
              LEFT JOIN campaign_locations l ON l.id = n.current_location_id
             WHERE n.campaign_id = $1 ORDER BY n.name ASC`
@@ -5675,7 +5694,7 @@ app.post('/api/campaigns/:campaignId/npcs', requireRole(['dm', 'admin']), async 
  */
 app.put('/api/campaigns/:campaignId/npcs/:npcId', requireRole(['dm', 'admin']), async (req, res) => {
   const { name, description, public_info, private_info, current_location_id,
-    has_sheet: hasSheet, life_state: lifeState } = req.body ?? {};
+    life_state: lifeState } = req.body ?? {};
   const { campaignId, npcId } = req.params;
   if (!name || !String(name).trim()) return res.status(400).json({ error: 'Name required' });
 
@@ -5698,15 +5717,14 @@ app.put('/api/campaigns/:campaignId/npcs/:npcId', requireRole(['dm', 'admin']), 
     const r = await pool.query(
       `UPDATE campaign_npcs
           SET name=$1, description=$2, public_info=$3, private_info=$4, current_location_id=$5,
-              has_sheet=$6,
               -- Clamped rather than rejected: an unknown value here is a
               -- stale client, and refusing the whole edit over it would
               -- lose the DM's text.
-              life_state = CASE WHEN $7::text IN ('alive','dead','unknown') THEN $7 ELSE life_state END
-        WHERE id=$8 AND campaign_id=$9
+              life_state = CASE WHEN $6::text IN ('alive','dead','unknown') THEN $6 ELSE life_state END
+        WHERE id=$7 AND campaign_id=$8
         RETURNING *`,
       [String(name).trim(), description || null, public_info || null, private_info || null,
-        locId, hasSheet === true, lifeState ?? null, npcId, campaignId],
+        locId, lifeState ?? null, npcId, campaignId],
     );
     if (!r.rows.length) return res.status(404).json({ error: 'NPC not found' });
     res.json(r.rows[0]);
@@ -5733,6 +5751,70 @@ app.put('/api/campaigns/:campaignId/npcs/:npcId', requireRole(['dm', 'admin']), 
  * entirely: naming an unmet person is the same leak as naming their
  * location.
  */
+/*
+ * An NPC's stat block: read, write, remove.
+ *
+ * DM-ONLY, all three — unlike the relationships route beside them, which a
+ * player may read for an NPC they have met. A stat block is the answer to
+ * "can we take them", and that is a question the table settles in play.
+ *
+ * The blob goes through `validateStats`, the same cleaner the PC sheet's
+ * stats use. It is written against the sheet's serialised shape rather than
+ * against characters, so it needed no change to serve a second owner — and
+ * it is what keeps a client from storing arbitrary JSON in this column.
+ */
+async function npcInCampaign(campaignId, npcId) {
+  const r = await pool.query(
+    'SELECT id FROM campaign_npcs WHERE id=$1 AND campaign_id=$2', [npcId, campaignId],
+  );
+  return r.rows.length > 0;
+}
+
+app.get('/api/campaigns/:campaignId/npcs/:npcId/sheet', requireRole(['dm', 'admin']), async (req, res) => {
+  const { campaignId, npcId } = req.params;
+  try {
+    if (!await dmOwnsCampaign(campaignId, req.session.userId, req.session.role))
+      return res.status(403).json({ error: 'Access denied' });
+    if (!await npcInCampaign(campaignId, npcId))
+      return res.status(404).json({ error: 'NPC not found' });
+    const r = await pool.query('SELECT stats_json FROM npc_sheets WHERE npc_id = $1', [npcId]);
+    // `exists` distinguishes "no sheet" from "an empty one", which is what
+    // the list icon reads and what decides Generate versus Manage.
+    res.json({ exists: r.rows.length > 0, stats: r.rows[0]?.stats_json || {} });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.put('/api/campaigns/:campaignId/npcs/:npcId/sheet', requireRole(['dm', 'admin']), async (req, res) => {
+  const { campaignId, npcId } = req.params;
+  try {
+    if (!await dmOwnsCampaign(campaignId, req.session.userId, req.session.role))
+      return res.status(403).json({ error: 'Access denied' });
+    if (!await npcInCampaign(campaignId, npcId))
+      return res.status(404).json({ error: 'NPC not found' });
+    const r = await pool.query(
+      `INSERT INTO npc_sheets (npc_id, stats_json, updated_at)
+            VALUES ($1, $2, CURRENT_TIMESTAMP)
+       ON CONFLICT (npc_id) DO UPDATE
+              SET stats_json = $2, updated_at = CURRENT_TIMESTAMP
+        RETURNING stats_json`,
+      [npcId, JSON.stringify(validateStats(req.body))],
+    );
+    res.json({ exists: true, stats: r.rows[0].stats_json });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.delete('/api/campaigns/:campaignId/npcs/:npcId/sheet', requireRole(['dm', 'admin']), async (req, res) => {
+  const { campaignId, npcId } = req.params;
+  try {
+    if (!await dmOwnsCampaign(campaignId, req.session.userId, req.session.role))
+      return res.status(403).json({ error: 'Access denied' });
+    if (!await npcInCampaign(campaignId, npcId))
+      return res.status(404).json({ error: 'NPC not found' });
+    await pool.query('DELETE FROM npc_sheets WHERE npc_id = $1', [npcId]);
+    res.json({ exists: false, stats: {} });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 app.get('/api/campaigns/:campaignId/npcs/:npcId/relationships', requireRole(['dm', 'player']), async (req, res) => {
   const { campaignId, npcId } = req.params;
   try {
@@ -7555,8 +7637,14 @@ app.get('/api/campaigns/:id/export', requireRole(['dm']), async (req, res) => {
          ORDER BY cp.created_at ASC`, [id]),
       pool.query('SELECT id, name, description, is_public, size_type, parent_id, image_data FROM campaign_locations WHERE campaign_id=$1 ORDER BY created_at ASC', [id]),
       pool.query(
-        `SELECT id, name, description, public_info, private_info, is_public, current_location_id
-           FROM campaign_npcs WHERE campaign_id=$1 ORDER BY name ASC`, [id]),
+        // The stat block travels with the NPC. LEFT JOIN rather than a
+        // second pass: most NPCs have no sheet, and the ones that do are
+        // the whole reason a restore must not lose them.
+        `SELECT n.id, n.name, n.description, n.public_info, n.private_info, n.is_public,
+                n.current_location_id, s.stats_json
+           FROM campaign_npcs n
+           LEFT JOIN npc_sheets s ON s.npc_id = n.id
+          WHERE n.campaign_id=$1 ORDER BY n.name ASC`, [id]),
       pool.query(
         `SELECT pte.*, pt.name as timeline_name, cp.player_name
          FROM player_timeline_entries pte
@@ -7940,11 +8028,11 @@ app.get('/api/campaigns/:id/export', requireRole(['dm']), async (req, res) => {
 
     res.json({
       // 5 adds `item_cards` and per-player `inventory`. 6 adds the NPC detail
-      // fields and `campaign_journal`. 7 adds `sessions`, the prep. Older
-      // bundles still import: every key here is additive and the import
-      // defaults each one, so nothing reads this number — see the note on
-      // the import side.
-      version: 7,
+      // fields and `campaign_journal`. 7 adds `sessions`, the prep. 8 adds
+      // each NPC's `sheet`, its stat block. Older bundles still import:
+      // every key here is additive and the import defaults each one, so
+      // nothing reads this number — see the note on the import side.
+      version: 8,
       exported_at: new Date().toISOString(),
       type: 'campaign',
       item_cards: cardsOut,
@@ -7973,6 +8061,10 @@ app.get('/api/campaigns/:id/export', requireRole(['dm']), async (req, res) => {
         current_location_ref: n.current_location_id
           ? (locRefById[n.current_location_id] || null)
           : null,
+        // Absent rather than null when there is no sheet, so the import can
+        // tell "no stat block" from "an empty one" — the same distinction
+        // the GET route makes with `exists`.
+        ...(n.stats_json ? { sheet: n.stats_json } : {}),
       })),
       locations: locsOut,
       players: playersOut,
@@ -8081,6 +8173,27 @@ app.post('/api/campaigns/import', requireRole(['dm']), async (req, res) => {
           ref ? (locIdByRef[ref] ?? null) : null]
       );
       npcIdByName[name] = r.rows[0].id;
+
+      /*
+       * The stat block, through the same cleaner the live route uses — a
+       * bundle is a file a person can edit, so what is in it is no more
+       * trusted here than it is on a PUT.
+       *
+       * Only when the key is PRESENT: a bundle written before sheets
+       * existed must leave an existing sheet alone rather than wiping it,
+       * which matters because an import can target a campaign that is
+       * already there.
+       */
+      const sheet = typeof n === 'string' ? null : n?.sheet;
+      if (sheet && typeof sheet === 'object' && !Array.isArray(sheet)) {
+        await client.query(
+          `INSERT INTO npc_sheets (npc_id, stats_json)
+                VALUES ($1, $2)
+           ON CONFLICT (npc_id) DO UPDATE SET
+                 stats_json = EXCLUDED.stats_json, updated_at = CURRENT_TIMESTAMP`,
+          [r.rows[0].id, JSON.stringify(validateStats(sheet))],
+        );
+      }
     }
 
     // 4. Users lookup
@@ -10213,14 +10326,53 @@ async function initializeDatabase() {
         INTEGER REFERENCES campaign_locations(id) ON DELETE SET NULL;
     `);
     /*
-     * Does this one need a stat block?
+     * An NPC's stat block.
      *
-     * The distinction the DM actually draws: an enemy or an ally who will
-     * be rolled for, versus a name with a note attached. Most NPCs are the
-     * second, so the default is false and the flag marks the exception.
+     * The same shape as a character's — `validateStats` cleans both, and the
+     * same editor writes both — but a SIDE table rather than a column, for
+     * the same reason `pc_char_stats` is one: most NPCs never get a sheet,
+     * and the ones that do carry a kilobyte of JSON.
+     *
+     * Deliberately NOT a PC sheet per NPC. That would need a
+     * `campaign_players` row, which would drag the NPC into the seat list,
+     * user assignments, diaries, timelines, inventory and the bundle — all
+     * to store an AC and a reaction.
      */
     await pool.query(`
-      ALTER TABLE campaign_npcs ADD COLUMN IF NOT EXISTS has_sheet BOOLEAN NOT NULL DEFAULT false;
+      CREATE TABLE IF NOT EXISTS npc_sheets (
+        id         SERIAL PRIMARY KEY,
+        npc_id     INTEGER NOT NULL UNIQUE REFERENCES campaign_npcs(id) ON DELETE CASCADE,
+        stats_json JSONB NOT NULL DEFAULT '{}',
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
+    /*
+     * `has_sheet` was a checkbox the DM ticked to mean "this one needs a
+     * stat block". Now that a sheet is a thing that exists, the row IS the
+     * answer, and two sources of truth would disagree the first time
+     * somebody made a sheet without ticking the box.
+     *
+     * So the intent it recorded is folded into an EMPTY sheet — which is
+     * exactly what the tick meant, "there should be one here" — and the
+     * column goes. Guarded on the column existing: UPDATE and INSERT have
+     * no IF EXISTS form, and naming a dropped column is a parse-time error
+     * that takes initDb down on the second boot.
+     */
+    await pool.query(`
+      DO $$
+      BEGIN
+        IF EXISTS (
+          SELECT 1 FROM information_schema.columns
+           WHERE table_name = 'campaign_npcs' AND column_name = 'has_sheet'
+        ) THEN
+          INSERT INTO npc_sheets (npc_id)
+            SELECT id FROM campaign_npcs WHERE has_sheet = true
+          ON CONFLICT (npc_id) DO NOTHING;
+        END IF;
+      END $$;
+    `);
+    await pool.query(`
+      ALTER TABLE campaign_npcs DROP COLUMN IF EXISTS has_sheet;
     `);
     /*
      * Alive, dead, or nobody knows.

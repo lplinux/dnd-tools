@@ -50,6 +50,7 @@ export default function CrossLinkPopover({ target, at, campaignId, mapPath, onMa
   const ref = useRef(null);
   const [pos, setPos] = useState(null);
   const [image, setImage] = useState(null);
+  const [rels, setRels] = useState(null);
 
   // Measured, not assumed: the box is as tall as the description is long.
   useLayoutEffect(() => {
@@ -78,6 +79,26 @@ export default function CrossLinkPopover({ target, at, campaignId, mapPath, onMa
         setImage(hit?.image_data || null);
       })
       .catch(() => { /* the popover is still useful without it */ });
+    return () => { alive = false; };
+  }, [target, campaignId]);
+
+  /*
+   * Who this NPC is connected to. Fetched here rather than carried on the
+   * target, because the lists that open this card hold the NPC row and the
+   * row has no edges on it — and asking for every NPC's edges to render a
+   * list would be a query per row.
+   *
+   * What comes back is already filtered by the server: a player gets the
+   * public edges only, and never one pointing at an NPC they have not met.
+   * So there is no role check here — the same reasoning as private_info.
+   */
+  useEffect(() => {
+    setRels(null);
+    if (!target || target.kind !== 'npc' || !campaignId) return undefined;
+    let alive = true;
+    campaignsApi.npcRelationships(campaignId, target.id)
+      .then((rows) => { if (alive) setRels(rows ?? []); })
+      .catch(() => { /* the card is still worth reading without them */ });
     return () => { alive = false; };
   }, [target, campaignId]);
 
@@ -170,6 +191,38 @@ export default function CrossLinkPopover({ target, at, campaignId, mapPath, onMa
               ? 'No notes on this one yet.'
               : 'No description yet.'}
           </p>
+        )}
+
+        {/* Who they are connected to. `label` is the relationship as the DM
+            wrote it on the Char Tree — "owes money to", "sister of" — so
+            the line reads as a sentence rather than a category. */}
+        {target.kind === 'npc' && !!rels?.length && (
+          <div className="flex flex-col gap-1 border-t border-border pt-2">
+            <p className="font-display uppercase tracking-wider text-[0.65rem] text-text-muted">
+              Relationships ({rels.length})
+            </p>
+            <ul className="flex flex-col gap-1">
+              {rels.map((r) => (
+                <li key={r.id} className="text-[0.78rem] leading-snug">
+                  <span className="text-text-muted">{r.outgoing ? '→' : '←'}</span>{' '}
+                  <span aria-hidden="true">{r.other_type === 'player' ? '🙂' : '🧟'}</span>{' '}
+                  <span className="text-text">{r.other_name}</span>
+                  {r.label && <span className="text-text-dim"> · {r.label}</span>}
+                  {/* DM only: the field is simply absent for a player, so
+                      there is nothing to gate. A private edge is marked
+                      rather than hidden — the DM is looking at their own
+                      Char Tree and needs to know which ones the table
+                      cannot see. */}
+                  {r.is_public === false && (
+                    <span className="text-[0.65rem] text-text-muted italic"> · hidden</span>
+                  )}
+                  {r.notes && (
+                    <span className="block text-[0.7rem] text-text-muted italic pl-4">{r.notes}</span>
+                  )}
+                </li>
+              ))}
+            </ul>
+          </div>
         )}
 
         {/* Who is standing here. Supplied by the caller rather than fetched:

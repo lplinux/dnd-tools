@@ -13,6 +13,93 @@ PC Sheet / Journey Map / Manage Campaign fix batch that went with it.
 
 ---
 
+## NPC stat blocks
+
+- [ ] **Open the NPCs tab.** Each name has a ⚔ beside it — faint for NPCs with no
+      stat block, gold for ones that have. Hovering should say which.
+- [ ] **Click a faint one.** A full-screen sheet opens, empty, with a note saying
+      there is no stat block yet. The row behind it should NOT also open the
+      reading card.
+- [ ] **Fill in a name and an AC and press Save.** The note disappears, a Delete
+      button appears, and the row's ⚔ turns gold — without the table jumping or
+      losing your scroll position.
+- [ ] **Close and re-open it.** What you typed is still there.
+- [ ] **Use the SRD import inside the sheet** to pull a creature; it should fill
+      the fields as it does on a PC sheet.
+- [ ] **Print from inside the sheet** — you should get the parchment stat block,
+      not the app's dark theme.
+- [ ] **Delete the stat block.** The NPC stays, the ⚔ goes faint again.
+- [ ] **Delete an NPC that has one** — no error, and no orphan left behind.
+- [ ] **Close the stat-block modal** with the ✕, with Escape, and by clicking the
+      backdrop. The page must stay up — this used to go black.
+- [ ] **Anyone who ticked "needs a sheet" before this release**: those NPCs should
+      come up gold, with an empty sheet waiting, rather than losing the mark.
+- [ ] **As a player**, nothing about stat blocks should be visible anywhere.
+- [ ] **Export and re-import the campaign** — the stat blocks come back with it.
+
+---
+
+## NPC relationships on the card
+
+- [ ] **Click an NPC's name** to open the reading card. Under the notes there is a
+      **Relationships** block listing who they are connected to, with → or ← for
+      which way the edge points and the label you wrote on the Char Tree.
+- [ ] **As the DM** you should see every edge, including ones marked hidden (tagged
+      *hidden*) and any notes you wrote on them.
+- [ ] **As a player** you should see only the public edges, no notes, no *hidden*
+      tags — and no edge pointing at an NPC the party has not met, even if that
+      edge itself is public.
+- [ ] **An NPC with no relationships** shows no block at all, not an empty one.
+
+---
+
+## Filtering the NPC list
+
+- [ ] **With more than three NPCs**, a row of filters appears under the search box.
+- [ ] **Filter by a place** — only NPCs standing there. The list offers only places
+      that actually have someone in them, plus *— no location —*.
+- [ ] **Filter by status** — Alive should include NPCs you never set a status on.
+- [ ] **Filter by Revealed / Not met yet.**
+- [ ] **Combine a filter with the search box** — they narrow together.
+- [ ] **The count** on the right reads "N of M" and tracks what you do.
+- [ ] **Filter everything out** — it should say no NPC matches those filters, not
+      "No NPCs yet", and **Clear** should bring them all back.
+
+---
+
+## Markdown in the last few places
+
+- [ ] **A DM note** with `**bold**`, a `- list` and a `# heading` renders them, on
+      the DM's view and on the player's shared copy.
+- [ ] **An inventory item's notes** likewise.
+- [ ] **A timeline event's description** likewise — and the quote marks that used
+      to wrap it are gone.
+- [ ] **Search for a word in a DM note or an event**, open the result: it should
+      render the same way the tab does, not show the asterisks.
+- [ ] **The NPC list's description column** should still show plain truncated text,
+      not rendered markup.
+- [ ] **Put markdown in your character's Public Information**, then open the **share
+      link** — it should render, not show the asterisks. The editor should say so.
+- [ ] **Print the PC sheet** — Public and Private Information render too, in the
+      sheet's own type rather than the app's colours, and so do the DM notes.
+- [ ] **Search for a word inside Public Information** and open the result: rendered.
+      Search for one inside **Story or Traits**: still plain, which is correct.
+
+---
+
+## Granting an item from the library
+
+- [ ] **Open Grant from library** — items are in alphabetical order.
+- [ ] **With more than seven**, a search box appears; it matches name, type and
+      rarity.
+- [ ] **Search for something absent** — a "nothing matches" line, not an empty box.
+- [ ] **Grant one, then re-open the modal** — the search box is empty again, not
+      still filtered by what you typed last time.
+- [ ] **An item that evolves** shows *tier N of M* in gold beside its rarity; an
+      ordinary item shows nothing extra.
+
+---
+
 ## Item cards: mastery, damage types, labels
 
 - [ ] **Edit a weapon.** There is a **Mastery** select under Properties, offering the eight.
