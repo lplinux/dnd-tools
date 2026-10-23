@@ -210,11 +210,55 @@ describe("an NPC's stat block travels with it", () => {
   });
 });
 
+describe('surveys travel with their history', () => {
+  it('the export carries the runs and the answers, not just the questions', () => {
+    // A restored campaign whose surveys had no past would be a survey tool
+    // with the point taken out.
+    expect(exp).toMatch(/surveys: surveysOut/);
+    expect(source).toMatch(/async function surveysForExport\(campaignId, playerRefById\)/);
+    expect(source).toMatch(/FROM campaign_survey_answers a/);
+  });
+
+  it('answers point at a question by INDEX, never by id', () => {
+    /*
+     * Ids are regenerated on import, and `position` is a column the DM can
+     * reorder. The index into the emitted array is true by construction.
+     */
+    expect(source).toMatch(/const indexOfQ = new Map\(questions\.map\(\(q, i\) => \[q\.id, i\]\)\)/);
+    expect(source).toMatch(/\{ q: indexOfQ\.get\(a\.question_id\), score: a\.score/);
+  });
+
+  it('and anonymity survives the round trip rather than being re-applied', () => {
+    // The response carries a name only where one was stored.
+    expect(source).toMatch(/player_ref: p\.player_id \? \(playerRefById\[p\.player_id\] \|\| null\) : null/);
+  });
+
+  it('the import cleans every prompt and label, like the live route', () => {
+    expect(source).toMatch(/const q = surveyQuestion\(incoming\[i\], i\)/);
+    expect(source).toMatch(/surveyStr\(s\?\.title, 255\)/);
+  });
+
+  it('a score outside its own scale is dropped, not fatal', () => {
+    // One bad cell in a year of history is not worth failing a restore.
+    expect(source).toMatch(/if \(Number\.isFinite\(n\) && n >= q\.scale_min && n <= q\.scale_max\) score = n;/);
+  });
+
+  it('and surveys are imported AFTER the players they name', () => {
+    expect(imp.indexOf('importSessionList')).toBeLessThan(imp.indexOf('importSurveyList'));
+    expect(imp).toMatch(/importSurveyList\(\s*\n?\s*client, newId, req\.session\.userId, surveys, playerIdByRef\)/);
+  });
+
+  it('an older bundle lands zero of them rather than erroring', () => {
+    expect(imp).toMatch(/surveys = \[\]/);
+  });
+});
+
 describe('the bundle version', () => {
-  it('is 8', () => {
+  it('is 9', () => {
     // 6 added the NPC detail fields and the journal; 7 the session prep;
-    // 8 each NPC's stat block. Documentary only — see the next test.
-    expect(exp).toMatch(/version: 8/);
+    // 8 each NPC's stat block; 9 the surveys, with their whole history.
+    // Documentary only — see the next test.
+    expect(exp).toMatch(/version: 9/);
   });
 
   it('is never read by the import', () => {
@@ -293,3 +337,4 @@ describe('credentials never travel', () => {
     expect(rawHandler('get', '/api/campaigns/:id/export')).toMatch(/campaign_invites/);
   });
 });
+

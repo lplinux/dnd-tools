@@ -29,6 +29,7 @@ const TimelinePublicPage = lazy(() => import('@/pages/TimelinePublic'));
 // Invite links. Public for the same reason the others are — the people it
 // is for do not have accounts yet.
 const JoinPage = lazy(() => import('@/pages/Join'));
+const SurveyPage = lazy(() => import('@/pages/Surveys/SurveyPage'));
 
 /**
  * ProtectedRoute — redirects to "/" when role requirements are not met.
@@ -64,6 +65,12 @@ export default function App() {
 
         {/* Join a campaign from an invite link */}
         <Route path="join/:token"                element={<JoinPage />} />
+        {/* A survey link the DM sends to the table. Not a ProtectedRoute:
+            that guard drops the destination on the way to logging in, and
+            this link is meant to be clicked from outside the app. The page
+            asks the server and sends a logged-out visitor to log in and
+            straight back. */}
+        <Route path="survey/:token"              element={<SurveyPage />} />
 
         {/* ── Authenticated (DM + Player) ──────────────── */}
         <Route

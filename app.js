@@ -2198,7 +2198,7 @@ async function shareGate(req, campaignId) {
   return null;
 }
 
-/** Send a refusal from `shareGate`. Keeps the five call sites to two lines. */
+/** Send a refusal from `shareGate`. Keeps the six call sites to two lines. */
 const denyShare = (res, gate) =>
   res.status(gate.status).json({ error: gate.error, code: gate.code });
 
@@ -5991,6 +5991,828 @@ async function sessionOnGoing(campaignId, session) {
   return r.rows;
 }
 
+/* ─────────────────────────────────────────────────────────────────────────
+ * Campaign surveys — asking the table how the campaign is going
+ *
+ * The DM writes the questions; there is no fixed set. A survey is asked by
+ * opening a RUN, and the same survey can be run again months later, which is
+ * the point: the results view puts the runs side by side.
+ *
+ * Shape of the gate: everything that reads or edits a survey is DM-only. The
+ * two routes a player touches are the pending list and the submit, and both
+ * resolve the player's own seat server-side rather than taking an id.
+ * ──────────────────────────────────────────────────────────────────────── */
+
+/** Trim to a length, or null. Mirrors journalStr, which is not exported here. */
+function surveyStr(v, max) {
+  const t = String(v ?? '').trim();
+  return t ? t.slice(0, max) : null;
+}
+
+/**
+ * One question, cleaned.
+ *
+ * Bounds matter more than they look: the scale drives a row of buttons in
+ * the player's form, so a max of 10000 is a denial of service against the
+ * person answering. Eleven points is the widest scale anyone uses (0-10).
+ */
+function surveyQuestion(q, position) {
+  const kind = q?.kind === 'text' ? 'text' : 'scale';
+  let min = Number.isFinite(+q?.scale_min) ? Math.trunc(+q.scale_min) : 1;
+  let max = Number.isFinite(+q?.scale_max) ? Math.trunc(+q.scale_max) : 10;
+  min = Math.min(Math.max(min, 0), 99);
+  max = Math.min(Math.max(max, min + 1), min + 10);
+  const polarity = ['higher', 'lower', 'middle', 'neutral'].includes(q?.polarity)
+    ? q.polarity : 'neutral';
+  return {
+    id: Number.isFinite(+q?.id) ? +q.id : null,
+    position,
+    prompt: surveyStr(q?.prompt, 2000),
+    kind,
+    scale_min: min,
+    scale_max: max,
+    low_label: surveyStr(q?.low_label, 60),
+    high_label: surveyStr(q?.high_label, 60),
+    polarity,
+    allow_comment: q?.allow_comment !== false,
+  };
+}
+
+/** The survey, if it belongs to this campaign. */
+async function surveyInCampaign(campaignId, surveyId) {
+  const r = await pool.query(
+    'SELECT * FROM campaign_surveys WHERE id=$1 AND campaign_id=$2', [surveyId, campaignId],
+  );
+  return r.rows[0] ?? null;
+}
+
+/** The run, if it belongs to a survey of this campaign. */
+async function runInCampaign(campaignId, runId) {
+  const r = await pool.query(
+    `SELECT r.*, s.id AS survey_id, s.campaign_id, s.title, s.intro, s.anonymous
+       FROM campaign_survey_runs r
+       JOIN campaign_surveys s ON s.id = r.survey_id
+      WHERE r.id = $1 AND s.campaign_id = $2`,
+    [runId, campaignId],
+  );
+  return r.rows[0] ?? null;
+}
+
+/**
+ * A campaign's surveys, with every asking and every answer.
+ *
+ * The history is the feature, so the bundle carries the runs and the answers
+ * rather than just the questions — a restored campaign whose surveys had no
+ * past would be a survey tool with the point removed.
+ *
+ * Answers point at a question by its INDEX in this survey's question list,
+ * never by id: ids are regenerated on import, and position is a column the
+ * DM can reorder. The index is whatever this array says it is, which makes
+ * the reference true by construction.
+ *
+ * Players are named, not numbered, like everywhere else in the bundle. An
+ * anonymous survey emits no name on its responses, because there is none
+ * stored — the anonymity survives the round trip rather than being
+ * re-applied on the way back in.
+ */
+async function surveysForExport(campaignId, playerRefById) {
+  const surveys = (await pool.query(
+    `SELECT id, title, intro, anonymous, created_at
+       FROM campaign_surveys WHERE campaign_id=$1 ORDER BY created_at ASC, id ASC`,
+    [campaignId])).rows;
+  if (!surveys.length) return [];
+  const ids = surveys.map((s) => s.id);
+
+  const [qs, runs, resps, answers, subs] = await Promise.all([
+    pool.query(`SELECT * FROM campaign_survey_questions WHERE survey_id = ANY($1::int[])
+                 ORDER BY survey_id, position ASC, id ASC`, [ids]),
+    pool.query(`SELECT * FROM campaign_survey_runs WHERE survey_id = ANY($1::int[])
+                 ORDER BY survey_id, opened_at ASC, id ASC`, [ids]),
+    pool.query(`SELECT p.* FROM campaign_survey_responses p
+                  JOIN campaign_survey_runs r ON r.id = p.run_id
+                 WHERE r.survey_id = ANY($1::int[]) ORDER BY p.id ASC`, [ids]),
+    pool.query(`SELECT a.* FROM campaign_survey_answers a
+                  JOIN campaign_survey_responses p ON p.id = a.response_id
+                  JOIN campaign_survey_runs r ON r.id = p.run_id
+                 WHERE r.survey_id = ANY($1::int[]) ORDER BY a.id ASC`, [ids]),
+    pool.query(`SELECT sub.* FROM campaign_survey_submissions sub
+                  JOIN campaign_survey_runs r ON r.id = sub.run_id
+                 WHERE r.survey_id = ANY($1::int[])`, [ids]),
+  ]);
+
+  const qsBySurvey = new Map();
+  for (const q of qs.rows) {
+    if (!qsBySurvey.has(q.survey_id)) qsBySurvey.set(q.survey_id, []);
+    qsBySurvey.get(q.survey_id).push(q);
+  }
+  const answersByResponse = new Map();
+  for (const a of answers.rows) {
+    if (!answersByResponse.has(a.response_id)) answersByResponse.set(a.response_id, []);
+    answersByResponse.get(a.response_id).push(a);
+  }
+  const respsByRun = new Map();
+  for (const p of resps.rows) {
+    if (!respsByRun.has(p.run_id)) respsByRun.set(p.run_id, []);
+    respsByRun.get(p.run_id).push(p);
+  }
+  const subsByRun = new Map();
+  for (const s of subs.rows) {
+    if (!subsByRun.has(s.run_id)) subsByRun.set(s.run_id, []);
+    subsByRun.get(s.run_id).push(s);
+  }
+
+  return surveys.map((s) => {
+    const questions = qsBySurvey.get(s.id) ?? [];
+    const indexOfQ = new Map(questions.map((q, i) => [q.id, i]));
+    return {
+      title: s.title,
+      intro: s.intro || null,
+      anonymous: s.anonymous,
+      created_at: s.created_at,
+      questions: questions.map((q) => ({
+        prompt: q.prompt,
+        kind: q.kind,
+        scale_min: q.scale_min,
+        scale_max: q.scale_max,
+        low_label: q.low_label || null,
+        high_label: q.high_label || null,
+        polarity: q.polarity,
+        allow_comment: q.allow_comment,
+      })),
+      runs: (runs.rows.filter((r) => r.survey_id === s.id)).map((r) => ({
+        label: r.label || null,
+        opened_at: r.opened_at,
+        closed_at: r.closed_at,
+        // Who answered. Kept whatever the survey's anonymity, because it is
+        // attendance rather than content — the same split the live route makes.
+        submitted: (subsByRun.get(r.id) ?? [])
+          .map((x) => playerRefById[x.player_id] || null).filter(Boolean),
+        responses: (respsByRun.get(r.id) ?? []).map((p) => ({
+          player_ref: p.player_id ? (playerRefById[p.player_id] || null) : null,
+          submitted_at: p.submitted_at,
+          answers: (answersByResponse.get(p.id) ?? [])
+            .filter((a) => indexOfQ.has(a.question_id))
+            .map((a) => ({ q: indexOfQ.get(a.question_id), score: a.score, comment: a.comment || null })),
+        })),
+      })),
+    };
+  });
+}
+
+/**
+ * Restore them. Returns how many surveys landed.
+ *
+ * A bundle is a file a person can edit, so every prompt, label and score
+ * goes back through `surveyQuestion` — the same cleaner the live PUT uses.
+ * A score outside its own question's scale is dropped rather than refused:
+ * one bad cell in a year of history is not worth failing a whole restore
+ * over, and the alternative is a campaign that will not import at all.
+ */
+async function importSurveyList(client, campaignId, createdBy, surveys, playerIdByRef) {
+  let added = 0;
+  for (const s of (Array.isArray(surveys) ? surveys : [])) {
+    const title = surveyStr(s?.title, 255);
+    if (!title) continue;
+    const sv = await client.query(
+      `INSERT INTO campaign_surveys (campaign_id, title, intro, anonymous, created_by, created_at)
+            VALUES ($1,$2,$3,$4,$5, COALESCE($6::timestamp, CURRENT_TIMESTAMP)) RETURNING id`,
+      [campaignId, title, surveyStr(s?.intro, 4000),
+        s?.anonymous !== false, createdBy, s?.created_at || null],
+    );
+    const surveyId = sv.rows[0].id;
+
+    // Index-keyed, matching how the answers refer to them.
+    const qIds = [];
+    const qRows = [];
+    const incoming = Array.isArray(s?.questions) ? s.questions : [];
+    for (let i = 0; i < incoming.length; i += 1) {
+      const q = surveyQuestion(incoming[i], i);
+      if (!q.prompt) { qIds.push(null); qRows.push(null); continue; }
+      const r = await client.query(
+        `INSERT INTO campaign_survey_questions
+           (survey_id, position, prompt, kind, scale_min, scale_max,
+            low_label, high_label, polarity, allow_comment)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING id`,
+        [surveyId, i, q.prompt, q.kind, q.scale_min, q.scale_max,
+          q.low_label, q.high_label, q.polarity, q.allow_comment],
+      );
+      qIds.push(r.rows[0].id);
+      qRows.push(q);
+    }
+
+    for (const run of (Array.isArray(s?.runs) ? s.runs : [])) {
+      const rr = await client.query(
+        `INSERT INTO campaign_survey_runs (survey_id, label, opened_at, closed_at)
+              VALUES ($1,$2, COALESCE($3::timestamp, CURRENT_TIMESTAMP), $4::timestamp)
+           RETURNING id`,
+        [surveyId, surveyStr(run?.label, 120), run?.opened_at || null, run?.closed_at || null],
+      );
+      const runId = rr.rows[0].id;
+
+      for (const name of (Array.isArray(run?.submitted) ? run.submitted : [])) {
+        const pid = playerIdByRef[name];
+        if (!pid) continue;              // a player who did not come across
+        await client.query(
+          `INSERT INTO campaign_survey_submissions (run_id, player_id) VALUES ($1,$2)
+           ON CONFLICT (run_id, player_id) DO NOTHING`, [runId, pid]);
+      }
+
+      for (const resp of (Array.isArray(run?.responses) ? run.responses : [])) {
+        const pid = resp?.player_ref ? (playerIdByRef[resp.player_ref] ?? null) : null;
+        const pr = await client.query(
+          `INSERT INTO campaign_survey_responses (run_id, player_id, submitted_at)
+                VALUES ($1,$2, COALESCE($3::timestamp, CURRENT_TIMESTAMP)) RETURNING id`,
+          [runId, pid, resp?.submitted_at || null],
+        );
+        for (const a of (Array.isArray(resp?.answers) ? resp.answers : [])) {
+          const i = Number(a?.q);
+          if (!Number.isInteger(i) || i < 0 || i >= qIds.length) continue;
+          const qid = qIds[i];
+          const q = qRows[i];
+          if (!qid || !q) continue;
+          let score = null;
+          if (a?.score !== null && a?.score !== undefined && a.score !== '') {
+            const n = Math.trunc(Number(a.score));
+            if (Number.isFinite(n) && n >= q.scale_min && n <= q.scale_max) score = n;
+          }
+          const comment = surveyStr(a?.comment, 4000);
+          if (score === null && !comment) continue;
+          await client.query(
+            `INSERT INTO campaign_survey_answers (response_id, question_id, score, comment)
+                  VALUES ($1,$2,$3,$4)`,
+            [pr.rows[0].id, qid, score, comment],
+          );
+        }
+      }
+    }
+    added += 1;
+  }
+  return added;
+}
+
+app.get('/api/campaigns/:campaignId/surveys', requireRole(['dm', 'admin']), async (req, res) => {
+  const { campaignId } = req.params;
+  try {
+    if (!await dmOwnsCampaign(campaignId, req.session.userId, req.session.role))
+      return res.status(403).json({ error: 'Access denied' });
+    // Counts rather than the rows: the list is a list, and a survey with
+    // twelve questions and six runs would otherwise carry both.
+    const r = await pool.query(
+      `SELECT s.*,
+              (SELECT count(*) FROM campaign_survey_questions q WHERE q.survey_id = s.id) AS question_count,
+              (SELECT count(*) FROM campaign_survey_runs  u WHERE u.survey_id = s.id) AS run_count,
+              (SELECT count(*) FROM campaign_survey_runs  u
+                WHERE u.survey_id = s.id AND u.closed_at IS NULL) AS open_count,
+              -- The link the DM sends is to the open RUN, so the list has
+              -- to say which one that is. At most one, by the open route.
+              (SELECT u.id FROM campaign_survey_runs u
+                WHERE u.survey_id = s.id AND u.closed_at IS NULL
+                ORDER BY u.opened_at DESC LIMIT 1) AS open_run_id,
+              (SELECT u.share_token FROM campaign_survey_runs u
+                WHERE u.survey_id = s.id AND u.closed_at IS NULL
+                ORDER BY u.opened_at DESC LIMIT 1) AS open_run_token
+         FROM campaign_surveys s
+        WHERE s.campaign_id = $1
+        ORDER BY s.created_at DESC`,
+      [campaignId],
+    );
+    res.json(r.rows);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/api/campaigns/:campaignId/surveys', requireRole(['dm', 'admin']), async (req, res) => {
+  const { campaignId } = req.params;
+  const title = surveyStr(req.body?.title, 255);
+  if (!title) return res.status(400).json({ error: 'Title required' });
+  const client = await pool.connect();
+  try {
+    if (!await dmOwnsCampaign(campaignId, req.session.userId, req.session.role))
+      return res.status(403).json({ error: 'Access denied' });
+    await client.query('BEGIN');
+    const s = await client.query(
+      `INSERT INTO campaign_surveys (campaign_id, title, intro, anonymous, created_by)
+            VALUES ($1,$2,$3,$4,$5) RETURNING *`,
+      [campaignId, title, surveyStr(req.body?.intro, 4000),
+        req.body?.anonymous !== false, req.session.userId],
+    );
+    const qs = Array.isArray(req.body?.questions) ? req.body.questions : [];
+    let pos = 0;
+    for (const raw of qs) {
+      const q = surveyQuestion(raw, pos);
+      if (!q.prompt) continue;              // a blank row in the editor
+      await client.query(
+        `INSERT INTO campaign_survey_questions
+           (survey_id, position, prompt, kind, scale_min, scale_max,
+            low_label, high_label, polarity, allow_comment)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
+        [s.rows[0].id, pos, q.prompt, q.kind, q.scale_min, q.scale_max,
+          q.low_label, q.high_label, q.polarity, q.allow_comment],
+      );
+      pos += 1;
+    }
+    await client.query('COMMIT');
+    res.status(201).json(s.rows[0]);
+  } catch (e) {
+    await client.query('ROLLBACK').catch(() => {});
+    res.status(500).json({ error: e.message });
+  } finally { client.release(); }
+});
+
+app.get('/api/campaigns/:campaignId/surveys/:surveyId', requireRole(['dm', 'admin']), async (req, res) => {
+  const { campaignId, surveyId } = req.params;
+  try {
+    if (!await dmOwnsCampaign(campaignId, req.session.userId, req.session.role))
+      return res.status(403).json({ error: 'Access denied' });
+    const survey = await surveyInCampaign(campaignId, surveyId);
+    if (!survey) return res.status(404).json({ error: 'Survey not found' });
+    const [qs, runs] = await Promise.all([
+      pool.query(`SELECT q.*,
+                         (SELECT count(*) FROM campaign_survey_answers a WHERE a.question_id = q.id) AS answer_count
+                    FROM campaign_survey_questions q
+                   WHERE q.survey_id = $1 ORDER BY q.position ASC, q.id ASC`, [surveyId]),
+      pool.query(`SELECT r.*,
+                         (SELECT count(*) FROM campaign_survey_responses p WHERE p.run_id = r.id) AS response_count
+                    FROM campaign_survey_runs r
+                   WHERE r.survey_id = $1 ORDER BY r.opened_at ASC`, [surveyId]),
+    ]);
+    res.json({ ...survey, questions: qs.rows, runs: runs.rows });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+/**
+ * Edit a survey, including its questions.
+ *
+ * Questions are MERGED, not replaced: an incoming row with an id updates
+ * that question, one without is new, and one that is missing is deleted —
+ * but only if nobody has answered it. Deleting an answered question would
+ * cascade its answers and silently rewrite the history the runs exist to
+ * preserve, so that is a 409 and the DM is told which.
+ *
+ * Rewording an answered question IS allowed. It is how a typo gets fixed,
+ * and refusing it would push the DM into making a near-duplicate survey,
+ * which loses the comparison far more thoroughly.
+ */
+app.put('/api/campaigns/:campaignId/surveys/:surveyId', requireRole(['dm', 'admin']), async (req, res) => {
+  const { campaignId, surveyId } = req.params;
+  const title = surveyStr(req.body?.title, 255);
+  if (!title) return res.status(400).json({ error: 'Title required' });
+  const client = await pool.connect();
+  try {
+    if (!await dmOwnsCampaign(campaignId, req.session.userId, req.session.role))
+      return res.status(403).json({ error: 'Access denied' });
+    if (!await surveyInCampaign(campaignId, surveyId))
+      return res.status(404).json({ error: 'Survey not found' });
+
+    const incoming = (Array.isArray(req.body?.questions) ? req.body.questions : [])
+      .map((q, i) => surveyQuestion(q, i)).filter((q) => q.prompt);
+
+    await client.query('BEGIN');
+    await client.query(
+      'UPDATE campaign_surveys SET title=$1, intro=$2, anonymous=$3 WHERE id=$4',
+      [title, surveyStr(req.body?.intro, 4000), req.body?.anonymous !== false, surveyId],
+    );
+
+    const existing = (await client.query(
+      `SELECT q.id, q.prompt,
+              (SELECT count(*) FROM campaign_survey_answers a WHERE a.question_id = q.id) AS answers
+         FROM campaign_survey_questions q WHERE q.survey_id = $1`, [surveyId],
+    )).rows;
+    const keep = new Set(incoming.map((q) => q.id).filter(Boolean));
+    const doomed = existing.filter((q) => !keep.has(q.id));
+    const answered = doomed.filter((q) => Number(q.answers) > 0);
+    if (answered.length) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({
+        error: 'Some questions already have answers and cannot be removed',
+        questions: answered.map((q) => q.prompt),
+      });
+    }
+    for (const q of doomed) {
+      await client.query('DELETE FROM campaign_survey_questions WHERE id=$1', [q.id]);
+    }
+    for (const q of incoming) {
+      if (q.id && existing.some((e) => e.id === q.id)) {
+        await client.query(
+          `UPDATE campaign_survey_questions
+              SET position=$1, prompt=$2, kind=$3, scale_min=$4, scale_max=$5,
+                  low_label=$6, high_label=$7, polarity=$8, allow_comment=$9
+            WHERE id=$10 AND survey_id=$11`,
+          [q.position, q.prompt, q.kind, q.scale_min, q.scale_max,
+            q.low_label, q.high_label, q.polarity, q.allow_comment, q.id, surveyId],
+        );
+      } else {
+        await client.query(
+          `INSERT INTO campaign_survey_questions
+             (survey_id, position, prompt, kind, scale_min, scale_max,
+              low_label, high_label, polarity, allow_comment)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
+          [surveyId, q.position, q.prompt, q.kind, q.scale_min, q.scale_max,
+            q.low_label, q.high_label, q.polarity, q.allow_comment],
+        );
+      }
+    }
+    await client.query('COMMIT');
+    res.json({ ok: true });
+  } catch (e) {
+    await client.query('ROLLBACK').catch(() => {});
+    res.status(500).json({ error: e.message });
+  } finally { client.release(); }
+});
+
+app.delete('/api/campaigns/:campaignId/surveys/:surveyId', requireRole(['dm', 'admin']), async (req, res) => {
+  const { campaignId, surveyId } = req.params;
+  try {
+    if (!await dmOwnsCampaign(campaignId, req.session.userId, req.session.role))
+      return res.status(403).json({ error: 'Access denied' });
+    if (!await surveyInCampaign(campaignId, surveyId))
+      return res.status(404).json({ error: 'Survey not found' });
+    await pool.query('DELETE FROM campaign_surveys WHERE id=$1', [surveyId]);
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+/**
+ * Open a run — this is what makes the bubble appear for the players.
+ *
+ * One open run per survey at a time. Two would mean the same questions
+ * asked twice concurrently, and the player's bubble could not say which
+ * one it meant.
+ */
+app.post('/api/campaigns/:campaignId/surveys/:surveyId/runs', requireRole(['dm', 'admin']), async (req, res) => {
+  const { campaignId, surveyId } = req.params;
+  try {
+    if (!await dmOwnsCampaign(campaignId, req.session.userId, req.session.role))
+      return res.status(403).json({ error: 'Access denied' });
+    if (!await surveyInCampaign(campaignId, surveyId))
+      return res.status(404).json({ error: 'Survey not found' });
+    const qs = await pool.query(
+      'SELECT count(*) FROM campaign_survey_questions WHERE survey_id=$1', [surveyId]);
+    if (Number(qs.rows[0].count) === 0)
+      return res.status(400).json({ error: 'Add at least one question before asking it' });
+    const open = await pool.query(
+      'SELECT id FROM campaign_survey_runs WHERE survey_id=$1 AND closed_at IS NULL', [surveyId]);
+    if (open.rows.length)
+      return res.status(409).json({ error: 'This survey is already open. Close it first.' });
+    const r = await pool.query(
+      'INSERT INTO campaign_survey_runs (survey_id, label) VALUES ($1,$2) RETURNING *',
+      [surveyId, surveyStr(req.body?.label, 120)],
+    );
+    res.status(201).json(r.rows[0]);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.patch('/api/campaigns/:campaignId/surveys/:surveyId/runs/:runId', requireRole(['dm', 'admin']), async (req, res) => {
+  const { campaignId, surveyId, runId } = req.params;
+  try {
+    if (!await dmOwnsCampaign(campaignId, req.session.userId, req.session.role))
+      return res.status(403).json({ error: 'Access denied' });
+    const run = await runInCampaign(campaignId, runId);
+    if (!run || String(run.survey_id) !== String(surveyId))
+      return res.status(404).json({ error: 'Run not found' });
+    // Re-opening is allowed: a DM closes one, a player says they never got
+    // to it, and making a second run would split the comparison in two.
+    const close = req.body?.closed !== false;
+    if (!close) {
+      const other = await pool.query(
+        'SELECT id FROM campaign_survey_runs WHERE survey_id=$1 AND closed_at IS NULL AND id<>$2',
+        [surveyId, runId]);
+      if (other.rows.length)
+        return res.status(409).json({ error: 'Another run of this survey is already open' });
+    }
+    const r = await pool.query(
+      `UPDATE campaign_survey_runs
+          SET closed_at = CASE WHEN $1::boolean THEN CURRENT_TIMESTAMP ELSE NULL END,
+              label = COALESCE($2, label)
+        WHERE id=$3 RETURNING *`,
+      [close, surveyStr(req.body?.label, 120), runId],
+    );
+    res.json(r.rows[0]);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+/**
+ * Reset a survey: every asking and every answer goes, the questions stay.
+ *
+ * For starting over — a test run before the real one, a new table playing
+ * the same campaign — without retyping the questions. The runs cascade to
+ * their responses, answers and attendance; an open run goes too, so the
+ * players' bubbles for it disappear.
+ *
+ * A DELETE on purpose. API tokens are refused every DELETE (see the bearer
+ * middleware), so this is reachable from a logged-in session only, never
+ * from a script — and it is the one thing on a survey that cannot be undone.
+ * Reports what it removed, so the confirmation's numbers can be checked
+ * against what actually happened.
+ */
+app.delete('/api/campaigns/:campaignId/surveys/:surveyId/runs', requireRole(['dm', 'admin']), async (req, res) => {
+  const { campaignId, surveyId } = req.params;
+  try {
+    if (!await dmOwnsCampaign(campaignId, req.session.userId, req.session.role))
+      return res.status(403).json({ error: 'Access denied' });
+    if (!await surveyInCampaign(campaignId, surveyId))
+      return res.status(404).json({ error: 'Survey not found' });
+    const counted = await pool.query(
+      `SELECT count(DISTINCT r.id)::int AS runs, count(p.id)::int AS responses
+         FROM campaign_survey_runs r
+         LEFT JOIN campaign_survey_responses p ON p.run_id = r.id
+        WHERE r.survey_id = $1`, [surveyId]);
+    await pool.query('DELETE FROM campaign_survey_runs WHERE survey_id = $1', [surveyId]);
+    res.json({ ok: true, ...counted.rows[0] });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.delete('/api/campaigns/:campaignId/surveys/:surveyId/runs/:runId', requireRole(['dm', 'admin']), async (req, res) => {
+  const { campaignId, surveyId, runId } = req.params;
+  try {
+    if (!await dmOwnsCampaign(campaignId, req.session.userId, req.session.role))
+      return res.status(403).json({ error: 'Access denied' });
+    const run = await runInCampaign(campaignId, runId);
+    if (!run || String(run.survey_id) !== String(surveyId))
+      return res.status(404).json({ error: 'Run not found' });
+    await pool.query('DELETE FROM campaign_survey_runs WHERE id=$1', [runId]);
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+/**
+ * The results, every run side by side.
+ *
+ * Aggregated in SQL per (question, run) rather than by shipping the raw
+ * answers: the comparison is the feature, and a client that had to average
+ * them itself would disagree with the next client that tried.
+ *
+ * Comments come back WITHOUT a respondent, on an anonymous survey, because
+ * the response row has no player on it to join to.
+ */
+app.get('/api/campaigns/:campaignId/surveys/:surveyId/results', requireRole(['dm', 'admin']), async (req, res) => {
+  const { campaignId, surveyId } = req.params;
+  try {
+    if (!await dmOwnsCampaign(campaignId, req.session.userId, req.session.role))
+      return res.status(403).json({ error: 'Access denied' });
+    const survey = await surveyInCampaign(campaignId, surveyId);
+    if (!survey) return res.status(404).json({ error: 'Survey not found' });
+
+    const [qs, runs, stats, comments, seats] = await Promise.all([
+      pool.query(`SELECT * FROM campaign_survey_questions
+                   WHERE survey_id=$1 ORDER BY position ASC, id ASC`, [surveyId]),
+      pool.query(`SELECT r.*,
+                         (SELECT count(*) FROM campaign_survey_responses p WHERE p.run_id=r.id) AS response_count
+                    FROM campaign_survey_runs r WHERE r.survey_id=$1
+                   ORDER BY r.opened_at ASC`, [surveyId]),
+      pool.query(
+        `SELECT a.question_id, p.run_id,
+                count(a.score)                      AS n,
+                round(avg(a.score)::numeric, 2)     AS avg,
+                min(a.score)                        AS min,
+                max(a.score)                        AS max
+           FROM campaign_survey_answers a
+           JOIN campaign_survey_responses p ON p.id = a.response_id
+           JOIN campaign_survey_runs r      ON r.id = p.run_id
+          WHERE r.survey_id = $1 AND a.score IS NOT NULL
+          GROUP BY a.question_id, p.run_id`, [surveyId]),
+      pool.query(
+        `SELECT a.question_id, p.run_id, a.comment, cp.player_name
+           FROM campaign_survey_answers a
+           JOIN campaign_survey_responses p ON p.id = a.response_id
+           JOIN campaign_survey_runs r      ON r.id = p.run_id
+           LEFT JOIN campaign_players cp    ON cp.id = p.player_id
+          WHERE r.survey_id = $1 AND a.comment IS NOT NULL AND a.comment <> ''
+          ORDER BY p.id ASC`, [surveyId]),
+      // Who has answered each run. Kept apart from the answers themselves,
+      // so this works on an anonymous survey without compromising it.
+      pool.query(
+        `SELECT sub.run_id, cp.player_name
+           FROM campaign_survey_submissions sub
+           JOIN campaign_survey_runs r   ON r.id = sub.run_id
+           JOIN campaign_players cp      ON cp.id = sub.player_id
+          WHERE r.survey_id = $1 ORDER BY cp.player_name ASC`, [surveyId]),
+    ]);
+
+    res.json({
+      survey: { id: survey.id, title: survey.title, intro: survey.intro, anonymous: survey.anonymous },
+      questions: qs.rows,
+      runs: runs.rows,
+      stats: stats.rows,
+      comments: comments.rows,
+      submitted: seats.rows,
+    });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+/* ── The two routes a player touches ───────────────────────────────────── */
+
+/**
+ * Open runs this player has not answered, across every campaign they are in.
+ *
+ * Account-wide and seat-resolved server-side: the caller names no campaign
+ * and no player, so there is nothing here to tamper with. This is what the
+ * bubble reads on every page load.
+ */
+app.get('/api/surveys/pending', requireRole(['dm', 'player']), async (req, res) => {
+  try {
+    const r = await pool.query(
+      `SELECT run.id        AS run_id,
+              s.id          AS survey_id,
+              s.campaign_id,
+              s.title,
+              s.intro,
+              s.anonymous,
+              run.label,
+              run.opened_at,
+              c.name        AS campaign_name,
+              cp.id         AS player_id,
+              cp.player_name
+         FROM campaign_survey_runs run
+         JOIN campaign_surveys s        ON s.id = run.survey_id
+         JOIN campaigns c               ON c.id = s.campaign_id
+         JOIN campaign_players cp       ON cp.campaign_id = s.campaign_id
+         JOIN campaign_user_assignments cua ON cua.player_id = cp.id
+        WHERE cua.user_id = $1
+          AND run.closed_at IS NULL
+          AND c.deleted_at IS NULL
+          AND (cp.is_dm_player IS NULL OR cp.is_dm_player = false)
+          AND NOT EXISTS (
+            SELECT 1 FROM campaign_survey_submissions sub
+             WHERE sub.run_id = run.id AND sub.player_id = cp.id)
+        ORDER BY run.opened_at ASC`,
+      [req.session.userId],
+    );
+    res.json(r.rows);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+/** One run and its survey, by `column = value`; `column` is a literal below. */
+async function loadSurveyRun(column, value) {
+  const r = await pool.query(
+    `SELECT r.id, r.label, r.closed_at, s.id AS survey_id, s.campaign_id,
+            s.title, s.intro, s.anonymous
+       FROM campaign_survey_runs r
+       JOIN campaign_surveys s ON s.id = r.survey_id
+      WHERE r.${column} = $1`, [value]);
+  return r.rows[0] ?? null;
+}
+
+/**
+ * The questions to answer, for a run the caller has ALREADY been allowed to
+ * see. The access check is deliberately not in here: the two doors below
+ * check differently, and each does it in its own body, where
+ * test/campaignAuth.test.js walks the route table looking for it.
+ */
+async function sendSurveyForm(req, res, row) {
+  if (row.closed_at) return res.status(410).json({ error: 'This survey has closed' });
+  const qs = await pool.query(
+    `SELECT id, position, prompt, kind, scale_min, scale_max, low_label, high_label, allow_comment
+       FROM campaign_survey_questions WHERE survey_id=$1 ORDER BY position ASC, id ASC`,
+    [row.survey_id]);
+  /*
+   * Whether THIS player has already answered, so a link opened a second
+   * time says so up front — rather than letting them fill in every
+   * question and then refusing the submit. Seat resolved from the session,
+   * like the submit itself. A DM without a seat gets `answered: false` and
+   * `can_answer: false`, which the page shows as a preview.
+   */
+  const seat = await seatHeldBy(req.session.userId, row.campaign_id);
+  let answered = false;
+  if (seat) {
+    const sub = await pool.query(
+      'SELECT 1 FROM campaign_survey_submissions WHERE run_id=$1 AND player_id=$2',
+      [row.id, seat.id]);
+    answered = sub.rows.length > 0;
+  }
+  // `polarity` is deliberately NOT sent: it is the DM's reading of which
+  // direction is good, and showing it to the player is a nudge.
+  return res.json({ ...row, questions: qs.rows, answered, can_answer: !!seat });
+}
+
+/**
+ * By run id — what the bubble uses, for runs the pending list already proved
+ * are the caller's.
+ *
+ * A non-member is told NOT FOUND rather than access denied. By id, a 403
+ * would be an oracle: it confirms "that run exists, in a campaign you are
+ * not in", one number at a time.
+ */
+app.get('/api/surveys/runs/:runId/form', requireRole(['dm', 'player']), async (req, res) => {
+  try {
+    const row = await loadSurveyRun('id', req.params.runId);
+    if (!row) return res.status(404).json({ error: 'Not found' });
+    if (!await canAccessCampaign(row.campaign_id, req.session.userId, req.session.role))
+      return res.status(404).json({ error: 'Not found' });
+    await sendSurveyForm(req, res, row);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+/**
+ * By share token — what the link page uses. A share route like the other
+ * five, and gated the same way.
+ *
+ * NOT behind requireRole, and that is the important part. Middleware runs
+ * before the token is resolved, so a logged-out visitor holding a DEAD link
+ * was told to log in — for something that no longer exists. Here the token
+ * is resolved first, so a dead link reads as a dead link, and only a real
+ * one reaches `shareGate`, which tells "log in" from "wrong account" with
+ * the codes ShareGateMessage reads. test/campaignAuth.test.js requires it.
+ *
+ * The shape is checked before the query: 32 hex characters is all a token
+ * can be, so anything else is a 404 without a round trip.
+ */
+app.get('/api/surveys/link/:token', async (req, res) => {
+  const { token } = req.params;
+  if (!/^[0-9a-f]{32}$/.test(token)) return res.status(404).json({ error: 'Not found' });
+  try {
+    const row = await loadSurveyRun('share_token', token);
+    if (!row) return res.status(404).json({ error: 'Not found' });
+    const gate = await shareGate(req, row.campaign_id);
+    if (gate) return denyShare(res, gate);
+    await sendSurveyForm(req, res, row);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+/**
+ * Submit. One per player per run, enforced by the submissions primary key
+ * rather than by checking first — two taps on a slow connection is a race,
+ * and the constraint is the only thing that settles it.
+ */
+app.post('/api/surveys/runs/:runId/responses', requireRole(['dm', 'player']), async (req, res) => {
+  const { runId } = req.params;
+  const client = await pool.connect();
+  try {
+    const run = await client.query(
+      `SELECT r.id, r.closed_at, s.id AS survey_id, s.campaign_id, s.anonymous
+         FROM campaign_survey_runs r
+         JOIN campaign_surveys s ON s.id = r.survey_id
+        WHERE r.id = $1`, [runId]);
+    if (!run.rows.length) return res.status(404).json({ error: 'Not found' });
+    const row = run.rows[0];
+    // 404, not 403: by id this would otherwise confirm the run exists.
+    if (!await canAccessCampaign(row.campaign_id, req.session.userId, req.session.role))
+      return res.status(404).json({ error: 'Not found' });
+    if (row.closed_at) return res.status(410).json({ error: 'This survey has closed' });
+
+    const seat = await seatHeldBy(req.session.userId, row.campaign_id);
+    if (!seat) return res.status(403).json({ error: 'You do not hold a seat in this campaign' });
+
+    const qs = (await client.query(
+      `SELECT id, kind, scale_min, scale_max, allow_comment
+         FROM campaign_survey_questions WHERE survey_id=$1`, [row.survey_id])).rows;
+    const byId = new Map(qs.map((q) => [String(q.id), q]));
+    const answers = Array.isArray(req.body?.answers) ? req.body.answers : [];
+
+    await client.query('BEGIN');
+    /*
+     * The attendance row FIRST, and by ON CONFLICT rather than by catching
+     * the duplicate.
+     *
+     * Its primary key is what settles a double submit — two taps on a slow
+     * connection is a race that checking first does not win. But catching
+     * the 23505 inside the transaction would be the bug this file has had
+     * once already: Postgres aborts the whole transaction on any failed
+     * statement, so the catch would be reasoning about a dead connection.
+     * DO NOTHING turns the race into a row count.
+     */
+    const claimed = await client.query(
+      `INSERT INTO campaign_survey_submissions (run_id, player_id)
+            VALUES ($1,$2)
+       ON CONFLICT (run_id, player_id) DO NOTHING
+         RETURNING player_id`,
+      [runId, seat.id]);
+    if (!claimed.rows.length) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({ error: 'You have already answered this one' });
+    }
+
+    const resp = await client.query(
+      `INSERT INTO campaign_survey_responses (run_id, player_id) VALUES ($1,$2) RETURNING id`,
+      // NULL on an anonymous survey: not unknown, deliberately not recorded.
+      [runId, row.anonymous ? null : seat.id]);
+
+    for (const a of answers) {
+      const q = byId.get(String(a?.question_id));
+      if (!q) continue;                     // a question from another survey
+      let score = null;
+      if (q.kind === 'scale' && a?.score !== null && a?.score !== undefined && a.score !== '') {
+        const n = Math.trunc(Number(a.score));
+        if (!Number.isFinite(n) || n < q.scale_min || n > q.scale_max) {
+          await client.query('ROLLBACK');
+          return res.status(400).json({ error: 'An answer is outside the scale' });
+        }
+        score = n;
+      }
+      const comment = (q.kind === 'text' || q.allow_comment)
+        ? surveyStr(a?.comment, 4000) : null;
+      if (score === null && !comment) continue;   // skipped
+      await client.query(
+        'INSERT INTO campaign_survey_answers (response_id, question_id, score, comment) VALUES ($1,$2,$3,$4)',
+        [resp.rows[0].id, q.id, score, comment]);
+    }
+    await client.query('COMMIT');
+    res.status(201).json({ ok: true });
+  } catch (e) {
+    await client.query('ROLLBACK').catch(() => {});
+    res.status(500).json({ error: e.message });
+  } finally { client.release(); }
+});
+
 app.get('/api/campaigns/:campaignId/sessions', requireRole(['dm', 'admin']), async (req, res) => {
   try {
     if (!await dmOwnsCampaign(req.params.campaignId, req.session.userId, req.session.role))
@@ -8025,14 +8847,17 @@ app.get('/api/campaigns/:id/export', requireRole(['dm']), async (req, res) => {
     // it carries the prep too; the `campaign-sessions` file stays as the way
     // to move prep BETWEEN campaigns without the players and maps.
     const sessionsOut = await sessionsForExport(id);
+    // After playerRefById is built — the responses name their player.
+    const surveysOut = await surveysForExport(id, playerRefById);
 
     res.json({
       // 5 adds `item_cards` and per-player `inventory`. 6 adds the NPC detail
       // fields and `campaign_journal`. 7 adds `sessions`, the prep. 8 adds
-      // each NPC's `sheet`, its stat block. Older bundles still import:
-      // every key here is additive and the import defaults each one, so
-      // nothing reads this number — see the note on the import side.
-      version: 8,
+      // each NPC's `sheet`, its stat block. 9 adds `surveys`, with every
+      // asking and every answer — the history is the feature. Older bundles
+      // still import: every key here is additive and the import defaults
+      // each one, so nothing reads this number — see the import side.
+      version: 9,
       exported_at: new Date().toISOString(),
       type: 'campaign',
       item_cards: cardsOut,
@@ -8083,15 +8908,15 @@ app.get('/api/campaigns/:id/export', requireRole(['dm']), async (req, res) => {
       })),
       campaign_diary: diaryRes.rows,
       sessions: sessionsOut,
+      surveys: surveysOut,
     });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// Import a full campaign snapshot — creates everything fresh, resolves all refs to new DB IDs
 app.post('/api/campaigns/import', requireRole(['dm']), async (req, res) => {
   const bundle = req.body;
   if (bundle.type !== 'campaign') return res.status(400).json({ error: 'Not a campaign export file' });
-  const { campaign, players = [], locations = [], npcs = [], cross_connections = [], journey_maps = [], dm_timelines = [], party_events = [], campaign_diary = [], campaign_journal = [], sessions = [] } = bundle;
+  const { campaign, players = [], locations = [], npcs = [], cross_connections = [], journey_maps = [], dm_timelines = [], party_events = [], campaign_diary = [], campaign_journal = [], sessions = [], surveys = [] } = bundle;
   if (!campaign?.name) return res.status(400).json({ error: 'Missing campaign name' });
 
   const client = await pool.connect();
@@ -8604,6 +9429,13 @@ app.post('/api/campaigns/import', requireRole(['dm']), async (req, res) => {
      *     An older bundle has no `sessions` key and lands zero of them.
      */
     const sessionsIn = await importSessionList(client, newId, req.session.userId, sessions);
+    /*
+     * Surveys last, because the responses name players by ref and
+     * `playerIdByRef` is only complete after the players pass. A bundle
+     * from before version 9 has no `surveys` key and lands zero of them.
+     */
+    const surveysIn = await importSurveyList(
+      client, newId, req.session.userId, surveys, playerIdByRef);
 
     await client.query('COMMIT');
     // Say what happened to the gear: how many rows landed, how many cards were
@@ -8614,6 +9446,7 @@ app.post('/api/campaigns/import', requireRole(['dm']), async (req, res) => {
       success: true,
       campaign_id: newId,
       sessions: sessionsIn.added,
+      surveys: surveysIn,
       session_cards: sessionsIn.cards,
       gear: {
         items: gearAdded,
@@ -9886,6 +10719,155 @@ async function initializeDatabase() {
         created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       );
+    `);
+
+    /**
+     * Campaign surveys — asking the table how the campaign is going.
+     *
+     * FIVE tables rather than one, because the thing being modelled is not a
+     * questionnaire but a questionnaire asked REPEATEDLY. The survey is the
+     * wording; a run is one asking of it; a response is one person's answers
+     * to one run. That is what lets "are we still railroading?" be a line on
+     * a chart rather than a number with nothing to compare it to.
+     *
+     * Questions are the DM's, not ours. There is no fixed set.
+     */
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS campaign_surveys (
+        id          SERIAL PRIMARY KEY,
+        campaign_id INTEGER NOT NULL REFERENCES campaigns(id) ON DELETE CASCADE,
+        title       VARCHAR(255) NOT NULL,
+        intro       TEXT,
+        anonymous   BOOLEAN NOT NULL DEFAULT true,
+        created_by  INTEGER REFERENCES users(id),
+        created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
+    /*
+     * `polarity` is not decoration. On a 1-10 scale, high railroading is bad,
+     * high involvement is good, and "do I describe too much or too little" is
+     * best in the MIDDLE — so a results view that colours high numbers green
+     * or sorts by average would mislead on half the questions a DM asks.
+     *
+     * `kind` keeps free text as a first-class question rather than a comment
+     * bolted to a number, and `allow_comment` lets a scale question carry one
+     * anyway, which is where the useful answers usually are.
+     */
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS campaign_survey_questions (
+        id            SERIAL PRIMARY KEY,
+        survey_id     INTEGER NOT NULL REFERENCES campaign_surveys(id) ON DELETE CASCADE,
+        position      INTEGER NOT NULL DEFAULT 0,
+        prompt        TEXT NOT NULL,
+        kind          VARCHAR(10) NOT NULL DEFAULT 'scale',
+        scale_min     INTEGER NOT NULL DEFAULT 1,
+        scale_max     INTEGER NOT NULL DEFAULT 10,
+        low_label     VARCHAR(60),
+        high_label    VARCHAR(60),
+        polarity      VARCHAR(10) NOT NULL DEFAULT 'neutral',
+        allow_comment BOOLEAN NOT NULL DEFAULT true
+      );
+    `);
+    await pool.query(`
+      ALTER TABLE campaign_survey_questions
+        DROP CONSTRAINT IF EXISTS campaign_survey_questions_kind_check;
+    `);
+    await pool.query(`
+      ALTER TABLE campaign_survey_questions
+        ADD CONSTRAINT campaign_survey_questions_kind_check
+        CHECK (kind IN ('scale','text'));
+    `);
+    await pool.query(`
+      ALTER TABLE campaign_survey_questions
+        DROP CONSTRAINT IF EXISTS campaign_survey_questions_polarity_check;
+    `);
+    await pool.query(`
+      ALTER TABLE campaign_survey_questions
+        ADD CONSTRAINT campaign_survey_questions_polarity_check
+        CHECK (polarity IN ('higher','lower','middle','neutral'));
+    `);
+    /* One asking of a survey. `closed_at` null means it is open. */
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS campaign_survey_runs (
+        id        SERIAL PRIMARY KEY,
+        survey_id INTEGER NOT NULL REFERENCES campaign_surveys(id) ON DELETE CASCADE,
+        label     VARCHAR(120),
+        opened_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        closed_at TIMESTAMP
+      );
+    `);
+    /*
+     * The token in the link a DM sends, in place of the run id.
+     *
+     * The id was guessable AND it was an oracle: /survey/2, /survey/3 … got
+     * 403 for a run in somebody else's campaign and 404 for one that does
+     * not exist, which told a stranger how many surveys the whole instance
+     * had asked. Every other share link here was already a token; this was
+     * the odd one out.
+     *
+     * A DATABASE default rather than minted in a route, because runs are
+     * created in two places — the Ask route and the campaign import — and a
+     * third will come. Postgres evaluates a volatile default per row when
+     * the column is added, so runs that already exist each get their own.
+     * gen_random_uuid() is core since Postgres 13: 122 random bits, and the
+     * dashes go because they read as structure that is not there.
+     *
+     * Never exported: an imported copy of a campaign gets fresh tokens, so
+     * a link sent for the original cannot open the copy — and two
+     * instances' bundles cannot collide on the unique index.
+     */
+    await pool.query(`
+      ALTER TABLE campaign_survey_runs
+        ADD COLUMN IF NOT EXISTS share_token TEXT NOT NULL
+        DEFAULT replace(gen_random_uuid()::text, '-', '');
+    `);
+    await pool.query(`
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_survey_runs_share_token
+        ON campaign_survey_runs (share_token);
+    `);
+    /*
+     * One person's answers to one run.
+     *
+     * `player_id` is NULL on an anonymous survey — not "unknown", but
+     * deliberately not recorded. Who has answered is kept separately, so the
+     * DM can still chase the two people who have not without being able to
+     * read what the other three said.
+     *
+     * With a table of five, that separation is thinner than it sounds: free
+     * text identifies its author by voice, and the rows were written in the
+     * same order people submitted. It is honest protection against casual
+     * reading, not against someone determined with database access — and the
+     * player-facing copy says so rather than promising more.
+     */
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS campaign_survey_responses (
+        id           SERIAL PRIMARY KEY,
+        run_id       INTEGER NOT NULL REFERENCES campaign_survey_runs(id) ON DELETE CASCADE,
+        player_id    INTEGER REFERENCES campaign_players(id) ON DELETE SET NULL,
+        submitted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
+    /* Attendance, always recorded — the "you have answered" the bubble reads. */
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS campaign_survey_submissions (
+        run_id       INTEGER NOT NULL REFERENCES campaign_survey_runs(id) ON DELETE CASCADE,
+        player_id    INTEGER NOT NULL REFERENCES campaign_players(id) ON DELETE CASCADE,
+        submitted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        PRIMARY KEY (run_id, player_id)
+      );
+    `);
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS campaign_survey_answers (
+        id          SERIAL PRIMARY KEY,
+        response_id INTEGER NOT NULL REFERENCES campaign_survey_responses(id) ON DELETE CASCADE,
+        question_id INTEGER NOT NULL REFERENCES campaign_survey_questions(id) ON DELETE CASCADE,
+        score       INTEGER,
+        comment     TEXT
+      );
+    `);
+    await pool.query(`
+      CREATE INDEX IF NOT EXISTS idx_survey_answers_question
+        ON campaign_survey_answers (question_id);
     `);
 
     /**

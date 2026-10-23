@@ -29,6 +29,7 @@ import EvolutionPanel from '@/pages/Evolution/EvolutionPanel';
 import { CharTreeTab }         from './tabs/CharTreeTab';
 import JournalTab              from './tabs/JournalTab';
 import SearchTab               from './tabs/SearchTab';
+import SurveysPanel            from '@/pages/Surveys/SurveysPanel';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Campaign sidebar
@@ -313,6 +314,8 @@ export default function ManageCampaigns() {
         );
       case 'evolution':
         return <EvolutionPanel key={currentId} campaignId={currentId} players={players} />;
+      case 'surveys':
+        return <SurveysPanel key={currentId} campaignId={currentId} />;
       case 'search':
         return <SearchTab campaignId={currentId} />;
       case 'settings':

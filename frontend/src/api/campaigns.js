@@ -72,6 +72,20 @@ export const campaignsApi = {
   saveNpcSheet:   (cid, nid, d) => client.put(`/campaigns/${cid}/npcs/${nid}/sheet`, d),
   deleteNpcSheet: (cid, nid)    => client.del(`/campaigns/${cid}/npcs/${nid}/sheet`),
 
+  /* Surveys — the DM's side. Asking one is opening a `run` of it. */
+  listSurveys:  (cid)            => client.get(`/campaigns/${cid}/surveys`),
+  getSurvey:    (cid, sid)       => client.get(`/campaigns/${cid}/surveys/${sid}`),
+  addSurvey:    (cid, d)         => client.post(`/campaigns/${cid}/surveys`, d),
+  saveSurvey:   (cid, sid, d)    => client.put(`/campaigns/${cid}/surveys/${sid}`, d),
+  deleteSurvey: (cid, sid)       => client.del(`/campaigns/${cid}/surveys/${sid}`),
+  surveyResults:(cid, sid)       => client.get(`/campaigns/${cid}/surveys/${sid}/results`),
+  openRun:      (cid, sid, d)    => client.post(`/campaigns/${cid}/surveys/${sid}/runs`, d),
+  setRun:       (cid, sid, r, d) => client.patch(`/campaigns/${cid}/surveys/${sid}/runs/${r}`, d),
+  deleteRun:    (cid, sid, r)    => client.del(`/campaigns/${cid}/surveys/${sid}/runs/${r}`),
+  // Every asking and answer gone, questions kept. Session-only: a token
+  // cannot DELETE anything.
+  resetSurvey:  (cid, sid)       => client.del(`/campaigns/${cid}/surveys/${sid}/runs`),
+
   // ── Meta ──────────────────────────────────────────────
   getMeta:    (cid)      => client.get(`/campaigns/${cid}/meta`),
   saveMeta:   (cid, d)   => client.put(`/campaigns/${cid}/meta`, d),
