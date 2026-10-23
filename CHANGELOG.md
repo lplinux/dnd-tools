@@ -11,6 +11,279 @@ The newest tag is `1.0.1`. Anything above it is marked *Unreleased* until it is 
 
 ---
 
+## [Unreleased]
+
+### Added — importing a campaign whose name you already use
+
+Importing a campaign file under a name you already have made a second "Leruhy", and
+every list in the app — the sidebar, the PC Sheet's campaign picker, the import's own
+"replace this?" — became a guess. It now asks, in a dialog rather than a yes/no box,
+because there are up to three answers and one of them needs a name:
+
+- **Replace it.** For a whole-campaign file: the current one goes to the **Trash** and the
+  file takes its place, players, sheets and maps included. Both happen in one
+  transaction, so an import that fails halfway leaves the old campaign exactly where it
+  was. Its share, invite and survey links belonged to the old campaign and stop working.
+- **Merge into it.** For a *partial* file, which cannot replace a whole campaign without
+  destroying everything it does not carry — the sections in the file replace those
+  sections, and the rest is left alone.
+- **Create a new campaign**, under a name that is not taken — "Leruhy (2)" filled in, and
+  the field says *taken* as you type.
+
+Merging into the campaign you have open is still offered when it is a different one.
+
+**The server has the last word.** An import under a taken name is refused with
+`NAME_TAKEN` and a free name to suggest, and the dialog asks again with it filled in. The
+check runs inside the import's transaction under a per-DM lock, so two imports at once
+cannot both pass it — checked live, one 200 and one 409. Names compare ignoring case and
+spaces, only among campaigns you can see: the Trash does not count, and another DM may
+have their own "Leruhy". There is no unique index, because existing installs may already
+hold duplicates an index would refuse to build on.
+
+**Restoring from the Trash renames instead of refusing** when the name is in use. That is
+the undo for a replace, and the replace took the name, so it collides every time it
+matters — "Leruhy" comes back as "Leruhy (2)", and says so.
+
+`test/campaignRoundTrip.live.test.js` had asserted `version: 6` since the bundle moved to 7,
+unnoticed because it runs only with `ROUNDTRIP_DB` set. Run for this change, it now passes
+all 17 and checks the version is *at least* 6, leaving the exact number to the test that
+runs every time.
+
+### Added — export part of a campaign
+
+**Settings → Export part…** chooses what goes into the file, in three groups: *the world*
+(locations, NPCs with their stat blocks, maps, item cards, DM timelines, session prep,
+survey questions, Char Tree connections), *this table* (the seats, character sheets, DM
+notes, personal relationships, player timelines and diaries, inventories, party timeline)
+and *what happened* (the journal, the campaign diary, survey results). Surveys are split:
+the questions are world, ready to ask a new group; the answers are history. *The world
+only — for a new table* is one click. A partial file is saved as `campaign-part-…`, so a
+folder of exports says which files are whole backups.
+
+The same thing is a query string for anyone driving it with an API token —
+`GET /api/campaigns/:id/export?parts=npcs,locations` — and the list of parts is served at
+`/api/campaign-export-parts`, so the dialog and a curl command cannot disagree about what
+the parts are called. No `parts` is the whole campaign, exactly as before; an unknown part
+is refused rather than ignored.
+
+**Two rules decide what a partial file contains.** A part that cannot exist without another
+brings it along — survey results their questions, a character sheet its seat — and the
+file says which were added. A reference to something left out is treated by kind:
+**people are stripped** (a world exported for a new table carries none of the old table's
+names: not in survey attendance, not as timeline actors, not as journal authors), **file
+positions are stripped** (an inventory item's card is an index into this file's own cards),
+and **world names are kept**. That last one was first written the other way, and would have
+broken the merge it was built for: an NPC standing in *Buldamar* keeps that name even when
+locations stay home, so importing it into a campaign that already has Buldamar puts it back.
+
+The selection is a pure function in `lib/campaignParts.js` — the first module outside
+`app.js`, so its tests run it against a bundle rather than reading it as text — and a test
+reads the real export route to fail the day a new section is added there and not here.
+
+### Fixed — importing a partial file, found while building it
+
+- **A timeline actor that did not resolve was stored raw** — `npc_Grathul` where an
+  `npc_<id>` belongs, a row that parses to NaN wherever actors are read. Full exports never
+  triggered it; partial ones would have every time. Unresolved actors are now dropped.
+- **Importing into an existing campaign dropped NPC stat blocks without a word** — they were
+  added to the new-campaign import and missed here. They come across now.
+- **It dropped Char Tree connections without a word too**, despite promising to name what
+  it will not merge. They are named now, and the import summary finally shows the server's
+  list of everything it skipped, which it always returned and the page never displayed.
+- **A location name resolves against the campaign already there**, not only against the
+  file — so NPCs merged from one group into another with the same world keep their places
+  instead of having them wiped.
+- **Surveys import into an existing campaign**, and are *added*, never replaced: replacing
+  one would delete its answers. One already there by title is skipped and named, so the
+  same file imported twice does not ask the table the same thing twice.
+
+### Added — campaign surveys: ask the table how it is going
+
+A **📊 Surveys** tab in Manage Campaigns, between Search and Settings. The DM writes the questions — there is
+no fixed set — and *asking* one puts a bubble in front of every player the next
+time they are in the app.
+
+**Asking the same survey again is the point.** A survey is the wording; each asking
+is a *run*; the results view puts the runs side by side with the change since last
+time. "6.2 on railroading" says almost nothing on its own and quite a lot next to
+the 7.8 it was three months ago.
+
+**Questions are scale or free text**, with the scale's own range and end labels — shown
+on the same row as the numbers, either side of them, so *Very unevenly 1 … 10 Evenly
+shared* reads as one line — and
+an optional comment box on a scale question — which is usually where the real answer
+is. Each question also carries a **direction**: higher-is-better, lower-is-better,
+or middle-is-best. Without it a results table cannot be read at a glance, because 9
+for railroading and 9 for involvement are opposite news in the same column. That
+reading is the DM's and is never sent to the player answering, where it would be a
+nudge.
+
+**Anonymous by default, and anonymous in the database** — the response carries no
+player id at all, rather than carrying one the screen declines to show. Who has
+answered is recorded separately, so the DM can still chase the two who have not
+without being able to read what the other three said. The player-facing copy says
+plainly that on a table of five, free text still sounds like whoever wrote it; this
+stops casual attribution, not a determined guess. A survey can be made attributed
+instead, and then names do appear.
+
+**The history cannot be quietly rewritten.** A question that has been answered
+cannot be deleted — that would cascade its answers and change what a past run said —
+and the refusal names which ones. Rewording one IS allowed, because that is how a
+typo gets fixed, and forcing a near-duplicate survey instead would lose the
+comparison far more thoroughly.
+
+**The bubble** is mounted in the app layout rather than on a page, since there is no
+page every player reliably opens, and it is fetched once per page load rather than
+polled. *Not now* is per browser and per run: it comes back next session and never
+touches the DM's "who has answered" list.
+
+**A link to send the table.** Opening a run shows its link straight away, and an open
+survey's card keeps a 🔗 *Link* button. It goes to `/survey/<token>` — a random token,
+not the run id. The id was guessable and, worse, an oracle: probing `/survey/2`,
+`/survey/3` got *exists, not yours* for runs in other campaigns and *not found* for ones
+that did not exist, which told a stranger how many surveys the whole instance had asked.
+Every other share link in the app was already a token. The id-based routes the bubble
+uses now answer a stranger *not found* either way.
+
+The token route is gated like the five other share routes — token resolved first, then
+`shareGate` — rather than behind the login middleware. It first shipped behind the
+middleware, which meant a logged-out visitor holding a **dead** link was told to log in
+for something that no longer existed; the route-walking test in `campaignAuth.test.js`
+caught it. That test also never walked routes keyed by a run id, so it was extended:
+removing the membership check from either player survey route now fails it.
+
+Tokens come from a database default, so the Ask route, the campaign import and any run
+that already existed all get one, each its own. They are never exported: an imported
+copy of a campaign gets fresh ones, so a link for the original cannot open the copy.
+
+The link is built from the address the DM's browser is on, like every share link here.
+On `localhost` the dialog now says so, since no player can open that.
+
+The page itself is deliberately outside the app's login guard: that guard sends a
+logged-out visitor home and forgets where they were going, which is fatal for a link
+clicked from a group chat. This page asks the server instead, so a logged-out player is
+sent to log in and straight back, a player from another campaign is told so, and a
+closed survey says it has closed.
+Opening it a second time says *already answered* up front rather than after the form. A
+DM without a seat sees a preview with no Send. Copy falls back to selecting the URL,
+because the clipboard API does not exist over plain HTTP on a LAN address. The page and
+the bubble render the same form, and answering on the page drops it from the bubble.
+
+**↺ Reset** clears a survey's results and keeps its questions — every asking, answer and
+attendance record goes, so the same survey can be asked from scratch: after a test run, or
+for a new table playing the same campaign. The confirmation names the answers as well as
+the askings, says when an open survey will close, and points at *Export part…* for a copy,
+because it cannot be undone. A DELETE, so no API token can reach it — tokens are refused
+every DELETE, which keeps the one unrecoverable thing on a survey out of a script's hands.
+
+**One answer per player per asking**, settled by the database rather than by checking
+first: two taps on a slow connection is a race, and a primary key is the only thing
+that wins it. Asking again opens a fresh chance, which is the point of asking again.
+
+**Surveys travel in the campaign bundle** (version 9) — every asking and every answer,
+not just the questions, since a restored survey with no past would be the feature with
+its point removed. Answers refer to their question by position in the bundle rather
+than by id, and an anonymous survey's responses carry no name on the way out because
+none is stored; the anonymity survives the round trip instead of being re-applied.
+Everything coming back in goes through the same cleaner as the live routes, and a
+score outside its own scale is dropped rather than failing the whole restore.
+
+### Added — NPCs get stat blocks of their own
+
+An NPC can hold a **stat block** now, without becoming a character. The sword
+beside a name on the NPCs tab opens it: faint when there is none and it offers to
+start one, gold when there is. It is the same editor the PC sheet embeds, so the
+SRD creature import works here too — pulling a goblin and editing it down is
+faster than typing one.
+
+**A side table, not a PC sheet per NPC.** Giving an NPC a character sheet would
+mean giving it a player seat, which would drag it into the seat list, user
+assignments, diaries, timelines, inventory and the bundle — all to record an AC.
+`npc_sheets` holds one row per NPC that has one, cascades when the NPC goes, and
+costs nothing for the many that never will. The blob goes through the same
+validator a character's stats do.
+
+**`has_sheet` is derived rather than stored.** It was a checkbox meaning "this one
+needs a stat block"; now the row is the answer, and two sources of truth would have
+disagreed the first time somebody made a sheet without ticking the box. Whatever the
+checkbox recorded is folded into an empty sheet — which is what the tick meant — and
+the column goes.
+
+**The iframe bridge now lives in one place.** The character sheet and an NPC's stat
+block are the same editor over different storage, and the bridge has enough sharp
+edges — the print copy stealing the on-screen frame's messages, an empty payload
+being a silent no-op — that a second copy would have drifted within a release.
+
+**The stat block travels in the campaign bundle** (version 8), emitted only for the
+NPCs that have one. A backup that silently dropped them would be the same class of
+bug as the NPC fields regression.
+
+### Added — clicking an NPC shows who they are connected to
+
+The card a `[[Name]]` opens now lists their relationships, with the direction the
+edge points and the label the DM wrote on the Char Tree. A player sees only the
+public ones, never the notes, and never an edge pointing at an NPC they have not
+met — a nameless edge still says somebody is there.
+
+The route and its gate shipped in 1.0.1 with no caller, so none of it was reachable.
+This is the half that was missing.
+
+### Added — filtering the NPC list
+
+By place, by alive/dead/unknown, and by whether the party has met them, on top of
+the search box. All three ride on the row the list already fetched, so none of it
+costs a request. The place list is built from the NPCs rather than from every
+location, so it cannot offer somewhere that would return nothing, and "no location"
+is its own choice — "who is unplaced" is a real question. An empty result now says
+which empty it is, rather than sending you off to write an NPC you already have.
+
+### Changed — the last big text boxes render markdown
+
+**DM notes**, **inventory item notes** and **timeline event descriptions** rendered
+their own asterisks. They are the longest things written in the app after the diary,
+and they were the last three still doing it. The search view's `bodyFormat` moved with
+them: the same note rendered two ways reads as two different notes.
+
+**A character's Public and Private Information** now do too, in all three places
+they are read: the public share page, the printed sheet and the search detail. They
+had no in-app read view of their own, which is how the split went unnoticed — the
+only way to see them rendered was to open the share link.
+
+That meant the search card needed a format **per section** rather than one for the
+whole character: the two Information fields are prose, while Story, Traits, Flaws
+and Goals are short boxes that stay plain. Both editors now say markdown works, since
+a bare textarea gives no hint and there is no rendered view to discover it from.
+
+The printed DM notes were missed in the first pass and render markdown now as well,
+matching their tab.
+
+Truncated list previews deliberately stay raw — one line of a note cut mid-sentence
+with its markup resolved is worse than the plain text.
+
+### Changed — granting an item from the library sorts, searches and names the tier
+
+The picker listed the library newest-first, which is the right order for a library
+you are building and the wrong one for a list you are looking something up in. It
+sorts by name now, and searches name, type and rarity once there are more than seven
+to scroll.
+
+**Evolving items say which rung they are** — *tier 2 of 3*. Granting a later tier
+straight out is a real choice, but the tiers of one item are often near-identical by
+name, so without it the list read as three copies of the same sword.
+
+### Fixed — closing an NPC's stat block turned the page black
+
+`<Modal open={!!x}>` evaluates its children before Modal is called, so the body
+still ran on the render where closing set `x` to null — and the companion state it
+checked instead had not been cleared yet, because that happens in an effect. Reading
+`sheetFor.id` there threw, and with no error boundary above it the whole page went.
+
+The fix is one guard, but the test sweeps **every** modal in the app for the same
+shape, because this is a pattern that reads as correct and the next one written from
+memory would have had it too. The other ten were already right.
+
+---
+
 ## [1.0.1] – 2026-10-21 — Running a session, and a campaign that keeps time
 
 `1.0.0` made the app. This release is about *using* it at the table.

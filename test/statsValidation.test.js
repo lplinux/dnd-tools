@@ -198,16 +198,25 @@ describe('validateStats rejects what it should', () => {
 
 describe('every write to stats_json goes through the validator', () => {
   it('has no remaining unvalidated write', () => {
-    // Three routes write this column and two take it from an uploaded file.
-    // Hardening only the PUT would leave the import routes as a back door.
+    // Six writes now: the character PUT and the NPC sheet PUT, plus four
+    // that take the blob from an uploaded file — the new-campaign import
+    // writes both kinds, and import-into writes NPC sheets since it stopped
+    // dropping them. Hardening only the PUTs
+    // would leave the import paths as a back door — a bundle is a file a
+    // person can edit, so what is in it is no more trusted than a request.
+    //
+    // `sheet` is in the filter because that is what the campaign import
+    // calls its variable. It was added when NPC sheets landed, and without
+    // it that write matched nothing and the guard counted past it: a raw
+    // JSON.stringify(sheet) would have sailed through this test.
     // Comments stripped first, as handlerCode() does in itemCards.test.js —
     // the validator's own doc comment names the old unchecked call.
     const code = appSource.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');
     const writes = [...code.matchAll(/JSON\.stringify\(([^)]*)\)/g)]
       .map(m => m[1])
-      .filter(a => /stats|req\.body/.test(a));
+      .filter(a => /stats|req\.body|sheet/.test(a));
 
-    expect(writes.length).toBe(3);
+    expect(writes.length).toBe(6);
     for (const arg of writes) expect(arg).toMatch(/^validateStats\(/);
   });
 });

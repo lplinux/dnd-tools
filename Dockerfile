@@ -48,6 +48,11 @@ RUN npm ci --omit=dev
 
 # Copy Express application
 COPY app.js ./
+# app.js requires ./lib at startup (lib/campaignParts.js — choosing which
+# parts of a campaign to export). Listed by name like everything here, so a
+# new server-side folder has to be added to this list or the image will not
+# boot: `Cannot find module './lib/campaignParts'`.
+COPY lib/ ./lib/
 COPY scripts/ ./scripts/
 COPY docs/ ./docs/
 

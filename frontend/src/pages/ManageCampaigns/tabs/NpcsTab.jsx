@@ -20,10 +20,13 @@
  * in later, when they turn out to matter.
  */
 
-import { useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Eye, EyeOff, MapPin, Pencil, Trash2, Swords, Skull, CircleHelp } from 'lucide-react';
 
-import { Button, Modal, FormField } from '@/components/ui';
+import { Button, Modal, FormField, Spinner } from '@/components/ui';
+import StatsSheetFrame from '@/components/StatsSheetFrame';
+import { campaignsApi } from '@/api/campaigns';
+import { useToast } from '@/hooks/useToast';
 import CrossLinkPopover from '@/components/CrossLinkPopover';
 import { useConfirm } from '@/contexts/ConfirmContext';
 
@@ -62,18 +65,41 @@ function LifeMark({ state, size = 13 }) {
 
 const INPUT_CLS = 'w-full bg-surface2 border border-border2 text-text px-2 py-1.5 rounded-sm text-sm focus:outline-none focus:border-[var(--gold-dim)]';
 
+/** A filter select: narrow, quiet, and the same height as the search box. */
+const FILTER_CLS = 'bg-surface2 border border-border2 text-text px-2 py-1.5 rounded-sm '
+  + 'text-xs focus:outline-none focus:border-[var(--gold-dim)]';
+
+/*
+ * The sentinel for "standing nowhere". A location can be called anything,
+ * so this cannot be a name — but it CAN be a string no name survives as,
+ * since a location's name is trimmed and non-empty.
+ */
+const NO_LOCATION = '\u0000none';
+
 export default function NpcsTab({ npcs, locations = [], campaignId, actions }) {
   const confirm = useConfirm();
+  const { toast } = useToast();
   const [input, setInput] = useState('');
   const [adding, setAdding] = useState(false);
   const [form, setForm] = useState(null);     // null = modal shut
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
   const [query, setQuery] = useState('');
+  /*
+   * Three narrowings, all answering "which of these do I need right now".
+   * Empty string means "any", so one falsy check covers both the control
+   * and the predicate below.
+   */
+  const [fLoc, setFLoc] = useState('');
+  const [fLife, setFLife] = useState('');
+  const [fMet, setFMet] = useState('');
   // The read-only card, opened by clicking a row. Reading an NPC and editing
   // one are different intents, and the edit modal is a poor reader: it is a
   // stack of textareas. The pencil still opens that.
   const [card, setCard] = useState(null);   // { target, at } | null
+  // The NPC whose stat block is open, and that sheet once it has loaded.
+  const [sheetFor, setSheetFor] = useState(null);
+  const [sheet, setSheet] = useState(null);     // { exists, stats } | null
 
   const sorted = useMemo(
     () => [...npcs].sort((a, b) => a.name.localeCompare(b.name)),
@@ -84,15 +110,76 @@ export default function NpcsTab({ npcs, locations = [], campaignId, actions }) {
   // the DM's own tab, and "which one was the innkeeper" is the question.
   const shown = useMemo(() => {
     const q = query.trim().toLowerCase();
-    if (!q) return sorted;
-    return sorted.filter((n) => [n.name, n.description, n.public_info, n.private_info,
-      n.location_name].some((v) => String(v ?? '').toLowerCase().includes(q)));
-  }, [sorted, query]);
+    return sorted.filter((n) => {
+      if (q && ![n.name, n.description, n.public_info, n.private_info, n.location_name]
+        .some((v) => String(v ?? '').toLowerCase().includes(q))) return false;
+      // NONE is its own choice, not the absence of one: "who is unplaced"
+      // is a real question when you are tidying up a campaign.
+      if (fLoc && (fLoc === NO_LOCATION ? n.location_name : n.location_name !== fLoc)) return false;
+      // An NPC with no life_state is alive — the column defaults to it, and
+      // every NPC that predates the column has null.
+      if (fLife && (n.life_state ?? 'alive') !== fLife) return false;
+      if (fMet && String(!!n.is_public) !== fMet) return false;
+      return true;
+    });
+  }, [sorted, query, fLoc, fLife, fMet]);
+
+  /*
+   * Built from the NPCs themselves rather than from `locations`, so the
+   * list cannot offer a place that would return nothing. The campaign has
+   * far more locations than it has NPCs standing in them.
+   */
+  const placeOpts = useMemo(() => {
+    const names = [...new Set(sorted.map((n) => n.location_name).filter(Boolean))];
+    return names.sort((a, b) => a.localeCompare(b));
+  }, [sorted]);
+
+  const anyFilter = !!(query.trim() || fLoc || fLife || fMet);
+  const clearFilters = () => { setQuery(''); setFLoc(''); setFLife(''); setFMet(''); };
 
   const locationOpts = useMemo(
     () => [...locations].sort((a, b) => a.name.localeCompare(b.name)),
     [locations],
   );
+
+  /*
+   * The blob is fetched when the sheet is opened, never with the list: it
+   * is a kilobyte of JSON per NPC and the list only ever needed the
+   * yes/no that `has_sheet` already carries.
+   */
+  useEffect(() => {
+    setSheet(null);
+    if (!sheetFor) return undefined;
+    let alive = true;
+    campaignsApi.npcSheet(campaignId, sheetFor.id)
+      .then((r) => { if (alive) setSheet(r ?? { exists: false, stats: {} }); })
+      .catch((e) => { if (alive) { toast(e.message, 'error'); setSheetFor(null); } });
+    return () => { alive = false; };
+  }, [sheetFor, campaignId, toast]);
+
+  /*
+   * Saving is what CREATES the sheet — there is no separate "generate"
+   * step, because an empty sheet nobody has typed into is indistinguishable
+   * from no sheet at all. The list is patched rather than refetched so the
+   * row's icon lights up without the table remounting underneath the modal.
+   */
+  const saveSheet = useCallback(async (payload) => {
+    const r = await campaignsApi.saveNpcSheet(campaignId, sheetFor.id, payload);
+    setSheet(r);
+    actions.patchNpc?.(sheetFor.id, { has_sheet: true });
+    return r;
+  }, [campaignId, sheetFor, actions]);
+
+  async function removeSheet() {
+    if (!await confirm(`Delete ${sheetFor.name}'s stat block? The NPC stays.`,
+      { title: 'Delete stat block', confirmLabel: 'Delete' })) return;
+    try {
+      await campaignsApi.deleteNpcSheet(campaignId, sheetFor.id);
+      actions.patchNpc?.(sheetFor.id, { has_sheet: false });
+      setSheetFor(null);
+      toast('Stat block deleted', 'success');
+    } catch (e) { toast(e.message, 'error'); }
+  }
 
   async function handleAdd() {
     const names = input.split(',').map((n) => n.trim()).filter(Boolean);
@@ -111,7 +198,6 @@ export default function NpcsTab({ npcs, locations = [], campaignId, actions }) {
       public_info: n.public_info ?? '',
       private_info: n.private_info ?? '',
       current_location_id: n.current_location_id ?? '',
-      has_sheet: !!n.has_sheet,
       life_state: n.life_state ?? 'alive',
     });
   }
@@ -127,7 +213,6 @@ export default function NpcsTab({ npcs, locations = [], campaignId, actions }) {
         public_info: form.public_info,
         private_info: form.private_info,
         current_location_id: form.current_location_id || null,
-        has_sheet: form.has_sheet,
         life_state: form.life_state,
       });
       setForm(null);
@@ -166,19 +251,61 @@ export default function NpcsTab({ npcs, locations = [], campaignId, actions }) {
       </p>
 
       {sorted.length > 3 && (
-        <input
-          type="search"
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          placeholder="Search NPCs…"
-          aria-label="Search NPCs"
-          className={INPUT_CLS}
-        />
+        <div className="flex flex-col gap-1.5">
+          <input
+            type="search"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Search NPCs…"
+            aria-label="Search NPCs"
+            className={INPUT_CLS}
+          />
+          <div className="flex flex-wrap items-center gap-1.5">
+            {/* Only offered when there is something to narrow BY. A place
+                filter on a campaign where nobody has a location is a
+                control that can only ever return the same list. */}
+            {placeOpts.length > 1 && (
+              <select value={fLoc} onChange={(e) => setFLoc(e.target.value)}
+                aria-label="Filter by location" className={FILTER_CLS}>
+                <option value="">Anywhere</option>
+                {placeOpts.map((p) => <option key={p} value={p}>{p}</option>)}
+                <option value={NO_LOCATION}>— no location —</option>
+              </select>
+            )}
+            <select value={fLife} onChange={(e) => setFLife(e.target.value)}
+              aria-label="Filter by status" className={FILTER_CLS}>
+              <option value="">Any status</option>
+              <option value="alive">Alive</option>
+              <option value="dead">Dead</option>
+              <option value="unknown">Unknown</option>
+            </select>
+            <select value={fMet} onChange={(e) => setFMet(e.target.value)}
+              aria-label="Filter by whether the party has met them" className={FILTER_CLS}>
+              <option value="">Met or not</option>
+              <option value="true">Revealed</option>
+              <option value="false">Not met yet</option>
+            </select>
+            {anyFilter && (
+              <button type="button" onClick={clearFilters}
+                className="text-[0.7rem] text-text-muted hover:text-gold underline">
+                Clear
+              </button>
+            )}
+            <span className="ml-auto text-[0.7rem] text-text-muted">
+              {shown.length} of {sorted.length}
+            </span>
+          </div>
+        </div>
       )}
 
       {!shown.length ? (
         <p className="text-text-dim text-sm italic text-center py-6">
-          {sorted.length ? `Nothing matches “${query.trim()}”.` : 'No NPCs yet.'}
+          {/* Which it is matters: "nothing matches" with a filter set is a
+              different problem from an empty campaign, and the fix is a
+              click away rather than a day's writing. */}
+          {!sorted.length ? 'No NPCs yet.'
+            : anyFilter ? 'No NPC matches those filters.'
+              : 'No NPCs yet.'}
         </p>
       ) : (
         <div className="overflow-x-auto">
@@ -227,10 +354,22 @@ export default function NpcsTab({ npcs, locations = [], campaignId, actions }) {
                         {n.name}
                       </strong>
                       <LifeMark state={n.life_state} />
-                      {n.has_sheet && (
-                        <Swords size={11} className="text-text-muted flex-shrink-0"
-                          aria-label="Has a stat block" />
-                      )}
+                      {/* Both states are the same control, because they are
+                          the same intent — "show me this one's numbers". An
+                          NPC with no sheet gets a faint sword that makes one
+                          on the way in, rather than a separate Add button
+                          taking a column from forty rows that do not need it. */}
+                      <button
+                        type="button"
+                        onClick={(e) => { e.stopPropagation(); setSheetFor(n); }}
+                        title={n.has_sheet ? `Open ${n.name}'s stat block` : `Create a stat block for ${n.name}`}
+                        aria-label={n.has_sheet ? 'Open stat block' : 'Create stat block'}
+                        className={`flex-shrink-0 leading-none ${n.has_sheet
+                          ? 'text-gold hover:text-text'
+                          : 'text-border2 hover:text-text-muted'}`}
+                      >
+                        <Swords size={11} />
+                      </button>
                     </span>
                   </td>
                   <td
@@ -305,15 +444,6 @@ export default function NpcsTab({ npcs, locations = [], campaignId, actions }) {
                   ))}
                 </select>
               </FormField>
-              <FormField label="Stat block">
-                {/* The distinction the DM actually draws: someone who will be
-                    rolled for, versus a name with a note. */}
-                <label className="flex items-center gap-2 text-sm text-text-dim pt-1.5">
-                  <input type="checkbox" checked={form.has_sheet}
-                    onChange={(e) => setForm((f) => ({ ...f, has_sheet: e.target.checked }))} />
-                  Needs a sheet (enemy or ally)
-                </label>
-              </FormField>
             </div>
 
             <FormField label="Description">
@@ -346,6 +476,49 @@ export default function NpcsTab({ npcs, locations = [], campaignId, actions }) {
             </div>
           </div>
         )}
+      </Modal>
+
+      {/* Full screen: it is a stat block, and the embedded sheet is laid out
+          for a page rather than a column. */}
+      <Modal
+        open={!!sheetFor}
+        onClose={() => setSheetFor(null)}
+        title={sheetFor ? `⚔ ${sheetFor.name} — stat block` : ''}
+        className="!max-w-[95vw] !w-[95vw] !max-h-[92vh]"
+      >
+        {/* `sheetFor &&` is load-bearing, not defensive. JSX evaluates
+            children before Modal is called, so this block still runs on the
+            render where closing set `sheetFor` to null — and `sheet` is
+            still the old object then, because the effect that clears it has
+            not run yet. Reading `sheetFor.id` there threw, and with no error
+            boundary above this, the whole page went black. */}
+        {sheetFor && (!sheet ? (
+          <div className="py-10 text-center"><Spinner /></div>
+        ) : (
+          <div className="flex flex-col gap-2 h-[78vh]">
+            {!sheet.exists && (
+              <p className="text-text-muted text-xs italic flex-shrink-0">
+                No stat block yet. Fill in what you need — a name, an AC and a
+                few actions is a usable one — and press Save. You can pull a
+                creature from the SRD inside the sheet rather than typing it.
+              </p>
+            )}
+            <div className="flex-1 min-h-0 border border-border rounded-sm overflow-hidden">
+              <StatsSheetFrame
+                stats={sheet.stats}
+                onSave={saveSheet}
+                frameId={`npc=${sheetFor.id}`}
+                title={`${sheetFor.name} stat block`}
+                autoHeight={false}
+              />
+            </div>
+            {sheet.exists && (
+              <div className="flex justify-end flex-shrink-0">
+                <Button variant="danger" onClick={removeSheet}>Delete stat block</Button>
+              </div>
+            )}
+          </div>
+        ))}
       </Modal>
 
       <CrossLinkPopover

@@ -7,7 +7,7 @@
  */
 
 import { useEffect, useMemo, useState } from 'react';
-import { Modal, Button, FIELD_INPUT, FIELD_LABEL } from '@/components/ui';
+import { Modal, Button, FIELD_INPUT, FIELD_LABEL, Markdown } from '@/components/ui';
 import {
   monthOptions, doyFromForm, absDay, fromAbsDay, formMidxFromDoy, HARPTOS, PALETTE,
   formatDate, formatDuration, parseDuration,
@@ -203,8 +203,12 @@ function ViewEventModal({ open, ev, onClose, onOpen, tl }) {
           <div>👤 {pls.length ? pls.map((p, i) => <span key={p.id} style={{ color: p.color }}>{i ? ', ' : ''}{p.name}</span>) : <span className="text-text-muted">—</span>}</div>
         </div>
         {ev.description && (
-          <div className="mt-4 pt-3 border-t border-border italic text-text max-w-[70ch]">
-            &quot;{ev.description}&quot;
+          /* The quote marks went with the plain text. They were punctuation
+             standing in for "this is the note" — a job the rule above it
+             already does, and they would wrap a heading or a list absurdly
+             now that those render. */
+          <div className="mt-4 pt-3 border-t border-border text-text max-w-[70ch]">
+            <Markdown>{ev.description}</Markdown>
           </div>
         )}
       </div>

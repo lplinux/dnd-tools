@@ -119,6 +119,10 @@ async function request(path, options = {}) {
     // from a refused permission can read these two instead.
     err.status = res.status;
     err.code   = body?.code;
+    // The rest of what the server said. A refusal can carry the way out —
+    // a name-taken 409 sends back a free name to suggest — and dropping it
+    // here meant the page had to guess at one the server already knew.
+    err.body   = body;
     throw err;
   }
 

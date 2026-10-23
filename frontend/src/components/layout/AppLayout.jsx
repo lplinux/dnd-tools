@@ -14,6 +14,7 @@
 import { Suspense } from 'react';
 import { Outlet } from 'react-router-dom';
 import { Spinner } from '@/components/ui';
+import SurveyBubble from '@/components/SurveyBubble';
 
 export default function AppLayout() {
   return (
@@ -24,6 +25,10 @@ export default function AppLayout() {
       <Suspense fallback={<div className="flex-1 flex items-center justify-center"><Spinner /></div>}>
         <Outlet />
       </Suspense>
+      {/* A survey the DM has opened, on whatever page the player is on —
+          there is no page every player reliably visits. It renders nothing
+          at all unless something is actually waiting. */}
+      <SurveyBubble />
     </div>
   );
 }

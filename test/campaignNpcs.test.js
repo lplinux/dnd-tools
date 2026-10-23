@@ -255,15 +255,36 @@ describe('the DM search reaches the new fields', () => {
 describe('a stat block, and whether they are still alive', () => {
   const put = route("app.put('/api/campaigns/:campaignId/npcs/:npcId'");
 
-  it('both columns exist, with the defaults that say what they mean', () => {
+  it('life_state exists, with the default that says what it means', () => {
     /*
-     * `has_sheet` defaults FALSE because most NPCs are a name and a note,
-     * so the flag marks the exception. `life_state` defaults ALIVE rather
-     * than unknown, because "unknown" is the DM saying the party has
-     * reason to wonder — not an NPC nobody has thought about yet.
+     * ALIVE rather than unknown, because "unknown" is the DM saying the
+     * party has reason to wonder — not an NPC nobody has thought about.
      */
-    expect(source).toMatch(/ADD COLUMN IF NOT EXISTS has_sheet BOOLEAN NOT NULL DEFAULT false/);
     expect(source).toMatch(/ADD COLUMN IF NOT EXISTS life_state VARCHAR\(10\)\s*\n\s*NOT NULL DEFAULT 'alive'/);
+  });
+
+  it('and has_sheet is DERIVED now, not stored', () => {
+    /*
+     * It was a checkbox meaning "this one needs a stat block". Now that a
+     * sheet is a row that either exists or does not, the row is the
+     * answer — and two sources of truth would disagree the first time a
+     * sheet was made without ticking the box.
+     */
+    expect(source).toMatch(/EXISTS \(SELECT 1 FROM npc_sheets s WHERE s\.npc_id = n\.id\) AS has_sheet/);
+    expect(source).toMatch(/ALTER TABLE campaign_npcs DROP COLUMN IF EXISTS has_sheet/);
+    expect(put).not.toMatch(/has_sheet/);
+  });
+
+  it('and the intent the checkbox recorded is folded in, not dropped', () => {
+    // A tick meant "there should be a sheet here", so it becomes an empty
+    // one. Guarded on the column existing: INSERT has no IF EXISTS form,
+    // and naming a dropped column is a parse-time error that takes initDb
+    // down on the SECOND boot of every database.
+    expect(source).toMatch(/INSERT INTO npc_sheets \(npc_id\)\s*\n\s*SELECT id FROM campaign_npcs WHERE has_sheet = true/);
+    const fold = source.slice(source.indexOf('CREATE TABLE IF NOT EXISTS npc_sheets'),
+      source.indexOf('DROP COLUMN IF EXISTS has_sheet'));
+    expect(fold).toMatch(/SELECT 1 FROM information_schema\.columns/);
+    expect(fold.indexOf('THEN')).toBeLessThan(fold.indexOf('INSERT INTO npc_sheets'));
   });
 
   it('and the life state is constrained in the database', () => {
@@ -274,11 +295,7 @@ describe('a stat block, and whether they are still alive', () => {
 
   it('an unknown life state is clamped, not rejected', () => {
     // Refusing the whole edit over a stale client would lose the DM's text.
-    expect(put).toMatch(/life_state = CASE WHEN \$7::text IN \('alive','dead','unknown'\) THEN \$7 ELSE life_state END/);
-  });
-
-  it('and has_sheet is coerced rather than trusted', () => {
-    expect(put).toMatch(/hasSheet === true/);
+    expect(put).toMatch(/life_state = CASE WHEN \$6::text IN \('alive','dead','unknown'\) THEN \$6 ELSE life_state END/);
   });
 });
 
@@ -356,10 +373,24 @@ describe('the NPC list', () => {
     expect(tab).toMatch(/title=\{life\.label\}/);
   });
 
-  it('and says who needs a stat block', () => {
-    expect(tab).toMatch(/n\.has_sheet && \(/);
-    expect(tab).toMatch(/has_sheet: form\.has_sheet/);
+  it('and the stat block is a BUTTON on the row, in both states', () => {
+    /*
+     * One control, not two: "show me this one's numbers" is the same
+     * intent whether a sheet exists yet or not, and an Add button would
+     * take a column from forty rows that will never have one. The filled
+     * state is gold, the empty one faint.
+     */
+    expect(tab).toMatch(/onClick=\{\(e\) => \{ e\.stopPropagation\(\); setSheetFor\(n\); \}\}/);
+    expect(tab).toMatch(/n\.has_sheet\s*\n?\s*\? 'text-gold/);
+    expect(tab).toMatch(/aria-label=\{n\.has_sheet \? 'Open stat block' : 'Create stat block'\}/);
+    // stopPropagation, or the row's own click opens the reading card too.
+    expect(tab).toMatch(/e\.stopPropagation\(\)/);
     expect(tab).toMatch(/life_state: form\.life_state/);
+  });
+
+  it('and the checkbox that used to set it is gone', () => {
+    expect(tab).not.toMatch(/Needs a sheet/);
+    expect(tab).not.toMatch(/has_sheet: form\.has_sheet/);
   });
 
   it('says WHERE a player reads public info, not just that they can', () => {

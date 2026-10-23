@@ -92,8 +92,14 @@ const tokenBearing = (p) => /:(token|playerToken)\b/.test(p);
  */
 const inviteRoute = (p) => p.startsWith('/api/invites/');
 
+/*
+ * `runId` is here because the survey routes a PLAYER calls carry a run id
+ * and no campaign id — the campaign is found from the run. Before it was
+ * added, those two routes were not walked at all: the pattern simply did
+ * not match them, so a guard removed from either would have passed.
+ */
 const idBearing = (p) =>
-  /:(campaignId|playerId|timelineId|locationId|mapId|npcId|id|token|playerToken)\b/.test(p)
+  /:(campaignId|playerId|timelineId|locationId|mapId|npcId|id|runId|token|playerToken)\b/.test(p)
   && !p.startsWith('/api/users/');          // user admin, gated by requireRole(['admin'])
 
 /**
@@ -143,9 +149,11 @@ describe('every id-bearing route checks ownership', () => {
     expect(used, `${label} has no ownership check`).not.toEqual([]);
   });
 
-  it('is actually looking at the five share routes', () => {
+  it('is actually looking at the six share routes', () => {
     // If the path patterns ever stop matching, every assertion above silently
-    // stops covering them — the exact failure this suite just had.
+    // stops covering them — the exact failure this suite just had. The sixth
+    // is the survey link a DM sends the table; it first shipped behind
+    // requireRole instead of shareGate, and this list is what caught it.
     const tokens = candidates
       .filter((r) => tokenBearing(r.path) && !inviteRoute(r.path))
       .map((r) => r.path).sort();
@@ -154,7 +162,20 @@ describe('every id-bearing route checks ownership', () => {
       '/api/diary-public/:token/roster',
       '/api/journey-map-public/:token',
       '/api/pc-public/:playerToken',
+      '/api/surveys/link/:token',
       '/api/timeline-public/:token',
+    ]);
+  });
+
+  it('and at the player survey routes, by run id', () => {
+    // The guard on the run-id doors must be in their own bodies. Only the
+    // player's: the DM's run routes also carry a :campaignId, so the walk
+    // already covered them.
+    const runs = candidates.filter((r) => r.path.startsWith('/api/surveys/') && /:runId\b/.test(r.path))
+      .map((r) => `${r.method} ${r.path}`).sort();
+    expect(runs).toEqual([
+      'GET /api/surveys/runs/:runId/form',
+      'POST /api/surveys/runs/:runId/responses',
     ]);
   });
 

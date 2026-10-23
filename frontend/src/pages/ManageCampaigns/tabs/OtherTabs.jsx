@@ -12,6 +12,7 @@ import { Download } from 'lucide-react';
 import { Button, Modal, FormField } from '@/components/ui';
 import { useConfirm } from '@/contexts/ConfirmContext';
 import { HARPTOS, absDay, doyFromForm, formatAbsDay } from '../constants';
+import ExportPartsDialog from '../ExportPartsDialog';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // TimelinesTab
@@ -68,6 +69,7 @@ export function SettingsTab({ campaign, meta, actions }) {
   const todayDisplay = formatAbsDay(todayMarker, calType);
 
   const [pickerOpen,  setPickerOpen]  = useState(false);
+  const [partsOpen,   setPartsOpen]   = useState(false);
   const [pickerYear,  setPickerYear]  = useState(1);
   const [pickerMonth, setPickerMonth] = useState(0);
   const [pickerDay,   setPickerDay]   = useState(1);
@@ -149,9 +151,21 @@ export function SettingsTab({ campaign, meta, actions }) {
           granted items in play) as a JSON file. Item cards travel with it: importing matches them into the
           destination library by name, adding what is missing and reusing what is already there.
         </p>
-        <Button variant="default" onClick={() => actions.exportCampaign?.()} title="Export campaign as JSON">
-          <Download size={12} className="inline mr-1" /> Export Campaign
-        </Button>
+        <p className="text-text-dim text-xs mb-3">
+          Or export <strong>part</strong> of it — the world without the table that played it, for a
+          new group or a new edition; one group&rsquo;s history; the surveys without their answers.
+          Import a part as a new campaign, or into one that already exists.
+        </p>
+        <div className="flex flex-wrap gap-2">
+          <Button variant="default" onClick={() => actions.exportCampaign?.()} title="Export the whole campaign as JSON">
+            <Download size={12} className="inline mr-1" /> Export Campaign
+          </Button>
+          <Button variant="ghost" onClick={() => setPartsOpen(true)} title="Choose which parts to export">
+            Export part…
+          </Button>
+        </div>
+        <ExportPartsDialog open={partsOpen} onClose={() => setPartsOpen(false)}
+          onExport={(parts) => actions.exportCampaign?.(parts)} />
       </section>
 
       {/* Danger zone */}

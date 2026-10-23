@@ -28,10 +28,17 @@ describe('where the tab sits', () => {
     expect(ids).toContain('search');
   });
 
-  it('sits immediately before Settings', () => {
-    // Asked for explicitly: "along the char tree and other things, just before
-    // the settings".
-    expect(ids[ids.indexOf('search') + 1]).toBe('settings');
+  it('sits with Surveys between it and Settings', () => {
+    /*
+     * Two explicit asks, in order. First: "along the char tree and other
+     * things, just before the settings". Then, when surveys landed: "Move
+     * the Survey tab after Search". So the tail of the bar is Search,
+     * Surveys, Settings — Search is no longer immediately before Settings,
+     * and Settings stays last.
+     */
+    const at = ids.indexOf('search');
+    expect(ids.slice(at, at + 3)).toEqual(['search', 'surveys', 'settings']);
+    expect(ids[ids.length - 1]).toBe('settings');
   });
 
   it('is rendered by the module’s switch, with the chosen campaign', () => {

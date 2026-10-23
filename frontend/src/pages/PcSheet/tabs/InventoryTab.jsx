@@ -17,14 +17,14 @@
  * rather than pinning each item to a named slot.
  */
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { Button, Spinner, Modal, FormField } from '@/components/ui';
+import { Button, Spinner, Modal, FormField, Markdown } from '@/components/ui';
 import { placeCard, CARD_GAP } from '@/data/placeCard';
 import { useConfirm } from '@/contexts/ConfirmContext';
 import SrdCombobox from '@/components/SrdCombobox';
 import { loadEntries, getEquipment } from '@/api/srd';
 import { equipmentToItem } from '@/data/srdMap';
 import { RARITIES } from '@/pages/ItemCards/constants';
-import { chainOf } from '@/pages/ItemCards/chain';
+import { chainOf, groupByChain } from '@/pages/ItemCards/chain';
 import ItemCardPreview from '@/pages/ItemCards/ItemCardPreview';
 import { useItemDrag } from '@/hooks/useItemDrag';
 import CoinPurse, { coinWeight } from './CoinPurse';
@@ -105,7 +105,7 @@ function PlainDetails({ item }) {
         )}
       </dl>
       {item.notes
-        ? <p className="text-sm text-text-dim whitespace-pre-wrap border-t border-border pt-2">{item.notes}</p>
+        ? <Markdown className="text-sm text-text-dim border-t border-border pt-2">{item.notes}</Markdown>
         : <p className="text-sm text-text-muted italic border-t border-border pt-2">No description.</p>}
     </div>
   );
@@ -357,6 +357,24 @@ export default function InventoryTab({
 }) {
   const [form, setForm]     = useState(null);
   const [assign, setAssign] = useState(false);
+  // The library is the DM's whole collection, not this campaign's — it
+  // outgrows a scrollable list quickly.
+  const [libQuery, setLibQuery] = useState('');
+
+  /*
+   * Where each card sits in its chain, for the grant picker.
+   *
+   * `groupByChain` walks the whole library once; calling `chainOf` per row
+   * would walk it again for every card. `tier` is 0 for a card that does
+   * not evolve, which is most of them.
+   */
+  const tierById = useMemo(() => {
+    const m = new Map();
+    for (const e of groupByChain(myCards ?? [])) {
+      if (e.tier > 0) m.set(e.card.id, { tier: e.tier, of: e.of });
+    }
+    return m;
+  }, [myCards]);
   const [busy, setBusy]     = useState(false);
   const [gearOpts, setGearOpts] = useState([]);
   // { item, pinned, x, y } — hover sets it unpinned beside the pointer, a tap
@@ -770,10 +788,17 @@ export default function InventoryTab({
       </Modal>
 
       {/* ── Grant from the DM's library ── */}
-      <Modal open={assign} onClose={() => setAssign(false)} title="＋ Grant from library">
+      <Modal open={assign} onClose={() => { setAssign(false); setLibQuery(''); }}
+        title="＋ Grant from library">
         {(() => {
           const inCampaign = new Set(inventory.filter(i => i.item_card_id).map(i => i.item_card_id));
-          const assignable = (myCards ?? []).filter((c) => !inCampaign.has(c.id));
+          const assignable = (myCards ?? [])
+            .filter((c) => !inCampaign.has(c.id))
+            // By name, because that is what you came here knowing. The API
+            // returns them newest-first, which is the right order for a
+            // library you are building and the wrong one for a list you are
+            // looking something up in.
+            .sort((a, b) => String(a.name ?? '').localeCompare(String(b.name ?? '')));
           if (assignable.length === 0) {
             return (
               <p className="text-[0.75rem] text-text-dim">
@@ -783,22 +808,56 @@ export default function InventoryTab({
               </p>
             );
           }
+          const q = libQuery.trim().toLowerCase();
+          // Type and rarity too: "that uncommon wand" is as likely a way in
+          // as the name, and both are already on the row.
+          const hits = q
+            ? assignable.filter((c) => [c.name, c.type, rarityLabel(c.rarity)]
+              .some((v) => String(v ?? '').toLowerCase().includes(q)))
+            : assignable;
           return (
+            <>
+              {assignable.length > 7 && (
+                <input
+                  type="search"
+                  value={libQuery}
+                  onChange={(e) => setLibQuery(e.target.value)}
+                  placeholder="Search your library…"
+                  aria-label="Search your library"
+                  className={INPUT_CLS + ' mb-2'}
+                />
+              )}
+              {!hits.length ? (
+                <p className="text-[0.75rem] text-text-dim">
+                  Nothing in your library matches “{libQuery.trim()}”.
+                </p>
+              ) : (
             <ul className="space-y-1 max-h-80 overflow-y-auto">
-              {assignable.map((c) => (
+              {hits.map((c) => (
                 <li key={c.id}>
                   <button type="button"
                     className="w-full text-left bg-surface2 border border-border rounded-sm px-2 py-1.5 hover:border-[var(--gold-dim)] hover:text-gold"
-                    onClick={async () => { setAssign(false); await actions.assignCard(c.id); }}>
+                    onClick={async () => { setAssign(false); setLibQuery(''); await actions.assignCard(c.id); }}>
                     <span className="text-sm">{c.name}</span>
                     <span className="text-[0.7rem] text-text-muted">
                       {c.type ? ` · ${c.type}` : ''} · {rarityLabel(c.rarity)}
                       {c.weight ? ` · ${c.weight} lb` : ''}
+                      {/* Which rung of an evolving item this is. Granting
+                          tier 3 of a sword straight out is a real choice,
+                          but only if the list says that is what it is —
+                          the tiers are often near-identical by name. */}
+                      {tierById.has(c.id) && (
+                        <span className="text-gold">
+                          {` · tier ${tierById.get(c.id).tier} of ${tierById.get(c.id).of}`}
+                        </span>
+                      )}
                     </span>
                   </button>
                 </li>
               ))}
             </ul>
+              )}
+            </>
           );
         })()}
       </Modal>

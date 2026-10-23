@@ -52,6 +52,9 @@ export const TABS = [
   // in the header: the campaign is already chosen in this module, and a global
   // control only a DM may use is one most of the table is shown and refused.
   { id: 'search',    label: '🔍 Search',    count: false },
+  // Asking the table how it is going. DM-side here; the players answer from
+  // a bubble on whatever page they are on. No count, as above.
+  { id: 'surveys',   label: '📊 Surveys',   count: false },
   { id: 'settings',  label: '⚙️ Settings',  count: false },
 ];
 

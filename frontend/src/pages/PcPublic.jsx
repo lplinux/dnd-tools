@@ -17,6 +17,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useParams, useSearchParams } from 'react-router-dom';
 
+import { Markdown } from '@/components/ui';
 import { pcApi } from '@/api/pc';
 import { useAsync } from '@/hooks/useAsync';
 import ShareGateMessage from '@/components/ShareGateMessage';
@@ -123,9 +124,15 @@ export default function PcPublic() {
                   📢 Public Information
                 </div>
                 {data.public_info ? (
-                  <div className="px-3.5 py-3.5 leading-relaxed whitespace-pre-wrap text-sm">
+                  /* Markdown, like every other long text in the app. No
+                     `links` is passed on purpose: this page is reachable
+                     without an account, so there is no cross-link index to
+                     resolve `[[Name]]` against — and a reader who may not
+                     resolve a name should see the plain text, which is what
+                     the renderer does without one. */
+                  <Markdown className="px-3.5 py-3.5 leading-relaxed text-sm">
                     {data.public_info}
-                  </div>
+                  </Markdown>
                 ) : (
                   <div className="px-3.5 py-3.5 text-text-dim italic text-[13px]">
                     No public information has been shared yet.

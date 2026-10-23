@@ -71,15 +71,28 @@ Most of this was captured before anything was designed. Where a section has sinc
 says so and keeps only what is still open; the built part is in `CHANGELOG.md`, and whatever
 is waiting on your QA is in `TOQA.md`.
 
-### New Module - DM Screen
+### New Modules
 #### DM Notes
 
 - [ ] A way of taking notes with ideas not linked to a Campaign (like a DM Diary of what I'd like a future Campaign or One Shot to be). This would be the start of a World Building module.
 
-#### PHB & DM Rules - A series of quicklinks for accessing the Official Rules of D&D
+##### PHB & DM Rules - A series of quicklinks for accessing the Official Rules of D&D
 
 - [ ] Accesss to Official books (Maybe upload the PDF into the PDF Viewer or by API calls to SRDs)
 - [ ] Quick access to Conditions, Spells, Monsters, rules, etc... Search would be the key here
+
+#### Campaign Poll
+
+- [ ] **Partial import into an existing campaign still refuses** players, maps, DM timelines,
+      party events, item cards and Char Tree connections — now *saying* so, rather than dropping
+      them. Each needs a matching rule before it can merge (a seat, its account and its stats all
+      have to agree), so for those parts, import as a new campaign.
+- [ ] **Campaign surveys — follow-ups.** The feature shipped; these did not:
+      a player-facing history (they only ever see the form, never what the table said);
+      CSV export of a run; a nudge for the players who have not answered, which today means
+      telling them yourself; and a multi-select question type — your sixth question ("what
+      aspect of play is missing") is still a scale plus a comment box, which collapses five
+      different answers into one number.
 
 ### PC Sheet — other
 
@@ -106,13 +119,7 @@ is rooted at 16px with nothing below 10.4px. What is left of the original survey
 
 ### 1. Session prep, in the app — **shipped**
 
-The 🗓 Sessions tab in Manage Campaigns. Everything asked for was built except the one item
-below: the five states, nesting to any depth, cross-links, the On-Going view, drag and drop
-across sections, search and filtering, read-only played sessions, generate-next, export and
-import, a place in the campaign bundle, and converting *What happened* into Journal entries.
-The detail is in `CHANGELOG.md`; the QA checklist is in `TOQA.md`.
+The 🗓 Sessions tab in Manage Campaigns.
 
 - [ ] **Campaign Pendings** — a campaign-level backlog, not tied to any session. Deferred by
-      agreement when the feature was scoped, and still the only part not built. Until it
-      exists, the *Pending* and *For later on* headings of the Obsidian prep notes import
-      into one labelled parent card under the session's beats.
+      agreement when the feature was scoped, and still the only part not built. 
