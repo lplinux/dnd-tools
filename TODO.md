@@ -83,14 +83,16 @@ is waiting on your QA is in `TOQA.md`.
 
 #### Campaign Poll
 
-- [ ] **Campaign poll.** First one is six 1-10 questions plus free text — railroading, missing
-      context, how intertwined each character feels, spotlight balance, description vs pace,
-      and what aspect of play is missing. Two things to settle first: answers anonymous (with
-      a separate "who has submitted" list) and each question carrying its own polarity, since
-      high is bad for railroading, good for intertwined, and middling-is-best for the two
-      balance questions. Question 6 wants a multi-select, not a number.
-      Players also have nowhere to land — Manage Campaigns is DM-only — so it needs its own
-      player-facing entry point.
+- [ ] **Partial import into an existing campaign still refuses** players, maps, DM timelines,
+      party events, item cards and Char Tree connections — now *saying* so, rather than dropping
+      them. Each needs a matching rule before it can merge (a seat, its account and its stats all
+      have to agree), so for those parts, import as a new campaign.
+- [ ] **Campaign surveys — follow-ups.** The feature shipped; these did not:
+      a player-facing history (they only ever see the form, never what the table said);
+      CSV export of a run; a nudge for the players who have not answered, which today means
+      telling them yourself; and a multi-select question type — your sixth question ("what
+      aspect of play is missing") is still a scale plus a comment box, which collapses five
+      different answers into one number.
 
 ### PC Sheet — other
 

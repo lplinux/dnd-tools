@@ -13,6 +13,122 @@ PC Sheet / Journey Map / Manage Campaign fix batch that went with it.
 
 ---
 
+## Importing a campaign whose name you already use
+
+- [ ] **Export Leruhy, then import that file.** A dialog says you already have a campaign
+      called Leruhy and offers **Replace it** and **Create a new campaign** (filled in as
+      "Leruhy (2)").
+- [ ] **Type "leruhy" in the name field** — it says the name is taken, and Create is greyed.
+- [ ] **Create** — a second campaign, "Leruhy (2)", with everything in it.
+- [ ] **Import the file again and Replace.** The old Leruhy moves to the Trash; the new one
+      is called Leruhy and has the players, sheets and maps.
+- [ ] **Restore the old one from the Trash** — it comes back as "Leruhy (3)" (or the next free
+      number), and the message says so.
+- [ ] **Import a PARTIAL file** (Export part…) whose campaign name matches: the dialog offers
+      **Merge into** instead of Replace, with what it would replace and what it cannot merge.
+- [ ] **With another campaign open**, importing a file whose name matches a different one:
+      both "Replace" (or "Merge into") the matching one and "Merge into" the open one.
+- [ ] **A file whose name matches nothing, with no campaign open** — it imports straight
+      away, no dialog, as before.
+- [ ] **Another DM account** can still import a campaign called Leruhy: names are per DM.
+
+---
+
+## Export part of a campaign
+
+- [ ] **Settings → Export part…** opens a dialog with three groups and every box ticked.
+- [ ] **Tick Survey results** with Survey questions unticked — questions tick themselves.
+      **Untick Players** — character sheets, diaries, inventories and the rest untick too.
+- [ ] **The world only — for a new table**, then Export. The file is named
+      `campaign-part-<name>-<date>.json`.
+- [ ] **Open that file in a text editor** and search for a player's name or account: it
+      should not be there. An NPC's location name should be.
+- [ ] **Import it** (with no campaign selected, or Cancel at the merge question) — a new
+      campaign with the places, NPCs **with their stat blocks**, maps and surveys (never
+      asked), and no players.
+- [ ] **Export just NPCs**, select a different campaign that has the same locations, and
+      import into it. The NPCs land in their places, with stat blocks.
+- [ ] **Import a file with surveys into a campaign twice** — the second time says they were
+      skipped, and there is still one of each.
+- [ ] **A file with Char Tree connections, imported into a campaign** — the summary says they
+      were not merged, rather than saying nothing.
+- [ ] **Export Campaign** (the plain button) still produces the full backup, named as before.
+
+---
+
+## Campaign surveys
+
+**As the DM, in Manage Campaigns → 📊 Surveys**
+
+- [ ] **New survey.** Add a few questions — at least one scale and one free text. Set
+      a scale's range, its end labels, and its direction. Save.
+- [ ] **Ask** it, naming the asking ("After session 25"). The card shows **Open**.
+- [ ] **Try to ask it again while open** — refused, with a reason.
+- [ ] **The Surveys tab sits between Search and Settings.**
+- [ ] **Right after Ask**, a dialog shows the survey's link with a **Copy** button. The
+      open survey's card also has a **🔗 Link** button that shows it again.
+- [ ] **The link ends in a long random code**, not a number. On `localhost` the dialog
+      warns that only this computer can open it.
+- [ ] **A link you sent before this change** (`/survey/1`) no longer works — copy a new
+      one from 🔗 Link.
+- [ ] **Open the app over your LAN address** (`http://192.168…`) and press Copy — it
+      should select the link and tell you to press Ctrl/⌘+C, not silently do nothing.
+
+**The link, opened by different people**
+
+- [ ] **Logged out**: it asks you to log in, and after logging in you land on the survey,
+      not the home page.
+- [ ] **A player from another campaign**: told it is not their campaign.
+- [ ] **A player in the campaign**: the form, with no bubble in the corner on that page.
+      The end labels sit on the same row as the numbers, either side of them.
+- [ ] **A player in TWO campaigns, each with a survey open**: two bubbles' worth (one
+      shown, "+1 more waiting"), each link opening its own campaign's survey, and
+      answering one leaves the other still waiting.
+- [ ] **A made-up link, logged out**: "not found" — not a prompt to log in.
+      Send it, then browse elsewhere in the app — no bubble for it there either.
+- [ ] **The same player opening the link again**: "You have already answered this one".
+- [ ] **You, the DM**: a preview of what players see, greyed out, with no Send.
+- [ ] **After you close the survey**: the link says it has closed.
+- [ ] **A survey with no questions** cannot be asked.
+
+**As a player, signed in as someone with a seat in that campaign**
+
+- [ ] **A bubble appears bottom-right** on whatever page you are on, naming the
+      campaign and the asking.
+- [ ] **Not now** dismisses it; reload and it stays gone. Sign in elsewhere (or clear
+      site data) and it returns — dismissing is not answering.
+- [ ] **Answer it.** Scales are a row of buttons; tapping the chosen number again
+      clears it, so a question can be skipped. Send.
+- [ ] **The bubble is gone** and does not come back on reload.
+- [ ] **Answering twice** is impossible — there is no second bubble.
+- [ ] **A player with no seat in that campaign** never sees it.
+
+**Back as the DM**
+
+- [ ] **Results** shows one row per question, one column per asking, with n and the
+      range under each average.
+- [ ] **Colours follow the direction you set**, not the number: a low railroading
+      score is green, a low involvement score is red.
+- [ ] **Who answered** is listed per run — even on an anonymous survey.
+- [ ] **On an anonymous survey, comments carry no name.** On an attributed one they do.
+- [ ] **Close** it, then **Ask again** and answer as both players with different
+      numbers. Results now shows two columns and a ▲/▼ change on the second.
+- [ ] **Edit the survey and try to delete an answered question** — refused, naming it.
+- [ ] **Reword an answered question** — allowed, and the old numbers stay under the
+      new wording.
+- [ ] **↺ Reset** appears only on a survey that has been asked. It asks first, naming how
+      many askings and answers will go; confirm, and Results says *never asked yet* while
+      the questions are all still there. Ask it again — players can answer afresh.
+- [ ] **Reset an OPEN survey** — the confirmation says it will close, and a player who had
+      not answered loses the bubble.
+- [ ] **Delete the whole survey** — it takes its runs and answers with it, and any
+      open bubble disappears for the players.
+- [ ] **Export the campaign and import it as a copy.** The surveys come back with every
+      run and its numbers intact, anonymous comments still nameless, attributed ones
+      still named, and an open run still open.
+
+---
+
 ## NPC stat blocks
 
 - [ ] **Open the NPCs tab.** Each name has a ⚔ beside it — faint for NPCs with no
