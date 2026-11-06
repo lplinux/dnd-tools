@@ -10,6 +10,80 @@ import { SPELL_LEVEL_NAMES, getSlotArray } from '@/data/dnd';
 import TagInput from './TagInput';
 import { useSrdNames } from '@/hooks/useSrdNames';
 import { splitList, joinList, removeOne } from '@/data/listValue';
+import { useSpellDetails } from '@/hooks/useSpellDetails';
+import {
+  levelShort, castingTimeShort, durationShort, materialCost, byLevelThenName,
+} from '@/data/spellDetails';
+import SrdInfo from '@/components/SrdInfo';
+
+/**
+ * Every spell on the sheet, with what you need at the table: what it needs,
+ * when it can be cast, how far, how long. Concentration and Ritual are tags
+ * beside the name, where the eye already is; a material with a price carries
+ * it on the M.
+ *
+ * The chips above are the editor; this is the reading view of the same
+ * names. A name opens its full card. One the SRD does not have — a PHB-only
+ * spell, homebrew, a typo — is listed by name alone and says so, rather than
+ * being dropped from the list.
+ */
+function SpellList({ spellNames }) {
+  const entries = Object.entries(spellNames ?? {})
+    .flatMap(([lv, v]) => splitList(v).map((name) => ({ name, row: Number(lv) })));
+  const details = useSpellDetails(entries.map((e) => e.name));
+  if (!entries.length) return null;
+
+  const rows = entries.map((e) => {
+    const d = details.get(e.name.trim()) ?? { status: 'loading', spell: null };
+    // The SRD's level when known, so a spell typed into the wrong row still
+    // sorts with its own level; the row's otherwise.
+    return { ...e, d, level: d.spell?.level ?? e.row };
+  }).sort((a, b) => byLevelThenName({ level: a.level, name: a.name }, { level: b.level, name: b.name }));
+
+  return (
+    <table className="spell-list">
+      <thead>
+        <tr>
+          <th style={{ width: 52 }}>Level</th>
+          <th>Spell</th>
+          <th>Components</th>
+          <th>Casting Time</th>
+          <th>Range</th>
+          <th>Duration</th>
+        </tr>
+      </thead>
+      <tbody>
+        {rows.map(({ name, row, level: lv, d }) => (
+          <tr key={`${row}:${name}`}>
+            <td className="lvl-cell">{levelShort(lv)}</td>
+            <td>
+              {d.status === 'ok'
+                ? <SrdInfo resource="spells" name={name}>{d.spell.name}</SrdInfo>
+                : name}
+              {d.status === 'ok' && d.spell.concentration && <span className="spell-mark" title="Concentration">C</span>}
+              {d.status === 'ok' && d.spell.ritual && <span className="spell-mark" title="Ritual">R</span>}
+            </td>
+            {d.status === 'ok' ? (
+              <>
+                <td className="spell-list-comp" title={d.spell.material || undefined}>
+                  {d.spell.components.join(', ') || '—'}
+                  {materialCost(d.spell) && <span className="spell-tag">{materialCost(d.spell)}</span>}
+                </td>
+                <td>{castingTimeShort(d.spell)}</td>
+                <td>{d.spell.range}</td>
+                <td>{durationShort(d.spell)}</td>
+              </>
+            ) : (
+              <td colSpan={4} className="spell-list-none">
+                {d.status === 'loading' ? '…' : 'Not in SRD 5.2'}
+              </td>
+            )}
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+}
 
 /**
  * The spell chips for ONE level.
@@ -81,6 +155,7 @@ export default function SpellSection({ casterType, level, spellNames, usedSlots,
   const hiddenLevels = Array.from({ length: 9 }, (_, n) => n + 1).filter(lv => !shown.has(lv));
 
   return (
+    <>
     <table className="spell-table">
       <thead>
         <tr>
@@ -135,5 +210,7 @@ export default function SpellSection({ casterType, level, spellNames, usedSlots,
         </tfoot>
       )}
     </table>
+    <SpellList spellNames={spellNames} />
+    </>
   );
 }

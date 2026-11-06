@@ -18,6 +18,9 @@ Longer write-ups of these entries are in this file's git history.
   SRD import included.
 - **NPC cards show their relationships.** Players see only the public ones.
 - **NPC list filters** by location, status, and met / not met.
+- **Spell details.** The stat sheet lists every spell with its components, casting time, range
+  and duration, with a C / R mark beside the name for Concentration and Ritual and a material's cost on
+  its M. Opening a spell shows its full entry: level, school, components and text.
 - **Export part of a campaign** (Settings → *Export part…*): the world, the table, the history,
   or any mix — e.g. to run the same campaign with a new group. Also `?parts=` on the export API.
 - **Importing a campaign whose name you already use** asks what to do: replace it (the old one

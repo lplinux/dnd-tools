@@ -100,11 +100,26 @@ describe('the spell rows ask per level', () => {
   });
 
   it('does so from a component, not from inside the row loop', () => {
-    // A hook in `rows.map` is a runtime error, and the build would not catch
-    // it — only mounting the sheet would.
-    const hookLine = src.indexOf("useSrdNames('spells'");
-    const loopLine = src.indexOf('rows.map(');
-    expect(hookLine).toBeGreaterThan(-1);
-    expect(loopLine).toBeGreaterThan(hookLine);
+    /*
+     * A hook in `rows.map` is a runtime error, and the build would not catch
+     * it — only mounting the sheet would.
+     *
+     * Checked by WHERE the call lives — inside SpellNames, and nowhere in the
+     * SpellSection that loops over the rows — rather than by comparing its
+     * position with the first `rows.map(` in the file. That broke the day a
+     * second component with its own `rows` (the spell list) was added above.
+     */
+    const body = (fn) => {
+      const at = src.indexOf(fn);
+      expect(at, `${fn} not found`).toBeGreaterThan(-1);
+      const next = src.indexOf('\nfunction ', at + 1);
+      const nextExport = src.indexOf('\nexport default function', at + 1);
+      const ends = [next, nextExport].filter((i) => i > at);
+      return src.slice(at, ends.length ? Math.min(...ends) : undefined);
+    };
+    expect(body('function SpellNames(')).toMatch(/useSrdNames\('spells',\s*level\)/);
+    const section = body('export default function SpellSection(');
+    expect(section).toMatch(/rows\.map\(/);
+    expect(section).not.toMatch(/useSrdNames\(/);
   });
 });
