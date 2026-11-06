@@ -32,6 +32,8 @@ Longer write-ups of these entries are in this file's git history.
 - **Grant from library** is sorted by name, searchable, and shows an evolving item's tier.
 - The NPC "needs a stat block" checkbox is gone; NPCs that had it ticked get an empty stat block.
 - Restoring a campaign from the Trash renames it if its name is taken.
+- **Session cards:** changing a card's state now changes its sub-cards too, for every state
+  (before, only Done and Skipped did).
 - Campaign files are version 10 and may be partial. Older files still import.
 
 ### Fixed

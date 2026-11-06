@@ -432,8 +432,8 @@ export default function SessionsPanel({
      * threw the DM back to the top of the page — mid-session, while they
      * were ticking something off, which is the worst possible moment.
      *
-     * The server returns every affected row because `done` cascades to the
-     * sub-cards, so this is not just the one that was clicked.
+     * The server returns every affected row because a state change cascades
+     * to the sub-cards, so this is not just the one that was clicked.
      */
     setState: async (item, state) => {
       try {

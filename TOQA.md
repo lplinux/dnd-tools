@@ -389,13 +389,12 @@ All three were written down as open questions when the feature shipped. Each is 
 covered by tests that were each proved to fail when the guard is reverted, and exercised live
 against a scratch Postgres (34 checks).
 
-### Skipped now cascades
+### Every state cascades
 
-- [ ] **Mark a parent card Skipped** — every sub-card beneath it, to any depth, should go
-      skipped with it, the same way Done already did.
-- [ ] **Mark a parent On-Going, Ready or In-Preparation** — those must still change only the
-      card you clicked. A parent is on-going precisely because one child is and the rest are
-      not, and that distinction is the reason the other three do not cascade.
+- [ ] **Change a parent card to each of the five states** — every sub-card beneath it, to any
+      depth, should take the same state, without the page reloading.
+- [ ] **Then change one sub-card on its own** — only that card (and its own sub-cards) change;
+      the parent keeps its state.
 
 ### Dragging between sections
 

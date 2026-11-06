@@ -7285,21 +7285,16 @@ app.patch('/api/campaigns/:campaignId/sessions/:sessionId/items/:itemId/state', 
     if (!await dmOwnsCampaign(campaignId, req.session.userId, req.session.role))
       return res.status(403).json({ error: 'Access denied' });
     /*
-     * Marking a card DONE or SKIPPED takes its sub-cards with it. Both mean
-     * "stop looking at this", and finishing a beat while leaving three
-     * half-ticked details underneath is just a second chore the DM would do
-     * by hand every time.
-     *
-     * The other three do not cascade, and that asymmetry is the point: a
-     * parent is on-going precisely because one child is and the rest are
-     * not, so pushing it down would erase the distinction.
+     * A state change takes the card's sub-cards with it, whatever the state.
+     * A beat's details follow the beat: readying a fight readies its traps,
+     * finishing it finishes them. A sub-card that needs to differ is changed
+     * on its own afterwards, which leaves the parent alone.
      *
      * One statement rather than a walk from the client: the subtree is
      * arbitrarily deep, and N requests would half-apply if one failed.
      * `depth` bounds it, because parent_id is a tree only by construction
      * and a cycle here would spin for ever.
      */
-    const cascade = state === 'done' || state === 'skipped';
     const r = await pool.query(
       `WITH RECURSIVE sub AS (
          SELECT id, 0 AS depth FROM campaign_session_items
@@ -7312,9 +7307,8 @@ app.patch('/api/campaigns/:campaignId/sessions/:sessionId/items/:itemId/state', 
        )
        UPDATE campaign_session_items SET state=$1, updated_at=CURRENT_TIMESTAMP
         WHERE id IN (SELECT id FROM sub)
-          AND ($4 OR id = $2)
         RETURNING *`,
-      [state, itemId, campaignId, cascade],
+      [state, itemId, campaignId],
     );
     if (!r.rows.length) return res.status(404).json({ error: 'Item not found' });
     // Every row that changed, so the page can patch itself in place instead

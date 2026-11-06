@@ -164,25 +164,13 @@ describe('marking a card done', () => {
     // Finishing a beat and leaving three half-ticked details underneath is
     // just a second chore the DM would do by hand every time.
     expect(patch).toMatch(/WITH RECURSIVE sub AS/);
-    expect(patch).toMatch(/const cascade = state === 'done'/);
   });
 
-  it('and so does skipped, which means the same thing', () => {
-    // "Stop looking at this", both of them. Leaving skipped per-card meant
-    // abandoning a beat and then ticking its details off one by one.
-    expect(patch).toMatch(/const cascade = state === 'done' \|\| state === 'skipped'/);
-  });
-
-  it('but the other three do NOT cascade', () => {
-    /*
-     * A parent is on-going precisely because one child is and the rest are
-     * not; pushing that down would erase the distinction. The guard is the
-     * `$4 OR` — without it every state cascades.
-     */
-    expect(patch).toMatch(/AND \(\$4 OR id = \$2\)/);
-    for (const st of ['in-preparation', 'ready', 'on-going']) {
-      expect(patch, `${st} must not cascade`).not.toMatch(new RegExp(`cascade[^;]*'${st}'`));
-    }
+  it("and so does every other state — a parent's state is its sub-cards' state", () => {
+    // Readying a fight readies its traps; there is no state that stays put.
+    expect(patch).not.toMatch(/const cascade/);
+    expect(patch).not.toMatch(/OR id = \$2/);
+    expect(patch).toMatch(/WHERE id IN \(SELECT id FROM sub\)\s*RETURNING \*/);
   });
 
   it('is bounded, so a cycle cannot spin for ever', () => {

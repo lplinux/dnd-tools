@@ -202,10 +202,10 @@ should still see 11's threads in 12. The view excludes `section = 'outcome'`: a 
 into *What happened* keeps whatever state it had, and a thread filed as having happened is a
 record rather than something still running.
 
-**`done` and `skipped` cascade to sub-cards; the other three do not.** Both mean "stop looking
-at this". A parent is on-going precisely because one child is and the rest are not, so pushing
-that down would erase the distinction. The cascade is one recursive statement bounded at fifty
-levels, because `parent_id` is a tree by construction and not by constraint.
+**Every state change cascades to sub-cards.** A beat's details follow the beat; a sub-card that
+needs to differ is changed on its own afterwards, which leaves the parent alone. The cascade is
+one recursive statement bounded at fifty levels, because `parent_id` is a tree by construction
+and not by constraint.
 
 **Two mount points, one component.** `pages/Journal/JournalPanel` fetches its own data and is
 rendered both as a PC Sheet tab and as a Manage Campaigns tab, so neither page threads journal
