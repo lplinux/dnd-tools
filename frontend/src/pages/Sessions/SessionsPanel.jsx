@@ -25,6 +25,7 @@ import { inGameDate } from '@/data/calendar';
 import { useToast } from '@/hooks/useToast';
 import { useConfirm } from '@/contexts/ConfirmContext';
 import { sessionsApi } from '@/api/sessions';
+import { campaignsApi } from '@/api/campaigns';
 import { downloadBundle } from '@/api/downloadBundle';
 import LinkingTextarea from '@/components/LinkingTextarea';
 import CrossLinkPopover from '@/components/CrossLinkPopover';
@@ -173,8 +174,10 @@ export default function SessionsPanel({
   const [query, setQuery] = useState('');
   const [stateFilter, setStateFilter] = useState(() => new Set());
   const [drag, setDrag] = useState(null);   // { id, section } while dragging
-  // { category, day, dmOnly, picked:Set } while the convert dialog is open
+  // { category, day, visibility, picked:Set } while the convert dialog is open
   const [journalForm, setJournalForm] = useState(null);
+  // The seats an entry can be written for, fetched when that dialog opens.
+  const [journalSeats, setJournalSeats] = useState([]);
   // { in_game_day, days, events } for the session on screen, or null.
   const [upcoming, setUpcoming] = useState(null);
   // { date } while the "mark it played" dialog is open.
@@ -534,7 +537,10 @@ export default function SessionsPanel({
         item_ids: [...journalForm.picked],
         category: journalForm.category,
         in_game_day: journalForm.day === '' ? null : journalForm.day,
-        dm_only: journalForm.dmOnly,
+        // 'public', 'hidden', or a seat id — as in the Journal's own form.
+        dm_only: journalForm.visibility !== 'public',
+        visible_to: ['public', 'hidden'].includes(journalForm.visibility)
+          ? null : Number(journalForm.visibility),
       });
       setJournalForm(null);
       toast(
@@ -770,18 +776,23 @@ export default function SessionsPanel({
                   <button
                     type="button"
                     title="Copy these into the Campaign Journal so the table can read them"
-                    onClick={() => setJournalForm({
+                    onClick={() => {
+                      campaignsApi.listPlayers(campaignId)
+                        .then((rows) => setJournalSeats((rows ?? []).filter((p) => !p.is_dm_player)))
+                        .catch(() => setJournalSeats([]));
+                      setJournalForm({
                       // Filed under the session it came from, which is how
                       // the journal already groups things.
                       category: detail.session.session_no
                         ? `Session ${detail.session.session_no}` : '',
                       day: '',
-                      // Off by default: these are the DM's own notes, and
+                      // Hidden by default: these are the DM's own notes, and
                       // publishing them is the deliberate act, not the
                       // accident.
-                      dmOnly: true,
+                      visibility: 'hidden',
                       picked: new Set(tree.map((i) => i.id)),
-                    })}
+                      });
+                    }}
                     className="text-[0.65rem] font-display uppercase tracking-wider
                                text-text-muted hover:text-gold"
                   >
@@ -894,15 +905,16 @@ export default function SessionsPanel({
             {/* The consequential one, so it says what it does rather than
                 naming the column. These are the DM's notes; publishing them
                 is a decision. */}
-            <label className="flex items-start gap-2 text-[0.75rem] text-text-dim">
-              <input type="checkbox" checked={!journalForm.dmOnly} className="mt-0.5"
-                onChange={(e) => setJournalForm((f) => ({ ...f, dmOnly: !e.target.checked }))} />
-              <span>
-                <strong className="text-text">Let the players read these.</strong>{' '}
-                Unticked, they go in DM-only and you can publish them one at a time
-                from the Journal.
-              </span>
-            </label>
+            <FormField label="Who can read them">
+              <select value={journalForm.visibility} className={INPUT}
+                onChange={(e) => setJournalForm((f) => ({ ...f, visibility: e.target.value }))}>
+                <option value="hidden">Only me — publish them one at a time from the Journal</option>
+                <option value="public">Everyone at the table</option>
+                {journalSeats.map((p) => (
+                  <option key={p.id} value={String(p.id)}>Only {p.player_name} (and me)</option>
+                ))}
+              </select>
+            </FormField>
 
             <FormField label={`Cards (${journalForm.picked.size} of ${outcomeRoots.length})`}>
               <div className="flex flex-col gap-1 max-h-56 overflow-y-auto border border-border

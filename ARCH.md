@@ -124,7 +124,8 @@ campaign_diary_shares
 ### Campaign Journal
 
 Shared notes on the PC Sheet. Every member of a campaign writes; the whole table reads. The DM
-can additionally mark an entry `dm_only`, which a player's listing never selects at all.
+can additionally keep an entry to themselves (`dm_only`), or show it to **one player**
+(`dm_only` plus `visible_to`). A player's listing never selects `dm_only` at all.
 
 ```
 campaign_journal_entries
@@ -133,9 +134,17 @@ campaign_journal_entries
   location_id (FK campaign_locations, SET NULL),  -- where it happened
   title, body, category (free text, nullable),
   in_game_day (absolute day number, nullable),
-  dm_only (bool, default false), created_at, updated_at
+  dm_only (bool, default false),
+  visible_to (FK campaign_players, SET NULL, nullable),  -- the one player a dm_only entry is for
+  created_at, updated_at
+  CHECK (visible_to IS NULL OR dm_only)
   INDEX (campaign_id, created_at DESC)
 ```
+
+`visible_to` refines `dm_only` rather than replacing it: public is `dm_only = false`, hidden is
+`dm_only` alone, and one player is `dm_only` plus their seat. Anything that only knows about
+`dm_only` — an older query, a bundle without the ref — therefore treats a one-player entry as
+hidden, and deleting the seat leaves it hidden too. It fails closed.
 
 `category` is free text with a datalist of what the campaign already uses, exactly like the
 diary's — a table invents its own filing ("Documents", "Rumours", "People we met") rather than
@@ -155,7 +164,8 @@ written about it.
 Two withholding rules are enforced in SQL rather than in the component, so a refactor of the UI
 cannot leak them:
 
-- A player's query carries `AND j.dm_only = false` and does not select the column at all.
+- A player's query carries `AND (j.dm_only = false OR j.visible_to = ANY(<their seats>))`, the
+  seats read from the session's user, and does not select `dm_only` at all.
 - A location the DM has since made private stops showing to players — **both its name and its
   id** — even on an entry written while it was still public. Withholding only the name would
   still let a player tell that two entries happened at the same secret place.

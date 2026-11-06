@@ -4943,6 +4943,39 @@ async function journalEntry(entryId, campaignId) {
   return r.rows[0] ?? null;
 }
 
+/**
+ * Who may read an entry, from a request: `{ dmOnly, visibleTo }`, or false
+ * for a seat that is not a player of this campaign.
+ *
+ * Only the DM chooses. A player's entry is public whatever they send — the
+ * journal is the table's shared notes, and a player already has a diary.
+ * `visible_to` means nothing on a public entry and is dropped there, which
+ * the table's CHECK also insists on.
+ */
+async function journalVisibility(campaignId, isDM, dmOnly, visibleTo) {
+  if (!isDM || !dmOnly) return { dmOnly: false, visibleTo: null };
+  if (visibleTo === null || visibleTo === undefined || visibleTo === '') {
+    return { dmOnly: true, visibleTo: null };
+  }
+  const r = await pool.query(
+    `SELECT id FROM campaign_players
+      WHERE id=$1 AND campaign_id=$2 AND is_dm_player = false`,
+    [visibleTo, campaignId],
+  );
+  return r.rows.length ? { dmOnly: true, visibleTo: r.rows[0].id } : false;
+}
+
+/** The seats this user plays in a campaign — whose one-player entries they read. */
+async function mySeats(campaignId, userId) {
+  const r = await pool.query(
+    `SELECT cp.id FROM campaign_players cp
+       JOIN campaign_user_assignments cua ON cua.player_id = cp.id
+      WHERE cp.campaign_id=$1 AND cua.user_id=$2`,
+    [campaignId, userId],
+  );
+  return r.rows.map((x) => x.id);
+}
+
 // ── Campaign-wide search (DM only) ──────────────────────────────────────────
 //
 // One box over everything written down about a campaign: the journal, both
@@ -5050,9 +5083,11 @@ app.get('/api/campaigns/:campaignId/search', requireRole(['dm', 'admin']), async
     const q = (sql) => pool.query(`${sql} LIMIT ${SEARCH_ROW_CAP}`, [campaignId]);
     const [journal, camDiary, plDiary, locs, npcs, events, chars, notes, items] =
       await Promise.all([
-        q(`SELECT j.id, j.title, j.body, j.category, j.dm_only, cp.player_name AS who
+        q(`SELECT j.id, j.title, j.body, j.category, j.dm_only, cp.player_name AS who,
+                  vp.player_name AS visible_to_name
              FROM campaign_journal_entries j
              LEFT JOIN campaign_players cp ON cp.id = j.player_id
+             LEFT JOIN campaign_players vp ON vp.id = j.visible_to
             WHERE j.campaign_id = $1`),
         q(`SELECT id, title, body, chapter, status
              FROM campaign_diary_entries WHERE campaign_id = $1`),
@@ -5107,7 +5142,9 @@ app.get('/api/campaigns/:campaignId/search', requireRole(['dm', 'admin']), async
       group('journal', 'Journal', journal.rows,
         (r) => [['title', r.title], ['body', r.body], ['category', r.category]],
         (r) => ({ id: r.id, title: r.title || '(untitled)', path: '/pc-sheet',
-          note: [r.who, r.category, r.dm_only ? 'DM only' : null].filter(Boolean).join(' · ') })),
+          note: [r.who, r.category,
+            r.dm_only ? (r.visible_to_name ? `Only ${r.visible_to_name}` : 'DM only') : null,
+          ].filter(Boolean).join(' · ') })),
       group('diary', 'Campaign diary', camDiary.rows,
         (r) => [['title', r.title], ['body', r.body], ['chapter', r.chapter]],
         (r) => ({ id: r.id, title: r.title || '(untitled)', path: '/diary',
@@ -5188,6 +5225,7 @@ app.get('/api/campaigns/:campaignId/search/:kind/:id', requireRole(['dm', 'admin
       case 'journal':
         r = await one(`SELECT j.title, j.body, j.category, j.in_game_day, j.dm_only,
                               j.created_at, u.username, cp.player_name,
+                              vp.player_name AS visible_to_name,
                               -- No CASE on is_public here, unlike the players'
                               -- journal query: this route is DM-only, and the
                               -- DM is who hid the location in the first place.
@@ -5195,6 +5233,7 @@ app.get('/api/campaigns/:campaignId/search/:kind/:id', requireRole(['dm', 'admin
                          FROM campaign_journal_entries j
                          JOIN users u ON u.id = j.created_by
                          LEFT JOIN campaign_players cp ON cp.id = j.player_id
+                         LEFT JOIN campaign_players vp ON vp.id = j.visible_to
                          LEFT JOIN campaign_locations cl ON cl.id = j.location_id
                         WHERE j.campaign_id = $1 AND j.id = $2`);
         if (!r) break;
@@ -5202,7 +5241,8 @@ app.get('/api/campaigns/:campaignId/search/:kind/:id', requireRole(['dm', 'admin
           meta: meta(['Written by', r.player_name || r.username], ['Category', r.category],
             ['Where', r.location && (r.location_public ? r.location : `${r.location} (hidden)`)],
             ['In-game day', r.in_game_day],
-            ['Visible to', r.dm_only ? 'you only' : 'the whole table']) };
+            ['Visible to', !r.dm_only ? 'the whole table'
+              : r.visible_to_name ? `you and ${r.visible_to_name}` : 'you only']) };
         break;
       case 'diary':
         r = await one(`SELECT title, body, chapter, session_no, session_date, status
@@ -5509,26 +5549,32 @@ app.get('/api/campaigns/:campaignId/journal', requireAuth, async (req, res) => {
     if (!await canAccessCampaign(campaignId, req.session.userId, req.session.role))
       return res.status(403).json({ error: 'Access denied' });
     const isDM = await isCampaignDm(campaignId, req.session.userId, req.session.role);
+    // A player reads the public entries and the ones written for their own
+    // seat — never another player's. `visible_to` is selected for them too:
+    // on a row they can see it can only name their own seat.
+    const seats = isDM ? [] : await mySeats(campaignId, req.session.userId);
 
     const r = await pool.query(
       `SELECT j.id, j.title, j.body, j.category, j.in_game_day, j.created_at, j.updated_at,
               j.created_by, j.player_id,
               ${isDM ? 'j.location_id,' : 'CASE WHEN cl.is_public THEN j.location_id ELSE NULL END AS location_id,'}
               ${isDM ? 'j.dm_only,' : ''}
+              j.visible_to, vp.player_name AS visible_to_name,
               u.username AS author_username,
               cp.player_name AS author_character,
               ${isDM ? 'cl.name' : 'CASE WHEN cl.is_public THEN cl.name ELSE NULL END'} AS location_name
          FROM campaign_journal_entries j
          JOIN users u ON u.id = j.created_by
          LEFT JOIN campaign_players cp ON cp.id = j.player_id
+         LEFT JOIN campaign_players vp ON vp.id = j.visible_to
          LEFT JOIN campaign_locations cl ON cl.id = j.location_id
         WHERE j.campaign_id = $1
-          ${isDM ? '' : 'AND j.dm_only = false'}
+          ${isDM ? '' : 'AND (j.dm_only = false OR j.visible_to = ANY($2::int[]))'}
         -- In-game date first, ascending, so the journal reads forward like the
         -- diary rather than like a feed. An entry with no in-game date has not
         -- been placed in the story, so it collects at the end of its group.
         ORDER BY j.in_game_day ASC NULLS LAST, j.created_at ASC`,
-      [campaignId],
+      isDM ? [campaignId] : [campaignId, seats],
     );
 
     let rows = r.rows;
@@ -5572,7 +5618,7 @@ app.get('/api/campaigns/:campaignId/journal', requireAuth, async (req, res) => {
 app.post('/api/campaigns/:campaignId/journal', requireAuth, async (req, res) => {
   const { campaignId } = req.params;
   const { title, body, category, location_id: locId, in_game_day: day,
-    dm_only: dmOnly } = req.body ?? {};
+    dm_only: dmOnly, visible_to: visibleTo } = req.body ?? {};
   if (!String(body ?? '').trim() && !String(title ?? '').trim())
     return res.status(400).json({ error: 'An entry needs a title or a body' });
   try {
@@ -5582,6 +5628,8 @@ app.post('/api/campaigns/:campaignId/journal', requireAuth, async (req, res) => 
 
     const location = await resolveJournalLocation(locId, campaignId, isDM);
     if (location === false) return res.status(400).json({ error: 'No such location' });
+    const vis = await journalVisibility(campaignId, isDM, dmOnly, visibleTo);
+    if (vis === false) return res.status(400).json({ error: 'That player is not in this campaign' });
 
     // Which character the author was playing. The DM has none.
     const who = await pool.query(
@@ -5599,11 +5647,11 @@ app.post('/api/campaigns/:campaignId/journal', requireAuth, async (req, res) => 
     const r = await pool.query(
       `INSERT INTO campaign_journal_entries
          (campaign_id, created_by, player_id, location_id, title, body, category,
-          in_game_day, dm_only)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING id`,
+          in_game_day, dm_only, visible_to)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING id`,
       [campaignId, req.session.userId, who.rows[0]?.id ?? null, location,
         journalStr(title, 255), journalStr(body, 50000), journalStr(category, 120),
-        journalDay(day), isDM ? !!dmOnly : false],
+        journalDay(day), vis.dmOnly, vis.visibleTo],
     );
     res.json({ success: true, id: r.rows[0].id });
   } catch (e) { res.status(500).json({ error: e.message }); }
@@ -5613,7 +5661,7 @@ app.post('/api/campaigns/:campaignId/journal', requireAuth, async (req, res) => 
 app.put('/api/campaigns/:campaignId/journal/:entryId', requireAuth, async (req, res) => {
   const { campaignId, entryId } = req.params;
   const { title, body, category, location_id: locId, in_game_day: day,
-    dm_only: dmOnly } = req.body ?? {};
+    dm_only: dmOnly, visible_to: visibleTo } = req.body ?? {};
   try {
     if (!await canAccessCampaign(campaignId, req.session.userId, req.session.role))
       return res.status(403).json({ error: 'Access denied' });
@@ -5627,14 +5675,16 @@ app.put('/api/campaigns/:campaignId/journal/:entryId', requireAuth, async (req, 
     const isDM = await isCampaignDm(campaignId, req.session.userId, req.session.role);
     const location = await resolveJournalLocation(locId, campaignId, isDM);
     if (location === false) return res.status(400).json({ error: 'No such location' });
+    const vis = await journalVisibility(campaignId, isDM, dmOnly, visibleTo);
+    if (vis === false) return res.status(400).json({ error: 'That player is not in this campaign' });
 
     await pool.query(
       `UPDATE campaign_journal_entries
           SET title=$1, body=$2, category=$3, location_id=$4, in_game_day=$5,
-              dm_only=$6, updated_at=CURRENT_TIMESTAMP
-        WHERE id=$7 AND campaign_id=$8`,
+              dm_only=$6, visible_to=$7, updated_at=CURRENT_TIMESTAMP
+        WHERE id=$8 AND campaign_id=$9`,
       [journalStr(title, 255), journalStr(body, 50000), journalStr(category, 120),
-        location, journalDay(day), isDM ? !!dmOnly : false, entryId, campaignId],
+        location, journalDay(day), vis.dmOnly, vis.visibleTo, entryId, campaignId],
     );
     res.json({ success: true });
   } catch (e) { res.status(500).json({ error: e.message }); }
@@ -7697,12 +7747,17 @@ app.post('/api/campaigns/:campaignId/sessions/:sessionId/generate-next', require
  */
 app.post('/api/campaigns/:campaignId/sessions/:sessionId/to-journal', requireRole(['dm', 'admin']), async (req, res) => {
   const { campaignId, sessionId } = req.params;
-  const { item_ids: itemIds, category, in_game_day: day, dm_only: dmOnly } = req.body ?? {};
+  const { item_ids: itemIds, category, in_game_day: day, dm_only: dmOnly,
+    visible_to: visibleTo } = req.body ?? {};
 
   const client = await pool.connect();
   try {
     if (!await dmOwnsCampaign(campaignId, req.session.userId, req.session.role))
       return res.status(403).json({ error: 'Access denied' });
+    // Resolved before BEGIN: it reads with the pool, and a bad seat is a 400
+    // with nothing to roll back.
+    const vis = await journalVisibility(campaignId, true, dmOnly, visibleTo);
+    if (vis === false) return res.status(400).json({ error: 'That player is not in this campaign' });
 
     await client.query('BEGIN');
     const session = (await client.query(
@@ -7777,9 +7832,10 @@ app.post('/api/campaigns/:campaignId/sessions/:sessionId/to-journal', requireRol
       await client.query(
         `INSERT INTO campaign_journal_entries
            (campaign_id, created_by, player_id, location_id, title, body,
-            category, in_game_day, dm_only)
-         VALUES ($1,$2,$3,NULL,$4,$5,$6,$7,$8)`,
-        [campaignId, req.session.userId, playerId, title, body, cat, when, !!dmOnly],
+            category, in_game_day, dm_only, visible_to)
+         VALUES ($1,$2,$3,NULL,$4,$5,$6,$7,$8,$9)`,
+        [campaignId, req.session.userId, playerId, title, body, cat, when,
+          vis.dmOnly, vis.visibleTo],
       );
       created += 1;
     }
@@ -8891,7 +8947,7 @@ app.get('/api/campaigns/:id/export', requireRole(['dm']), async (req, res) => {
      */
     const journalRes = await pool.query(
       `SELECT j.title, j.body, j.category, j.in_game_day, j.dm_only, j.created_at,
-              j.player_id, j.location_id, u.username AS author_username
+              j.player_id, j.location_id, j.visible_to, u.username AS author_username
          FROM campaign_journal_entries j
          JOIN users u ON u.id = j.created_by
         WHERE j.campaign_id = $1
@@ -8987,6 +9043,9 @@ app.get('/api/campaigns/:id/export', requireRole(['dm']), async (req, res) => {
         // playersRes excludes the DM's own seat.
         player_ref: e.player_id ? (playerRefById[e.player_id] || null) : null,
         location_ref: e.location_id ? (locRefById[e.location_id] || null) : null,
+        // The one player a DM-only entry is shown to. A ref that does not
+        // resolve on import leaves the entry hidden, never public.
+        visible_to_ref: e.visible_to ? (playerRefById[e.visible_to] || null) : null,
       })),
       campaign_diary: diaryRes.rows,
       sessions: sessionsOut,
@@ -9543,10 +9602,10 @@ app.post('/api/campaigns/import', requireRole(['dm']), async (req, res) => {
       await client.query(
         `INSERT INTO campaign_journal_entries
            (campaign_id, created_by, player_id, location_id, title, body, category,
-            in_game_day, dm_only, created_at, updated_at)
+            in_game_day, dm_only, created_at, updated_at, visible_to)
          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,
                  COALESCE($10::timestamp, CURRENT_TIMESTAMP),
-                 COALESCE($10::timestamp, CURRENT_TIMESTAMP))`,
+                 COALESCE($10::timestamp, CURRENT_TIMESTAMP), $11)`,
         [newId, author,
           e.player_ref ? (playerIdByRef[e.player_ref] ?? null) : null,
           e.location_ref ? (locIdByRef[e.location_ref] ?? null) : null,
@@ -9558,7 +9617,10 @@ app.post('/api/campaigns/import', requireRole(['dm']), async (req, res) => {
           // A bare NULL here STORES null — a column DEFAULT only applies when
           // the column is omitted — and a null created_at scrambles the order
           // the journal is read back in.
-          e.created_at || null],
+          e.created_at || null,
+          // Only on a DM-only entry (the CHECK insists), and only a seat this
+          // import made. One that does not resolve leaves the entry hidden.
+          e.dm_only === true && e.visible_to_ref ? (playerIdByRef[e.visible_to_ref] ?? null) : null],
       );
       journalAdded += 1;
     }
@@ -9800,15 +9862,16 @@ app.post('/api/campaigns/:campaignId/import-into', requireRole(['dm', 'admin']),
         await client.query(
           `INSERT INTO campaign_journal_entries
              (campaign_id, created_by, player_id, location_id, title, body, category,
-              in_game_day, dm_only, created_at, updated_at)
+              in_game_day, dm_only, created_at, updated_at, visible_to)
            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,
                    COALESCE($10::timestamp, CURRENT_TIMESTAMP),
-                   COALESCE($10::timestamp, CURRENT_TIMESTAMP))`,
+                   COALESCE($10::timestamp, CURRENT_TIMESTAMP), $11)`,
           [cid, req.session.userId,
             e.player_ref ? (playerIdByRef[e.player_ref] ?? null) : null,
             e.location_ref ? (locIdByRef[e.location_ref] ?? null) : null,
             title, body, journalStr(e.category, 120),
-            journalDay(e.in_game_day), e.dm_only === true, e.created_at || null],
+            journalDay(e.in_game_day), e.dm_only === true, e.created_at || null,
+            e.dm_only === true && e.visible_to_ref ? (playerIdByRef[e.visible_to_ref] ?? null) : null],
         );
         n += 1;
       }
@@ -11119,6 +11182,31 @@ async function initializeDatabase() {
     await pool.query(`
       ALTER TABLE campaign_journal_entries
         ADD COLUMN IF NOT EXISTS category VARCHAR(120);
+    `);
+    /*
+     * One player who may read a DM-only entry.
+     *
+     * A refinement of dm_only rather than a replacement: public is
+     * dm_only=false, hidden is dm_only with no one here, and "just for Iris"
+     * is dm_only with her seat here. Every query written against dm_only
+     * before this column existed therefore treats a one-player entry as
+     * hidden — anything that forgets about it fails closed, not open.
+     *
+     * SET NULL when the seat goes, which leaves the entry hidden: a note
+     * written for one player must not become everyone's because she left.
+     */
+    await pool.query(`
+      ALTER TABLE campaign_journal_entries
+        ADD COLUMN IF NOT EXISTS visible_to INTEGER
+          REFERENCES campaign_players(id) ON DELETE SET NULL;
+    `);
+    await pool.query(`
+      DO $$ BEGIN
+        IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'journal_visible_to_needs_dm_only') THEN
+          ALTER TABLE campaign_journal_entries
+            ADD CONSTRAINT journal_visible_to_needs_dm_only CHECK (visible_to IS NULL OR dm_only);
+        END IF;
+      END $$;
     `);
     await pool.query(`
       CREATE INDEX IF NOT EXISTS idx_journal_campaign

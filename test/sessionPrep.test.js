@@ -701,9 +701,16 @@ describe('What happened becomes journal entries', () => {
      * the deliberate act, so the box is an opt-IN and it says what it
      * does rather than naming the column.
      */
-    expect(panel).toMatch(/dmOnly: true,/);
-    expect(panel).toMatch(/Let the players read these/);
-    expect(panel).toMatch(/checked=\{!journalForm\.dmOnly\}/);
+    expect(panel).toMatch(/visibility: 'hidden',/);
+    expect(panel).toMatch(/<option value="hidden">Only me/);
+    expect(panel).toMatch(/dm_only: journalForm\.visibility !== 'public'/);
+  });
+
+  it('and can write them for one player instead', () => {
+    expect(panel).toMatch(/Only \{p\.player_name\} \(and me\)/);
+    const r = route("app.post('/api/campaigns/:campaignId/sessions/:sessionId/to-journal'");
+    expect(r).toMatch(/journalVisibility\(campaignId, true, dmOnly, visibleTo\)/);
+    expect(r).toMatch(/vis\.dmOnly, vis\.visibleTo/);
   });
 
   it('and offers it on a played session too', () => {

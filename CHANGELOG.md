@@ -8,6 +8,9 @@ Longer write-ups of these entries are in this file's git history.
 ## [Unreleased]
 
 ### Added
+- **Journal entries for one player.** The DM can show an entry to everyone, keep it hidden, or
+  show it to a single player. The same choice is offered when copying *What happened* to the
+  journal.
 - **Campaign surveys** (📊 Surveys tab). Write your own questions — scales or free text, with
   end labels, an optional comment box, and which direction is "better" for colouring results.
   Ask the same survey again later and compare the answers side by side.

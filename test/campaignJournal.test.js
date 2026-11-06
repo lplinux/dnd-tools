@@ -39,7 +39,7 @@ const del = handlerCode('delete', '/api/campaigns/:campaignId/journal/:entryId')
 
 describe('a player never receives a DM-only entry', () => {
   it('filters them out in SQL, not in the component', () => {
-    expect(list).toMatch(/AND j\.dm_only = false/);
+    expect(list).toMatch(/AND \(j\.dm_only = false OR j\.visible_to = ANY\(\$2::int\[\]\)\)/);
   });
 
   it('does not even select the column for a player', () => {
@@ -49,6 +49,42 @@ describe('a player never receives a DM-only entry', () => {
 
   it('decides from the campaign, not from anything the client sent', () => {
     expect(list).toMatch(/isCampaignDm\(campaignId, req\.session\.userId, req\.session\.role\)/);
+  });
+});
+
+describe('an entry written for one player', () => {
+  const helper = source.slice(source.indexOf('async function journalVisibility('),
+    source.indexOf('async function mySeats('));
+  const seats = source.slice(source.indexOf('async function mySeats('),
+    source.indexOf('\n}\n', source.indexOf('async function mySeats(')));
+
+  it('reaches that player only — their own seats, from the session', () => {
+    expect(list).toMatch(/const seats = isDM \? \[\] : await mySeats\(campaignId, req\.session\.userId\)/);
+    expect(seats).toMatch(/cua\.user_id=\$2/);
+    expect(list).toMatch(/isDM \? \[campaignId\] : \[campaignId, seats\]/);
+  });
+
+  it('is a refinement of dm_only, so anything that forgets it fails closed', () => {
+    // Public is dm_only=false; a one-player entry is dm_only=true plus a seat.
+    // Every older `dm_only = false` filter therefore hides it.
+    expect(source).toMatch(/CHECK \(visible_to IS NULL OR dm_only\)/);
+    expect(source).toMatch(/visible_to INTEGER\s+REFERENCES campaign_players\(id\) ON DELETE SET NULL/);
+  });
+
+  it('can only be set by the DM, and only to a player of this campaign', () => {
+    expect(helper).toMatch(/if \(!isDM \|\| !dmOnly\) return \{ dmOnly: false, visibleTo: null \}/);
+    expect(helper).toMatch(/WHERE id=\$1 AND campaign_id=\$2 AND is_dm_player = false/);
+    for (const [name, code] of [['create', create], ['edit', edit]]) {
+      expect(code, name).toMatch(/journalVisibility\(campaignId, isDM, dmOnly, visibleTo\)/);
+      expect(code, name).toMatch(/if \(vis === false\) return res\.status\(400\)/);
+      expect(code, name).toMatch(/vis\.dmOnly, vis\.visibleTo/);
+    }
+  });
+
+  it('travels in the bundle as a player ref, and stays hidden if it does not resolve', () => {
+    expect(source).toMatch(/visible_to_ref: e\.visible_to \? \(playerRefById\[e\.visible_to\] \|\| null\) : null/);
+    const n = source.match(/e\.dm_only === true && e\.visible_to_ref \? \(playerIdByRef\[e\.visible_to_ref\] \?\? null\) : null/g);
+    expect(n, 'both journal imports').toHaveLength(2);
   });
 });
 
@@ -84,8 +120,9 @@ describe('who may do what', () => {
   it('only lets the DM mark an entry DM-only', () => {
     // A player posting something the table cannot see would be a diary, and
     // they already have one.
-    expect(create).toMatch(/isDM \? !!dmOnly : false/);
-    expect(edit).toMatch(/isDM \? !!dmOnly : false/);
+    // journalVisibility returns a public entry for anyone who is not the DM.
+    expect(create).toMatch(/journalVisibility\(campaignId, isDM, dmOnly, visibleTo\)/);
+    expect(edit).toMatch(/journalVisibility\(campaignId, isDM, dmOnly, visibleTo\)/);
   });
 
   it('lets only the author edit', () => {

@@ -69,8 +69,28 @@ const INPUT_CLS = [
 ].join(' ');
 
 const blank = () => ({
-  id: null, title: '', body: '', category: '', location_id: '', date: null, dm_only: false,
+  id: null, title: '', body: '', category: '', location_id: '', date: null, visibility: 'public',
 });
+
+/**
+ * Who may read an entry, as one value for the form's select: 'public',
+ * 'hidden' (the DM only), or a player seat's id. The server stores it as
+ * `dm_only` plus an optional `visible_to`, which these two translate.
+ */
+const visibilityOf = (e) => (!e.dm_only ? 'public' : e.visible_to ? String(e.visible_to) : 'hidden');
+const visibilityPayload = (v) => ({
+  dm_only: v !== 'public',
+  visible_to: v !== 'public' && v !== 'hidden' ? Number(v) : null,
+});
+
+/**
+ * The tag on a restricted entry. A player only ever receives the entries
+ * written for their own seat, so for them it is always "you".
+ */
+export function visibilityLabel(e, isDM) {
+  if (e.visible_to) return isDM ? `Only ${e.visible_to_name || 'one player'}` : 'Only you';
+  return e.dm_only ? 'DM only' : null;
+}
 
 /** The real-world stamp. Short — the in-game date is the interesting one. */
 function writtenOn(iso) {
@@ -88,7 +108,7 @@ function writtenOn(iso) {
  * with. The emoji go too: they print as tofu in half the fonts a browser will
  * fall back to.
  */
-export function journalMetaText(e, calType) {
+export function journalMetaText(e, calType, isDM = true) {
   const when = inGameDate(e.in_game_day, calType);
   return [
     e.author_character || e.author_username,
@@ -96,7 +116,7 @@ export function journalMetaText(e, calType) {
     when,
     // Worth carrying onto paper: a printout that leaves the table should say
     // which lines were never meant for the players.
-    e.dm_only ? 'DM only' : null,
+    visibilityLabel(e, isDM),
   ].filter(Boolean).join(' · ');
 }
 
@@ -106,6 +126,8 @@ export default function JournalPanel({
   const { toast } = useToast();
   const [entries, setEntries] = useState([]);
   const [locations, setLocations] = useState([]);
+  // The seats a DM can write an entry for. Never fetched for a player.
+  const [players, setPlayers] = useState([]);
   const [loading, setLoading] = useState(false);
   const [busy, setBusy] = useState(false);
   const [form, setForm] = useState(null);       // null = not editing
@@ -133,14 +155,18 @@ export default function JournalPanel({
     if (!campaignId) { setEntries([]); setLocations([]); return; }
     setLoading(true);
     try {
-      const [list, locs] = await Promise.all([
+      const [list, locs, seats] = await Promise.all([
         campaignsApi.listJournal(campaignId).catch(() => []),
         campaignsApi.listLocations(campaignId).catch(() => []),
+        isDM ? campaignsApi.listPlayers(campaignId).catch(() => []) : [],
       ]);
       setEntries(Array.isArray(list) ? list : []);
       setLocations(Array.isArray(locs) ? locs : []);
+      setPlayers((Array.isArray(seats) ? seats : [])
+        .filter((p) => !p.is_dm_player)
+        .sort((a, b) => (a.player_name || '').localeCompare(b.player_name || '')));
     } finally { setLoading(false); }
-  }, [campaignId]);
+  }, [campaignId, isDM]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -169,7 +195,7 @@ export default function JournalPanel({
       category: e.category ?? '',
       location_id: e.location_id ?? '',
       date: partsFromAbsDay(e.in_game_day, calendarType),
-      dm_only: !!e.dm_only,
+      visibility: visibilityOf(e),
     });
   }
 
@@ -183,7 +209,7 @@ export default function JournalPanel({
         category: form.category,
         location_id: form.location_id === '' ? null : Number(form.location_id),
         in_game_day: absDayFromParts(form.date, calendarType),
-        dm_only: isDM ? form.dm_only : false,
+        ...(isDM ? visibilityPayload(form.visibility) : { dm_only: false, visible_to: null }),
       };
       if (form.id) await campaignsApi.editJournal(campaignId, form.id, payload);
       else await campaignsApi.addJournal(campaignId, payload);
@@ -214,14 +240,14 @@ export default function JournalPanel({
         {e.location_name && <span>📍 {e.location_name}</span>}
         {when && <span className="text-gold/70">🗓 {when}</span>}
         <span className="text-text-muted">written {writtenOn(e.created_at)}</span>
-        {e.dm_only && (
+        {visibilityLabel(e, isDM) && (
           <span className="font-display uppercase tracking-wider text-[var(--gold)]">
-            · DM only
+            · {visibilityLabel(e, isDM)}
           </span>
         )}
       </span>
     );
-  }, [calendarType]);
+  }, [calendarType, isDM]);
 
   /**
    * Print what is on screen.
@@ -238,7 +264,7 @@ export default function JournalPanel({
       subtitle: 'Campaign Journal',
       groups,
       ungroupedLabel: GROUP_BY[groupBy].ungrouped,
-      meta: (e) => journalMetaText(e, calendarType),
+      meta: (e) => journalMetaText(e, calendarType, isDM),
       // Say so on the paper, or a filtered printout looks like the whole
       // journal with entries mysteriously missing.
       note: [
@@ -265,7 +291,7 @@ export default function JournalPanel({
       <div className="flex items-center gap-2 flex-wrap">
         <p className="text-[0.7rem] text-text-muted italic flex-1 min-w-[12rem]">
           Shared with everyone in the campaign. {isDM
-            ? 'Mark an entry DM-only to keep it to yourself until the party finds it.'
+            ? 'An entry of yours can also be kept to yourself, or shown to one player only.'
             : 'Your entries are visible to the whole table.'}
         </p>
         <Button variant="accent" onClick={openNew} disabled={!campaignId}>＋ New entry</Button>
@@ -312,7 +338,7 @@ export default function JournalPanel({
         )}
         meta={meta}
         can={can}
-        accent={(e) => !!e.dm_only}
+        accent={(e) => !!e.dm_only || !!e.visible_to}
         onEdit={openEdit}
         onDelete={remove}
         emptyText={'Nothing written yet. Use this for what the party found — a letter, a name '
@@ -367,12 +393,16 @@ export default function JournalPanel({
             </FormField>
 
             {isDM && (
-              <label className="flex items-center gap-2 text-sm text-text cursor-pointer">
-                <input type="checkbox" checked={form.dm_only}
-                  className="w-4 h-4 accent-[var(--gold)]"
-                  onChange={(ev) => setForm({ ...form, dm_only: ev.target.checked })} />
-                DM only — the players never see this entry
-              </label>
+              <FormField label="Who can read it">
+                <select value={form.visibility} className={INPUT_CLS}
+                  onChange={(ev) => setForm({ ...form, visibility: ev.target.value })}>
+                  <option value="public">Everyone at the table</option>
+                  <option value="hidden">Only me (hidden from the players)</option>
+                  {players.map((p) => (
+                    <option key={p.id} value={String(p.id)}>Only {p.player_name} (and me)</option>
+                  ))}
+                </select>
+              </FormField>
             )}
 
             <div className="flex gap-2 justify-end pt-1">
