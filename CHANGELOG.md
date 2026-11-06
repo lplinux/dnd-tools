@@ -8,6 +8,9 @@ Longer write-ups of these entries are in this file's git history.
 ## [Unreleased]
 
 ### Added
+- **Campaign backlog** (🗓 Sessions tab, under the session). Ideas for no session in particular.
+  **→ This session** moves a card, sub-cards and all, into the session on screen;
+  **→ Backlog** on a session card sends it back.
 - **Journal entries for one player.** The DM can show an entry to everyone, keep it hidden, or
   show it to a single player. The same choice is offered when copying *What happened* to the
   journal.
@@ -37,7 +40,7 @@ Longer write-ups of these entries are in this file's git history.
 - Restoring a campaign from the Trash renames it if its name is taken.
 - **Session cards:** changing a card's state now changes its sub-cards too, for every state
   (before, only Done and Skipped did).
-- Campaign files are version 10 and may be partial. Older files still import.
+- Campaign files are version 11 and may be partial. Older files still import.
 
 ### Fixed
 - Closing an NPC's stat block turned the page black.

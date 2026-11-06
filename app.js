@@ -7859,6 +7859,319 @@ app.delete('/api/campaigns/:campaignId/sessions/:sessionId/items/:itemId', requi
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// ─── Campaign backlog ("pendings") ───────────────────────────────────────────
+//
+// Things the DM means to use some day — a letter to deliver, an NPC to bring
+// back, a reveal — that belong to no session yet. Before this they lived as a
+// card inside whichever session was open, and travelled from session to
+// session with every "Generate next".
+//
+// Its own table rather than session cards with no session: every query on
+// campaign_session_items is keyed on a session, and a card with none would
+// quietly drop out of some (the export) and into others (anything by
+// campaign). The shape is the same on purpose — same states, same nesting —
+// so a card crosses between the two whole, in either direction.
+//
+// DM-only throughout, like session prep.
+
+/** The card, if it belongs to this campaign. */
+async function pendingOf(itemId, campaignId) {
+  const r = await pool.query(
+    'SELECT * FROM campaign_pendings WHERE id=$1 AND campaign_id=$2', [itemId, campaignId]);
+  return r.rows[0] ?? null;
+}
+
+/**
+ * A card and everything under it, parents before children.
+ *
+ * `table` is one of two literals from this file, never input. Bounded at
+ * fifty levels like every other walk here: parent_id is a tree by
+ * construction, not by constraint.
+ */
+async function subtreeRows(client, table, itemId) {
+  const r = await client.query(
+    `WITH RECURSIVE sub AS (
+       SELECT t.*, 0 AS depth FROM ${table} t WHERE t.id=$1
+       UNION ALL
+       SELECT t.*, sub.depth + 1 FROM ${table} t
+         JOIN sub ON t.parent_id = sub.id WHERE sub.depth < 50
+     )
+     SELECT * FROM sub ORDER BY depth ASC, position ASC, id ASC`,
+    [itemId],
+  );
+  return r.rows;
+}
+
+app.get('/api/campaigns/:campaignId/pendings', requireRole(['dm', 'admin']), async (req, res) => {
+  try {
+    if (!await dmOwnsCampaign(req.params.campaignId, req.session.userId, req.session.role))
+      return res.status(403).json({ error: 'Access denied' });
+    const r = await pool.query(
+      'SELECT * FROM campaign_pendings WHERE campaign_id=$1 ORDER BY position ASC, id ASC',
+      [req.params.campaignId],
+    );
+    res.json({ items: r.rows });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/api/campaigns/:campaignId/pendings', requireRole(['dm', 'admin']), async (req, res) => {
+  const { campaignId } = req.params;
+  const { parent_id: parentId, title, body, state } = req.body ?? {};
+  try {
+    if (!await dmOwnsCampaign(campaignId, req.session.userId, req.session.role))
+      return res.status(403).json({ error: 'Access denied' });
+    if (parentId && !await pendingOf(parentId, campaignId)) {
+      return res.status(400).json({ error: 'That parent is not in this campaign' });
+    }
+    const next = await pool.query(
+      `SELECT COALESCE(MAX(position), -1) + 1 AS pos FROM campaign_pendings
+        WHERE campaign_id=$1 AND parent_id IS NOT DISTINCT FROM $2`,
+      [campaignId, parentId || null],
+    );
+    const r = await pool.query(
+      `INSERT INTO campaign_pendings (campaign_id, parent_id, title, body, state, position)
+       VALUES ($1,$2,$3,$4,$5,$6) RETURNING *`,
+      [campaignId, parentId || null, journalStr(title, 255), journalStr(body, 50000),
+        SESSION_STATES.includes(state) ? state : 'in-preparation', next.rows[0].pos],
+    );
+    res.json(r.rows[0]);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.put('/api/campaigns/:campaignId/pendings/:itemId', requireRole(['dm', 'admin']), async (req, res) => {
+  const { campaignId, itemId } = req.params;
+  const { title, body } = req.body ?? {};
+  try {
+    if (!await dmOwnsCampaign(campaignId, req.session.userId, req.session.role))
+      return res.status(403).json({ error: 'Access denied' });
+    const r = await pool.query(
+      `UPDATE campaign_pendings SET title=$1, body=$2, updated_at=CURRENT_TIMESTAMP
+        WHERE id=$3 AND campaign_id=$4 RETURNING *`,
+      [journalStr(title, 255), journalStr(body, 50000), itemId, campaignId],
+    );
+    if (!r.rows.length) return res.status(404).json({ error: 'Item not found' });
+    res.json(r.rows[0]);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+/** The state, taking the sub-cards with it — the same rule as session cards. */
+app.patch('/api/campaigns/:campaignId/pendings/:itemId/state', requireRole(['dm', 'admin']), async (req, res) => {
+  const { campaignId, itemId } = req.params;
+  const { state } = req.body ?? {};
+  if (!SESSION_STATES.includes(state)) return res.status(400).json({ error: 'Unknown state' });
+  try {
+    if (!await dmOwnsCampaign(campaignId, req.session.userId, req.session.role))
+      return res.status(403).json({ error: 'Access denied' });
+    const r = await pool.query(
+      `WITH RECURSIVE sub AS (
+         SELECT id, 0 AS depth FROM campaign_pendings WHERE id=$2 AND campaign_id=$3
+         UNION ALL
+         SELECT p.id, sub.depth + 1 FROM campaign_pendings p
+           JOIN sub ON p.parent_id = sub.id WHERE sub.depth < 50
+       )
+       UPDATE campaign_pendings SET state=$1, updated_at=CURRENT_TIMESTAMP
+        WHERE id IN (SELECT id FROM sub)
+        RETURNING *`,
+      [state, itemId, campaignId],
+    );
+    if (!r.rows.length) return res.status(404).json({ error: 'Item not found' });
+    res.json({ updated: r.rows });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+/** Reorder or re-parent within the backlog. Returns the whole list, renumbered. */
+app.patch('/api/campaigns/:campaignId/pendings/:itemId/move', requireRole(['dm', 'admin']), async (req, res) => {
+  const { campaignId, itemId } = req.params;
+  const { parent_id: parentId = null, position } = req.body ?? {};
+  const client = await pool.connect();
+  try {
+    if (!await dmOwnsCampaign(campaignId, req.session.userId, req.session.role))
+      return res.status(403).json({ error: 'Access denied' });
+    await client.query('BEGIN');
+    const self = (await client.query(
+      'SELECT * FROM campaign_pendings WHERE id=$1 AND campaign_id=$2', [itemId, campaignId],
+    )).rows[0];
+    if (!self) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'Item not found' }); }
+    if (parentId != null) {
+      const parent = (await client.query(
+        'SELECT 1 FROM campaign_pendings WHERE id=$1 AND campaign_id=$2', [parentId, campaignId],
+      )).rows[0];
+      if (!parent) { await client.query('ROLLBACK'); return res.status(400).json({ error: 'That parent is not in this campaign' }); }
+      // Into its own branch would detach the branch from the tree.
+      const mine = await subtreeRows(client, 'campaign_pendings', itemId);
+      if (mine.some((r) => String(r.id) === String(parentId))) {
+        await client.query('ROLLBACK');
+        return res.status(400).json({ error: 'A card cannot be moved inside itself' });
+      }
+    }
+    await client.query(
+      'UPDATE campaign_pendings SET parent_id=$1, updated_at=CURRENT_TIMESTAMP WHERE id=$2',
+      [parentId, itemId],
+    );
+    const sibs = (await client.query(
+      `SELECT id FROM campaign_pendings
+        WHERE campaign_id=$1 AND parent_id IS NOT DISTINCT FROM $2 AND id <> $3
+        ORDER BY position ASC, id ASC`,
+      [campaignId, parentId, itemId],
+    )).rows.map((r) => r.id);
+    const at = Number.isInteger(position) ? Math.max(0, Math.min(position, sibs.length)) : sibs.length;
+    sibs.splice(at, 0, Number(itemId));
+    for (let i = 0; i < sibs.length; i++) {
+      await client.query('UPDATE campaign_pendings SET position=$1 WHERE id=$2', [i, sibs[i]]);
+    }
+    await client.query('COMMIT');
+    const all = await pool.query(
+      'SELECT * FROM campaign_pendings WHERE campaign_id=$1 ORDER BY position ASC, id ASC', [campaignId]);
+    res.json({ items: all.rows });
+  } catch (e) {
+    await client.query('ROLLBACK');
+    res.status(500).json({ error: e.message });
+  } finally { client.release(); }
+});
+
+app.delete('/api/campaigns/:campaignId/pendings/:itemId', requireRole(['dm', 'admin']), async (req, res) => {
+  try {
+    if (!await dmOwnsCampaign(req.params.campaignId, req.session.userId, req.session.role))
+      return res.status(403).json({ error: 'Access denied' });
+    // Sub-cards go by CASCADE, as in session prep.
+    await pool.query('DELETE FROM campaign_pendings WHERE id=$1 AND campaign_id=$2',
+      [req.params.itemId, req.params.campaignId]);
+    res.json({ success: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+/**
+ * Take a backlog card into a session, sub-cards and all.
+ *
+ * A MOVE, not a copy: the point of the backlog is that a thing leaves it
+ * when it is used, or it is still there next month asking to be used again.
+ * Lands last in the chosen section (The session unless told otherwise),
+ * keeping its states — the session's own drag moves it on from there.
+ */
+app.post('/api/campaigns/:campaignId/pendings/:itemId/to-session', requireRole(['dm', 'admin']), async (req, res) => {
+  const { campaignId, itemId } = req.params;
+  const { session_id: sessionId, section: want } = req.body ?? {};
+  const section = ['prep', 'beats'].includes(want) ? want : 'beats';
+  const client = await pool.connect();
+  try {
+    if (!await dmOwnsCampaign(campaignId, req.session.userId, req.session.role))
+      return res.status(403).json({ error: 'Access denied' });
+    if (!await sessionOf(sessionId, campaignId)) return res.status(404).json({ error: 'Session not found' });
+    await client.query('BEGIN');
+    const rows = await subtreeRows(client, 'campaign_pendings', itemId);
+    if (!rows.length || String(rows[0].campaign_id) !== String(campaignId)) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'Item not found' });
+    }
+    const pos = (await client.query(
+      `SELECT COALESCE(MAX(position), -1) + 1 AS pos FROM campaign_session_items
+        WHERE session_id=$1 AND section=$2 AND parent_id IS NULL`, [sessionId, section],
+    )).rows[0].pos;
+    const newId = new Map();
+    for (const r of rows) {
+      const made = await client.query(
+        `INSERT INTO campaign_session_items
+           (campaign_id, session_id, parent_id, section, title, body, state, position)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING id`,
+        [campaignId, sessionId, r.depth === 0 ? null : newId.get(r.parent_id), section,
+          r.title, r.body, r.state, r.depth === 0 ? pos : r.position],
+      );
+      newId.set(r.id, made.rows[0].id);
+    }
+    await client.query('DELETE FROM campaign_pendings WHERE id=$1', [itemId]);
+    await client.query('COMMIT');
+    res.json({ success: true, moved: rows.length });
+  } catch (e) {
+    await client.query('ROLLBACK');
+    res.status(500).json({ error: e.message });
+  } finally { client.release(); }
+});
+
+/** The other way: a session card, sub-cards and all, back to the backlog. */
+app.post('/api/campaigns/:campaignId/sessions/:sessionId/items/:itemId/to-pendings', requireRole(['dm', 'admin']), async (req, res) => {
+  const { campaignId, sessionId, itemId } = req.params;
+  const client = await pool.connect();
+  try {
+    if (!await dmOwnsCampaign(campaignId, req.session.userId, req.session.role))
+      return res.status(403).json({ error: 'Access denied' });
+    await client.query('BEGIN');
+    const rows = await subtreeRows(client, 'campaign_session_items', itemId);
+    if (!rows.length || String(rows[0].campaign_id) !== String(campaignId)
+        || String(rows[0].session_id) !== String(sessionId)) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'Item not found' });
+    }
+    // What happened is a record of the night, not something to do later.
+    if (rows[0].section === 'outcome' || rows[0].section === 'recap') {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ error: 'Only prep and beats can go to the backlog' });
+    }
+    const pos = (await client.query(
+      `SELECT COALESCE(MAX(position), -1) + 1 AS pos FROM campaign_pendings
+        WHERE campaign_id=$1 AND parent_id IS NULL`, [campaignId],
+    )).rows[0].pos;
+    const newId = new Map();
+    for (const r of rows) {
+      const made = await client.query(
+        `INSERT INTO campaign_pendings (campaign_id, parent_id, title, body, state, position)
+         VALUES ($1,$2,$3,$4,$5,$6) RETURNING id`,
+        [campaignId, r.depth === 0 ? null : newId.get(r.parent_id),
+          r.title, r.body, r.state, r.depth === 0 ? pos : r.position],
+      );
+      newId.set(r.id, made.rows[0].id);
+    }
+    await client.query('DELETE FROM campaign_session_items WHERE id=$1', [itemId]);
+    await client.query('COMMIT');
+    res.json({ success: true, moved: rows.length });
+  } catch (e) {
+    await client.query('ROLLBACK');
+    res.status(500).json({ error: e.message });
+  } finally { client.release(); }
+});
+
+/** The backlog, nested and id-free, for the campaign bundle. */
+async function pendingsForExport(campaignId) {
+  const r = await pool.query(
+    `SELECT id, parent_id, title, body, state FROM campaign_pendings
+      WHERE campaign_id=$1 ORDER BY position ASC, id ASC`, [campaignId]);
+  const kids = new Map();
+  for (const i of r.rows) {
+    const k = i.parent_id ?? 'root';
+    if (!kids.has(k)) kids.set(k, []);
+    kids.get(k).push(i);
+  }
+  const build = (k, depth) => (depth > 50 ? [] : (kids.get(k) ?? []).map((i) => {
+    const children = build(i.id, depth + 1);
+    return { title: i.title, body: i.body, state: i.state, ...(children.length ? { children } : {}) };
+  }));
+  return build('root', 0);
+}
+
+/** Append a nested backlog list to a campaign. Inside the caller's transaction. */
+async function importPendingList(client, campaignId, list) {
+  let n = 0;
+  const walk = async (items, parentId, depth) => {
+    if (depth > 50) return;
+    let pos = (await client.query(
+      `SELECT COALESCE(MAX(position), -1) + 1 AS pos FROM campaign_pendings
+        WHERE campaign_id=$1 AND parent_id IS NOT DISTINCT FROM $2`, [campaignId, parentId],
+    )).rows[0].pos;
+    for (const raw of items ?? []) {
+      if (!raw) continue;
+      const r = await client.query(
+        `INSERT INTO campaign_pendings (campaign_id, parent_id, title, body, state, position)
+         VALUES ($1,$2,$3,$4,$5,$6) RETURNING id`,
+        [campaignId, parentId, journalStr(raw.title, 255), journalStr(raw.body, 50000),
+          SESSION_STATES.includes(raw.state) ? raw.state : 'in-preparation', pos],
+      );
+      pos += 1; n += 1;
+      await walk(raw.children, r.rows[0].id, depth + 1);
+    }
+  };
+  await walk(list, null, 0);
+  return n;
+}
+
 // ─── Character Relationship Tree (DM cross-player connections) ────────────────
 // GET all pc_relationships for every player in a campaign + DM cross-connections
 app.get('/api/campaigns/:campaignId/char-tree', requireRole(['dm', 'admin']), async (req, res) => {
@@ -8977,6 +9290,7 @@ app.get('/api/campaigns/:id/export', requireRole(['dm']), async (req, res) => {
     // it carries the prep too; the `campaign-sessions` file stays as the way
     // to move prep BETWEEN campaigns without the players and maps.
     const sessionsOut = await sessionsForExport(id);
+    const pendingsOut = await pendingsForExport(id);
     // After playerRefById is built — the responses name their player.
     const surveysOut = await surveysForExport(id, playerRefById);
 
@@ -8995,7 +9309,8 @@ app.get('/api/campaigns/:id/export', requireRole(['dm']), async (req, res) => {
       // still import: every key here is additive and the import defaults
       // each one, so nothing reads this number — see the import side.
       // 10: a file may be PARTIAL, and carries `parts` naming what it is.
-      version: 10,
+      // 11 adds `pendings`, the campaign backlog.
+      version: 11,
       exported_at: new Date().toISOString(),
       type: 'campaign',
       item_cards: cardsOut,
@@ -9049,6 +9364,7 @@ app.get('/api/campaigns/:id/export', requireRole(['dm']), async (req, res) => {
       })),
       campaign_diary: diaryRes.rows,
       sessions: sessionsOut,
+      pendings: pendingsOut,
       surveys: surveysOut,
     };
     const out = selectParts(full, sel.parts);
@@ -9072,7 +9388,7 @@ app.get('/api/campaign-export-parts', requireRole(['dm', 'admin']), (req, res) =
 app.post('/api/campaigns/import', requireRole(['dm']), async (req, res) => {
   const bundle = req.body;
   if (bundle.type !== 'campaign') return res.status(400).json({ error: 'Not a campaign export file' });
-  const { campaign, players = [], locations = [], npcs = [], cross_connections = [], journey_maps = [], dm_timelines = [], party_events = [], campaign_diary = [], campaign_journal = [], sessions = [], surveys = [] } = bundle;
+  const { campaign, players = [], locations = [], npcs = [], cross_connections = [], journey_maps = [], dm_timelines = [], party_events = [], campaign_diary = [], campaign_journal = [], sessions = [], surveys = [], pendings = [] } = bundle;
   if (!campaign?.name || !String(campaign.name).trim()) return res.status(400).json({ error: 'Missing campaign name' });
   const name = String(campaign.name).trim();
 
@@ -9636,6 +9952,8 @@ app.post('/api/campaigns/import', requireRole(['dm']), async (req, res) => {
      *     An older bundle has no `sessions` key and lands zero of them.
      */
     const sessionsIn = await importSessionList(client, newId, req.session.userId, sessions);
+    // The backlog beside it. A bundle from before version 11 has none.
+    const pendingsIn = await importPendingList(client, newId, pendings);
     /*
      * Surveys last, because the responses name players by ref and
      * `playerIdByRef` is only complete after the players pass. A bundle
@@ -9657,6 +9975,7 @@ app.post('/api/campaigns/import', requireRole(['dm']), async (req, res) => {
       sessions: sessionsIn.added,
       surveys: surveysIn,
       session_cards: sessionsIn.cards,
+      pendings: pendingsIn,
       gear: {
         items: gearAdded,
         cards_added: cardResolve.added,
@@ -9710,7 +10029,7 @@ app.post('/api/campaigns/:campaignId/import-into', requireRole(['dm', 'admin']),
 
     const cid = parseInt(campaignId, 10);
     const report = { locations: null, npcs: null, journal: null, diary: null,
-      sessions: null, surveys: null, skipped: [] };
+      sessions: null, surveys: null, pendings: null, skipped: [] };
     for (const [key, why] of [['players', 'player sheets, stats and timelines'],
       ['journey_maps', 'maps'], ['dm_timelines', 'DM timelines'],
       ['party_events', 'party events'], ['item_cards', 'gear'],
@@ -9912,6 +10231,22 @@ app.post('/api/campaigns/:campaignId/import-into', requireRole(['dm', 'admin']),
      */
     if (Array.isArray(bundle.sessions) && bundle.sessions.length) {
       report.sessions = await importSessionList(client, cid, req.session.userId, bundle.sessions);
+    }
+
+    /*
+     * ── The backlog ──
+     *
+     * Swapped whole, like the journal: a backlog card has no number or
+     * title anyone has promised to keep unique, so there is nothing to
+     * merge on, and appending would double it on every re-import. Only
+     * when the file carries the key — a slice without it leaves this
+     * campaign's backlog alone.
+     */
+    if (Array.isArray(bundle.pendings)) {
+      const had = await client.query(
+        'DELETE FROM campaign_pendings WHERE campaign_id=$1 AND parent_id IS NULL RETURNING id', [cid]);
+      const added = await importPendingList(client, cid, bundle.pendings);
+      report.pendings = { added, replaced: had.rows.length };
     }
 
     /*
@@ -10988,6 +11323,26 @@ async function initializeDatabase() {
       );
     `);
 
+    /*
+     * The campaign backlog: session cards that belong to no session yet.
+     * Same columns less the session and section, so a card moves between
+     * the two tables whole. See the routes.
+     */
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS campaign_pendings (
+        id          SERIAL PRIMARY KEY,
+        campaign_id INTEGER NOT NULL REFERENCES campaigns(id) ON DELETE CASCADE,
+        parent_id   INTEGER REFERENCES campaign_pendings(id) ON DELETE CASCADE,
+        title       VARCHAR(255),
+        body        TEXT,
+        state       VARCHAR(20) NOT NULL DEFAULT 'in-preparation'
+                      CHECK (state IN ('in-preparation','ready','on-going','skipped','done')),
+        position    INTEGER NOT NULL DEFAULT 0,
+        created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
+
     /**
      * Campaign surveys — asking the table how the campaign is going.
      *
@@ -11814,6 +12169,7 @@ async function initializeDatabase() {
       ['idx_campaign_sessions_campaign',   'campaign_sessions(campaign_id)'],
       ['idx_csi_session',                  'campaign_session_items(session_id)'],
       ['idx_csi_campaign_state',           'campaign_session_items(campaign_id, state)'],
+      ['idx_pendings_campaign',            'campaign_pendings(campaign_id, parent_id)'],
       ['idx_pde_campaign_player',          'player_diary_entries(campaign_id, player_id)'],
 
       // PC sheets — read on every sheet load.

@@ -444,7 +444,11 @@ describe('a played session is a record', () => {
   });
 
   it('Still Running is hidden on it, not deleted', () => {
-    expect(panel).toMatch(/\{!locked && !filtering && ongoing\.length > 0/);
+    expect(panel).toMatch(/\{!loading && detail && !locked && !filtering && ongoing\.length > 0/);
+  });
+
+  it('sits below the campaign backlog', () => {
+    expect(panel.indexOf('<BacklogPanel')).toBeLessThan(panel.indexOf('Still running ('));
   });
 });
 

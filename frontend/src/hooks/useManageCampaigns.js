@@ -49,6 +49,7 @@ function mergeSummary(data) {
   if (Array.isArray(data.locations)) replaces.push(n(data.locations, 'location'));
   if (Array.isArray(data.campaign_journal)) replaces.push(n(data.campaign_journal, 'journal entry', 'journal entries'));
   if (Array.isArray(data.campaign_diary)) replaces.push(n(data.campaign_diary, 'diary entry', 'diary entries'));
+  if (Array.isArray(data.pendings)) replaces.push(`the backlog (${n(data.pendings, 'card')})`);
   // Named, because a matched session is REPLACED whole — its cards deleted
   // and rebuilt — and that is the most destructive thing in this list.
   if (Array.isArray(data.sessions) && data.sessions.length) {
@@ -285,6 +286,7 @@ export function useManageCampaigns() {
               r.journal && `journal: ${r.journal.added}`,
               r.diary && `diary: ${r.diary.added}`,
               r.sessions && `sessions: ${r.sessions.added} added, ${r.sessions.replaced} replaced`,
+              r.pendings && `backlog: ${r.pendings.added}`,
               r.surveys && `surveys: ${r.surveys.added} added`,
             ].filter(Boolean).join(' · ');
             toast(`Imported into ${into?.name ?? 'the campaign'} — ${bits || 'nothing to do'}.`);

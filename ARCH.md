@@ -199,6 +199,13 @@ campaign_session_items
 `campaign_id` is carried on the items as well as the session so the On-Going view is one
 indexed read rather than a join back through `campaign_sessions` for every row.
 
+**The campaign backlog** (`campaign_pendings`) is the same card shape with no session and no
+section: things to use some day. Its own table rather than session cards with a NULL session,
+because every query on `campaign_session_items` is keyed on a session and a card with none
+would drop out of some and leak into others. A card moves between the two **whole and as a
+move** — `→ This session` and `→ Backlog` copy the subtree and delete the original in one
+transaction — so a used idea leaves the backlog. *What happened* cannot be sent there.
+
 **A child's section is always its parent's.** Enforced on create, on import and on move — a
 card whose section disagreed with its parent's would appear in neither and be unreachable.
 Moving a card to another section therefore rewrites the whole subtree, in one bounded

@@ -171,12 +171,3 @@ is rooted at 16px with nothing below 10.4px. What is left of the original survey
       bar hides and reappears. Nothing uses `dvh`. The new full-screen dialogs inherit this.
 
 ---
-
-## Ideas worth considering
-
-### 1. Session prep, in the app — **shipped**
-
-The 🗓 Sessions tab in Manage Campaigns.
-
-- [ ] **Campaign Pendings** — a campaign-level backlog, not tied to any session. Deferred by
-      agreement when the feature was scoped, and still the only part not built. 
