@@ -13,6 +13,44 @@ PC Sheet / Journey Map / Manage Campaign fix batch that went with it.
 
 ---
 
+## Journal entries for one player
+
+- [ ] **As the DM, write a journal entry** and set *Who can read it* to **Only Iris**. It shows
+      *· Only Iris* on your list.
+- [ ] **Log in as Iris's player** — the entry is there, tagged *· Only you*. **Log in as any
+      other player** — it is not there at all.
+- [ ] **Edit it to Only me**, then to **Everyone** — Iris loses it, then everyone has it.
+- [ ] **Sessions → What happened → 📖 To journal** offers the same choice, defaulting to
+      *Only me*.
+- [ ] **Export the campaign and import it under a new name** — the entry is still for that
+      player's seat in the copy.
+
+## Campaign backlog
+
+- [ ] **Sessions tab, under the session: 📌 Campaign backlog.** Add a card and a sub-card;
+      change the parent's state — the sub-card follows. Drag to reorder.
+- [ ] **→ This session** on a backlog card: it leaves the backlog and appears, sub-cards and
+      all, under *The session*, which opens itself. The page does not jump to the top.
+- [ ] **→ Backlog** on a card in *Before it begins* or *The session*: it moves out to the
+      backlog. *What happened* cards do not offer it, and neither does a played session.
+- [ ] **Your session 25 "For later on — campaign backlog" card**: one click on → Backlog
+      moves all 31 cards there.
+
+## Spell details
+
+- [ ] **Add spells to a sheet** (a PC's Stats tab, or the NPC sheet). Under the slot table, a
+      list shows each one: name, then Components, Casting Time, Range, Duration.
+- [ ] **Concentration** and **Ritual** are a circled *C* / *R* beside the name (hover for the word) —
+      Detect Magic has both — and are not repeated in Casting Time or Duration.
+- [ ] **Find Familiar** shows *V, S, M* with a *10+ GP* tag; hovering it shows the material.
+      **Shield** shows *Reaction*; **Guidance** a range of *Touch* (not "Touch Component: V, S").
+- [ ] **A spell not in the SRD** (e.g. Toll the Dead) stays on the list, marked *Not in SRD 5.2*.
+- [ ] **Click a spell name** (in the list, or the ⓘ on a chip): the card shows level and school,
+      casting time, range, components with the material, duration, and the full text.
+- [ ] **Print the sheet** — the list prints, without the clickable underline.
+
+---
+
 ## Importing a campaign whose name you already use
 
 - [ ] **Export Leruhy, then import that file.** A dialog says you already have a campaign
@@ -389,13 +427,12 @@ All three were written down as open questions when the feature shipped. Each is 
 covered by tests that were each proved to fail when the guard is reverted, and exercised live
 against a scratch Postgres (34 checks).
 
-### Skipped now cascades
+### Every state cascades
 
-- [ ] **Mark a parent card Skipped** — every sub-card beneath it, to any depth, should go
-      skipped with it, the same way Done already did.
-- [ ] **Mark a parent On-Going, Ready or In-Preparation** — those must still change only the
-      card you clicked. A parent is on-going precisely because one child is and the rest are
-      not, and that distinction is the reason the other three do not cascade.
+- [ ] **Change a parent card to each of the five states** — every sub-card beneath it, to any
+      depth, should take the same state, without the page reloading.
+- [ ] **Then change one sub-card on its own** — only that card (and its own sub-cards) change;
+      the parent keeps its state.
 
 ### Dragging between sections
 

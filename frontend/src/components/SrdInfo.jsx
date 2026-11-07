@@ -17,7 +17,9 @@
 
 import { useEffect, useState } from 'react';
 import { Modal, Spinner } from '@/components/ui';
-import { lookupByResource, loadIndex, toSlug, ATTRIBUTION } from '@/api/srd';
+import { lookupByResource, lookupRaw, loadIndex, toSlug, ATTRIBUTION } from '@/api/srd';
+import { spellFromSrd } from '@/data/spellDetails';
+import SpellCard from '@/components/SpellCard';
 
 /** Cached slug index for a resource. `null` = unknown (loading or unavailable). */
 export function useSrdIndex(resource) {
@@ -47,14 +49,26 @@ export function srdHasEntry(slugs, name) {
  */
 export default function SrdInfo({ resource, name, className = '', children }) {
   const [open, setOpen] = useState(false);
-  const [state, setState] = useState({ loading: false, entry: null });
+  const [state, setState] = useState({ loading: false, entry: null, spell: null });
 
+  /*
+   * A spell is read from the whole record, not just its prose: school,
+   * casting time, range, components and duration were all in the response
+   * and all being thrown away, leaving a card that said what Fireball does
+   * but not what it costs to cast. Same request either way, and the same
+   * cache, since `lookup` is built on `lookupRaw`.
+   */
   useEffect(() => {
     if (!open) return undefined;
     let alive = true;
-    setState({ loading: true, entry: null });
-    lookupByResource(resource, name).then((entry) => {
-      if (alive) setState({ loading: false, entry });
+    setState({ loading: true, entry: null, spell: null });
+    const load = resource === 'spells'
+      ? lookupRaw(resource, name).then((body) => ({ spell: spellFromSrd(body) }))
+      : Promise.resolve(null);
+    load.then(async (got) => {
+      if (got?.spell) { if (alive) setState({ loading: false, entry: null, spell: got.spell }); return; }
+      const entry = await lookupByResource(resource, name);
+      if (alive) setState({ loading: false, entry, spell: null });
     });
     return () => { alive = false; };
   }, [open, resource, name]);
@@ -77,7 +91,9 @@ export default function SrdInfo({ resource, name, className = '', children }) {
       <Modal open={open} onClose={() => setOpen(false)} title={name}>
         {state.loading && <div className="srd-modal-loading"><Spinner /></div>}
 
-        {!state.loading && state.entry && (
+        {!state.loading && state.spell && <SpellCard spell={state.spell} />}
+
+        {!state.loading && !state.spell && state.entry && (
           <div className="srd-modal-body">
             {state.entry.text.split('\n').filter(Boolean).map((para, i) => (
               <p key={i}>{para}</p>
@@ -85,7 +101,7 @@ export default function SrdInfo({ resource, name, className = '', children }) {
           </div>
         )}
 
-        {!state.loading && !state.entry && (
+        {!state.loading && !state.spell && !state.entry && (
           <div className="srd-modal-body">
             <p>
               No entry for <strong>{name}</strong> in SRD 5.2.

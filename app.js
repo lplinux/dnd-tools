@@ -4943,6 +4943,39 @@ async function journalEntry(entryId, campaignId) {
   return r.rows[0] ?? null;
 }
 
+/**
+ * Who may read an entry, from a request: `{ dmOnly, visibleTo }`, or false
+ * for a seat that is not a player of this campaign.
+ *
+ * Only the DM chooses. A player's entry is public whatever they send — the
+ * journal is the table's shared notes, and a player already has a diary.
+ * `visible_to` means nothing on a public entry and is dropped there, which
+ * the table's CHECK also insists on.
+ */
+async function journalVisibility(campaignId, isDM, dmOnly, visibleTo) {
+  if (!isDM || !dmOnly) return { dmOnly: false, visibleTo: null };
+  if (visibleTo === null || visibleTo === undefined || visibleTo === '') {
+    return { dmOnly: true, visibleTo: null };
+  }
+  const r = await pool.query(
+    `SELECT id FROM campaign_players
+      WHERE id=$1 AND campaign_id=$2 AND is_dm_player = false`,
+    [visibleTo, campaignId],
+  );
+  return r.rows.length ? { dmOnly: true, visibleTo: r.rows[0].id } : false;
+}
+
+/** The seats this user plays in a campaign — whose one-player entries they read. */
+async function mySeats(campaignId, userId) {
+  const r = await pool.query(
+    `SELECT cp.id FROM campaign_players cp
+       JOIN campaign_user_assignments cua ON cua.player_id = cp.id
+      WHERE cp.campaign_id=$1 AND cua.user_id=$2`,
+    [campaignId, userId],
+  );
+  return r.rows.map((x) => x.id);
+}
+
 // ── Campaign-wide search (DM only) ──────────────────────────────────────────
 //
 // One box over everything written down about a campaign: the journal, both
@@ -5050,9 +5083,11 @@ app.get('/api/campaigns/:campaignId/search', requireRole(['dm', 'admin']), async
     const q = (sql) => pool.query(`${sql} LIMIT ${SEARCH_ROW_CAP}`, [campaignId]);
     const [journal, camDiary, plDiary, locs, npcs, events, chars, notes, items] =
       await Promise.all([
-        q(`SELECT j.id, j.title, j.body, j.category, j.dm_only, cp.player_name AS who
+        q(`SELECT j.id, j.title, j.body, j.category, j.dm_only, cp.player_name AS who,
+                  vp.player_name AS visible_to_name
              FROM campaign_journal_entries j
              LEFT JOIN campaign_players cp ON cp.id = j.player_id
+             LEFT JOIN campaign_players vp ON vp.id = j.visible_to
             WHERE j.campaign_id = $1`),
         q(`SELECT id, title, body, chapter, status
              FROM campaign_diary_entries WHERE campaign_id = $1`),
@@ -5107,7 +5142,9 @@ app.get('/api/campaigns/:campaignId/search', requireRole(['dm', 'admin']), async
       group('journal', 'Journal', journal.rows,
         (r) => [['title', r.title], ['body', r.body], ['category', r.category]],
         (r) => ({ id: r.id, title: r.title || '(untitled)', path: '/pc-sheet',
-          note: [r.who, r.category, r.dm_only ? 'DM only' : null].filter(Boolean).join(' · ') })),
+          note: [r.who, r.category,
+            r.dm_only ? (r.visible_to_name ? `Only ${r.visible_to_name}` : 'DM only') : null,
+          ].filter(Boolean).join(' · ') })),
       group('diary', 'Campaign diary', camDiary.rows,
         (r) => [['title', r.title], ['body', r.body], ['chapter', r.chapter]],
         (r) => ({ id: r.id, title: r.title || '(untitled)', path: '/diary',
@@ -5188,6 +5225,7 @@ app.get('/api/campaigns/:campaignId/search/:kind/:id', requireRole(['dm', 'admin
       case 'journal':
         r = await one(`SELECT j.title, j.body, j.category, j.in_game_day, j.dm_only,
                               j.created_at, u.username, cp.player_name,
+                              vp.player_name AS visible_to_name,
                               -- No CASE on is_public here, unlike the players'
                               -- journal query: this route is DM-only, and the
                               -- DM is who hid the location in the first place.
@@ -5195,6 +5233,7 @@ app.get('/api/campaigns/:campaignId/search/:kind/:id', requireRole(['dm', 'admin
                          FROM campaign_journal_entries j
                          JOIN users u ON u.id = j.created_by
                          LEFT JOIN campaign_players cp ON cp.id = j.player_id
+                         LEFT JOIN campaign_players vp ON vp.id = j.visible_to
                          LEFT JOIN campaign_locations cl ON cl.id = j.location_id
                         WHERE j.campaign_id = $1 AND j.id = $2`);
         if (!r) break;
@@ -5202,7 +5241,8 @@ app.get('/api/campaigns/:campaignId/search/:kind/:id', requireRole(['dm', 'admin
           meta: meta(['Written by', r.player_name || r.username], ['Category', r.category],
             ['Where', r.location && (r.location_public ? r.location : `${r.location} (hidden)`)],
             ['In-game day', r.in_game_day],
-            ['Visible to', r.dm_only ? 'you only' : 'the whole table']) };
+            ['Visible to', !r.dm_only ? 'the whole table'
+              : r.visible_to_name ? `you and ${r.visible_to_name}` : 'you only']) };
         break;
       case 'diary':
         r = await one(`SELECT title, body, chapter, session_no, session_date, status
@@ -5509,26 +5549,32 @@ app.get('/api/campaigns/:campaignId/journal', requireAuth, async (req, res) => {
     if (!await canAccessCampaign(campaignId, req.session.userId, req.session.role))
       return res.status(403).json({ error: 'Access denied' });
     const isDM = await isCampaignDm(campaignId, req.session.userId, req.session.role);
+    // A player reads the public entries and the ones written for their own
+    // seat — never another player's. `visible_to` is selected for them too:
+    // on a row they can see it can only name their own seat.
+    const seats = isDM ? [] : await mySeats(campaignId, req.session.userId);
 
     const r = await pool.query(
       `SELECT j.id, j.title, j.body, j.category, j.in_game_day, j.created_at, j.updated_at,
               j.created_by, j.player_id,
               ${isDM ? 'j.location_id,' : 'CASE WHEN cl.is_public THEN j.location_id ELSE NULL END AS location_id,'}
               ${isDM ? 'j.dm_only,' : ''}
+              j.visible_to, vp.player_name AS visible_to_name,
               u.username AS author_username,
               cp.player_name AS author_character,
               ${isDM ? 'cl.name' : 'CASE WHEN cl.is_public THEN cl.name ELSE NULL END'} AS location_name
          FROM campaign_journal_entries j
          JOIN users u ON u.id = j.created_by
          LEFT JOIN campaign_players cp ON cp.id = j.player_id
+         LEFT JOIN campaign_players vp ON vp.id = j.visible_to
          LEFT JOIN campaign_locations cl ON cl.id = j.location_id
         WHERE j.campaign_id = $1
-          ${isDM ? '' : 'AND j.dm_only = false'}
+          ${isDM ? '' : 'AND (j.dm_only = false OR j.visible_to = ANY($2::int[]))'}
         -- In-game date first, ascending, so the journal reads forward like the
         -- diary rather than like a feed. An entry with no in-game date has not
         -- been placed in the story, so it collects at the end of its group.
         ORDER BY j.in_game_day ASC NULLS LAST, j.created_at ASC`,
-      [campaignId],
+      isDM ? [campaignId] : [campaignId, seats],
     );
 
     let rows = r.rows;
@@ -5572,7 +5618,7 @@ app.get('/api/campaigns/:campaignId/journal', requireAuth, async (req, res) => {
 app.post('/api/campaigns/:campaignId/journal', requireAuth, async (req, res) => {
   const { campaignId } = req.params;
   const { title, body, category, location_id: locId, in_game_day: day,
-    dm_only: dmOnly } = req.body ?? {};
+    dm_only: dmOnly, visible_to: visibleTo } = req.body ?? {};
   if (!String(body ?? '').trim() && !String(title ?? '').trim())
     return res.status(400).json({ error: 'An entry needs a title or a body' });
   try {
@@ -5582,6 +5628,8 @@ app.post('/api/campaigns/:campaignId/journal', requireAuth, async (req, res) => 
 
     const location = await resolveJournalLocation(locId, campaignId, isDM);
     if (location === false) return res.status(400).json({ error: 'No such location' });
+    const vis = await journalVisibility(campaignId, isDM, dmOnly, visibleTo);
+    if (vis === false) return res.status(400).json({ error: 'That player is not in this campaign' });
 
     // Which character the author was playing. The DM has none.
     const who = await pool.query(
@@ -5599,11 +5647,11 @@ app.post('/api/campaigns/:campaignId/journal', requireAuth, async (req, res) => 
     const r = await pool.query(
       `INSERT INTO campaign_journal_entries
          (campaign_id, created_by, player_id, location_id, title, body, category,
-          in_game_day, dm_only)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING id`,
+          in_game_day, dm_only, visible_to)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING id`,
       [campaignId, req.session.userId, who.rows[0]?.id ?? null, location,
         journalStr(title, 255), journalStr(body, 50000), journalStr(category, 120),
-        journalDay(day), isDM ? !!dmOnly : false],
+        journalDay(day), vis.dmOnly, vis.visibleTo],
     );
     res.json({ success: true, id: r.rows[0].id });
   } catch (e) { res.status(500).json({ error: e.message }); }
@@ -5613,7 +5661,7 @@ app.post('/api/campaigns/:campaignId/journal', requireAuth, async (req, res) => 
 app.put('/api/campaigns/:campaignId/journal/:entryId', requireAuth, async (req, res) => {
   const { campaignId, entryId } = req.params;
   const { title, body, category, location_id: locId, in_game_day: day,
-    dm_only: dmOnly } = req.body ?? {};
+    dm_only: dmOnly, visible_to: visibleTo } = req.body ?? {};
   try {
     if (!await canAccessCampaign(campaignId, req.session.userId, req.session.role))
       return res.status(403).json({ error: 'Access denied' });
@@ -5627,14 +5675,16 @@ app.put('/api/campaigns/:campaignId/journal/:entryId', requireAuth, async (req, 
     const isDM = await isCampaignDm(campaignId, req.session.userId, req.session.role);
     const location = await resolveJournalLocation(locId, campaignId, isDM);
     if (location === false) return res.status(400).json({ error: 'No such location' });
+    const vis = await journalVisibility(campaignId, isDM, dmOnly, visibleTo);
+    if (vis === false) return res.status(400).json({ error: 'That player is not in this campaign' });
 
     await pool.query(
       `UPDATE campaign_journal_entries
           SET title=$1, body=$2, category=$3, location_id=$4, in_game_day=$5,
-              dm_only=$6, updated_at=CURRENT_TIMESTAMP
-        WHERE id=$7 AND campaign_id=$8`,
+              dm_only=$6, visible_to=$7, updated_at=CURRENT_TIMESTAMP
+        WHERE id=$8 AND campaign_id=$9`,
       [journalStr(title, 255), journalStr(body, 50000), journalStr(category, 120),
-        location, journalDay(day), isDM ? !!dmOnly : false, entryId, campaignId],
+        location, journalDay(day), vis.dmOnly, vis.visibleTo, entryId, campaignId],
     );
     res.json({ success: true });
   } catch (e) { res.status(500).json({ error: e.message }); }
@@ -7285,21 +7335,16 @@ app.patch('/api/campaigns/:campaignId/sessions/:sessionId/items/:itemId/state', 
     if (!await dmOwnsCampaign(campaignId, req.session.userId, req.session.role))
       return res.status(403).json({ error: 'Access denied' });
     /*
-     * Marking a card DONE or SKIPPED takes its sub-cards with it. Both mean
-     * "stop looking at this", and finishing a beat while leaving three
-     * half-ticked details underneath is just a second chore the DM would do
-     * by hand every time.
-     *
-     * The other three do not cascade, and that asymmetry is the point: a
-     * parent is on-going precisely because one child is and the rest are
-     * not, so pushing it down would erase the distinction.
+     * A state change takes the card's sub-cards with it, whatever the state.
+     * A beat's details follow the beat: readying a fight readies its traps,
+     * finishing it finishes them. A sub-card that needs to differ is changed
+     * on its own afterwards, which leaves the parent alone.
      *
      * One statement rather than a walk from the client: the subtree is
      * arbitrarily deep, and N requests would half-apply if one failed.
      * `depth` bounds it, because parent_id is a tree only by construction
      * and a cycle here would spin for ever.
      */
-    const cascade = state === 'done' || state === 'skipped';
     const r = await pool.query(
       `WITH RECURSIVE sub AS (
          SELECT id, 0 AS depth FROM campaign_session_items
@@ -7312,9 +7357,8 @@ app.patch('/api/campaigns/:campaignId/sessions/:sessionId/items/:itemId/state', 
        )
        UPDATE campaign_session_items SET state=$1, updated_at=CURRENT_TIMESTAMP
         WHERE id IN (SELECT id FROM sub)
-          AND ($4 OR id = $2)
         RETURNING *`,
-      [state, itemId, campaignId, cascade],
+      [state, itemId, campaignId],
     );
     if (!r.rows.length) return res.status(404).json({ error: 'Item not found' });
     // Every row that changed, so the page can patch itself in place instead
@@ -7703,12 +7747,17 @@ app.post('/api/campaigns/:campaignId/sessions/:sessionId/generate-next', require
  */
 app.post('/api/campaigns/:campaignId/sessions/:sessionId/to-journal', requireRole(['dm', 'admin']), async (req, res) => {
   const { campaignId, sessionId } = req.params;
-  const { item_ids: itemIds, category, in_game_day: day, dm_only: dmOnly } = req.body ?? {};
+  const { item_ids: itemIds, category, in_game_day: day, dm_only: dmOnly,
+    visible_to: visibleTo } = req.body ?? {};
 
   const client = await pool.connect();
   try {
     if (!await dmOwnsCampaign(campaignId, req.session.userId, req.session.role))
       return res.status(403).json({ error: 'Access denied' });
+    // Resolved before BEGIN: it reads with the pool, and a bad seat is a 400
+    // with nothing to roll back.
+    const vis = await journalVisibility(campaignId, true, dmOnly, visibleTo);
+    if (vis === false) return res.status(400).json({ error: 'That player is not in this campaign' });
 
     await client.query('BEGIN');
     const session = (await client.query(
@@ -7783,9 +7832,10 @@ app.post('/api/campaigns/:campaignId/sessions/:sessionId/to-journal', requireRol
       await client.query(
         `INSERT INTO campaign_journal_entries
            (campaign_id, created_by, player_id, location_id, title, body,
-            category, in_game_day, dm_only)
-         VALUES ($1,$2,$3,NULL,$4,$5,$6,$7,$8)`,
-        [campaignId, req.session.userId, playerId, title, body, cat, when, !!dmOnly],
+            category, in_game_day, dm_only, visible_to)
+         VALUES ($1,$2,$3,NULL,$4,$5,$6,$7,$8,$9)`,
+        [campaignId, req.session.userId, playerId, title, body, cat, when,
+          vis.dmOnly, vis.visibleTo],
       );
       created += 1;
     }
@@ -7808,6 +7858,319 @@ app.delete('/api/campaigns/:campaignId/sessions/:sessionId/items/:itemId', requi
     res.json({ success: true });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
+
+// ─── Campaign backlog ("pendings") ───────────────────────────────────────────
+//
+// Things the DM means to use some day — a letter to deliver, an NPC to bring
+// back, a reveal — that belong to no session yet. Before this they lived as a
+// card inside whichever session was open, and travelled from session to
+// session with every "Generate next".
+//
+// Its own table rather than session cards with no session: every query on
+// campaign_session_items is keyed on a session, and a card with none would
+// quietly drop out of some (the export) and into others (anything by
+// campaign). The shape is the same on purpose — same states, same nesting —
+// so a card crosses between the two whole, in either direction.
+//
+// DM-only throughout, like session prep.
+
+/** The card, if it belongs to this campaign. */
+async function pendingOf(itemId, campaignId) {
+  const r = await pool.query(
+    'SELECT * FROM campaign_pendings WHERE id=$1 AND campaign_id=$2', [itemId, campaignId]);
+  return r.rows[0] ?? null;
+}
+
+/**
+ * A card and everything under it, parents before children.
+ *
+ * `table` is one of two literals from this file, never input. Bounded at
+ * fifty levels like every other walk here: parent_id is a tree by
+ * construction, not by constraint.
+ */
+async function subtreeRows(client, table, itemId) {
+  const r = await client.query(
+    `WITH RECURSIVE sub AS (
+       SELECT t.*, 0 AS depth FROM ${table} t WHERE t.id=$1
+       UNION ALL
+       SELECT t.*, sub.depth + 1 FROM ${table} t
+         JOIN sub ON t.parent_id = sub.id WHERE sub.depth < 50
+     )
+     SELECT * FROM sub ORDER BY depth ASC, position ASC, id ASC`,
+    [itemId],
+  );
+  return r.rows;
+}
+
+app.get('/api/campaigns/:campaignId/pendings', requireRole(['dm', 'admin']), async (req, res) => {
+  try {
+    if (!await dmOwnsCampaign(req.params.campaignId, req.session.userId, req.session.role))
+      return res.status(403).json({ error: 'Access denied' });
+    const r = await pool.query(
+      'SELECT * FROM campaign_pendings WHERE campaign_id=$1 ORDER BY position ASC, id ASC',
+      [req.params.campaignId],
+    );
+    res.json({ items: r.rows });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/api/campaigns/:campaignId/pendings', requireRole(['dm', 'admin']), async (req, res) => {
+  const { campaignId } = req.params;
+  const { parent_id: parentId, title, body, state } = req.body ?? {};
+  try {
+    if (!await dmOwnsCampaign(campaignId, req.session.userId, req.session.role))
+      return res.status(403).json({ error: 'Access denied' });
+    if (parentId && !await pendingOf(parentId, campaignId)) {
+      return res.status(400).json({ error: 'That parent is not in this campaign' });
+    }
+    const next = await pool.query(
+      `SELECT COALESCE(MAX(position), -1) + 1 AS pos FROM campaign_pendings
+        WHERE campaign_id=$1 AND parent_id IS NOT DISTINCT FROM $2`,
+      [campaignId, parentId || null],
+    );
+    const r = await pool.query(
+      `INSERT INTO campaign_pendings (campaign_id, parent_id, title, body, state, position)
+       VALUES ($1,$2,$3,$4,$5,$6) RETURNING *`,
+      [campaignId, parentId || null, journalStr(title, 255), journalStr(body, 50000),
+        SESSION_STATES.includes(state) ? state : 'in-preparation', next.rows[0].pos],
+    );
+    res.json(r.rows[0]);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.put('/api/campaigns/:campaignId/pendings/:itemId', requireRole(['dm', 'admin']), async (req, res) => {
+  const { campaignId, itemId } = req.params;
+  const { title, body } = req.body ?? {};
+  try {
+    if (!await dmOwnsCampaign(campaignId, req.session.userId, req.session.role))
+      return res.status(403).json({ error: 'Access denied' });
+    const r = await pool.query(
+      `UPDATE campaign_pendings SET title=$1, body=$2, updated_at=CURRENT_TIMESTAMP
+        WHERE id=$3 AND campaign_id=$4 RETURNING *`,
+      [journalStr(title, 255), journalStr(body, 50000), itemId, campaignId],
+    );
+    if (!r.rows.length) return res.status(404).json({ error: 'Item not found' });
+    res.json(r.rows[0]);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+/** The state, taking the sub-cards with it — the same rule as session cards. */
+app.patch('/api/campaigns/:campaignId/pendings/:itemId/state', requireRole(['dm', 'admin']), async (req, res) => {
+  const { campaignId, itemId } = req.params;
+  const { state } = req.body ?? {};
+  if (!SESSION_STATES.includes(state)) return res.status(400).json({ error: 'Unknown state' });
+  try {
+    if (!await dmOwnsCampaign(campaignId, req.session.userId, req.session.role))
+      return res.status(403).json({ error: 'Access denied' });
+    const r = await pool.query(
+      `WITH RECURSIVE sub AS (
+         SELECT id, 0 AS depth FROM campaign_pendings WHERE id=$2 AND campaign_id=$3
+         UNION ALL
+         SELECT p.id, sub.depth + 1 FROM campaign_pendings p
+           JOIN sub ON p.parent_id = sub.id WHERE sub.depth < 50
+       )
+       UPDATE campaign_pendings SET state=$1, updated_at=CURRENT_TIMESTAMP
+        WHERE id IN (SELECT id FROM sub)
+        RETURNING *`,
+      [state, itemId, campaignId],
+    );
+    if (!r.rows.length) return res.status(404).json({ error: 'Item not found' });
+    res.json({ updated: r.rows });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+/** Reorder or re-parent within the backlog. Returns the whole list, renumbered. */
+app.patch('/api/campaigns/:campaignId/pendings/:itemId/move', requireRole(['dm', 'admin']), async (req, res) => {
+  const { campaignId, itemId } = req.params;
+  const { parent_id: parentId = null, position } = req.body ?? {};
+  const client = await pool.connect();
+  try {
+    if (!await dmOwnsCampaign(campaignId, req.session.userId, req.session.role))
+      return res.status(403).json({ error: 'Access denied' });
+    await client.query('BEGIN');
+    const self = (await client.query(
+      'SELECT * FROM campaign_pendings WHERE id=$1 AND campaign_id=$2', [itemId, campaignId],
+    )).rows[0];
+    if (!self) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'Item not found' }); }
+    if (parentId != null) {
+      const parent = (await client.query(
+        'SELECT 1 FROM campaign_pendings WHERE id=$1 AND campaign_id=$2', [parentId, campaignId],
+      )).rows[0];
+      if (!parent) { await client.query('ROLLBACK'); return res.status(400).json({ error: 'That parent is not in this campaign' }); }
+      // Into its own branch would detach the branch from the tree.
+      const mine = await subtreeRows(client, 'campaign_pendings', itemId);
+      if (mine.some((r) => String(r.id) === String(parentId))) {
+        await client.query('ROLLBACK');
+        return res.status(400).json({ error: 'A card cannot be moved inside itself' });
+      }
+    }
+    await client.query(
+      'UPDATE campaign_pendings SET parent_id=$1, updated_at=CURRENT_TIMESTAMP WHERE id=$2',
+      [parentId, itemId],
+    );
+    const sibs = (await client.query(
+      `SELECT id FROM campaign_pendings
+        WHERE campaign_id=$1 AND parent_id IS NOT DISTINCT FROM $2 AND id <> $3
+        ORDER BY position ASC, id ASC`,
+      [campaignId, parentId, itemId],
+    )).rows.map((r) => r.id);
+    const at = Number.isInteger(position) ? Math.max(0, Math.min(position, sibs.length)) : sibs.length;
+    sibs.splice(at, 0, Number(itemId));
+    for (let i = 0; i < sibs.length; i++) {
+      await client.query('UPDATE campaign_pendings SET position=$1 WHERE id=$2', [i, sibs[i]]);
+    }
+    await client.query('COMMIT');
+    const all = await pool.query(
+      'SELECT * FROM campaign_pendings WHERE campaign_id=$1 ORDER BY position ASC, id ASC', [campaignId]);
+    res.json({ items: all.rows });
+  } catch (e) {
+    await client.query('ROLLBACK');
+    res.status(500).json({ error: e.message });
+  } finally { client.release(); }
+});
+
+app.delete('/api/campaigns/:campaignId/pendings/:itemId', requireRole(['dm', 'admin']), async (req, res) => {
+  try {
+    if (!await dmOwnsCampaign(req.params.campaignId, req.session.userId, req.session.role))
+      return res.status(403).json({ error: 'Access denied' });
+    // Sub-cards go by CASCADE, as in session prep.
+    await pool.query('DELETE FROM campaign_pendings WHERE id=$1 AND campaign_id=$2',
+      [req.params.itemId, req.params.campaignId]);
+    res.json({ success: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+/**
+ * Take a backlog card into a session, sub-cards and all.
+ *
+ * A MOVE, not a copy: the point of the backlog is that a thing leaves it
+ * when it is used, or it is still there next month asking to be used again.
+ * Lands last in the chosen section (The session unless told otherwise),
+ * keeping its states — the session's own drag moves it on from there.
+ */
+app.post('/api/campaigns/:campaignId/pendings/:itemId/to-session', requireRole(['dm', 'admin']), async (req, res) => {
+  const { campaignId, itemId } = req.params;
+  const { session_id: sessionId, section: want } = req.body ?? {};
+  const section = ['prep', 'beats'].includes(want) ? want : 'beats';
+  const client = await pool.connect();
+  try {
+    if (!await dmOwnsCampaign(campaignId, req.session.userId, req.session.role))
+      return res.status(403).json({ error: 'Access denied' });
+    if (!await sessionOf(sessionId, campaignId)) return res.status(404).json({ error: 'Session not found' });
+    await client.query('BEGIN');
+    const rows = await subtreeRows(client, 'campaign_pendings', itemId);
+    if (!rows.length || String(rows[0].campaign_id) !== String(campaignId)) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'Item not found' });
+    }
+    const pos = (await client.query(
+      `SELECT COALESCE(MAX(position), -1) + 1 AS pos FROM campaign_session_items
+        WHERE session_id=$1 AND section=$2 AND parent_id IS NULL`, [sessionId, section],
+    )).rows[0].pos;
+    const newId = new Map();
+    for (const r of rows) {
+      const made = await client.query(
+        `INSERT INTO campaign_session_items
+           (campaign_id, session_id, parent_id, section, title, body, state, position)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING id`,
+        [campaignId, sessionId, r.depth === 0 ? null : newId.get(r.parent_id), section,
+          r.title, r.body, r.state, r.depth === 0 ? pos : r.position],
+      );
+      newId.set(r.id, made.rows[0].id);
+    }
+    await client.query('DELETE FROM campaign_pendings WHERE id=$1', [itemId]);
+    await client.query('COMMIT');
+    res.json({ success: true, moved: rows.length });
+  } catch (e) {
+    await client.query('ROLLBACK');
+    res.status(500).json({ error: e.message });
+  } finally { client.release(); }
+});
+
+/** The other way: a session card, sub-cards and all, back to the backlog. */
+app.post('/api/campaigns/:campaignId/sessions/:sessionId/items/:itemId/to-pendings', requireRole(['dm', 'admin']), async (req, res) => {
+  const { campaignId, sessionId, itemId } = req.params;
+  const client = await pool.connect();
+  try {
+    if (!await dmOwnsCampaign(campaignId, req.session.userId, req.session.role))
+      return res.status(403).json({ error: 'Access denied' });
+    await client.query('BEGIN');
+    const rows = await subtreeRows(client, 'campaign_session_items', itemId);
+    if (!rows.length || String(rows[0].campaign_id) !== String(campaignId)
+        || String(rows[0].session_id) !== String(sessionId)) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'Item not found' });
+    }
+    // What happened is a record of the night, not something to do later.
+    if (rows[0].section === 'outcome' || rows[0].section === 'recap') {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ error: 'Only prep and beats can go to the backlog' });
+    }
+    const pos = (await client.query(
+      `SELECT COALESCE(MAX(position), -1) + 1 AS pos FROM campaign_pendings
+        WHERE campaign_id=$1 AND parent_id IS NULL`, [campaignId],
+    )).rows[0].pos;
+    const newId = new Map();
+    for (const r of rows) {
+      const made = await client.query(
+        `INSERT INTO campaign_pendings (campaign_id, parent_id, title, body, state, position)
+         VALUES ($1,$2,$3,$4,$5,$6) RETURNING id`,
+        [campaignId, r.depth === 0 ? null : newId.get(r.parent_id),
+          r.title, r.body, r.state, r.depth === 0 ? pos : r.position],
+      );
+      newId.set(r.id, made.rows[0].id);
+    }
+    await client.query('DELETE FROM campaign_session_items WHERE id=$1', [itemId]);
+    await client.query('COMMIT');
+    res.json({ success: true, moved: rows.length });
+  } catch (e) {
+    await client.query('ROLLBACK');
+    res.status(500).json({ error: e.message });
+  } finally { client.release(); }
+});
+
+/** The backlog, nested and id-free, for the campaign bundle. */
+async function pendingsForExport(campaignId) {
+  const r = await pool.query(
+    `SELECT id, parent_id, title, body, state FROM campaign_pendings
+      WHERE campaign_id=$1 ORDER BY position ASC, id ASC`, [campaignId]);
+  const kids = new Map();
+  for (const i of r.rows) {
+    const k = i.parent_id ?? 'root';
+    if (!kids.has(k)) kids.set(k, []);
+    kids.get(k).push(i);
+  }
+  const build = (k, depth) => (depth > 50 ? [] : (kids.get(k) ?? []).map((i) => {
+    const children = build(i.id, depth + 1);
+    return { title: i.title, body: i.body, state: i.state, ...(children.length ? { children } : {}) };
+  }));
+  return build('root', 0);
+}
+
+/** Append a nested backlog list to a campaign. Inside the caller's transaction. */
+async function importPendingList(client, campaignId, list) {
+  let n = 0;
+  const walk = async (items, parentId, depth) => {
+    if (depth > 50) return;
+    let pos = (await client.query(
+      `SELECT COALESCE(MAX(position), -1) + 1 AS pos FROM campaign_pendings
+        WHERE campaign_id=$1 AND parent_id IS NOT DISTINCT FROM $2`, [campaignId, parentId],
+    )).rows[0].pos;
+    for (const raw of items ?? []) {
+      if (!raw) continue;
+      const r = await client.query(
+        `INSERT INTO campaign_pendings (campaign_id, parent_id, title, body, state, position)
+         VALUES ($1,$2,$3,$4,$5,$6) RETURNING id`,
+        [campaignId, parentId, journalStr(raw.title, 255), journalStr(raw.body, 50000),
+          SESSION_STATES.includes(raw.state) ? raw.state : 'in-preparation', pos],
+      );
+      pos += 1; n += 1;
+      await walk(raw.children, r.rows[0].id, depth + 1);
+    }
+  };
+  await walk(list, null, 0);
+  return n;
+}
 
 // ─── Character Relationship Tree (DM cross-player connections) ────────────────
 // GET all pc_relationships for every player in a campaign + DM cross-connections
@@ -8897,7 +9260,7 @@ app.get('/api/campaigns/:id/export', requireRole(['dm']), async (req, res) => {
      */
     const journalRes = await pool.query(
       `SELECT j.title, j.body, j.category, j.in_game_day, j.dm_only, j.created_at,
-              j.player_id, j.location_id, u.username AS author_username
+              j.player_id, j.location_id, j.visible_to, u.username AS author_username
          FROM campaign_journal_entries j
          JOIN users u ON u.id = j.created_by
         WHERE j.campaign_id = $1
@@ -8927,6 +9290,7 @@ app.get('/api/campaigns/:id/export', requireRole(['dm']), async (req, res) => {
     // it carries the prep too; the `campaign-sessions` file stays as the way
     // to move prep BETWEEN campaigns without the players and maps.
     const sessionsOut = await sessionsForExport(id);
+    const pendingsOut = await pendingsForExport(id);
     // After playerRefById is built — the responses name their player.
     const surveysOut = await surveysForExport(id, playerRefById);
 
@@ -8945,7 +9309,8 @@ app.get('/api/campaigns/:id/export', requireRole(['dm']), async (req, res) => {
       // still import: every key here is additive and the import defaults
       // each one, so nothing reads this number — see the import side.
       // 10: a file may be PARTIAL, and carries `parts` naming what it is.
-      version: 10,
+      // 11 adds `pendings`, the campaign backlog.
+      version: 11,
       exported_at: new Date().toISOString(),
       type: 'campaign',
       item_cards: cardsOut,
@@ -8993,9 +9358,13 @@ app.get('/api/campaigns/:id/export', requireRole(['dm']), async (req, res) => {
         // playersRes excludes the DM's own seat.
         player_ref: e.player_id ? (playerRefById[e.player_id] || null) : null,
         location_ref: e.location_id ? (locRefById[e.location_id] || null) : null,
+        // The one player a DM-only entry is shown to. A ref that does not
+        // resolve on import leaves the entry hidden, never public.
+        visible_to_ref: e.visible_to ? (playerRefById[e.visible_to] || null) : null,
       })),
       campaign_diary: diaryRes.rows,
       sessions: sessionsOut,
+      pendings: pendingsOut,
       surveys: surveysOut,
     };
     const out = selectParts(full, sel.parts);
@@ -9019,7 +9388,7 @@ app.get('/api/campaign-export-parts', requireRole(['dm', 'admin']), (req, res) =
 app.post('/api/campaigns/import', requireRole(['dm']), async (req, res) => {
   const bundle = req.body;
   if (bundle.type !== 'campaign') return res.status(400).json({ error: 'Not a campaign export file' });
-  const { campaign, players = [], locations = [], npcs = [], cross_connections = [], journey_maps = [], dm_timelines = [], party_events = [], campaign_diary = [], campaign_journal = [], sessions = [], surveys = [] } = bundle;
+  const { campaign, players = [], locations = [], npcs = [], cross_connections = [], journey_maps = [], dm_timelines = [], party_events = [], campaign_diary = [], campaign_journal = [], sessions = [], surveys = [], pendings = [] } = bundle;
   if (!campaign?.name || !String(campaign.name).trim()) return res.status(400).json({ error: 'Missing campaign name' });
   const name = String(campaign.name).trim();
 
@@ -9549,10 +9918,10 @@ app.post('/api/campaigns/import', requireRole(['dm']), async (req, res) => {
       await client.query(
         `INSERT INTO campaign_journal_entries
            (campaign_id, created_by, player_id, location_id, title, body, category,
-            in_game_day, dm_only, created_at, updated_at)
+            in_game_day, dm_only, created_at, updated_at, visible_to)
          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,
                  COALESCE($10::timestamp, CURRENT_TIMESTAMP),
-                 COALESCE($10::timestamp, CURRENT_TIMESTAMP))`,
+                 COALESCE($10::timestamp, CURRENT_TIMESTAMP), $11)`,
         [newId, author,
           e.player_ref ? (playerIdByRef[e.player_ref] ?? null) : null,
           e.location_ref ? (locIdByRef[e.location_ref] ?? null) : null,
@@ -9564,7 +9933,10 @@ app.post('/api/campaigns/import', requireRole(['dm']), async (req, res) => {
           // A bare NULL here STORES null — a column DEFAULT only applies when
           // the column is omitted — and a null created_at scrambles the order
           // the journal is read back in.
-          e.created_at || null],
+          e.created_at || null,
+          // Only on a DM-only entry (the CHECK insists), and only a seat this
+          // import made. One that does not resolve leaves the entry hidden.
+          e.dm_only === true && e.visible_to_ref ? (playerIdByRef[e.visible_to_ref] ?? null) : null],
       );
       journalAdded += 1;
     }
@@ -9580,6 +9952,8 @@ app.post('/api/campaigns/import', requireRole(['dm']), async (req, res) => {
      *     An older bundle has no `sessions` key and lands zero of them.
      */
     const sessionsIn = await importSessionList(client, newId, req.session.userId, sessions);
+    // The backlog beside it. A bundle from before version 11 has none.
+    const pendingsIn = await importPendingList(client, newId, pendings);
     /*
      * Surveys last, because the responses name players by ref and
      * `playerIdByRef` is only complete after the players pass. A bundle
@@ -9601,6 +9975,7 @@ app.post('/api/campaigns/import', requireRole(['dm']), async (req, res) => {
       sessions: sessionsIn.added,
       surveys: surveysIn,
       session_cards: sessionsIn.cards,
+      pendings: pendingsIn,
       gear: {
         items: gearAdded,
         cards_added: cardResolve.added,
@@ -9654,7 +10029,7 @@ app.post('/api/campaigns/:campaignId/import-into', requireRole(['dm', 'admin']),
 
     const cid = parseInt(campaignId, 10);
     const report = { locations: null, npcs: null, journal: null, diary: null,
-      sessions: null, surveys: null, skipped: [] };
+      sessions: null, surveys: null, pendings: null, skipped: [] };
     for (const [key, why] of [['players', 'player sheets, stats and timelines'],
       ['journey_maps', 'maps'], ['dm_timelines', 'DM timelines'],
       ['party_events', 'party events'], ['item_cards', 'gear'],
@@ -9806,15 +10181,16 @@ app.post('/api/campaigns/:campaignId/import-into', requireRole(['dm', 'admin']),
         await client.query(
           `INSERT INTO campaign_journal_entries
              (campaign_id, created_by, player_id, location_id, title, body, category,
-              in_game_day, dm_only, created_at, updated_at)
+              in_game_day, dm_only, created_at, updated_at, visible_to)
            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,
                    COALESCE($10::timestamp, CURRENT_TIMESTAMP),
-                   COALESCE($10::timestamp, CURRENT_TIMESTAMP))`,
+                   COALESCE($10::timestamp, CURRENT_TIMESTAMP), $11)`,
           [cid, req.session.userId,
             e.player_ref ? (playerIdByRef[e.player_ref] ?? null) : null,
             e.location_ref ? (locIdByRef[e.location_ref] ?? null) : null,
             title, body, journalStr(e.category, 120),
-            journalDay(e.in_game_day), e.dm_only === true, e.created_at || null],
+            journalDay(e.in_game_day), e.dm_only === true, e.created_at || null,
+            e.dm_only === true && e.visible_to_ref ? (playerIdByRef[e.visible_to_ref] ?? null) : null],
         );
         n += 1;
       }
@@ -9855,6 +10231,22 @@ app.post('/api/campaigns/:campaignId/import-into', requireRole(['dm', 'admin']),
      */
     if (Array.isArray(bundle.sessions) && bundle.sessions.length) {
       report.sessions = await importSessionList(client, cid, req.session.userId, bundle.sessions);
+    }
+
+    /*
+     * ── The backlog ──
+     *
+     * Swapped whole, like the journal: a backlog card has no number or
+     * title anyone has promised to keep unique, so there is nothing to
+     * merge on, and appending would double it on every re-import. Only
+     * when the file carries the key — a slice without it leaves this
+     * campaign's backlog alone.
+     */
+    if (Array.isArray(bundle.pendings)) {
+      const had = await client.query(
+        'DELETE FROM campaign_pendings WHERE campaign_id=$1 AND parent_id IS NULL RETURNING id', [cid]);
+      const added = await importPendingList(client, cid, bundle.pendings);
+      report.pendings = { added, replaced: had.rows.length };
     }
 
     /*
@@ -10931,6 +11323,26 @@ async function initializeDatabase() {
       );
     `);
 
+    /*
+     * The campaign backlog: session cards that belong to no session yet.
+     * Same columns less the session and section, so a card moves between
+     * the two tables whole. See the routes.
+     */
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS campaign_pendings (
+        id          SERIAL PRIMARY KEY,
+        campaign_id INTEGER NOT NULL REFERENCES campaigns(id) ON DELETE CASCADE,
+        parent_id   INTEGER REFERENCES campaign_pendings(id) ON DELETE CASCADE,
+        title       VARCHAR(255),
+        body        TEXT,
+        state       VARCHAR(20) NOT NULL DEFAULT 'in-preparation'
+                      CHECK (state IN ('in-preparation','ready','on-going','skipped','done')),
+        position    INTEGER NOT NULL DEFAULT 0,
+        created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
+
     /**
      * Campaign surveys — asking the table how the campaign is going.
      *
@@ -11125,6 +11537,31 @@ async function initializeDatabase() {
     await pool.query(`
       ALTER TABLE campaign_journal_entries
         ADD COLUMN IF NOT EXISTS category VARCHAR(120);
+    `);
+    /*
+     * One player who may read a DM-only entry.
+     *
+     * A refinement of dm_only rather than a replacement: public is
+     * dm_only=false, hidden is dm_only with no one here, and "just for Iris"
+     * is dm_only with her seat here. Every query written against dm_only
+     * before this column existed therefore treats a one-player entry as
+     * hidden — anything that forgets about it fails closed, not open.
+     *
+     * SET NULL when the seat goes, which leaves the entry hidden: a note
+     * written for one player must not become everyone's because she left.
+     */
+    await pool.query(`
+      ALTER TABLE campaign_journal_entries
+        ADD COLUMN IF NOT EXISTS visible_to INTEGER
+          REFERENCES campaign_players(id) ON DELETE SET NULL;
+    `);
+    await pool.query(`
+      DO $$ BEGIN
+        IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'journal_visible_to_needs_dm_only') THEN
+          ALTER TABLE campaign_journal_entries
+            ADD CONSTRAINT journal_visible_to_needs_dm_only CHECK (visible_to IS NULL OR dm_only);
+        END IF;
+      END $$;
     `);
     await pool.query(`
       CREATE INDEX IF NOT EXISTS idx_journal_campaign
@@ -11732,6 +12169,7 @@ async function initializeDatabase() {
       ['idx_campaign_sessions_campaign',   'campaign_sessions(campaign_id)'],
       ['idx_csi_session',                  'campaign_session_items(session_id)'],
       ['idx_csi_campaign_state',           'campaign_session_items(campaign_id, state)'],
+      ['idx_pendings_campaign',            'campaign_pendings(campaign_id, parent_id)'],
       ['idx_pde_campaign_player',          'player_diary_entries(campaign_id, player_id)'],
 
       // PC sheets — read on every sheet load.

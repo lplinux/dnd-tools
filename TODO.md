@@ -62,6 +62,8 @@ Touch input and the two overflowing layouts are **done** — see `TOQA.md`. What
       is not usable. Probably wants a different presentation rather than a responsive fix.
 - [ ] **SplitView** — four iframes at ~195px each on a phone. Arguably should just say
       "desktop only" rather than be fixed.
+- [ ] Improve the home to group DM tools on one group and Players tools on another group.
+- [ ] Add information about How to use the different sections (llike what to put on Journal, what on Sessions, etc)
 
 ---
 
@@ -72,6 +74,60 @@ says so and keeps only what is still open; the built part is in `CHANGELOG.md`, 
 is waiting on your QA is in `TOQA.md`.
 
 ### New Modules
+#### Homebrew
+
+A DM module for custom content: spells, creatures, items and the rest of the list below.
+**Not started; parked for now.**
+
+**Decided: a library, not per campaign.** Entries belong to the DM and travel between
+campaigns, like item cards already do. Each campaign chooses which entries it uses. Per-campaign
+copies would turn one spell used at two tables into two copies that drift apart.
+
+**Data model (sketch)**
+- [ ] `homebrew_entries` — owned by a **user**: `kind`, `name`, `data JSONB`, `status`
+      (draft / playtest / final), a private balance note, and `based_on` (the SRD entry it was
+      copied from). One table with a JSON body per kind, each kind validated on write the way
+      `validateStats` cleans a stat block — rather than a table per kind.
+- [ ] `campaign_homebrew` — which entries a campaign uses, and `is_public` (revealed to players),
+      the same gate NPCs have.
+- [ ] Grants — an entry given to a character (a spell into their list, a feat, a gift). Could
+      reuse Evolution's paths, whose **✨ Homebrew** items are free text today and would become
+      links to real entries.
+- [ ] Version notes per entry ("v2 — damage lowered after session 25"), so players see what changed.
+
+**First slice**
+- [ ] **Spells**: level, school, casting time, range, components, duration, description, at
+      higher levels — the shape `data/spellDetails.js` already reads SRD spells into, so a
+      homebrew spell shows in the sheet's spell list and card the same way.
+- [ ] **Creatures**: reuse the stat-block editor (`StatsSheetFrame`) and `validateStats`. A
+      creature is a reusable template; an NPC's stat block can start as a copy of one.
+- [ ] **Item cards, embedded.** For a logged-in DM the Item Cards library becomes a tab here.
+      It is already a per-user library, so this is mostly UI. The public `/item-cards` page stays
+      as the standalone tool for anyone not logged in.
+- [ ] **Homebrew in every SRD picker**, marked *homebrew*: spells on the stat sheet, species,
+      conditions, damage types, weapon properties. This is what makes it useful during play.
+- [ ] **Start from an official entry**: copy an SRD spell or monster and edit it.
+- [ ] **Reveal and grant**, per campaign.
+
+**Later — more kinds**
+- [ ] Subclasses (to allow import from non official)
+- [ ] Feats and backgrounds
+- [ ] Supernatural gifts: blessings, charms, boons, curses
+- [ ] Conditions and status effects
+- [ ] House rules — a readable page for the table (crits, resting, flanking…)
+
+**Later — across every kind**
+- [ ] `[[spell:Name]]` cross-links opening a card, like NPCs and places
+- [ ] Printable cards for spells and gifts, reusing the item-card print sheet
+- [ ] A balance check against the DMG guidelines (damage by spell level, CR from a stat block)
+- [ ] Included in campaign search
+- [ ] Export / import: inside the campaign file (only the entries that campaign uses) and as a
+      standalone library file for moving homebrew between DMs
+
+**Open questions**
+- [X] A homebrew entry with the same name as an SRD one: show both
+- [X] Can players propose homebrew? No
+
 #### DM Notes
 
 - [ ] A way of taking notes with ideas not linked to a Campaign (like a DM Diary of what I'd like a future Campaign or One Shot to be). This would be the start of a World Building module.
@@ -99,6 +155,7 @@ is waiting on your QA is in `TOQA.md`.
 - [ ] Prepare for Multi-Class
 - [ ] Expand to character creation and level up (automatical, based on D&D rules and not manual)
 
+
 ### Modals and type — **done**, see the CHANGELOG
 
 The entry dialogs are full screen, the timeline event form is two columns, and the type scale
@@ -114,12 +171,3 @@ is rooted at 16px with nothing below 10.4px. What is left of the original survey
       bar hides and reappears. Nothing uses `dvh`. The new full-screen dialogs inherit this.
 
 ---
-
-## Ideas worth considering
-
-### 1. Session prep, in the app — **shipped**
-
-The 🗓 Sessions tab in Manage Campaigns.
-
-- [ ] **Campaign Pendings** — a campaign-level backlog, not tied to any session. Deferred by
-      agreement when the feature was scoped, and still the only part not built. 

@@ -350,6 +350,26 @@
 .npc-sheet .spell-table th { font-family: var(--fd); font-size: 9px; letter-spacing: .07em; text-transform: uppercase; color: var(--muted); border-bottom: 1.5px solid var(--rule); padding: 3px 4px; text-align: left; }
 .npc-sheet .spell-table td { padding: 3px 4px; border-bottom: 1px dotted var(--parch3); vertical-align: top; }
 .npc-sheet .spell-table td.lvl-cell { font-family: var(--fd); font-size: 9px; font-weight: 600; letter-spacing: .06em; color: var(--muted); white-space: nowrap; width: 65px; padding-top: 5px; }
+/* The reading view of the spells: one row each, the 2024 sheet's columns. */
+.npc-sheet .spell-list { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 11.5px; }
+.npc-sheet .spell-list th { font-family: var(--fd); font-size: 9px; letter-spacing: .07em; text-transform: uppercase; color: var(--muted); border-bottom: 1.5px solid var(--rule); padding: 3px 4px; text-align: left; }
+.npc-sheet .spell-list td { padding: 3px 4px; border-bottom: 1px dotted var(--parch3); vertical-align: top; color: var(--ink); }
+.npc-sheet .spell-list td.lvl-cell { font-family: var(--fd); font-size: 9px; font-weight: 600; letter-spacing: .06em; color: var(--muted); white-space: nowrap; }
+.npc-sheet .spell-list-comp { white-space: nowrap; }
+/* Concentration and Ritual as a circled C / R beside the name; the word is on hover. */
+.npc-sheet .spell-mark {
+  display: inline-flex; align-items: center; justify-content: center; margin-left: 4px;
+  width: 12px; height: 12px; vertical-align: 1px; cursor: help;
+  font-family: var(--fd); font-size: 7.5px; font-weight: 600; line-height: 1;
+  color: var(--muted); border: 1px solid var(--rule); border-radius: 50%;
+}
+/* A material's cost on the M. */
+.npc-sheet .spell-tag {
+  display: inline-block; margin-left: 4px; padding: 0 4px; vertical-align: 1px;
+  font-family: var(--fd); font-size: 8px; letter-spacing: .06em; text-transform: uppercase;
+  color: var(--muted); border: 1px solid var(--rule); border-radius: 2px; line-height: 1.5;
+}
+.npc-sheet .spell-list-none { font-style: italic; color: var(--muted); }
 .npc-sheet .spell-name-inp { width: 100%; background: none; border: none; border-bottom: 1px dotted var(--parch3); outline: none; font-family: var(--fi); font-size: 12px; color: var(--ink); padding: 2px 0; }
 .npc-sheet .spell-name-inp:focus { border-bottom-color: var(--gold); }
 .npc-sheet .slot-boxes { display: flex; gap: 4px; flex-wrap: wrap; align-items: center; padding-top: 4px; justify-content: flex-end; }
@@ -425,6 +445,7 @@
      hiding only the <select> would leave an empty row with the table's rules
      drawn under the last spell level. */
   .npc-sheet .spell-table tfoot { display: none !important; }
+  .npc-sheet .spell-list tr { break-inside: avoid; }
   /* Defenses keep their boxes on paper. This used to strip them to bare text,
      which was fine while the section was hidden when empty — now that it always
      prints, an empty field would otherwise be a label with nothing under it.

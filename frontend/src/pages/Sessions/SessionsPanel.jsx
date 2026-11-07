@@ -25,11 +25,13 @@ import { inGameDate } from '@/data/calendar';
 import { useToast } from '@/hooks/useToast';
 import { useConfirm } from '@/contexts/ConfirmContext';
 import { sessionsApi } from '@/api/sessions';
+import { campaignsApi } from '@/api/campaigns';
 import { downloadBundle } from '@/api/downloadBundle';
 import LinkingTextarea from '@/components/LinkingTextarea';
 import CrossLinkPopover from '@/components/CrossLinkPopover';
 import { useCrossLinks } from '@/hooks/useCrossLinks';
 import ItemCard from './ItemCard';
+import BacklogPanel from './BacklogPanel';
 import { SECTIONS, STATES, nest, sectionTree } from './constants';
 import { filterTree, countTree } from './filter';
 
@@ -173,12 +175,16 @@ export default function SessionsPanel({
   const [query, setQuery] = useState('');
   const [stateFilter, setStateFilter] = useState(() => new Set());
   const [drag, setDrag] = useState(null);   // { id, section } while dragging
-  // { category, day, dmOnly, picked:Set } while the convert dialog is open
+  // { category, day, visibility, picked:Set } while the convert dialog is open
   const [journalForm, setJournalForm] = useState(null);
+  // The seats an entry can be written for, fetched when that dialog opens.
+  const [journalSeats, setJournalSeats] = useState([]);
   // { in_game_day, days, events } for the session on screen, or null.
   const [upcoming, setUpcoming] = useState(null);
   // { date } while the "mark it played" dialog is open.
   const [playedForm, setPlayedForm] = useState(null);
+  // Bumped when a card is sent to the backlog, so the backlog refetches.
+  const [backlogKey, setBacklogKey] = useState(0);
 
   const openLink = useCallback(({ kind, id }, e) => {
     const rows = kind === 'npc' ? targets.npcs : targets.locations;
@@ -224,6 +230,21 @@ export default function SessionsPanel({
   }, [campaignId, currentId, fail]);
 
   useEffect(() => { loadDetail(); }, [loadDetail]);
+
+  /*
+   * The session's cards again, WITHOUT the spinner — for a card arriving
+   * from the backlog. loadDetail swaps the panel for a spinner, which
+   * throws the DM back to the top and shuts every card. Opens The session,
+   * where the card lands, so it is visible that it arrived.
+   */
+  const refreshItems = useCallback(async () => {
+    if (!campaignId || !currentId) return;
+    try {
+      const d = await sessionsApi.get(campaignId, currentId);
+      setDetail(d);
+      setOpenSections((prev) => new Set(prev).add('beats'));
+    } catch (e) { fail(e); }
+  }, [campaignId, currentId, fail]);
 
   /*
    * What the timeline says is near this session's in-game date.
@@ -432,8 +453,8 @@ export default function SessionsPanel({
      * threw the DM back to the top of the page — mid-session, while they
      * were ticking something off, which is the worst possible moment.
      *
-     * The server returns every affected row because `done` cascades to the
-     * sub-cards, so this is not just the one that was clicked.
+     * The server returns every affected row because a state change cascades
+     * to the sub-cards, so this is not just the one that was clicked.
      */
     setState: async (item, state) => {
       try {
@@ -472,24 +493,47 @@ export default function SessionsPanel({
       if (!ok) return;
       try {
         await sessionsApi.removeItem(campaignId, currentId, item.id);
-        setDetail((d) => {
-          if (!d) return d;
-          // The server cascades to sub-cards, so mirror that here rather
-          // than refetching — a reload costs the scroll position and every
-          // open card, exactly as it did on save.
-          const doomed = new Set([item.id]);
-          for (let pass = 0; pass < 50; pass++) {
-            const before = doomed.size;
-            for (const i of d.items) {
-              if (i.parent_id != null && doomed.has(i.parent_id)) doomed.add(i.id);
-            }
-            if (doomed.size === before) break;
-          }
-          return { ...d, items: d.items.filter((i) => !doomed.has(i.id)) };
-        });
+        dropSubtree(item.id);
       } catch (e) { fail(e); }
     },
+    /*
+     * Out to the campaign backlog, sub-cards and all. Prep and beats only:
+     * What happened is a record of the night, not something to do later.
+     */
+    send: {
+      label: '→ Backlog',
+      title: 'Move to the campaign backlog, for a later session',
+      allows: (item) => !locked && (item.section === 'prep' || item.section === 'beats'),
+      run: async (item) => {
+        try {
+          const r = await sessionsApi.toPendings(campaignId, currentId, item.id);
+          dropSubtree(item.id);
+          setBacklogKey((k) => k + 1);
+          toast(`Moved to the backlog — ${r.moved} card${r.moved === 1 ? '' : 's'}.`);
+        } catch (e) { fail(e); }
+      },
+    },
   };
+
+  /*
+   * Take a card and its sub-cards off the page, as the server's CASCADE
+   * did, rather than refetching — a reload costs the scroll position and
+   * every open card, exactly as it did on save.
+   */
+  function dropSubtree(id) {
+    setDetail((d) => {
+      if (!d) return d;
+      const doomed = new Set([id]);
+      for (let pass = 0; pass < 50; pass++) {
+        const before = doomed.size;
+        for (const i of d.items) {
+          if (i.parent_id != null && doomed.has(i.parent_id)) doomed.add(i.id);
+        }
+        if (doomed.size === before) break;
+      }
+      return { ...d, items: d.items.filter((i) => !doomed.has(i.id)) };
+    });
+  }
 
   /**
    * Reorder, re-parent, or move to another section. The server returns the
@@ -534,7 +578,10 @@ export default function SessionsPanel({
         item_ids: [...journalForm.picked],
         category: journalForm.category,
         in_game_day: journalForm.day === '' ? null : journalForm.day,
-        dm_only: journalForm.dmOnly,
+        // 'public', 'hidden', or a seat id — as in the Journal's own form.
+        dm_only: journalForm.visibility !== 'public',
+        visible_to: ['public', 'hidden'].includes(journalForm.visibility)
+          ? null : Number(journalForm.visibility),
       });
       setJournalForm(null);
       toast(
@@ -770,18 +817,23 @@ export default function SessionsPanel({
                   <button
                     type="button"
                     title="Copy these into the Campaign Journal so the table can read them"
-                    onClick={() => setJournalForm({
+                    onClick={() => {
+                      campaignsApi.listPlayers(campaignId)
+                        .then((rows) => setJournalSeats((rows ?? []).filter((p) => !p.is_dm_player)))
+                        .catch(() => setJournalSeats([]));
+                      setJournalForm({
                       // Filed under the session it came from, which is how
                       // the journal already groups things.
                       category: detail.session.session_no
                         ? `Session ${detail.session.session_no}` : '',
                       day: '',
-                      // Off by default: these are the DM's own notes, and
+                      // Hidden by default: these are the DM's own notes, and
                       // publishing them is the deliberate act, not the
                       // accident.
-                      dmOnly: true,
+                      visibility: 'hidden',
                       picked: new Set(tree.map((i) => i.id)),
-                    })}
+                      });
+                    }}
                     className="text-[0.65rem] font-display uppercase tracking-wider
                                text-text-muted hover:text-gold"
                   >
@@ -795,43 +847,60 @@ export default function SessionsPanel({
               />
             );
           })}
-
-          {/* Derived, so there is no "add" here. Clearing a thread means
-              marking it done where it lives, which removes it from every
-              session at once. */}
-          {/* Hidden on a played session: it is a working view of what is
-              still live, and a record of a finished night should not carry
-              one. The rows are untouched — only this view is gone. */}
-          {!locked && !filtering && ongoing.length > 0 && (
-            <section className="flex flex-col gap-1.5">
-              <h3 className="font-display uppercase tracking-widest text-[0.65rem] text-gold
-                             border-b border-[var(--gold-dim)] pb-1">
-                Still running ({ongoing.length})
-              </h3>
-              <p className="text-[0.65rem] text-text-muted italic">
-                Carried over from earlier sessions. Mark one done where it lives and it leaves
-                every session at once.
-              </p>
-              {ongoing.map((i) => (
-                <ItemCard
-                  key={i.id}
-                  item={i}
-                  readOnly
-                  links={index}
-                  onLinkClick={openLink}
-                  actions={actions}
-                  isOpen={isOpen}
-                  onToggle={toggleItem}
-                  onDragStart={() => {}}
-                  onDragEnd={() => {}}
-                  onMove={() => {}}
-                  origin={[i.session_no != null ? `session ${i.session_no}` : null, i.session_title]
-                    .filter(Boolean).join(' · ') || 'an earlier session'}
-                />
-              ))}
-            </section>
-          )}
         </>
+      )}
+
+      {/* Under every session, and with none: the backlog is the campaign's,
+          and the moment to reach for it is while planning. */}
+      {campaignId && (
+        <BacklogPanel
+          campaignId={campaignId}
+          session={detail?.session ?? null}
+          locked={locked}
+          links={index}
+          onLinkClick={openLink}
+          targets={targets}
+          reloadKey={backlogKey}
+          onMovedIn={refreshItems}
+        />
+      )}
+
+      {/* Derived, so there is no "add" here. Clearing a thread means
+          marking it done where it lives, which removes it from every
+          session at once.
+          Below the backlog, and so outside the session block above: the
+          backlog stays mounted across a session switch, which keeps it open.
+          Hidden on a played session: it is a working view of what is
+          still live, and a record of a finished night should not carry
+          one. The rows are untouched — only this view is gone. */}
+      {!loading && detail && !locked && !filtering && ongoing.length > 0 && (
+        <section className="flex flex-col gap-1.5">
+          <h3 className="font-display uppercase tracking-widest text-[0.65rem] text-gold
+                         border-b border-[var(--gold-dim)] pb-1">
+            Still running ({ongoing.length})
+          </h3>
+          <p className="text-[0.65rem] text-text-muted italic">
+            Carried over from earlier sessions. Mark one done where it lives and it leaves
+            every session at once.
+          </p>
+          {ongoing.map((i) => (
+            <ItemCard
+              key={i.id}
+              item={i}
+              readOnly
+              links={index}
+              onLinkClick={openLink}
+              actions={actions}
+              isOpen={isOpen}
+              onToggle={toggleItem}
+              onDragStart={() => {}}
+              onDragEnd={() => {}}
+              onMove={() => {}}
+              origin={[i.session_no != null ? `session ${i.session_no}` : null, i.session_title]
+                .filter(Boolean).join(' · ') || 'an earlier session'}
+            />
+          ))}
+        </section>
       )}
 
       <Modal
@@ -894,15 +963,16 @@ export default function SessionsPanel({
             {/* The consequential one, so it says what it does rather than
                 naming the column. These are the DM's notes; publishing them
                 is a decision. */}
-            <label className="flex items-start gap-2 text-[0.75rem] text-text-dim">
-              <input type="checkbox" checked={!journalForm.dmOnly} className="mt-0.5"
-                onChange={(e) => setJournalForm((f) => ({ ...f, dmOnly: !e.target.checked }))} />
-              <span>
-                <strong className="text-text">Let the players read these.</strong>{' '}
-                Unticked, they go in DM-only and you can publish them one at a time
-                from the Journal.
-              </span>
-            </label>
+            <FormField label="Who can read them">
+              <select value={journalForm.visibility} className={INPUT}
+                onChange={(e) => setJournalForm((f) => ({ ...f, visibility: e.target.value }))}>
+                <option value="hidden">Only me — publish them one at a time from the Journal</option>
+                <option value="public">Everyone at the table</option>
+                {journalSeats.map((p) => (
+                  <option key={p.id} value={String(p.id)}>Only {p.player_name} (and me)</option>
+                ))}
+              </select>
+            </FormField>
 
             <FormField label={`Cards (${journalForm.picked.size} of ${outcomeRoots.length})`}>
               <div className="flex flex-col gap-1 max-h-56 overflow-y-auto border border-border

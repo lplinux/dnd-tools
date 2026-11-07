@@ -299,6 +299,18 @@ body {
 .srd-info-btn:hover { color: var(--gold); opacity: 1; }
 
 .srd-modal-loading { display: flex; justify-content: center; padding: 18px 0; }
+
+/* A spell in a lookup: the level-and-school line, then the four facts. */
+.spell-card-level { margin: 0 0 8px; font-style: italic; color: var(--text-dim); }
+.spell-card-stats { display: grid; grid-template-columns: max-content 1fr; gap: 3px 12px; margin: 0 0 10px; }
+.spell-card-stats > div { display: contents; }
+.spell-card-stats dt { font-weight: 600; color: var(--text); }
+.spell-card-stats dd { margin: 0; color: var(--text-dim); }
+.spell-card-tags { display: flex; gap: 6px; margin: 0 0 10px; }
+.spell-card-tags span {
+  font-size: 11px; padding: 1px 6px; border-radius: 2px;
+  border: 1px solid var(--gold-dim); color: var(--gold);
+}
 .srd-modal-body p { margin: 0 0 9px; line-height: 1.5; }
 .srd-modal-hint { font-size: 12px; opacity: .75; }
 .srd-modal-attrib {

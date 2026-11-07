@@ -159,6 +159,17 @@ export default function ItemCard({
                 {stateOf(item.state).icon} {stateOf(item.state).label}
               </span>
             : <StateChip state={item.state} onPick={(next) => actions.setState(item, next)} />)}
+          {/* Root cards only: a sub-card travels with its parent, never
+              alone. The panel decides where "send" goes, and whether it is
+              offered at all — a played session's cards stay put. */}
+          {!readOnly && depth === 0 && actions.send?.allows(item) && (
+            <button type="button" onClick={() => actions.send.run(item)}
+              title={actions.send.title}
+              className="text-[0.65rem] font-display uppercase tracking-wider text-text-muted
+                         hover:text-gold flex-shrink-0">
+              {actions.send.label}
+            </button>
+          )}
           {!readOnly && (
             <span className="flex gap-1 flex-shrink-0">
               <button type="button" onClick={() => actions.addChild(item)}

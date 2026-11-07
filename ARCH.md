@@ -124,7 +124,8 @@ campaign_diary_shares
 ### Campaign Journal
 
 Shared notes on the PC Sheet. Every member of a campaign writes; the whole table reads. The DM
-can additionally mark an entry `dm_only`, which a player's listing never selects at all.
+can additionally keep an entry to themselves (`dm_only`), or show it to **one player**
+(`dm_only` plus `visible_to`). A player's listing never selects `dm_only` at all.
 
 ```
 campaign_journal_entries
@@ -133,9 +134,17 @@ campaign_journal_entries
   location_id (FK campaign_locations, SET NULL),  -- where it happened
   title, body, category (free text, nullable),
   in_game_day (absolute day number, nullable),
-  dm_only (bool, default false), created_at, updated_at
+  dm_only (bool, default false),
+  visible_to (FK campaign_players, SET NULL, nullable),  -- the one player a dm_only entry is for
+  created_at, updated_at
+  CHECK (visible_to IS NULL OR dm_only)
   INDEX (campaign_id, created_at DESC)
 ```
+
+`visible_to` refines `dm_only` rather than replacing it: public is `dm_only = false`, hidden is
+`dm_only` alone, and one player is `dm_only` plus their seat. Anything that only knows about
+`dm_only` — an older query, a bundle without the ref — therefore treats a one-player entry as
+hidden, and deleting the seat leaves it hidden too. It fails closed.
 
 `category` is free text with a datalist of what the campaign already uses, exactly like the
 diary's — a table invents its own filing ("Documents", "Rumours", "People we met") rather than
@@ -155,7 +164,8 @@ written about it.
 Two withholding rules are enforced in SQL rather than in the component, so a refactor of the UI
 cannot leak them:
 
-- A player's query carries `AND j.dm_only = false` and does not select the column at all.
+- A player's query carries `AND (j.dm_only = false OR j.visible_to = ANY(<their seats>))`, the
+  seats read from the session's user, and does not select `dm_only` at all.
 - A location the DM has since made private stops showing to players — **both its name and its
   id** — even on an entry written while it was still public. Withholding only the name would
   still let a player tell that two entries happened at the same secret place.
@@ -189,6 +199,13 @@ campaign_session_items
 `campaign_id` is carried on the items as well as the session so the On-Going view is one
 indexed read rather than a join back through `campaign_sessions` for every row.
 
+**The campaign backlog** (`campaign_pendings`) is the same card shape with no session and no
+section: things to use some day. Its own table rather than session cards with a NULL session,
+because every query on `campaign_session_items` is keyed on a session and a card with none
+would drop out of some and leak into others. A card moves between the two **whole and as a
+move** — `→ This session` and `→ Backlog` copy the subtree and delete the original in one
+transaction — so a used idea leaves the backlog. *What happened* cannot be sent there.
+
 **A child's section is always its parent's.** Enforced on create, on import and on move — a
 card whose section disagreed with its parent's would appear in neither and be unreachable.
 Moving a card to another section therefore rewrites the whole subtree, in one bounded
@@ -202,10 +219,10 @@ should still see 11's threads in 12. The view excludes `section = 'outcome'`: a 
 into *What happened* keeps whatever state it had, and a thread filed as having happened is a
 record rather than something still running.
 
-**`done` and `skipped` cascade to sub-cards; the other three do not.** Both mean "stop looking
-at this". A parent is on-going precisely because one child is and the rest are not, so pushing
-that down would erase the distinction. The cascade is one recursive statement bounded at fifty
-levels, because `parent_id` is a tree by construction and not by constraint.
+**Every state change cascades to sub-cards.** A beat's details follow the beat; a sub-card that
+needs to differ is changed on its own afterwards, which leaves the parent alone. The cascade is
+one recursive statement bounded at fifty levels, because `parent_id` is a tree by construction
+and not by constraint.
 
 **Two mount points, one component.** `pages/Journal/JournalPanel` fetches its own data and is
 rendered both as a PC Sheet tab and as a Manage Campaigns tab, so neither page threads journal

@@ -25,6 +25,8 @@ export const sessionsApi = {
   generateNext: (cid, sid)          => client.post(`/campaigns/${cid}/sessions/${sid}/generate-next`, {}),
   /** What the timeline says is near this session's in-game date. */
   upcoming:   (cid, sid, days)      => client.get(`/campaigns/${cid}/sessions/${sid}/upcoming${days ? `?days=${days}` : ''}`),
+  /** Move a card, sub-cards and all, out to the campaign backlog. */
+  toPendings: (cid, sid, id)        => client.post(`/campaigns/${cid}/sessions/${sid}/items/${id}/to-pendings`, {}),
   /** Copy "What happened" into the Campaign Journal. */
   toJournal:  (cid, sid, data)      => client.post(`/campaigns/${cid}/sessions/${sid}/to-journal`, data),
 
