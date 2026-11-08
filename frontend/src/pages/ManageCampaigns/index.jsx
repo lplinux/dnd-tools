@@ -11,8 +11,8 @@
  *   Players · Locations · NPCs · Timelines · Char Tree · Journal · Search · Settings
  */
 
-import { useRef, useState } from 'react';
-import { Upload, Download, Trash2, Undo2, ChevronRight, ChevronDown } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
+import { Upload, Download, Trash2, Undo2, ChevronRight, ChevronDown, Maximize2, Minimize2 } from 'lucide-react';
 
 import AppHeader               from '@/components/layout/AppHeader';
 import { Button, Spinner, Modal, FormField } from '@/components/ui';
@@ -237,6 +237,25 @@ export default function ManageCampaigns() {
     importAsk, answerImport,
   } = mc;
 
+  /*
+   * Full screen: the tab body lifted over the whole page, header and all.
+   * Only for tabs that ask for it, and it ends when the tab or the campaign
+   * changes — arriving at another tab already maximised would be a surprise.
+   */
+  const [full, setFull] = useState(false);
+  const fullable = !!TABS.find((t) => t.id === activeTab)?.fullScreen;
+  const isFull = full && fullable && !!currentCampaign;
+  useEffect(() => { setFull(false); }, [activeTab, currentId]);
+  useEffect(() => {
+    if (!isFull) return undefined;
+    const onKey = (e) => {
+      // A dialog open over the tab takes Escape for itself.
+      if (e.key === 'Escape' && !document.querySelector('[aria-modal="true"]')) setFull(false);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [isFull]);
+
   // Tab content switcher
   const tabCounts = {
     players:   players.length,
@@ -295,7 +314,7 @@ export default function ManageCampaigns() {
       case 'timelines':
         return <TimelinesTab timelines={timelines} campaignId={currentId} />;
       case 'chartree':
-        return <CharTreeTab campaignId={currentId} />;
+        return <CharTreeTab campaignId={currentId} fill={isFull} />;
       case 'journal':
         return (
           <JournalTab
@@ -379,6 +398,12 @@ export default function ManageCampaigns() {
                 <h2 className="font-display text-gold uppercase tracking-widest text-sm flex-1 truncate">
                   🏰 {currentCampaign.name}
                 </h2>
+                {fullable && (
+                  <Button variant="default" onClick={() => setFull(true)} title="Full screen">
+                    <Maximize2 size={12} className="inline mr-1" />
+                    Full screen
+                  </Button>
+                )}
               </div>
 
               {/* Tabs */}
@@ -391,13 +416,32 @@ export default function ManageCampaigns() {
                 }}
               />
 
-              {/* Tab body */}
-              <div className="flex-1 overflow-y-auto p-4">
-                {loading ? (
-                  <div className="flex justify-center py-12"><Spinner /></div>
-                ) : (
-                  renderTab()
+              {/* Tab body. The same element in and out of full screen —
+                  only its classes change — so the tab is not remounted:
+                  Sessions keeps its session and its open cards, the tree
+                  keeps its zoom. The bar sits in a slot of its own for the
+                  same reason. Below z-50, where dialogs open. */}
+              <div className={isFull
+                ? 'fixed inset-0 z-40 flex flex-col bg-[var(--bg)]'
+                : 'flex-1 flex flex-col min-h-0'}>
+                {isFull && (
+                  <div className="flex items-center gap-2 px-4 py-2 bg-surface2 border-b-2 border-[var(--gold-dim)] flex-shrink-0">
+                    <h2 className="font-display text-gold uppercase tracking-widest text-sm flex-1 truncate">
+                      🏰 {currentCampaign.name} · {TABS.find((t) => t.id === activeTab)?.label}
+                    </h2>
+                    <Button variant="accent" onClick={() => setFull(false)} title="Exit full screen (Esc)">
+                      <Minimize2 size={12} className="inline mr-1" />
+                      Exit full screen
+                    </Button>
+                  </div>
                 )}
+                <div className="flex-1 overflow-y-auto p-4">
+                  {loading ? (
+                    <div className="flex justify-center py-12"><Spinner /></div>
+                  ) : (
+                    renderTab()
+                  )}
+                </div>
               </div>
             </>
           )}

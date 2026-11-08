@@ -25,6 +25,7 @@ import { Button, Modal, FormField, Spinner, CalendarDate,
   absDayFromParts, partsFromAbsDay } from '@/components/ui';
 import { campaignsApi } from '@/api/campaigns';
 import { useToast } from '@/hooks/useToast';
+import { useConfirm } from '@/contexts/ConfirmContext';
 import { inGameDate } from '@/data/calendar';
 import GroupedEntries from '@/pages/Diary/GroupedEntries';
 import { openNotesPrint } from '@/pages/Diary/printNotes';
@@ -124,6 +125,7 @@ export default function JournalPanel({
   campaignId, isDM, calendarType = 'harptos', campaignName = '',
 }) {
   const { toast } = useToast();
+  const confirm = useConfirm();
   const [entries, setEntries] = useState([]);
   const [locations, setLocations] = useState([]);
   // The seats a DM can write an entry for. Never fetched for a player.
@@ -217,6 +219,24 @@ export default function JournalPanel({
       await load();
       toast(form.id ? 'Entry saved.' : 'Entry added.');
     } catch (e) { fail(e); } finally { setBusy(false); }
+  }
+
+  /*
+   * An entry the DM wrote for this player alone, shared with the table by
+   * that player. Asked first: it cannot be taken back from this side.
+   */
+  async function makePublic(e) {
+    const ok = await confirm(
+      `Share "${e.title || 'this entry'}" with everyone at the table? You cannot make it private again.`,
+      { title: 'Make public', confirmLabel: 'Make public' },
+    );
+    if (!ok) return;
+    try {
+      await campaignsApi.makeJournalPublic(campaignId, e.id);
+      setEntries((prev) => prev.map((x) => (x.id === e.id
+        ? { ...x, dm_only: false, visible_to: null, visible_to_name: null } : x)));
+      toast('Shared with the table.');
+    } catch (err) { fail(err); }
   }
 
   async function remove(id) {
@@ -341,6 +361,11 @@ export default function JournalPanel({
         accent={(e) => !!e.dm_only || !!e.visible_to}
         onEdit={openEdit}
         onDelete={remove}
+        // Only on the player's side: the DM changes visibility by editing.
+        extra={(e) => (!isDM && e.visible_to ? (
+          <Button variant="default" onClick={() => makePublic(e)}
+            title="Share this entry with everyone at the table">📢 Make public</Button>
+        ) : null)}
         emptyText={'Nothing written yet. Use this for what the party found — a letter, a name '
           + 'overheard, the thing nobody wants to have to remember.'}
       />

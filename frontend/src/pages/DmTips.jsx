@@ -33,7 +33,7 @@ const WHERE = [
     'Manage Campaigns → 📖 Journal', 'Everyone, only you, or one player — you choose per entry'],
   ['A secret only one character knows',
     '📖 Journal, set to “Only <player> (and me)” — or a note in their PC Sheet’s 📜 DM Notes',
-    'You and that player'],
+    'You and that player — who can make it public with 📢'],
   ['When something happened in the world',
     '📜 Timeline (a 🌍 Party event if it was the whole group)', 'Hidden until you reveal it with 👁'],
   ['Who someone is', 'Manage Campaigns → 🧟 NPCs',

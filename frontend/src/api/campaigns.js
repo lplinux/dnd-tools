@@ -51,6 +51,8 @@ export const campaignsApi = {
   addJournal:    (cid, d)       => client.post(`/campaigns/${cid}/journal`, d),
   editJournal:   (cid, eid, d)  => client.put(`/campaigns/${cid}/journal/${eid}`, d),
   removeJournal: (cid, eid)     => client.del(`/campaigns/${cid}/journal/${eid}`),
+  /** The player an entry is for shares it with the table. One way only. */
+  makeJournalPublic: (cid, eid) => client.patch(`/campaigns/${cid}/journal/${eid}/make-public`, {}),
 
   // Everything in the campaign that has been shared — maps, timelines, and
   // (prepared, still empty) NPCs. Only rows with a share token come back, so

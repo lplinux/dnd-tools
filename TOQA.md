@@ -25,6 +25,18 @@ PC Sheet / Journey Map / Manage Campaign fix batch that went with it.
 - [ ] **Open DM Tips** — four sections; the *What goes where* table scrolls sideways on a phone
       rather than squashing. A player going to `/dm-tips` is sent home.
 
+## Full screen, and making a journal entry public
+
+- [ ] **Manage Campaigns → 🗓 Sessions → Full screen** — the tab covers the page; the session on
+      screen and the open cards are still as they were. Edit a card: the dialog opens on top.
+      **Esc** with the dialog open closes only the dialog; **Esc** again leaves full screen.
+- [ ] **🌳 Char Tree → Full screen** — the tree fills the window and keeps its zoom; the lists
+      below scroll. Resize the window: the tree follows. Leave full screen: back to its usual size.
+- [ ] Switching tab or campaign leaves full screen. Other tabs have no Full screen button.
+- [ ] **As the DM, write an entry *Only Iris***. **As Iris**, it shows **📢 Make public**; confirm —
+      it loses its *Only you* tag. **As another player**, it is now there.
+- [ ] **As the DM**, it now reads as public, not *Only Iris*. No other player ever sees the button.
+
 ## Journal entries for one player
 
 - [ ] **As the DM, write a journal entry** and set *Who can read it* to **Only Iris**. It shows

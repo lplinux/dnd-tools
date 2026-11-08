@@ -10,6 +10,9 @@ Longer write-ups of these entries are in this file's git history.
 ### Added
 - **DM Tips** (DM tools on the home page): what goes where — Sessions, Diary, Journal, Timeline —
   who sees each, and a session from planning to publishing the diary.
+- **Full screen** for the Sessions and Char Tree tabs in Manage Campaigns (Esc to leave).
+- **A player can make public a journal entry written for them.** It then belongs to the whole
+  table; it cannot be made private again from their side.
 - **Tools menu** in the header of every page, to jump to another tool without going home.
 - **Campaign backlog** (🗓 Sessions tab, under the session). Ideas for no session in particular.
   **→ This session** moves a card, sub-cards and all, into the session on screen;
@@ -36,6 +39,7 @@ Longer write-ups of these entries are in this file's git history.
   goes to the Trash), merge into it, or create a new one under another name.
 
 ### Changed
+- The Char Tree follows the window's size instead of staying at its first width.
 - **The home page groups the tools** into DM, Player and Public tools (and Admin). Each group
   folds away, and stays folded on that browser.
 - Markdown renders in DM notes, inventory notes, timeline event descriptions, and a character's

@@ -549,7 +549,11 @@ function hitTest(mx, my, nodes, vp) {
 // ─────────────────────────────────────────────────────────────────────────────
 // Canvas component
 // ─────────────────────────────────────────────────────────────────────────────
-function TreeCanvas({ players, relationships, npcs, crossConnections, hiddenPlayers }) {
+// The tree's height on the page; in full screen it takes the window instead,
+// less the bar above it and the tab's padding, and the lists below scroll.
+const TREE_H = 560;
+
+function TreeCanvas({ players, relationships, npcs, crossConnections, hiddenPlayers, fill = false }) {
   const wrapRef    = useRef(null);
   const canvasRef  = useRef(null);
   const tooltipRef = useRef(null);
@@ -586,7 +590,7 @@ function TreeCanvas({ players, relationships, npcs, crossConnections, hiddenPlay
     const c = canvasRef.current;
     const w = wrapRef.current;
     if (!c || !w) return;
-    const W = w.clientWidth, H = 560;
+    const W = w.clientWidth, H = w.clientHeight;
     c.width = W; c.height = H;
     nodesRef.current = buildNodes(vis.players, vis.relationships, npcs, vis.crossConnections);
     // Only auto-fit the first time this canvas mounts (initial load / campaign
@@ -598,6 +602,24 @@ function TreeCanvas({ players, relationships, npcs, crossConnections, hiddenPlay
     }
     redraw();
   }, [vis, npcs, redraw]);
+
+  /*
+   * Follow the box when it changes size — entering or leaving full screen,
+   * or the window being resized. The canvas only resizes; the zoom and pan
+   * stay where the DM left them.
+   */
+  useEffect(() => {
+    const c = canvasRef.current;
+    const w = wrapRef.current;
+    if (!c || !w || typeof ResizeObserver === 'undefined') return undefined;
+    const ro = new ResizeObserver(() => {
+      if (c.width === w.clientWidth && c.height === w.clientHeight) return;
+      c.width = w.clientWidth; c.height = w.clientHeight;
+      redraw();
+    });
+    ro.observe(w);
+    return () => ro.disconnect();
+  }, [redraw]);
 
   // React synthetic mouse events don't reliably expose offsetX/offsetY — derive
   // canvas-local coords from the bounding rect so pan + hit-testing stay correct.
@@ -690,7 +712,8 @@ function TreeCanvas({ players, relationships, npcs, crossConnections, hiddenPlay
   }, [zoomAtLocal]);
 
   return (
-    <div ref={wrapRef} className="relative" style={{ height: 560 }}>
+    <div ref={wrapRef} className="relative"
+      style={{ height: fill ? 'calc(100dvh - 6.5rem)' : TREE_H, minHeight: 320 }}>
       <canvas
         ref={canvasRef}
         className="block w-full cursor-grab active:cursor-grabbing"
@@ -869,7 +892,7 @@ function ConnModal({ open, onClose, onSave, editData, entityOptions }) {
 // ─────────────────────────────────────────────────────────────────────────────
 // Main exported tab
 // ─────────────────────────────────────────────────────────────────────────────
-export function CharTreeTab({ campaignId }) {
+export function CharTreeTab({ campaignId, fill = false }) {
   const { toast } = useToast();
   const confirm = useConfirm();
   const [data,      setData]      = useState(null);
@@ -987,6 +1010,7 @@ export function CharTreeTab({ campaignId }) {
         npcs={npcs}
         crossConnections={crossConnections}
         hiddenPlayers={hiddenPlayers}
+        fill={fill}
       />
 
       {/* One box, two lists. It narrows the player chips below AND the

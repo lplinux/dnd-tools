@@ -124,6 +124,9 @@ Tick **DM only** and the entry never reaches a player — it is filtered out of 
 the server rather than hidden on their screen. Those cards are outlined in gold here so you can
 see at a glance what the table cannot. Untick it when the party finds the thing.
 
+An entry can also be shown to **one player** only. That player can **📢 Make public** it
+themselves, which shares it with everyone and clears the assignment — one way only.
+
 ### What you can and cannot do to a player's entry
 
 You can **delete** any entry. You cannot **edit** one you did not write: a DM should be able to

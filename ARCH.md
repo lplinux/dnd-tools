@@ -146,6 +146,11 @@ campaign_journal_entries
 `dm_only` — an older query, a bundle without the ref — therefore treats a one-player entry as
 hidden, and deleting the seat leaves it hidden too. It fails closed.
 
+The player an entry is for may **make it public** (`PATCH …/journal/:id/make-public`) — one way
+only, and only that: one conditional UPDATE to `dm_only = false, visible_to = NULL`, guarded on
+the entry still being `dm_only` and for one of the caller's own seats. They cannot edit it, and
+anything else is a 404 so the route confirms nothing the caller cannot already read.
+
 `category` is free text with a datalist of what the campaign already uses, exactly like the
 diary's — a table invents its own filing ("Documents", "Rumours", "People we met") rather than
 picking from a list somebody else wrote. Entries group under it in the UI.

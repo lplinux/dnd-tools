@@ -5690,6 +5690,38 @@ app.put('/api/campaigns/:campaignId/journal/:entryId', requireAuth, async (req, 
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+/**
+ * The player an entry was written for shares it with the whole table.
+ *
+ * One way only, and a separate route rather than a looser PUT: the player
+ * did not write the entry, so they may not change a word of it, and nothing
+ * here can make anything LESS visible. Public means dm_only=false and no one
+ * in particular, so the seat goes with it — the CHECK would allow keeping
+ * it, but a public entry "for Iris" would be a label with no meaning.
+ *
+ * A single conditional UPDATE: the entry must still be DM-only and still be
+ * for one of the caller's own seats. Anything else — someone else's entry,
+ * a hidden one, one already public — is a 404, so the route does not
+ * confirm that an entry the caller cannot read exists.
+ */
+app.patch('/api/campaigns/:campaignId/journal/:entryId/make-public', requireAuth, async (req, res) => {
+  const { campaignId, entryId } = req.params;
+  try {
+    if (!await canAccessCampaign(campaignId, req.session.userId, req.session.role))
+      return res.status(403).json({ error: 'Access denied' });
+    const seats = await mySeats(campaignId, req.session.userId);
+    const r = await pool.query(
+      `UPDATE campaign_journal_entries
+          SET dm_only=false, visible_to=NULL, updated_at=CURRENT_TIMESTAMP
+        WHERE id=$1 AND campaign_id=$2 AND dm_only AND visible_to = ANY($3::int[])
+        RETURNING id`,
+      [entryId, campaignId, seats],
+    );
+    if (!r.rows.length) return res.status(404).json({ error: 'Entry not found' });
+    res.json({ success: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 /** Delete. The author, or the DM of the campaign. */
 app.delete('/api/campaigns/:campaignId/journal/:entryId', requireAuth, async (req, res) => {
   const { campaignId, entryId } = req.params;
