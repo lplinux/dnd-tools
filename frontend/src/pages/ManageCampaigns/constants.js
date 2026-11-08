@@ -43,6 +43,9 @@ export const TABS = [
   // data, like the journal, and a badge blank until you open the tab is
   // worse than no badge.
   { id: 'sessions',  label: '🗓 Sessions',  count: false, fullScreen: true },
+  // Stat blocks to read mid-fight, two at a time, one key apart. Not a
+  // tracker: initiative and hit points stay in the DM's combat tool.
+  { id: 'encounter', label: '⚔ Encounter', count: false, fullScreen: true },
   // How each character can grow, and what it costs. DM-private — it is in
   // this module rather than on the PC sheet precisely because a player
   // cannot open this module at all. No count, for the reason above.

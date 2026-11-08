@@ -8,6 +8,9 @@ Longer write-ups of these entries are in this file's git history.
 ## [Unreleased]
 
 ### Added
+- **⚔ Encounter** (Manage Campaigns): stat blocks to read mid-fight. Line up NPCs and homebrew
+  creatures, switch with a click or keys 1–9, pin a second one beside it (Shift + 1–9). Spell
+  names open their card. Not a tracker — initiative and hit points stay in your combat tool.
 - **Homebrew creatures**: stat blocks of your own, edited in the same sheet as NPCs (SRD import
   included), used and revealed per campaign. An NPC's stat block can **start from one** of them.
 - **Item Cards inside Homebrew**: your item library is the Homebrew page's *Items* tab. The public

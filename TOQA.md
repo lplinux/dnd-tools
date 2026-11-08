@@ -25,6 +25,18 @@ PC Sheet / Journey Map / Manage Campaign fix batch that went with it.
 - [ ] **Open DM Tips** — four sections; the *What goes where* table scrolls sideways on a phone
       rather than squashing. A player going to `/dm-tips` is sent home.
 
+## Encounter tab — stat blocks to read mid-fight
+
+- [ ] **Manage Campaigns → ⚔ Encounter → ＋ Add**: Vhessk, Ssharai, Grukhaa Red-Tooth, Nerida.
+      Only NPCs that have a stat block are offered, plus your homebrew creatures.
+- [ ] The numbers match the Oracle's Chamber page: Vhessk Perception +10 and Con +6 / Wis +7 /
+      Cha +5; Ssharai DC 12, +4; Nerida DC 15, +7, slots 4/3/3/1.
+- [ ] Keys **1–4** switch the left pane instantly; **Shift + 1** pins Vhessk on the right;
+      **← →** step through. Typing in the Add box does not switch anything.
+- [ ] Click a spell name — its card opens (a homebrew spell shows *Homebrew*).
+- [ ] **DM notes** start folded. **Full screen** works; reload — the line-up is still there.
+- [ ] On a phone: one column, the pinned sheet under the main one.
+
 ## Homebrew creatures and the Items tab
 
 - [ ] **Homebrew → 🐉 Creatures → ＋ New** "Ash Wyrmling", Draft. Its stat sheet opens on the right

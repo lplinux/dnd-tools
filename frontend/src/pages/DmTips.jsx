@@ -46,6 +46,8 @@ const WHERE = [
     'Only you, or the table by share link'],
   ['A spell or creature of your own, or a magic item', '🧪 Homebrew — then tick the campaigns that use it',
     'Only you, until you reveal it in a campaign'],
+  ['Stat blocks to read during a fight', 'Manage Campaigns → ⚔ Encounter — line them up, keys 1–9 to switch',
+    'Only you'],
   ['How the players feel the game is going', 'Manage Campaigns → 📊 Surveys',
     'Players answer; anonymous by default'],
 ];

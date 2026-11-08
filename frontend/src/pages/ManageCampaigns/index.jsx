@@ -29,6 +29,7 @@ import EvolutionPanel from '@/pages/Evolution/EvolutionPanel';
 import { CharTreeTab }         from './tabs/CharTreeTab';
 import JournalTab              from './tabs/JournalTab';
 import SearchTab               from './tabs/SearchTab';
+import EncounterTab            from './tabs/EncounterTab';
 import SurveysPanel            from '@/pages/Surveys/SurveysPanel';
 import ImportChoiceDialog      from './ImportChoiceDialog';
 
@@ -333,6 +334,8 @@ export default function ManageCampaigns() {
             onTodayMarkerChanged={refreshMeta}
           />
         );
+      case 'encounter':
+        return <EncounterTab key={currentId} campaignId={currentId} npcs={npcs} />;
       case 'evolution':
         return <EvolutionPanel key={currentId} campaignId={currentId} players={players} />;
       case 'surveys':

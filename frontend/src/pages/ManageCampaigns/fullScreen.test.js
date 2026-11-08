@@ -18,8 +18,8 @@ const PAGE = read('./index.jsx');
 const TREE = read('./tabs/CharTreeTab.jsx');
 
 describe('full screen', () => {
-  it('is offered on Sessions and the Char Tree only', () => {
-    expect(TABS.filter((t) => t.fullScreen).map((t) => t.id).sort()).toEqual(['chartree', 'sessions']);
+  it('is offered on Sessions, the Char Tree and the Encounter only', () => {
+    expect(TABS.filter((t) => t.fullScreen).map((t) => t.id).sort()).toEqual(['chartree', 'encounter', 'sessions']);
   });
 
   it('changes the classes of the tab body, never which element it is', () => {

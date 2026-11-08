@@ -128,6 +128,22 @@ copies would turn one spell used at two tables into two copies that drift apart.
 - [X] A homebrew entry with the same name as an SRD one: show both
 - [X] Can players propose homebrew? No
 
+#### Encounters — a full combat tracker (alternative, not planned)
+
+**Shieldmaiden runs combat today** (initiative, damage, conditions, states), so this stays an
+option, not a plan. What exists is the read-only **⚔ Encounter** tab: stat blocks two at a time,
+switched by key. If the tracker is ever wanted, it would build on that tab:
+
+- [ ] Encounters saved per campaign, optionally linked to a session's prep
+- [ ] Combatants from NPC stat blocks, homebrew creatures and the party; "×4" makes four copies,
+      each pointing at its stat block (fixes flow into the next fight), with only the fight's
+      own state stored: initiative, current/temp HP, conditions, death saves
+- [ ] Round and turn tracking; the current turn's stat block opens itself
+- [ ] X/day pips (Legendary Resistance, 1/Day actions), suggested from "(N/Day)" in the text
+- [ ] Encounter difficulty from CR and party level (XP, multiplier, thresholds)
+- [ ] A player view: initiative order and *bloodied* only, by link
+- [ ] A short combat log
+
 #### DM Notes
 
 - [ ] A way of taking notes with ideas not linked to a Campaign (like a DM Diary of what I'd like a future Campaign or One Shot to be). This would be the start of a World Building module.
