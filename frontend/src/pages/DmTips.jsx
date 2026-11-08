@@ -44,6 +44,8 @@ const WHERE = [
   ['How people are connected', 'Manage Campaigns → 🌳 Char Tree', 'Only you'],
   ['Where the party went', '🗺️ Journey Path Map (built from Timeline events with a place and a date)',
     'Only you, or the table by share link'],
+  ['A spell or creature of your own, or a magic item', '🧪 Homebrew — then tick the campaigns that use it',
+    'Only you, until you reveal it in a campaign'],
   ['How the players feel the game is going', 'Manage Campaigns → 📊 Surveys',
     'Players answer; anonymous by default'],
 ];

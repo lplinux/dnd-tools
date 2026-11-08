@@ -44,6 +44,16 @@ export const MODULES = [
     docs: 'diary',
   },
   {
+    key: 'homebrew',
+    group: 'dm',
+    icon: '🧪',
+    title: 'Homebrew',
+    desc: 'Your own spells, in one library: use them in any campaign, reveal them when the table finds them.',
+    url: '/homebrew',
+    access: ['dm'],
+    docs: 'homebrew',
+  },
+  {
     key: 'journeymap',
     group: 'dm',
     icon: '🗺️',

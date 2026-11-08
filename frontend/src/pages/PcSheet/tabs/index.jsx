@@ -173,12 +173,15 @@ export function CharacterTab({ charData, playerId, actions, publicLink }) {
 // edges that two copies would drift. All this tab decides is whose blob it is.
 // ─────────────────────────────────────────────────────────────────────────────
 
-export function StatsTab({ playerId, charData, onSaveStats }) {
+export function StatsTab({ playerId, campaignId, charData, onSaveStats }) {
   return (
     <StatsSheetFrame
       stats={charData?.stats ?? {}}
       onSave={onSaveStats}
       frameId={`player=${playerId}`}
+      // So the sheet's spell pickers offer this campaign's homebrew — the
+      // revealed spells only, for a player; the server decides which.
+      campaignId={campaignId}
       title="Stats Sheet"
     />
   );

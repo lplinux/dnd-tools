@@ -150,7 +150,7 @@ app.use(express.static(path.join(__dirname, 'public', 'app')));
 app.use('/pdfs', express.static(path.join(__dirname, 'pdfs')));
 
 // Serve module README docs — only whitelisted slugs, no path traversal
-const DOCS_MODULES = new Set(['npc-sheet', 'item-cards', 'split-view', 'timeline', 'pdf-viewer', 'pc-sheet', 'manage-campaigns', 'journey-map', 'user-panel', 'diary']);
+const DOCS_MODULES = new Set(['npc-sheet', 'item-cards', 'split-view', 'timeline', 'pdf-viewer', 'pc-sheet', 'manage-campaigns', 'journey-map', 'user-panel', 'diary', 'homebrew']);
 app.get('/api/docs/:module', async (req, res) => {
   const mod = req.params.module;
   if (!DOCS_MODULES.has(mod)) return res.status(404).json({ error: 'Not found' });
@@ -7891,6 +7891,267 @@ app.delete('/api/campaigns/:campaignId/sessions/:sessionId/items/:itemId', requi
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// ─── Homebrew ────────────────────────────────────────────────────────────────
+//
+// The DM's own content, as a library that travels between campaigns. See the
+// homebrew_entries table for why it is one table with a JSON body per kind.
+//
+// Every write goes through the kind's validator, which REBUILDS the body from
+// known fields — an unknown key is dropped, not stored — so what the sheet
+// reads back is always the shape it expects.
+
+const HB_SCHOOLS = ['Abjuration', 'Conjuration', 'Divination', 'Enchantment',
+  'Evocation', 'Illusion', 'Necromancy', 'Transmutation'];
+const HB_STATUSES = ['draft', 'playtest', 'final'];
+
+const hbStr = (v, max) => (typeof v === 'string' ? v.trim().slice(0, max) : '');
+
+/**
+ * A spell, in the shape data/spellDetails.js reads SRD spells into — less
+ * `paragraphs`, which the client splits out of `description` — so a homebrew
+ * spell and an official one render through the same card.
+ */
+function cleanHomebrewSpell(d) {
+  const b = d && typeof d === 'object' && !Array.isArray(d) ? d : {};
+  const level = Math.trunc(Number(b.level));
+  const school = HB_SCHOOLS.find((x) => x.toLowerCase() === hbStr(b.school, 40).toLowerCase()) ?? '';
+  const components = ['V', 'S', 'M'].filter((c) =>
+    Array.isArray(b.components) && b.components.some((x) => String(x).toUpperCase() === c));
+  return {
+    level: Number.isFinite(level) && level >= 0 && level <= 9 ? level : 0,
+    school,
+    castingTime: hbStr(b.castingTime, 120),
+    range: hbStr(b.range, 120),
+    components,
+    // A material with no M is a leftover from an edit, not a component.
+    material: components.includes('M') ? hbStr(b.material, 255) : '',
+    duration: hbStr(b.duration, 120),
+    concentration: b.concentration === true,
+    ritual: b.ritual === true,
+    description: hbStr(b.description, 20000),
+    higherLevel: hbStr(b.higherLevel, 5000),
+    classes: (Array.isArray(b.classes) ? b.classes : [])
+      .map((c) => hbStr(c, 40)).filter(Boolean).slice(0, 16),
+  };
+}
+
+/** The kinds this build knows, each with its cleaner. A kind not here is refused. */
+const HOMEBREW_KINDS = {
+  spell: cleanHomebrewSpell,
+  // A creature is a stat block — the same blob an NPC's sheet and a
+  // character's stats hold — so it is cleaned by the same validator and
+  // edited in the same sheet. An NPC's stat block can start as a copy.
+  creature: (d) => validateStats(d),
+};
+
+/** The editable part of an entry from a request, or `{ error }`. */
+function homebrewFields(body, kindFallback) {
+  const b = body ?? {};
+  const kind = kindFallback ?? b.kind;
+  if (!Object.hasOwn(HOMEBREW_KINDS, kind)) return { error: 'Unknown homebrew kind' };
+  const name = hbStr(b.name, 255);
+  if (!name) return { error: 'A homebrew entry needs a name' };
+  return {
+    kind,
+    name,
+    status: HB_STATUSES.includes(b.status) ? b.status : 'draft',
+    data: HOMEBREW_KINDS[kind](b.data),
+    balanceNote: hbStr(b.balance_note, 5000) || null,
+    basedOn: hbStr(b.based_on, 255) || null,
+  };
+}
+
+const HB_DUPLICATE = (kind, name) => `You already have a ${kind} called “${name}”.`;
+
+/*
+ * Export / import — the LIBRARY, on its own, never inside a campaign file.
+ *
+ * Homebrew belongs to the DM, not to a campaign, so it travels on its own:
+ * from one instance to another, or to another DM. A campaign file carries
+ * none of it. What a character has is a spell NAME on their sheet, and a
+ * name is all that crosses with the campaign; at a table without that
+ * homebrew it is a name with no card behind it, and nothing else leaks.
+ *
+ * No ids and no campaign links in the file: usage is per table, and a
+ * campaign id means nothing on another instance.
+ *
+ * Literal paths, registered before any /:id route (routeOrder.test.js).
+ */
+app.get('/api/homebrew/export', requireRole(['dm', 'admin']), async (req, res) => {
+  try {
+    const r = await pool.query(
+      `SELECT kind, name, status, data, balance_note, based_on
+         FROM homebrew_entries WHERE user_id=$1 ORDER BY kind, name`,
+      [req.session.userId],
+    );
+    res.json({
+      type: 'homebrew-library',
+      version: 1,
+      exported_at: new Date().toISOString(),
+      entries: r.rows,
+    });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+/**
+ * Adds what is new; never overwrites. An entry whose kind and name the
+ * library already has is skipped and named in the reply, so importing the
+ * same file twice changes nothing and a DM's edits are never replaced by an
+ * older copy. Each entry goes through the same cleaner as a manual save;
+ * one that does not clean (no name, unknown kind) is reported as invalid.
+ */
+app.post('/api/homebrew/import', requireRole(['dm', 'admin']), async (req, res) => {
+  const bundle = req.body ?? {};
+  if (bundle.type !== 'homebrew-library' || !Array.isArray(bundle.entries))
+    return res.status(400).json({ error: 'Not a homebrew library file' });
+  if (bundle.entries.length > 5000)
+    return res.status(400).json({ error: 'Too many entries in one file' });
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const added = [], skipped = [];
+    let invalid = 0;
+    for (const raw of bundle.entries) {
+      const f = homebrewFields(raw);
+      if (f.error) { invalid++; continue; }
+      const r = await client.query(
+        `INSERT INTO homebrew_entries (user_id, kind, name, status, data, balance_note, based_on)
+         VALUES ($1,$2,$3,$4,$5,$6,$7)
+         ON CONFLICT (user_id, kind, name) DO NOTHING RETURNING id`,
+        [req.session.userId, f.kind, f.name, f.status, f.data, f.balanceNote, f.basedOn],
+      );
+      (r.rows.length ? added : skipped).push(f.name);
+    }
+    await client.query('COMMIT');
+    res.json({ added: added.length, skipped, invalid });
+  } catch (e) {
+    await client.query('ROLLBACK').catch(() => {});
+    res.status(500).json({ error: e.message });
+  } finally { client.release(); }
+});
+
+/** The DM's library, newest edit first, each with the campaigns that use it. */
+app.get('/api/homebrew', requireRole(['dm', 'admin']), async (req, res) => {
+  try {
+    const kind = typeof req.query.kind === 'string' ? req.query.kind : null;
+    const r = await pool.query(
+      `SELECT e.id, e.kind, e.name, e.status, e.data, e.balance_note, e.based_on,
+              e.created_at, e.updated_at,
+              COALESCE(json_agg(json_build_object(
+                'campaign_id', c.id, 'campaign_name', c.name, 'is_public', ch.is_public)
+                ORDER BY c.name) FILTER (WHERE c.id IS NOT NULL), '[]') AS campaigns
+         FROM homebrew_entries e
+         LEFT JOIN campaign_homebrew ch ON ch.entry_id = e.id
+         LEFT JOIN campaigns c ON c.id = ch.campaign_id AND c.deleted_at IS NULL
+        WHERE e.user_id = $1 ${kind ? 'AND e.kind = $2' : ''}
+        GROUP BY e.id
+        ORDER BY e.updated_at DESC`,
+      kind ? [req.session.userId, kind] : [req.session.userId],
+    );
+    res.json(r.rows);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/api/homebrew', requireRole(['dm', 'admin']), async (req, res) => {
+  const f = homebrewFields(req.body);
+  if (f.error) return res.status(400).json({ error: f.error });
+  try {
+    const r = await pool.query(
+      `INSERT INTO homebrew_entries (user_id, kind, name, status, data, balance_note, based_on)
+       VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *`,
+      [req.session.userId, f.kind, f.name, f.status, f.data, f.balanceNote, f.basedOn],
+    );
+    res.json({ ...r.rows[0], campaigns: [] });
+  } catch (e) {
+    if (e.code === '23505') return res.status(409).json({ error: HB_DUPLICATE(f.kind, f.name) });
+    res.status(500).json({ error: e.message });
+  }
+});
+
+/** Edit. The kind is the entry's own — a spell does not become a creature. */
+app.put('/api/homebrew/:id', requireRole(['dm', 'admin']), async (req, res) => {
+  try {
+    const cur = await pool.query('SELECT kind FROM homebrew_entries WHERE id=$1 AND user_id=$2',
+      [req.params.id, req.session.userId]);
+    if (!cur.rows.length) return res.status(404).json({ error: 'Not found' });
+    const f = homebrewFields(req.body, cur.rows[0].kind);
+    if (f.error) return res.status(400).json({ error: f.error });
+    const r = await pool.query(
+      `UPDATE homebrew_entries
+          SET name=$1, status=$2, data=$3, balance_note=$4, based_on=$5, updated_at=CURRENT_TIMESTAMP
+        WHERE id=$6 AND user_id=$7 RETURNING *`,
+      [f.name, f.status, f.data, f.balanceNote, f.basedOn, req.params.id, req.session.userId],
+    );
+    res.json(r.rows[0]);
+  } catch (e) {
+    if (e.code === '23505') return res.status(409).json({ error: 'You already have one with that name.' });
+    res.status(500).json({ error: e.message });
+  }
+});
+
+/** Delete. Every campaign stops using it (ON DELETE CASCADE); the page says which first. */
+app.delete('/api/homebrew/:id', requireRole(['dm', 'admin']), async (req, res) => {
+  try {
+    const r = await pool.query('DELETE FROM homebrew_entries WHERE id=$1 AND user_id=$2 RETURNING id',
+      [req.params.id, req.session.userId]);
+    if (!r.rows.length) return res.status(404).json({ error: 'Not found' });
+    res.json({ success: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+/**
+ * The homebrew a campaign uses. The DM gets everything it uses, with what is
+ * revealed; a player gets the revealed entries only — filtered here, in SQL —
+ * and never the balance note, which is the DM's working notes on the entry.
+ */
+app.get('/api/campaigns/:campaignId/homebrew', requireAuth, async (req, res) => {
+  const { campaignId } = req.params;
+  try {
+    if (!await canAccessCampaign(campaignId, req.session.userId, req.session.role))
+      return res.status(403).json({ error: 'Access denied' });
+    const isDM = await isCampaignDm(campaignId, req.session.userId, req.session.role);
+    const r = await pool.query(
+      `SELECT e.id, e.kind, e.name, e.status, e.data, e.based_on, e.updated_at, ch.is_public
+              ${isDM ? ', e.balance_note' : ''}
+         FROM campaign_homebrew ch
+         JOIN homebrew_entries e ON e.id = ch.entry_id
+        WHERE ch.campaign_id = $1 ${isDM ? '' : 'AND ch.is_public = true'}
+        ORDER BY e.kind, e.name`,
+      [campaignId],
+    );
+    res.json(r.rows);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+/**
+ * Use an entry in a campaign, reveal it, or stop using it: `{ used, is_public }`.
+ * Only the campaign's DM, and only with an entry from their own library — a
+ * campaign cannot borrow from somebody else's.
+ */
+app.put('/api/campaigns/:campaignId/homebrew/:entryId', requireRole(['dm', 'admin']), async (req, res) => {
+  const { campaignId, entryId } = req.params;
+  const { used = true, is_public: isPublic = false } = req.body ?? {};
+  try {
+    if (!await dmOwnsCampaign(campaignId, req.session.userId, req.session.role))
+      return res.status(403).json({ error: 'Access denied' });
+    const own = await pool.query('SELECT 1 FROM homebrew_entries WHERE id=$1 AND user_id=$2',
+      [entryId, req.session.userId]);
+    if (!own.rows.length) return res.status(404).json({ error: 'Not found' });
+    if (used === false) {
+      await pool.query('DELETE FROM campaign_homebrew WHERE campaign_id=$1 AND entry_id=$2',
+        [campaignId, entryId]);
+      return res.json({ used: false, is_public: false });
+    }
+    const r = await pool.query(
+      `INSERT INTO campaign_homebrew (campaign_id, entry_id, is_public) VALUES ($1,$2,$3)
+       ON CONFLICT (campaign_id, entry_id) DO UPDATE SET is_public = EXCLUDED.is_public
+       RETURNING is_public`,
+      [campaignId, entryId, isPublic === true],
+    );
+    res.json({ used: true, is_public: r.rows[0].is_public });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 // ─── Campaign backlog ("pendings") ───────────────────────────────────────────
 //
 // Things the DM means to use some day — a letter to deliver, an NPC to bring
@@ -11375,6 +11636,46 @@ async function initializeDatabase() {
       );
     `);
 
+    /*
+     * Homebrew: the DM's own spells (and, later, creatures, feats…).
+     *
+     * A LIBRARY, owned by a user, not a campaign: one spell used at two
+     * tables is one spell, and per-campaign copies would drift apart. Each
+     * campaign picks which entries it uses in campaign_homebrew, and reveals
+     * them to its players there — the same gate NPCs have.
+     *
+     * One table with a JSON body per kind rather than a table per kind. The
+     * body is cleaned on every write by the kind's validator (see
+     * HOMEBREW_KINDS), so JSONB here means "shape owned by the app", not
+     * "anything goes". `kind` has no CHECK for the same reason: adding a
+     * kind is a code change, and a constraint would make it a migration too.
+     */
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS homebrew_entries (
+        id           SERIAL PRIMARY KEY,
+        user_id      INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        kind         VARCHAR(20) NOT NULL,
+        name         VARCHAR(255) NOT NULL,
+        status       VARCHAR(20) NOT NULL DEFAULT 'draft'
+                       CHECK (status IN ('draft','playtest','final')),
+        data         JSONB NOT NULL DEFAULT '{}'::jsonb,
+        balance_note TEXT,
+        based_on     VARCHAR(255),
+        created_at   TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at   TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE (user_id, kind, name)
+      );
+    `);
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS campaign_homebrew (
+        campaign_id INTEGER NOT NULL REFERENCES campaigns(id) ON DELETE CASCADE,
+        entry_id    INTEGER NOT NULL REFERENCES homebrew_entries(id) ON DELETE CASCADE,
+        is_public   BOOLEAN NOT NULL DEFAULT false,
+        added_at    TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        PRIMARY KEY (campaign_id, entry_id)
+      );
+    `);
+
     /**
      * Campaign surveys — asking the table how the campaign is going.
      *
@@ -12202,6 +12503,10 @@ async function initializeDatabase() {
       ['idx_csi_session',                  'campaign_session_items(session_id)'],
       ['idx_csi_campaign_state',           'campaign_session_items(campaign_id, state)'],
       ['idx_pendings_campaign',            'campaign_pendings(campaign_id, parent_id)'],
+      // Homebrew. The library is read per owner; usage is looked up by entry
+      // when listing which campaigns use one (the PK already serves campaign).
+      ['idx_homebrew_user_kind',           'homebrew_entries(user_id, kind)'],
+      ['idx_campaign_homebrew_entry',      'campaign_homebrew(entry_id)'],
       ['idx_pde_campaign_player',          'player_diary_entries(campaign_id, player_id)'],
 
       // PC sheets — read on every sheet load.

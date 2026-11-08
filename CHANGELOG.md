@@ -8,6 +8,18 @@ Longer write-ups of these entries are in this file's git history.
 ## [Unreleased]
 
 ### Added
+- **Homebrew creatures**: stat blocks of your own, edited in the same sheet as NPCs (SRD import
+  included), used and revealed per campaign. An NPC's stat block can **start from one** of them.
+- **Item Cards inside Homebrew**: your item library is the Homebrew page's *Items* tab. The public
+  Item Cards page is unchanged.
+- **Homebrew spells on character sheets.** A campaign's revealed homebrew spells are offered in the
+  stat sheet's spell pickers (marked *homebrew*) and open their own card; the DM sees every spell
+  the campaign uses, on characters and NPC stat blocks alike.
+- **Homebrew export / import**: the whole library as one file, separate from campaign files.
+  Import adds new entries and keeps yours where a name already exists.
+- **Homebrew** (DM tools): your own spells in one library — start from an SRD spell, mark
+  them draft / playtest / final, keep private balance notes, and choose per campaign which use
+  them and which have revealed them to the players.
 - **DM Tips** (DM tools on the home page): what goes where — Sessions, Diary, Journal, Timeline —
   who sees each, and a session from planning to publishing the diary.
 - **Full screen** for the Sessions and Char Tree tabs in Manage Campaigns (Esc to leave).

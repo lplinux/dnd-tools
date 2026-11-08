@@ -30,9 +30,11 @@ const BRIDGE_ORIGIN = window.location.origin;
  * @param {string}   frameId   query suffix identifying the owner, e.g. "npc=7"
  * @param {string}   [title]   iframe title, for screen readers
  * @param {boolean}  [autoHeight]  grow the frame to the sheet's own height
+ * @param {number}   [campaignId]  the campaign the sheet belongs to, so its
+ *                                 spell pickers offer that campaign's homebrew
  */
 export default function StatsSheetFrame({
-  stats, onSave, frameId, title = 'Stat sheet', autoHeight = true,
+  stats, onSave, frameId, title = 'Stat sheet', autoHeight = true, campaignId = null,
 }) {
   const confirm = useConfirm();
   const iframeRef = useRef(null);
@@ -149,7 +151,7 @@ export default function StatsSheetFrame({
       <div className="flex-1 overflow-y-auto bg-[#f7f0dc]">
         <iframe
           ref={iframeRef}
-          src={`/npc-sheet?embedded=1&${frameId}`}
+          src={`/npc-sheet?embedded=1&${frameId}${campaignId ? `&campaign=${campaignId}` : ''}`}
           title={title}
           className="w-full border-0 block"
           style={{ height: autoHeight ? frameH : '100%', minHeight: '100%' }}

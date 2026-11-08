@@ -204,6 +204,18 @@ campaign_session_items
 `campaign_id` is carried on the items as well as the session so the On-Going view is one
 indexed read rather than a join back through `campaign_sessions` for every row.
 
+**Homebrew** (`homebrew_entries`, `campaign_homebrew`) is a library owned by a **user**, not a
+campaign: one spell used at two tables is one row. A campaign points at the entries it uses, with
+`is_public` as the reveal — the same gate NPCs have — and a player's read filters on it in SQL and
+never selects `balance_note`. One table with a JSONB body per `kind`, rebuilt on every write by
+that kind's cleaner in `HOMEBREW_KINDS`, so unknown keys are dropped rather than stored; `kind`
+has no CHECK because adding one is a code change. A spell's body is the shape
+`data/spellDetails.js` reads SRD spells into, so `SpellCard` renders both.
+A stat sheet reaches a campaign's homebrew through `StatsSheetFrame`'s `campaignId`, passed to the
+iframe as `?campaign=`; the sheet fetches `/api/campaigns/:id/homebrew` (revealed only, for a
+player) and offers those names in its spell pickers. Sheets store names, never entry ids, which is
+why the library's export/import is separate from the campaign bundle and needs no id remapping.
+
 **The campaign backlog** (`campaign_pendings`) is the same card shape with no session and no
 section: things to use some day. Its own table rather than session cards with a NULL session,
 because every query on `campaign_session_items` is keyed on a session and a card with none

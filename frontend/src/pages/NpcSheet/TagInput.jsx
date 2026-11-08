@@ -8,6 +8,9 @@
  * Props: options string[], values string[], onAdd(v), onRemove(v), placeholder,
  *        srdResource ('conditions' | 'damage-types') — when set, chips that exist
  *        in the 2024 SRD gain an ⓘ lookup button.
+ *        badgeFor(v) — optional label shown beside a suggestion (e.g. "homebrew").
+ *        infoFor(v)  — optional node to use as a chip's ⓘ instead of the SRD one;
+ *                      null falls back to the SRD lookup.
  */
 
 import { useRef, useState } from 'react';
@@ -16,6 +19,7 @@ import SrdInfo, { useSrdIndex, srdHasEntry } from '@/components/SrdInfo';
 export default function TagInput({
   options = [], values = [], onAdd, onRemove,
   placeholder = 'Type to search…', srdResource = null,
+  badgeFor = null, infoFor = null,
 }) {
   // One indexed request per resource per session — not one per chip.
   const srdSlugs = useSrdIndex(srdResource);
@@ -60,9 +64,9 @@ export default function TagInput({
         {values.map((v) => (
           <span key={v} className="tag">
             {v}
-            {srdResource && srdHasEntry(srdSlugs, v) && (
+            {infoFor?.(v) ?? (srdResource && srdHasEntry(srdSlugs, v) && (
               <SrdInfo resource={srdResource} name={v} />
-            )}
+            ))}
             <button
               type="button"
               className="tag-x"
@@ -96,6 +100,7 @@ export default function TagInput({
               onPointerDown={(e) => { e.preventDefault(); handleAdd(o); }}
             >
               {o}
+              {badgeFor?.(o) && <span className="tag-opt-badge">{badgeFor(o)}</span>}
             </div>
           ))}
         </div>

@@ -25,6 +25,34 @@ PC Sheet / Journey Map / Manage Campaign fix batch that went with it.
 - [ ] **Open DM Tips** — four sections; the *What goes where* table scrolls sideways on a phone
       rather than squashing. A player going to `/dm-tips` is sent home.
 
+## Homebrew creatures and the Items tab
+
+- [ ] **Homebrew → 🐉 Creatures → ＋ New** "Ash Wyrmling", Draft. Its stat sheet opens on the right
+      with the name filled in. Pull a monster from the SRD inside the sheet, change the CR, **💾
+      Save** — the list line shows *CR · type · alignment*.
+- [ ] **✎ Details** — rename it and add a balance note; the stat block is untouched.
+- [ ] Switch between two creatures with unsaved sheet edits — each opens its own saved sheet.
+- [ ] **Manage Campaigns → NPCs → ⚔** on an NPC with a stat block: *Start from one of your
+      creatures* → pick it — asked to replace; yes — the sheet now holds the creature, under the
+      NPC's name. On an NPC without one: no question.
+- [ ] **🗡️ Items** — your Item Cards library, editor and preview as on the Item Cards page, with
+      no second header. Make a card here: it is on the Item Cards page too. Homebrew's own Export /
+      Import are hidden on this tab.
+
+## Homebrew — library and spells
+
+- [ ] **Home → DM tools → Homebrew.** Creatures, Items and Feats show as *coming*, not clickable.
+- [ ] **＋ New**, start from an SRD spell (Fire Bolt) — every field fills in, the name becomes
+      *Fire Bolt (homebrew)*, and *Based on the official Fire Bolt* appears. Save: it shows as the
+      same card the stat sheet uses.
+- [ ] Untick **M** — the material field greys out; saved, the card has no material.
+- [ ] A second spell with the same name is refused with a sentence, not an error.
+- [ ] **Campaigns** panel: tick *Uses it* on Leruhy — *Revealed* becomes tickable. As a player of
+      Leruhy nothing has changed yet (there is no player view yet; check `GET
+      /api/campaigns/9/homebrew` returns `[]` for them, and the spell once *Revealed*).
+- [ ] Delete a spell used by a campaign — the confirmation names the campaign.
+- [ ] On a phone: the list, then the spell full width with **‹ All** to go back.
+
 ## Full screen, and making a journal entry public
 
 - [ ] **Manage Campaigns → 🗓 Sessions → Full screen** — the tab covers the page; the session on
