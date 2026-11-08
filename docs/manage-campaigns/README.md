@@ -284,6 +284,12 @@ Open the **Settings** tab and click **💾 Export Campaign** (under "Export / Ba
 - DM cross-connections from the character tree
 - All Journey Maps — including background image, all pins and region polygons (with per-pin `icon_scale`), `scope_type`/`scope_location_ref`, distances, and paths with waypoints, route type, and dragged name-label positions (`label_x`/`label_y`)
 - **Session prep** — every session (number, title, date, played/prepared) and all of its cards, nested, with their section and state, as a top-level `sessions[]` array. The same shape the `campaign-sessions` file uses, and written by the same code
+- The **campaign backlog** — its cards, nested, with their state, as `pendings[]`
+- **Character evolution** — every learning path, teacher and homebrew card, nested, as
+  `character_paths[]`. Each top-level card names its character as `player_ref` (none for the party's
+  own); sub-cards belong to their card's character and category. Importing into an existing campaign
+  matches characters **by name**, and a card whose character is not there is left out and named —
+  never filed under the party
 
 > **Never exported:** campaign **invite links**. An invite is a credential rather than campaign
 > content — its token is unique, its user references do not exist on the far side, and it expires

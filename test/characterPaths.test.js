@@ -64,11 +64,23 @@ describe('it is the DM\'s alone', () => {
       const body = source.slice(m.index, source.indexOf('\n});', m.index));
       if (!body.includes('character_paths')) continue;
       if (m[2].startsWith('/api/campaigns/:campaignId/paths')) continue;
+      // The campaign bundle carries it — export, restore, import-into — and
+      // all three are the DM's: a player cannot reach any of them.
+      if (BUNDLE_ROUTES.includes(`${m[1].toUpperCase()} ${m[2]}`)) {
+        expect(body, `${m[2]} is not DM-only`).toMatch(/requireRole\(\['dm'(, 'admin')?\]\)/);
+        continue;
+      }
       offenders.push(`${m[1].toUpperCase()} ${m[2]}`);
     }
     expect(offenders, 'a route outside the paths group reads character_paths').toEqual([]);
   });
 });
+
+const BUNDLE_ROUTES = [
+  'GET /api/campaigns/:id/export',
+  'POST /api/campaigns/import',
+  'POST /api/campaigns/:campaignId/import-into',
+];
 
 describe('a card cannot end up where nothing renders it', () => {
   const add = route("app.post('/api/campaigns/:campaignId/paths'");
@@ -255,5 +267,39 @@ describe('the page', () => {
     const add = source.indexOf('ADD CONSTRAINT character_paths_category_check');
     expect(drop).toBeLessThan(move);
     expect(move).toBeLessThan(add);
+  });
+});
+
+describe('in the campaign bundle', () => {
+  const expAt = source.indexOf("app.get('/api/campaigns/:id/export'");
+  const exp = source.slice(expAt, source.indexOf('\n});', expAt));
+  const helpers = source.slice(source.indexOf('async function pathsForExport('), source.indexOf('// ─── Character Relationship Tree'));
+
+  it('is exported nested and id-free, each root naming its character as a ref', () => {
+    expect(exp).toMatch(/character_paths: pathsOut,/);
+    expect(helpers).toMatch(/player_ref: i\.player_id \? \(playerRefById\[i\.player_id\] \|\| null\) : null/);
+    expect(helpers).not.toMatch(/\bid: i\.id/);
+  });
+
+  it('is restored after the players, so every ref resolves', () => {
+    expect(source).toMatch(/pendings = \[\], character_paths = \[\] \} = bundle;/);
+    expect(source).toMatch(/const pathsIn = await importPathList\(client, newId, character_paths, playerIdByRef\)/);
+  });
+
+  it("never files a character's path under the party when the character is missing", () => {
+    expect(helpers).toMatch(/if \(playerId == null\) \{ skipped\.push\(/);
+  });
+
+  it('refuses an unknown category rather than defaulting it, here too', () => {
+    expect(helpers).toMatch(/if \(!PATH_CATEGORIES\.includes\(root\.category\)\) \{\s*skipped\.push/);
+  });
+
+  it("sub-cards take their root's character and category", () => {
+    expect(helpers).toMatch(/await walk\(raw\.children, r\.rows\[0\]\.id, playerId, category, depth \+ 1\)/);
+  });
+
+  it('is swapped whole on import-into, matching characters by name, and says what it skipped', () => {
+    expect(source).toMatch(/if \(Array\.isArray\(bundle\.character_paths\)\) \{\s*const had = await client\.query\(\s*'DELETE FROM character_paths WHERE campaign_id=\$1 AND parent_id IS NULL RETURNING id'/);
+    expect(source).toMatch(/report\.character_paths = \{ added: r\.added, replaced: had\.rows\.length, skipped: r\.skipped \}/);
   });
 });

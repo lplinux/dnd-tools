@@ -254,12 +254,13 @@ describe('surveys travel with their history', () => {
 });
 
 describe('the bundle version', () => {
-  it('is 11', () => {
+  it('is 13', () => {
     // 6 added the NPC detail fields and the journal; 7 the session prep;
     // 8 each NPC's stat block; 9 the surveys, with their whole history;
     // 10 a file that may be PARTIAL, naming its `parts`; 11 the campaign
-    // backlog. Documentary only — see the next test.
-    expect(exp).toMatch(/version: 11/);
+    // backlog; 12 character evolution; 13 timeline event visibility.
+    // Documentary only — see the next test.
+    expect(exp).toMatch(/version: 13/);
   });
 
   it('is never read by the import', () => {

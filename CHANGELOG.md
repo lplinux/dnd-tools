@@ -74,9 +74,17 @@ Longer write-ups of these entries are in this file's git history.
 - Restoring a campaign from the Trash renames it if its name is taken.
 - **Session cards:** changing a card's state now changes its sub-cards too, for every state
   (before, only Done and Skipped did).
-- Campaign files are version 11 and may be partial. Older files still import.
+- Campaign files are version 13 and may be partial. Older files still import.
 
 ### Fixed
+- **Timeline events keep whether they were revealed** through campaign and timeline export/import.
+  Before, a restored campaign had every event hidden, including ones the table had already seen.
+  Files from before this fix still import, with their events hidden.
+- **A player's timeline export no longer includes events the DM has hidden from them.**
+- **Character evolution was missing from campaign exports**, so a backup restored without any learning
+  paths, teachers or homebrew ideas. It now travels with the campaign, and can be exported on its own
+  (*Export part… → Character evolution*). Importing into another campaign matches characters by name
+  and names any it could not place.
 - *Around this date* put every timeline event a day late — one starting that day showed as "in 1d" — and
   drifted further each year on Gregorian campaigns.
 - The Account and Tools menus could open behind the Sessions section headings.

@@ -1854,8 +1854,17 @@ app.get('/api/player-timelines/:timelineId/export', requireAuth, async (req, res
       return res.status(403).json({ error: 'Access denied' });
     }
     const cid = t.campaign_id;
+    /*
+     * A player exports only what they can see. This route is open to the
+     * timeline's own player, and it once selected every row — so an event
+     * the DM had not revealed, invisible in the app, came out in the file.
+     * The same rule as the entries route above, in SQL.
+     */
+    const canSeeHidden = ['dm', 'admin'].includes(req.session.role);
     const [entriesR, playersR, npcsR, relsR, metaR] = await Promise.all([
-      pool.query('SELECT * FROM player_timeline_entries WHERE timeline_id=$1 ORDER BY year ASC, day_of_year ASC, created_at ASC', [timelineId]),
+      pool.query(`SELECT * FROM player_timeline_entries WHERE timeline_id=$1
+                    ${canSeeHidden ? '' : 'AND visible_to_players = true'}
+                  ORDER BY year ASC, day_of_year ASC, created_at ASC`, [timelineId]),
       pool.query('SELECT id, player_name FROM campaign_players WHERE campaign_id=$1', [cid]),
       pool.query('SELECT id, name FROM campaign_npcs WHERE campaign_id=$1', [cid]),
       pool.query(`SELECT pr.id, pr.name FROM pc_relationships pr
@@ -1883,10 +1892,13 @@ app.get('/api/player-timelines/:timelineId/export', requireAuth, async (req, res
       title: e.title, description: e.description || null, location: e.location || null,
       year: e.year, day_of_year: e.day_of_year, duration_days: e.duration_days || 1,
       is_party: !!e.is_party,
+      visible_to_players: e.visible_to_players === true,
       actors: actorsFor(e.player_ids),
     }));
     res.json({
-      version: 1, type: 'timeline',
+      // 2 adds `visible_to_players` per event. A version-1 file has none, and
+      // its events import hidden.
+      version: 2, type: 'timeline',
       timeline: { name: t.name },
       calendar_type: metaR.rows[0]?.calendar_type || 'harptos',
       events,
@@ -1956,11 +1968,13 @@ app.post('/api/campaigns/:campaignId/import/timeline', requireRole(['dm', 'admin
       }
       await client.query(
         `INSERT INTO player_timeline_entries
-           (campaign_id, player_id, timeline_id, created_by, title, description, location, year, day_of_year, duration_days, player_ids, is_party)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
+           (campaign_id, player_id, timeline_id, created_by, title, description, location, year, day_of_year, duration_days, player_ids, is_party, visible_to_players)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
         [campaignId, player_id, tlId, req.session.userId,
           e.title || '(untitled)', e.description || null, loc,
-          e.year || 1492, e.day_of_year || 1, e.duration_days || 1, ids, !!e.is_party]
+          e.year || 1492, e.day_of_year || 1, e.duration_days || 1, ids, !!e.is_party,
+          // Revealed only when the file says so; an older file lands hidden.
+          e.visible_to_players === true]
       );
       n++;
     }
@@ -8517,6 +8531,92 @@ async function importPendingList(client, campaignId, list) {
   return n;
 }
 
+/*
+ * ── Character evolution (character_paths) in the campaign bundle ──
+ *
+ * Nested like the backlog, id-free. Only a ROOT names its character and
+ * category: a sub-card always belongs to its parent's (the routes enforce
+ * it), so writing them again on every child would only invite a file whose
+ * children disagree with their parent.
+ *
+ * The character travels as a player ref, like the journal's. No ref means
+ * the PARTY — a path or teacher the whole group shares — so a ref that does
+ * not resolve on import must NOT fall back to null: that would file one
+ * character's private path under the party. It is skipped and named instead.
+ */
+// PATH_CATEGORIES and PATH_STATES are the routes' own (with the Evolution
+// routes below); a bundle is held to exactly what the page can write.
+async function pathsForExport(campaignId, playerRefById) {
+  const r = await pool.query(
+    `SELECT id, parent_id, player_id, category, title, body, state FROM character_paths
+      WHERE campaign_id=$1 ORDER BY position ASC, id ASC`, [campaignId]);
+  const kids = new Map();
+  for (const i of r.rows) {
+    const k = i.parent_id ?? 'root';
+    if (!kids.has(k)) kids.set(k, []);
+    kids.get(k).push(i);
+  }
+  const build = (k, depth) => (depth > 50 ? [] : (kids.get(k) ?? []).map((i) => {
+    const children = build(i.id, depth + 1);
+    return {
+      ...(depth === 0 ? {
+        player_ref: i.player_id ? (playerRefById[i.player_id] || null) : null,
+        category: i.category,
+      } : {}),
+      title: i.title, body: i.body, state: i.state,
+      ...(children.length ? { children } : {}),
+    };
+  }));
+  return build('root', 0);
+}
+
+/**
+ * Append nested paths to a campaign, inside the caller's transaction.
+ * Returns `{ added, skipped }` — `skipped` names the roots whose character
+ * is not in this campaign.
+ */
+async function importPathList(client, campaignId, list, playerIdByRef) {
+  let added = 0;
+  const skipped = [];
+  const walk = async (items, parentId, playerId, category, depth) => {
+    if (depth > 50) return;
+    for (const raw of items ?? []) {
+      if (!raw) continue;
+      const pos = (await client.query(
+        `SELECT COALESCE(MAX(position), -1) + 1 AS pos FROM character_paths
+          WHERE campaign_id=$1 AND parent_id IS NOT DISTINCT FROM $2
+            AND player_id IS NOT DISTINCT FROM $3 AND category=$4`,
+        [campaignId, parentId, playerId, category],
+      )).rows[0].pos;
+      const r = await client.query(
+        `INSERT INTO character_paths (campaign_id, player_id, parent_id, category, title, body, state, position)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING id`,
+        [campaignId, playerId, parentId, category, journalStr(raw.title, 255),
+          journalStr(raw.body, 50000), PATH_STATES.includes(raw.state) ? raw.state : 'idea', pos],
+      );
+      added += 1;
+      await walk(raw.children, r.rows[0].id, playerId, category, depth + 1);
+    }
+  };
+  for (const root of list ?? []) {
+    if (!root) continue;
+    // Refused, not defaulted — the same rule as the page's own route: a
+    // default would file it under something the DM never chose.
+    if (!PATH_CATEGORIES.includes(root.category)) {
+      skipped.push(`${root.title || '(untitled)'} — unknown category "${root.category ?? ''}"`);
+      continue;
+    }
+    const category = root.category;
+    let playerId = null;
+    if (root.player_ref) {
+      playerId = playerIdByRef[root.player_ref] ?? null;
+      if (playerId == null) { skipped.push(`${root.title || '(untitled)'} — ${root.player_ref}`); continue; }
+    }
+    await walk([root], null, playerId, category, 0);
+  }
+  return { added, skipped };
+}
+
 // ─── Character Relationship Tree (DM cross-player connections) ────────────────
 // GET all pc_relationships for every player in a campaign + DM cross-connections
 app.get('/api/campaigns/:campaignId/char-tree', requireRole(['dm', 'admin']), async (req, res) => {
@@ -9395,6 +9495,10 @@ app.get('/api/campaigns/:id/export', requireRole(['dm']), async (req, res) => {
               year: e.year,
               day_of_year: e.day_of_year,
               duration_days: e.duration_days,
+              // Revealed to the players or not. Without it a restore put every
+              // event back under the column's default — hidden — including ones
+              // the table had already been shown.
+              visible_to_players: e.visible_to_players === true,
               player_id_refs: playerIdRefs,
             };
           }),
@@ -9572,6 +9676,10 @@ app.get('/api/campaigns/:id/export', requireRole(['dm']), async (req, res) => {
               year: e.year,
               day_of_year: e.day_of_year,
               duration_days: e.duration_days,
+              // Revealed to the players or not. Without it a restore put every
+              // event back under the column's default — hidden — including ones
+              // the table had already been shown.
+              visible_to_players: e.visible_to_players === true,
               player_id_refs: playerIdRefs,
             };
           }),
@@ -9582,13 +9690,14 @@ app.get('/api/campaigns/:id/export', requireRole(['dm']), async (req, res) => {
     // Party timeline events — campaign-scoped, no owning player/timeline (excluded from
     // the per-player/DM timeline queries above), so export them separately.
     const partyRes = await pool.query(
-      `SELECT title, description, location, year, day_of_year, duration_days
+      `SELECT title, description, location, year, day_of_year, duration_days, visible_to_players
        FROM player_timeline_entries WHERE campaign_id=$1 AND is_party=true
        ORDER BY year ASC, day_of_year ASC`, [id]
     );
     const partyEventsOut = partyRes.rows.map(e => ({
       title: e.title, description: e.description || null, location: e.location || null,
       year: e.year, day_of_year: e.day_of_year, duration_days: e.duration_days,
+      visible_to_players: e.visible_to_players === true,
     }));
 
     /*
@@ -9637,6 +9746,7 @@ app.get('/api/campaigns/:id/export', requireRole(['dm']), async (req, res) => {
     const sessionsOut = await sessionsForExport(id);
     const pendingsOut = await pendingsForExport(id);
     // After playerRefById is built — the responses name their player.
+    const pathsOut = await pathsForExport(id, playerRefById);
     const surveysOut = await surveysForExport(id, playerRefById);
 
     /*
@@ -9654,8 +9764,9 @@ app.get('/api/campaigns/:id/export', requireRole(['dm']), async (req, res) => {
       // still import: every key here is additive and the import defaults
       // each one, so nothing reads this number — see the import side.
       // 10: a file may be PARTIAL, and carries `parts` naming what it is.
-      // 11 adds `pendings`, the campaign backlog.
-      version: 11,
+      // 11 added `pendings`, the campaign backlog; 12 `character_paths`;
+      // 13 `visible_to_players` on every timeline and party event.
+      version: 13,
       exported_at: new Date().toISOString(),
       type: 'campaign',
       item_cards: cardsOut,
@@ -9710,6 +9821,7 @@ app.get('/api/campaigns/:id/export', requireRole(['dm']), async (req, res) => {
       campaign_diary: diaryRes.rows,
       sessions: sessionsOut,
       pendings: pendingsOut,
+      character_paths: pathsOut,
       surveys: surveysOut,
     };
     const out = selectParts(full, sel.parts);
@@ -9733,7 +9845,7 @@ app.get('/api/campaign-export-parts', requireRole(['dm', 'admin']), (req, res) =
 app.post('/api/campaigns/import', requireRole(['dm']), async (req, res) => {
   const bundle = req.body;
   if (bundle.type !== 'campaign') return res.status(400).json({ error: 'Not a campaign export file' });
-  const { campaign, players = [], locations = [], npcs = [], cross_connections = [], journey_maps = [], dm_timelines = [], party_events = [], campaign_diary = [], campaign_journal = [], sessions = [], surveys = [], pendings = [] } = bundle;
+  const { campaign, players = [], locations = [], npcs = [], cross_connections = [], journey_maps = [], dm_timelines = [], party_events = [], campaign_diary = [], campaign_journal = [], sessions = [], surveys = [], pendings = [], character_paths = [] } = bundle;
   if (!campaign?.name || !String(campaign.name).trim()) return res.status(400).json({ error: 'Missing campaign name' });
   const name = String(campaign.name).trim();
 
@@ -10086,11 +10198,14 @@ app.post('/api/campaigns/import', requireRole(['dm']), async (req, res) => {
           const playerIds = (e.player_id_refs || []).map(resolveToken).filter(Boolean);
           await client.query(
             `INSERT INTO player_timeline_entries
-               (campaign_id, player_id, timeline_id, created_by, title, description, location, year, day_of_year, duration_days, player_ids)
-             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
+               (campaign_id, player_id, timeline_id, created_by, title, description, location, year, day_of_year, duration_days, player_ids, visible_to_players)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
             [newId, playerId, tlId, req.session.userId,
               e.title, e.description || null, e.location || null,
-              e.year || 1492, e.day_of_year || 1, e.duration_days || 1, playerIds]
+              e.year || 1492, e.day_of_year || 1, e.duration_days || 1, playerIds,
+              // Revealed only when the file says so. A file from before the
+              // flag travelled has none, and lands hidden — never the reverse.
+              e.visible_to_players === true]
           );
         }
       }
@@ -10125,11 +10240,12 @@ app.post('/api/campaigns/import', requireRole(['dm']), async (req, res) => {
           }).filter(Boolean);   // an actor that did not resolve is dropped, not stored as NULL
           await client.query(
             `INSERT INTO player_timeline_entries
-               (campaign_id, player_id, timeline_id, created_by, title, description, location, year, day_of_year, duration_days, player_ids)
-             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
+               (campaign_id, player_id, timeline_id, created_by, title, description, location, year, day_of_year, duration_days, player_ids, visible_to_players)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
             [newId, dmPlayerId, tlId, req.session.userId,
               e.title, e.description || null, e.location || null,
-              e.year || 1492, e.day_of_year || 1, e.duration_days || 1, playerIds]
+              e.year || 1492, e.day_of_year || 1, e.duration_days || 1, playerIds,
+              e.visible_to_players === true]
           );
         }
       }
@@ -10215,10 +10331,10 @@ app.post('/api/campaigns/import', requireRole(['dm']), async (req, res) => {
     for (const e of party_events) {
       await client.query(
         `INSERT INTO player_timeline_entries
-           (campaign_id, player_id, timeline_id, created_by, title, description, location, year, day_of_year, duration_days, is_party)
-         VALUES ($1,NULL,NULL,$2,$3,$4,$5,$6,$7,$8,true)`,
+           (campaign_id, player_id, timeline_id, created_by, title, description, location, year, day_of_year, duration_days, is_party, visible_to_players)
+         VALUES ($1,NULL,NULL,$2,$3,$4,$5,$6,$7,$8,true,$9)`,
         [newId, req.session.userId, e.title, e.description || null, e.location || null,
-          e.year || 1492, e.day_of_year || 1, e.duration_days || 1]
+          e.year || 1492, e.day_of_year || 1, e.duration_days || 1, e.visible_to_players === true]
       );
     }
 
@@ -10299,6 +10415,9 @@ app.post('/api/campaigns/import', requireRole(['dm']), async (req, res) => {
     const sessionsIn = await importSessionList(client, newId, req.session.userId, sessions);
     // The backlog beside it. A bundle from before version 11 has none.
     const pendingsIn = await importPendingList(client, newId, pendings);
+    // Character evolution, after the players pass so every ref resolves.
+    // A bundle from before version 12 has none.
+    const pathsIn = await importPathList(client, newId, character_paths, playerIdByRef);
     /*
      * Surveys last, because the responses name players by ref and
      * `playerIdByRef` is only complete after the players pass. A bundle
@@ -10321,6 +10440,8 @@ app.post('/api/campaigns/import', requireRole(['dm']), async (req, res) => {
       surveys: surveysIn,
       session_cards: sessionsIn.cards,
       pendings: pendingsIn,
+      character_paths: pathsIn.added,
+      ...(pathsIn.skipped.length ? { character_paths_skipped: pathsIn.skipped } : {}),
       gear: {
         items: gearAdded,
         cards_added: cardResolve.added,
@@ -10374,7 +10495,7 @@ app.post('/api/campaigns/:campaignId/import-into', requireRole(['dm', 'admin']),
 
     const cid = parseInt(campaignId, 10);
     const report = { locations: null, npcs: null, journal: null, diary: null,
-      sessions: null, surveys: null, pendings: null, skipped: [] };
+      sessions: null, surveys: null, pendings: null, character_paths: null, skipped: [] };
     for (const [key, why] of [['players', 'player sheets, stats and timelines'],
       ['journey_maps', 'maps'], ['dm_timelines', 'DM timelines'],
       ['party_events', 'party events'], ['item_cards', 'gear'],
@@ -10592,6 +10713,25 @@ app.post('/api/campaigns/:campaignId/import-into', requireRole(['dm', 'admin']),
         'DELETE FROM campaign_pendings WHERE campaign_id=$1 AND parent_id IS NULL RETURNING id', [cid]);
       const added = await importPendingList(client, cid, bundle.pendings);
       report.pendings = { added, replaced: had.rows.length };
+    }
+
+    /*
+     * ── Character evolution ──
+     *
+     * Swapped whole, like the backlog — nothing in a path is promised to be
+     * unique, so there is no merge key. Characters are matched by NAME to
+     * this campaign's own players (this import brings none). A path whose
+     * character is not here is skipped and named: filing it under no one
+     * would make it a party-wide path.
+     */
+    if (Array.isArray(bundle.character_paths)) {
+      const had = await client.query(
+        'DELETE FROM character_paths WHERE campaign_id=$1 AND parent_id IS NULL RETURNING id', [cid]);
+      const players = await client.query(
+        'SELECT id, player_name FROM campaign_players WHERE campaign_id=$1', [cid]);
+      const byName = Object.fromEntries(players.rows.map((p) => [p.player_name, p.id]));
+      const r = await importPathList(client, cid, bundle.character_paths, byName);
+      report.character_paths = { added: r.added, replaced: had.rows.length, skipped: r.skipped };
     }
 
     /*

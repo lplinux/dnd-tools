@@ -117,11 +117,12 @@ describe('moving between the backlog and a session', () => {
 describe('the backlog in the campaign bundle', () => {
   it('is exported, and the version says so', () => {
     expect(source).toMatch(/pendings: pendingsOut,/);
-    expect(source).toMatch(/version: 11,/);
+    // 11 is the version that added it; later versions keep it.
+    expect(source).toMatch(/version: 1[1-9],/);
   });
 
   it('is restored with a new campaign, and a bundle without it lands none', () => {
-    expect(source).toMatch(/sessions = \[\], surveys = \[\], pendings = \[\] \} = bundle;/);
+    expect(source).toMatch(/sessions = \[\], surveys = \[\], pendings = \[\][, }]/);
     expect(source).toMatch(/const pendingsIn = await importPendingList\(client, newId, pendings\)/);
   });
 

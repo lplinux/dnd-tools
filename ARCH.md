@@ -494,6 +494,10 @@ per-timeline list, the party list and the public share — so a hidden event nev
 reaches the browser rather than merely going unrendered. A DM's new event starts
 **hidden**; an event a player writes on their own timeline starts visible, since
 defaulting that to hidden would stop a player seeing what they just typed.
+The flag travels as `visible_to_players` in every file an event is in — the campaign bundle (player
+and DM timelines, party events) and the single-timeline file — and an import reveals only on an
+explicit `true`, so a file from before it travelled lands hidden. The single-timeline export applies
+the same SQL filter as the entries route: a player's file never holds a hidden event.
 
 **Two kinds of share token.** `campaign_timeline_shares` grants the whole
 campaign (every player's timeline plus party events); `player_timeline_shares`

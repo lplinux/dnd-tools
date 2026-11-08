@@ -25,6 +25,27 @@ PC Sheet / Journey Map / Manage Campaign fix batch that went with it.
 - [ ] **Open DM Tips** — four sections; the *What goes where* table scrolls sideways on a phone
       rather than squashing. A player going to `/dm-tips` is sent home.
 
+## Timeline visibility in exported files
+
+- [ ] In Leruhy, note one revealed (👁) and one hidden event on a player's timeline, the World
+      timeline and the party lane. **Settings → Export**, then import the file as a new campaign —
+      each event is revealed or hidden exactly as before.
+- [ ] Import an **old** campaign file (from before this fix) — its events land hidden; nothing is
+      revealed by accident.
+- [ ] **As a player**, export your own timeline (⬇) — the file holds only the events you can see.
+      **As the DM**, the same export holds all of them, each with `visible_to_players`.
+- [ ] Import that DM file into a campaign (Manage Campaigns → Import → timeline) — the flags stay.
+
+## Character evolution in campaign files
+
+- [ ] **Settings → Export** Leruhy; open the file — a `character_paths` list, each card naming its
+      character (`player_ref`) or none for the party; sub-cards nested under their card.
+- [ ] Import that file as a **new campaign** — 🌱 Evolution has every character's cards, nested, with
+      their states and notes; party paths and teachers under *The party*.
+- [ ] **Export part… → Character evolution** — *Players* is ticked with it (it needs them).
+- [ ] Import into a campaign that lacks one of the characters — the toast names the cards it left
+      out, and none of them appears under *The party*.
+
 ## Session dates and *Around this date*
 
 - [ ] **＋ New session** after a played one — it opens already dated the day that one ended, and
