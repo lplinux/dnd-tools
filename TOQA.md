@@ -39,6 +39,22 @@ PC Sheet / Journey Map / Manage Campaign fix batch that went with it.
       no second header. Make a card here: it is on the Item Cards page too. Homebrew's own Export /
       Import are hidden on this tab.
 
+## Homebrew on sheets, export/import, and four fixes
+
+- [ ] **Reveal a homebrew spell in Leruhy.** As one of its players, PC Sheet → Stats → type its
+      name at its level: it is offered, marked *homebrew*. Add it — the chip's ⓘ and the name in
+      the spell list open its card. A spell used but *not* revealed is not offered.
+- [ ] **As the DM**, an NPC's stat block (Manage Campaigns → NPCs → ⚔) offers every spell Leruhy
+      uses, revealed or not. The public NPC Sheet offers none.
+- [ ] **Homebrew → ⬇ Export**, then **⬆ Import** the same file — nothing added, every name listed
+      as kept. Edit one, import again — your edit stays.
+- [ ] **Char Tree**: mark a connected NPC dead — a ☠ disc on its circle, *Dead* in its tooltip;
+      unknown shows ?. Both in the legend.
+- [ ] **PC Sheet → DM Notes**: a long note shows a few lines and **Read more**; a short one has no
+      button. **Show less** folds it again.
+- [ ] **Sessions**, scrolled so a section heading is under the header — open **Account** and
+      **Tools**: both menus are on top.
+
 ## Homebrew — library and spells
 
 - [ ] **Home → DM tools → Homebrew.** Creatures, Items and Feats show as *coming*, not clickable.

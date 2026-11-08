@@ -17,6 +17,8 @@ Longer write-ups of these entries are in this file's git history.
   the campaign uses, on characters and NPC stat blocks alike.
 - **Homebrew export / import**: the whole library as one file, separate from campaign files.
   Import adds new entries and keeps yours where a name already exists.
+- **The Char Tree marks dead (☠) and unknown (?) NPCs.**
+- **Long DM notes fold** behind *Read more*.
 - **Homebrew** (DM tools): your own spells in one library — start from an SRD spell, mark
   them draft / playtest / final, keep private balance notes, and choose per campaign which use
   them and which have revealed them to the players.
@@ -64,6 +66,7 @@ Longer write-ups of these entries are in this file's git history.
 - Campaign files are version 11 and may be partial. Older files still import.
 
 ### Fixed
+- The Account and Tools menus could open behind the Sessions section headings.
 - Closing an NPC's stat block turned the page black.
 - Importing into an existing campaign silently dropped NPC stat blocks and Char Tree
   connections. Stat blocks now merge; connections are reported as not merged.

@@ -268,7 +268,10 @@ function buildNodes(players, relationships, npcs, crossConns) {
       nodes[`n_${n.id}`] = {
         x: -totalNpcW / 2 + ni * spacing, y: npcY,
         label: n.name, type: 'npc', r: NR,
-        tooltip: `NPC: ${n.name}`,
+        // Alive is the default and stays unmarked, as in the NPC list.
+        life: n.life_state === 'dead' || n.life_state === 'unknown' ? n.life_state : null,
+        tooltip: `NPC: ${n.name}${n.life_state === 'dead' ? '\nDead'
+          : n.life_state === 'unknown' ? '\nAlive or dead: unknown' : ''}`,
       };
     });
   }
@@ -344,6 +347,7 @@ function drawAll(canvas, nodes, relationships, crossConns, vp) {
   const C = {
     gold:    get('--gold',    '#c9a84c'),
     goldDim: get('--gold-dim','#7a6030'),
+    text:    get('--text',    '#e8dcc0'),
     textDim: get('--text-dim','#a09070'),
     border:  get('--border',  '#3d3220'),
     border2: get('--border2', '#554428'),
@@ -511,6 +515,28 @@ function drawAll(canvas, nodes, relationships, crossConns, vp) {
     }
     ctx.fill();
     ctx.stroke();
+
+    // Life badge on an NPC: a small disc on the circle's upper right, ☠ for
+    // dead and ? for unknown — the same two marks the NPC list uses. Drawn
+    // on the circle rather than beside the name, so it survives the label
+    // being cut short.
+    if (n.life) {
+      const br = Math.max(4, 5.5 * sc);
+      const bx = sx(n.x) + r * 0.72, by = sy(n.y) - r * 0.72;
+      ctx.beginPath();
+      ctx.arc(bx, by, br, 0, Math.PI * 2);
+      ctx.fillStyle   = n.life === 'dead' ? '#7a1f1f' : (isLight ? '#d8d0c0' : '#3a3428');
+      ctx.strokeStyle = n.life === 'dead' ? '#e06060' : C.textDim;
+      ctx.lineWidth   = 1 * sc;
+      ctx.fill();
+      ctx.stroke();
+      ctx.font         = `bold ${Math.max(6, Math.round(7 * sc))}px sans-serif`;
+      ctx.fillStyle    = n.life === 'dead' ? '#ffd8d8' : C.text;
+      ctx.textAlign    = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(n.life === 'dead' ? '☠' : '?', bx, by + 0.5 * sc);
+      ctx.textBaseline = 'alphabetic';
+    }
 
     // Relation type micro-label (only family nodes, only if zoomed in)
     if (n.type === 'rel' && n.isFamily && n.relType && sc >= 0.55) {
@@ -1069,6 +1095,8 @@ export function CharTreeTab({ campaignId, fill = false }) {
         <span><span className="inline-block w-2.5 h-2.5 rounded-full bg-[#2d3a1a] border border-[#7ab050] mr-1 align-middle"/>NPC</span>
         <span><span className="inline-block w-2.5 h-2.5 rounded-full bg-[#362206] border border-[#b07828] mr-1 align-middle"/>Family rel</span>
         <span><span className="inline-block w-2.5 h-2.5 rounded-full bg-[#062c1a] border border-[#288858] mr-1 align-middle"/>Social rel</span>
+        <span><span className="inline-flex items-center justify-center w-3.5 h-3.5 rounded-full bg-[#7a1f1f] border border-[#e06060] text-[#ffd8d8] text-[0.65rem] leading-none mr-1 align-middle">☠</span>Dead NPC</span>
+        <span><span className="inline-flex items-center justify-center w-3.5 h-3.5 rounded-full bg-surface3 border border-border2 text-text text-[0.65rem] leading-none mr-1 align-middle">?</span>Unknown</span>
         <span className="text-text-muted">Scroll to zoom · Drag to pan · Hover for details</span>
       </div>
 

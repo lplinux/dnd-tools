@@ -230,8 +230,12 @@ export default function AppHeader({
     else navigate('/');
   }
 
+  // z-30: the header is a stacking context, so its menus can never rise above
+  // it — whatever the page stacks above the HEADER covers them. Page-level
+  // sticky bars use z-20 (Sessions' section heads), so the header sits above
+  // them; full screen (z-40) and dialogs (z-50) still cover it, as they should.
   return (
-    <header className="bg-surface border-b-2 border-[var(--gold-dim)] px-3.5 py-1.5 flex items-center gap-2 flex-shrink-0 shadow-header flex-wrap relative z-10">
+    <header className="bg-surface border-b-2 border-[var(--gold-dim)] px-3.5 py-1.5 flex items-center gap-2 flex-shrink-0 shadow-header flex-wrap relative z-30">
       {/* Left: icon + name */}
       {(icon || name) && (
         <>
