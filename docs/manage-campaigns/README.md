@@ -98,7 +98,8 @@ campaign from: the locations an entry points at are managed two tabs away, and s
 for the party to find later is prep rather than character work.
 
 Entries are listed in **in-game date order**, oldest first, grouped under whatever category their
-author filed them under, with undated entries and unfiled ones last. Click a card to read it in
+author filed them under, with undated entries and unfiled ones last. The groups themselves are
+listed **by name**, whichever grouping is chosen. Click a card to read it in
 full.
 
 The **search box** filters on any word from a title, a note, a category, a location or an

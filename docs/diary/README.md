@@ -104,6 +104,18 @@ Write in a small subset of markdown:
 - `> a quote`
 - `- bullet` and `1. numbered` lists
 - `[link text](https://example.com)` or a link into the app, like `[the map](/journey-map)`
+- **Tables**, written with pipes. The second line sets each column's alignment — `---` left,
+  `:-:` centred, `--:` right — and cells take bold, italics, links and `[[cross-links]]`:
+
+  ```
+  | Item    | Cost  |
+  |---------|------:|
+  | Rope    |  1 gp |
+  | [[Zyrina|the mage]]'s fee | 50 gp |
+  ```
+
+  A `|` inside `[[Name|label]]` stays part of the link; write `\|` for a literal pipe in a cell.
+  Wide tables scroll sideways on a phone, and print with their header repeated on every page.
 
 Press **👁 Preview** in the editor to see it rendered.
 

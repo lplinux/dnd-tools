@@ -243,3 +243,12 @@ describe('the schema', () => {
     expect(source).toMatch(/idx_journal_campaign[\s\S]{0,120}campaign_id, created_at DESC/);
   });
 });
+
+describe('the journal page', () => {
+  const panel = readFileSync(path.join(root, 'frontend/src/pages/Journal/JournalPanel.jsx'), 'utf8');
+  it('lists groups by name however they are grouped', () => {
+    const groupBy = panel.slice(panel.indexOf('const GROUP_BY = {'), panel.indexOf('/** Everything the search box looks through.'));
+    expect(groupBy.match(/sortGroups: true/g)).toHaveLength(3);
+    expect(groupBy).not.toMatch(/sortGroups: false/);
+  });
+});

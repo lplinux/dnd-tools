@@ -8,6 +8,8 @@ Longer write-ups of these entries are in this file's git history.
 ## [Unreleased]
 
 ### Added
+- **Tables in Markdown** — everywhere notes are written (diary, journal, session and backlog cards,
+  NPC and DM notes) and in the module docs. Wide ones scroll on a phone and print cleanly.
 - **⚔ Encounter** (Manage Campaigns): stat blocks to read mid-fight. Line up NPCs and homebrew
   creatures, switch with a click or keys 1–9, pin a second one beside it (Shift + 1–9). Spell
   names open their card. Not a tracker — initiative and hit points stay in your combat tool.
@@ -56,6 +58,7 @@ Longer write-ups of these entries are in this file's git history.
   goes to the Trash), merge into it, or create a new one under another name.
 
 ### Changed
+- Journal groups are listed by name when grouped by **Category** too, not only by Location or author.
 - **Done and skipped backlog cards fold away** into a *✓ Done & skipped* line instead of showing
   under every session. Marking one Done while a session is open asks whether to move it into that
   session.

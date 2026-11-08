@@ -43,9 +43,13 @@ import { useCrossLinks } from '@/hooks/useCrossLinks';
  * the same five names jumping around as entries are added is just noise.
  */
 const GROUP_BY = {
+  // Every grouping lists its groups by name, Category included: a reader
+  // scanning for "Rumours" should find it where the alphabet puts it, not
+  // wherever its earliest entry happens to fall. Inside a group, entries
+  // keep their in-game date order; the unfiled pile is always last.
   category: {
     label: 'Category', field: 'category',
-    ungrouped: 'Uncategorised', sortGroups: false,
+    ungrouped: 'Uncategorised', sortGroups: true,
   },
   location: {
     label: 'Location', field: 'location_name',

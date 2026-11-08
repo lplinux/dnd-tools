@@ -25,6 +25,18 @@ PC Sheet / Journey Map / Manage Campaign fix batch that went with it.
 - [ ] **Open DM Tips** — four sections; the *What goes where* table scrolls sideways on a phone
       rather than squashing. A player going to `/dm-tips` is sent home.
 
+## Tables in Markdown, and journal groups by name
+
+- [ ] In a journal entry, write a table with a `[[Zyrina|the mage]]` link in one cell, a right-aligned
+      column (`--:`) and `\|` in a cell. It renders as a table; the link opens Zyrina's card; the
+      pipe shows as a pipe; the paragraphs above and below are not torn apart.
+- [ ] On a phone, a wide table scrolls sideways inside the entry, not the whole page.
+- [ ] Print the journal and the diary book with a table in them — grid lines, shaded header, the
+      header repeated if the table crosses a page, no row cut in half.
+- [ ] Home → ⓘ on PC Character Sheet: the *DM Notes* table in its docs is now a real table.
+- [ ] **Journal**, grouped by **Category**: the groups run A→Z, *Uncategorised* last; the entries in
+      each still read in in-game date order.
+
 ## Finished backlog cards fold away
 
 - [ ] Open session 26 (still being prepared), backlog open. Mark a top-level card **Done** — asked
