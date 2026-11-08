@@ -164,3 +164,25 @@ describe('the page', () => {
     expect(r).not.toMatch(/setLoading/);
   });
 });
+
+describe('finished backlog cards', () => {
+  const backlog = readFileSync(path.join(root, 'frontend/src/pages/Sessions/BacklogPanel.jsx'), 'utf8');
+
+  it('fold away by the top-level card, done and skipped alike — never deleted', () => {
+    expect(backlog).toMatch(/const spentState = \(i\) => i\.state === 'done' \|\| i\.state === 'skipped'/);
+    expect(backlog).toMatch(/const live = tree\.filter\(\(i\) => !spentState\(i\)\)/);
+    expect(backlog).toMatch(/✓ Done &amp; skipped \(\{spent\.length\}\)/);
+    expect(backlog).toMatch(/const \[showSpent, setShowSpent\] = useState\(false\)/);
+  });
+
+  it('keep drag positions counted among every card, folded ones included', () => {
+    expect(backlog).toMatch(/index=\{tree\.indexOf\(i\)\}/);
+    expect(backlog).not.toMatch(/live\.map\(\(i, idx\)/);
+  });
+
+  it('offer to move a Done card into the open session — asked, Done only, top-level only', () => {
+    expect(backlog).toMatch(/if \(state !== 'done' \|\| item\.parent_id != null \|\| !session \|\| locked\) return;/);
+    expect(backlog).toMatch(/cancelLabel: 'No, keep it in the backlog'/);
+    expect(backlog).toMatch(/pendingsApi\.toSession\(campaignId, item\.id, session\.id, 'beats'\)/);
+  });
+});

@@ -25,6 +25,19 @@ PC Sheet / Journey Map / Manage Campaign fix batch that went with it.
 - [ ] **Open DM Tips** — four sections; the *What goes where* table scrolls sideways on a phone
       rather than squashing. A player going to `/dm-tips` is sent home.
 
+## Finished backlog cards fold away
+
+- [ ] Open session 26 (still being prepared), backlog open. Mark a top-level card **Done** — asked
+      *Used this session?* **Move to session 26**: it leaves the backlog and appears under *The
+      session*, still Done, sub-cards and all.
+- [ ] Mark another **Done** and answer **No, keep it in the backlog** — it drops into the folded
+      **✓ Done & skipped** line; the heading count reads *(n · 1 done)*. Open the line: it is there.
+      Set it back to Ready — it returns to the live list.
+- [ ] Mark one **Skipped** — no question, straight into the folded line.
+- [ ] Mark a **sub-card** Done — no question, it stays inside its card.
+- [ ] On a **played** session, marking Done asks nothing.
+- [ ] Drag a live card between two others with folded cards around — it lands where you dropped it.
+
 ## Encounter tab — stat blocks to read mid-fight
 
 - [ ] **Manage Campaigns → ⚔ Encounter → ＋ Add**: Vhessk, Ssharai, Grukhaa Red-Tooth, Nerida.

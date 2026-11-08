@@ -56,6 +56,9 @@ Longer write-ups of these entries are in this file's git history.
   goes to the Trash), merge into it, or create a new one under another name.
 
 ### Changed
+- **Done and skipped backlog cards fold away** into a *✓ Done & skipped* line instead of showing
+  under every session. Marking one Done while a session is open asks whether to move it into that
+  session.
 - The Char Tree follows the window's size instead of staying at its first width.
 - **The home page groups the tools** into DM, Player and Public tools (and Admin). Each group
   folds away, and stays folded on that browser.
