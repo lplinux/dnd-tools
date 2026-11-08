@@ -42,6 +42,7 @@ import { CLASSES, ALIGNMENTS, DAMAGE_TYPES, CONDITIONS, FULL_CASTERS, HALF_CASTE
 import AbilityScores from './AbilityScores';
 import SkillsBlock   from './SkillsBlock';
 import SpellSection  from './SpellSection';
+import { HomebrewSpells, useCampaignHomebrewSpells } from './homebrewSpells';
 import TagInput      from './TagInput';
 import './npc-sheet.css';
 
@@ -348,6 +349,11 @@ export default function NpcSheet() {
   // directions, and `'*'` hands it to whatever document happens to be in the
   // parent frame.
   const isEmbedded = new URLSearchParams(window.location.search).get('embedded') === '1';
+  // The campaign this sheet belongs to, when it is a character's or an NPC's —
+  // so its spell pickers can offer that campaign's homebrew. See
+  // homebrewSpells.js; a public sheet passes none and gets none.
+  const campaignParam = isEmbedded ? new URLSearchParams(window.location.search).get('campaign') : null;
+  const homebrewSpells = useCampaignHomebrewSpells(/^\d+$/.test(campaignParam ?? '') ? campaignParam : null);
 
   // `collectSheet` changes identity on every edit (it closes over `fields`). Holding
   // it in a ref keeps the effect below mounted exactly once: with it in the dep array
@@ -420,7 +426,7 @@ export default function NpcSheet() {
   // Render
   // ─────────────────────────────────────────────────────────────────────────
   return (
-    <>
+    <HomebrewSpells.Provider value={homebrewSpells}>
       {!isEmbedded && (
         <AppHeader icon="🎭" name="NPC Sheet">
           <Button variant="danger" onClick={handleClear}>🗑 Clear</Button>
@@ -833,6 +839,6 @@ export default function NpcSheet() {
           <Button variant="accent" onClick={() => setHpModal(false)}>Done</Button>
         </div>
       </Modal>
-    </>
+    </HomebrewSpells.Provider>
   );
 }

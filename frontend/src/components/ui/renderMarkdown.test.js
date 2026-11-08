@@ -4,6 +4,9 @@
  * formatting nicety. Each escaping case below is a real injection route.
  */
 import { describe, it, expect } from 'vitest';
+import { readFileSync } from 'fs';
+import { fileURLToPath } from 'url';
+import path from 'path';
 import { renderMd } from './renderMarkdown';
 import { buildIndex } from '@/data/crossLinks';
 
@@ -228,5 +231,101 @@ describe('[[cross-links]]', () => {
     expect(html).toContain('<strong');
     expect(html).toContain('<em>');
     expect(html).toContain('data-xlink');
+  });
+});
+
+describe('renderMd — tables', () => {
+  const T = '| Item | Cost |\n|------|-----:|\n| Rope | 1 gp |\n| Torch | 1 cp |';
+
+  it('renders a pipe table with a header and body rows', () => {
+    const out = renderMd(T);
+    expect(out).toContain('<table');
+    expect(out.match(/<th /g)).toHaveLength(2);
+    expect(out.match(/<tr>/g)).toHaveLength(3);
+    expect(out).toContain('>Rope</td>');
+  });
+
+  it('aligns columns from the separator, with classes from a fixed set', () => {
+    const out = renderMd('| a | b | c |\n|:--|:-:|--:|\n| 1 | 2 | 3 |');
+    expect(out).toMatch(/text-center">2</);
+    expect(out).toMatch(/text-right">3</);
+    expect(out).not.toMatch(/style=/);
+  });
+
+  it('is not wrapped in a paragraph, and leaves no empty ones around it', () => {
+    const out = renderMd(`Before.\n\n${T}\n\nAfter.`);
+    expect(out).not.toMatch(/<p[^>]*>\s*<div class="md-table/);
+    expect(out).not.toMatch(/<p class="mb-2">\s*<\/p>/);
+    expect(out).toMatch(/^<p class="mb-2">Before\.<\/p><div class="md-table/);
+    expect(out).toMatch(/<\/div><p class="mb-2">After\.<\/p>$/);
+  });
+
+  it('keeps a [[Name|label]] link in one cell — its pipe is not a column', () => {
+    const links = buildIndex({ npcs: [{ id: 7, name: 'Zyrina' }] });
+    const out = renderMd('| Who | Where |\n|---|---|\n| [[Zyrina|the mage]] | Chavyondat |', links);
+    expect(out.match(/<td /g)).toHaveLength(2);
+    expect(out).toContain('data-xlink="npc:7"');
+    expect(out).toContain('>the mage</a>');
+  });
+
+  it('reads \\| as a literal pipe inside a cell', () => {
+    const out = renderMd('| a | b |\n|---|---|\n| x \\| y | z |');
+    expect(out.match(/<td /g)).toHaveLength(2);
+    expect(out).toContain('>x | y</td>');
+  });
+
+  it('formats cells like running text', () => {
+    const out = renderMd('| a |\n|---|\n| **bold** and [site](https://example.com) |');
+    expect(out).toContain('<strong');
+    expect(out).toContain('href="https://example.com"');
+  });
+
+  it('pads a short row and drops extra cells, to the header width', () => {
+    const out = renderMd('| a | b |\n|---|---|\n| 1 |\n| 1 | 2 | 3 |');
+    expect(out.match(/<td /g)).toHaveLength(4);
+    expect(out).not.toContain('>3</td>');
+  });
+
+  it('is not a table without a matching separator', () => {
+    expect(renderMd('| a | b |\n| c | d |')).not.toContain('<table');
+    expect(renderMd('| a | b |\n|---|')).not.toContain('<table');
+    expect(renderMd('a - b | c')).not.toContain('<table');
+  });
+
+  it('escapes markup in cells like everywhere else', () => {
+    const out = renderMd('| a |\n|---|\n| <img src=x onerror=alert(1)> |');
+    expect(out).not.toContain('<img');
+    expect(out).toContain('&lt;img');
+  });
+
+  it('cannot be forged with the placeholder characters', () => {
+    const out = renderMd('0 text');
+    expect(out).not.toContain('<table');
+    expect(out).not.toMatch(/[]/);
+  });
+
+  it('renders two tables in one note, each in its place', () => {
+    const out = renderMd(`${T}\n\nBetween.\n\n${T}`);
+    expect(out.match(/<table/g)).toHaveLength(2);
+    expect(out).toMatch(/<\/div><p class="mb-2">Between\.<\/p><div class="md-table/);
+  });
+});
+
+describe('renderMd — tables on paper', () => {
+  const here = path.dirname(fileURLToPath(import.meta.url));
+  const read = (p) => readFileSync(path.resolve(here, p), 'utf8');
+
+  it('both print documents style the table, since Tailwind is inert there', () => {
+    for (const f of ['../../pages/Diary/printNotes.js', '../../pages/Diary/printBook.js']) {
+      const src = read(f);
+      expect(src, f).toMatch(/\.body \.md-table \{ overflow: visible/);
+      expect(src, f).toMatch(/\.body th, \.body td \{ border:/);
+      expect(src, f).toMatch(/\.body \.text-right \{ text-align: right; \}/);
+      expect(src, f).toMatch(/\.body tr \{ break-inside: avoid/);
+    }
+  });
+
+  it('printing from the app does not clip a wide table', () => {
+    expect(read('../../styles/globals.css')).toMatch(/@media print \{\n {2}\.md-table \{ overflow: visible !important; \}/);
   });
 });

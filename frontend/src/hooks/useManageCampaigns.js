@@ -50,6 +50,10 @@ function mergeSummary(data) {
   if (Array.isArray(data.campaign_journal)) replaces.push(n(data.campaign_journal, 'journal entry', 'journal entries'));
   if (Array.isArray(data.campaign_diary)) replaces.push(n(data.campaign_diary, 'diary entry', 'diary entries'));
   if (Array.isArray(data.pendings)) replaces.push(`the backlog (${n(data.pendings, 'card')})`);
+  // Matched to this campaign's characters by name; ones with no match are skipped.
+  if (Array.isArray(data.character_paths)) {
+    replaces.push(`character evolution (${n(data.character_paths, 'card')}, matched to characters by name)`);
+  }
   // Named, because a matched session is REPLACED whole — its cards deleted
   // and rebuilt — and that is the most destructive thing in this list.
   if (Array.isArray(data.sessions) && data.sessions.length) {
@@ -287,9 +291,15 @@ export function useManageCampaigns() {
               r.diary && `diary: ${r.diary.added}`,
               r.sessions && `sessions: ${r.sessions.added} added, ${r.sessions.replaced} replaced`,
               r.pendings && `backlog: ${r.pendings.added}`,
+              r.character_paths && `evolution: ${r.character_paths.added}`,
               r.surveys && `surveys: ${r.surveys.added} added`,
             ].filter(Boolean).join(' · ');
             toast(`Imported into ${into?.name ?? 'the campaign'} — ${bits || 'nothing to do'}.`);
+            // A path for a character this campaign does not have was left out
+            // rather than filed under the party — say which.
+            if (r.character_paths?.skipped?.length) {
+              toast(`Evolution — not imported, no such character here: ${r.character_paths.skipped.slice(0, 5).join('; ')}${r.character_paths.skipped.length > 5 ? '…' : ''}.`);
+            }
             if (r.surveys?.skipped_existing?.length) {
               toast(`Skipped ${r.surveys.skipped_existing.length} survey(s) already here: ${r.surveys.skipped_existing.slice(0, 5).join(', ')}.`);
             }

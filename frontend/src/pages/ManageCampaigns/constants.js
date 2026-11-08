@@ -35,11 +35,17 @@ export const TABS = [
   { id: 'locations', label: '📍 Locations', count: true  },
   { id: 'npcs',      label: '🧟 NPCs',      count: true  },
   { id: 'timelines', label: '📜 Timelines', count: true  },
-  { id: 'chartree',  label: '🌳 Char Tree', count: false },
+  // `fullScreen`: offers ⛶ to lift the tab over the whole page. For the
+  // two that are worked IN rather than glanced at — a graph you pan, a prep
+  // you run a session from.
+  { id: 'chartree',  label: '🌳 Char Tree', count: false, fullScreen: true },
   // Session prep — the DM's plan for one sitting. No count: it loads its own
   // data, like the journal, and a badge blank until you open the tab is
   // worse than no badge.
-  { id: 'sessions',  label: '🗓 Sessions',  count: false },
+  { id: 'sessions',  label: '🗓 Sessions',  count: false, fullScreen: true },
+  // Stat blocks to read mid-fight, two at a time, one key apart. Not a
+  // tracker: initiative and hit points stay in the DM's combat tool.
+  { id: 'encounter', label: '⚔ Encounter', count: false, fullScreen: true },
   // How each character can grow, and what it costs. DM-private — it is in
   // this module rather than on the PC sheet precisely because a player
   // cannot open this module at all. No count, for the reason above.

@@ -98,7 +98,8 @@ campaign from: the locations an entry points at are managed two tabs away, and s
 for the party to find later is prep rather than character work.
 
 Entries are listed in **in-game date order**, oldest first, grouped under whatever category their
-author filed them under, with undated entries and unfiled ones last. Click a card to read it in
+author filed them under, with undated entries and unfiled ones last. The groups themselves are
+listed **by name**, whichever grouping is chosen. Click a card to read it in
 full.
 
 The **search box** filters on any word from a title, a note, a category, a location or an
@@ -123,6 +124,9 @@ all.
 Tick **DM only** and the entry never reaches a player — it is filtered out of their request on
 the server rather than hidden on their screen. Those cards are outlined in gold here so you can
 see at a glance what the table cannot. Untick it when the party finds the thing.
+
+An entry can also be shown to **one player** only. That player can **📢 Make public** it
+themselves, which shares it with everyone and clears the assignment — one way only.
 
 ### What you can and cannot do to a player's entry
 
@@ -280,6 +284,12 @@ Open the **Settings** tab and click **💾 Export Campaign** (under "Export / Ba
 - DM cross-connections from the character tree
 - All Journey Maps — including background image, all pins and region polygons (with per-pin `icon_scale`), `scope_type`/`scope_location_ref`, distances, and paths with waypoints, route type, and dragged name-label positions (`label_x`/`label_y`)
 - **Session prep** — every session (number, title, date, played/prepared) and all of its cards, nested, with their section and state, as a top-level `sessions[]` array. The same shape the `campaign-sessions` file uses, and written by the same code
+- The **campaign backlog** — its cards, nested, with their state, as `pendings[]`
+- **Character evolution** — every learning path, teacher and homebrew card, nested, as
+  `character_paths[]`. Each top-level card names its character as `player_ref` (none for the party's
+  own); sub-cards belong to their card's character and category. Importing into an existing campaign
+  matches characters **by name**, and a card whose character is not there is left out and named —
+  never filed under the party
 
 > **Never exported:** campaign **invite links**. An invite is a credential rather than campaign
 > content — its token is unique, its user references do not exist on the far side, and it expires

@@ -88,6 +88,32 @@ describe('an entry written for one player', () => {
   });
 });
 
+describe('the player an entry is for can make it public', () => {
+  const pub = handlerCode('patch', '/api/campaigns/:campaignId/journal/:entryId/make-public');
+
+  it('only for their own seats, only on an entry still for one of them', () => {
+    expect(pub).toMatch(/const seats = await mySeats\(campaignId, req\.session\.userId\)/);
+    expect(pub).toMatch(/WHERE id=\$1 AND campaign_id=\$2 AND dm_only AND visible_to = ANY\(\$3::int\[\]\)/);
+  });
+
+  it('only towards public, and the seat goes with it', () => {
+    expect(pub).toMatch(/SET dm_only=false, visible_to=NULL,/);
+    // Nothing the caller sends is read: it cannot set anything else.
+    expect(pub).not.toMatch(/req\.body/);
+  });
+
+  it('does not confirm an entry the caller cannot read exists', () => {
+    expect(pub).toMatch(/if \(!r\.rows\.length\) return res\.status\(404\)/);
+    expect(pub).toMatch(/canAccessCampaign/);
+  });
+
+  it('is offered to the player only, and asked first', () => {
+    const panel = readFileSync(path.join(root, 'frontend/src/pages/Journal/JournalPanel.jsx'), 'utf8');
+    expect(panel).toMatch(/extra=\{\(e\) => \(!isDM && e\.visible_to \? \(/);
+    expect(panel).toMatch(/You cannot make it private again/);
+  });
+});
+
 describe('a private location stops showing its name', () => {
   it('guards the location name for players', () => {
     // The entry survives a location being hidden; the place it names does not.
@@ -215,5 +241,14 @@ describe('the schema', () => {
 
   it('indexes the way it is read', () => {
     expect(source).toMatch(/idx_journal_campaign[\s\S]{0,120}campaign_id, created_at DESC/);
+  });
+});
+
+describe('the journal page', () => {
+  const panel = readFileSync(path.join(root, 'frontend/src/pages/Journal/JournalPanel.jsx'), 'utf8');
+  it('lists groups by name however they are grouped', () => {
+    const groupBy = panel.slice(panel.indexOf('const GROUP_BY = {'), panel.indexOf('/** Everything the search box looks through.'));
+    expect(groupBy.match(/sortGroups: true/g)).toHaveLength(3);
+    expect(groupBy).not.toMatch(/sortGroups: false/);
   });
 });

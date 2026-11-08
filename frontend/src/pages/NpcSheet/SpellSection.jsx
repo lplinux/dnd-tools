@@ -15,6 +15,8 @@ import {
   levelShort, castingTimeShort, durationShort, materialCost, byLevelThenName,
 } from '@/data/spellDetails';
 import SrdInfo from '@/components/SrdInfo';
+import HomebrewSpellInfo from '@/components/HomebrewSpellInfo';
+import { useHomebrewSpells } from './homebrewSpells';
 
 /**
  * Every spell on the sheet, with what you need at the table: what it needs,
@@ -31,10 +33,15 @@ function SpellList({ spellNames }) {
   const entries = Object.entries(spellNames ?? {})
     .flatMap(([lv, v]) => splitList(v).map((name) => ({ name, row: Number(lv) })));
   const details = useSpellDetails(entries.map((e) => e.name));
+  const homebrew = useHomebrewSpells();
   if (!entries.length) return null;
 
   const rows = entries.map((e) => {
-    const d = details.get(e.name.trim()) ?? { status: 'loading', spell: null };
+    // The campaign's homebrew first: a name the table's DM defined is the
+    // spell this table means, even where the SRD has one of the same name.
+    const hb = homebrew.get(e.name.trim());
+    const d = hb ? { status: 'ok', spell: hb, homebrew: true }
+      : details.get(e.name.trim()) ?? { status: 'loading', spell: null };
     // The SRD's level when known, so a spell typed into the wrong row still
     // sorts with its own level; the row's otherwise.
     return { ...e, d, level: d.spell?.level ?? e.row };
@@ -57,9 +64,12 @@ function SpellList({ spellNames }) {
           <tr key={`${row}:${name}`}>
             <td className="lvl-cell">{levelShort(lv)}</td>
             <td>
-              {d.status === 'ok'
-                ? <SrdInfo resource="spells" name={name}>{d.spell.name}</SrdInfo>
-                : name}
+              {d.homebrew
+                ? <HomebrewSpellInfo spell={d.spell}>{d.spell.name}</HomebrewSpellInfo>
+                : d.status === 'ok'
+                  ? <SrdInfo resource="spells" name={name}>{d.spell.name}</SrdInfo>
+                  : name}
+              {d.homebrew && <span className="spell-hb">homebrew</span>}
               {d.status === 'ok' && d.spell.concentration && <span className="spell-mark" title="Concentration">C</span>}
               {d.status === 'ok' && d.spell.ritual && <span className="spell-mark" title="Ritual">R</span>}
             </td>
@@ -96,7 +106,13 @@ function SpellList({ spellNames }) {
 function SpellNames({ level, value, onSet }) {
   // Only this level's spells: 42 at 3rd rather than all 339, so "fire" offers
   // Fireball without Fire Bolt and Fire Shield, which belong to other rows.
-  const options = useSrdNames('spells', level);
+  const srdOptions = useSrdNames('spells', level);
+  const homebrew = useHomebrewSpells();
+  // The campaign's homebrew of this level, ahead of the SRD's. A name both
+  // have is offered once — the sheet stores names, so two entries reading
+  // "Fireball" could not be told apart once chosen — and means the homebrew.
+  const hbNames = [...homebrew.values()].filter((s) => s.level === level).map((s) => s.name);
+  const options = [...hbNames, ...srdOptions.filter((n) => !homebrew.has(n))];
   const names = splitList(value);
   const setNames = (next) => onSet(joinList(next));
 
@@ -113,6 +129,8 @@ function SpellNames({ level, value, onSet }) {
       onAdd={(v) => setNames([...names, v])}
       onRemove={(v) => setNames(removeOne(names, v))}
       srdResource="spells"
+      badgeFor={(v) => (homebrew.has(v) ? 'homebrew' : null)}
+      infoFor={(v) => (homebrew.has(v) ? <HomebrewSpellInfo spell={homebrew.get(v)} /> : null)}
       placeholder={level === 0 ? 'Fire Bolt, Mage Hand…' : `Add a ${SPELL_LEVEL_NAMES[level]}-level spell…`}
     />
   );

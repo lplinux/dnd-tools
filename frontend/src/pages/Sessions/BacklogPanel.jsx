@@ -9,6 +9,12 @@
  * reads. A card goes into the session on screen with one click and leaves
  * the backlog as it does; a session card comes back the same way.
  *
+ * Done and Skipped cards fold away into one line at the bottom rather than
+ * being deleted: the backlog shows what is still live, and "did we ever use
+ * that letter?" is still answerable months later. Marking a card Done while
+ * a session is open offers to move it INTO that session, where it then sits
+ * in the record of the night it was used.
+ *
  * Self-contained, like the panel it sits in: it owns its fetching and its
  * own open/closed set. Backlog ids come from another table, so sharing the
  * session's set would let card 12 here open card 12 there.
@@ -43,6 +49,8 @@ export default function BacklogPanel({
   const [form, setForm] = useState(null);   // { id?, parent_id?, title, body }
   const [busy, setBusy] = useState(false);
   const [drag, setDrag] = useState(null);
+  // The folded "Done & skipped" line. Shut by default: it is the archive.
+  const [showSpent, setShowSpent] = useState(false);
 
   const fail = useCallback((e) => toast(e?.message || String(e), 'error'), [toast]);
 
@@ -58,6 +66,11 @@ export default function BacklogPanel({
   useEffect(() => { load(); }, [load, reloadKey]);
 
   const tree = nest(items);
+  // Folded by the ROOT's state: a live card keeps its finished sub-cards
+  // (they are part of it), and a finished card takes all of its own along.
+  const spentState = (i) => i.state === 'done' || i.state === 'skipped';
+  const live = tree.filter((i) => !spentState(i));
+  const spent = tree.filter(spentState);
 
   const isOpen = useCallback((id) => openItems.has(id), [openItems]);
   const toggleItem = useCallback((id) => setOpenItems((prev) => {
@@ -86,6 +99,24 @@ export default function BacklogPanel({
         const { updated = [] } = await pendingsApi.setState(campaignId, item.id, state);
         const byId = new Map(updated.map((u) => [u.id, u]));
         setItems((prev) => prev.map((i) => (byId.has(i.id) ? { ...i, ...byId.get(i.id) } : i)));
+      } catch (e) { fail(e); return; }
+      /*
+       * Done on a top-level card, with a session open that is still being
+       * prepared: it was probably used tonight. Asked, never assumed — "No"
+       * (or closing the question) leaves it Done in the backlog, folded
+       * away. Skipped is not asked: a dropped idea was used nowhere.
+       */
+      if (state !== 'done' || item.parent_id != null || !session || locked) return;
+      const move = await confirm(
+        `Was “${item.title || 'this card'}” used in ${sessionName(session)}? Move it there and it becomes part of that session's record.`,
+        { title: 'Used this session?', confirmLabel: `Move to ${sessionName(session)}`, cancelLabel: 'No, keep it in the backlog' },
+      );
+      if (!move) return;
+      try {
+        const r = await pendingsApi.toSession(campaignId, item.id, session.id, 'beats');
+        dropSubtree(item.id);
+        await onMovedIn?.();
+        toast(`Moved into ${sessionName(session)} as done — ${r.moved} card${r.moved === 1 ? '' : 's'}.`);
       } catch (e) { fail(e); }
     },
     remove: async (item) => {
@@ -155,7 +186,9 @@ export default function BacklogPanel({
         >
           <span>{open ? <ChevronDown size={12} /> : <ChevronRight size={12} />}</span>
           <span className="flex-1">📌 Campaign backlog</span>
-          <span className="text-text-muted normal-case tracking-normal">({items.length})</span>
+          <span className="text-text-muted normal-case tracking-normal">
+            ({live.length}{spent.length ? ` · ${spent.length} done` : ''})
+          </span>
         </button>
       </div>
 
@@ -165,10 +198,17 @@ export default function BacklogPanel({
             Ideas for no session in particular. <strong>→ This session</strong> moves one, sub-cards
             and all, into the session above; <strong>→ Backlog</strong> on a session card sends it back.
           </p>
-          {!tree.length && <p className="text-text-dim text-sm italic py-2">Nothing here yet.</p>}
-          {tree.map((i, idx) => (
+          {!live.length && (
+            <p className="text-text-dim text-sm italic py-2">
+              {spent.length ? 'Nothing left to use — everything here is done or skipped.' : 'Nothing here yet.'}
+            </p>
+          )}
+          {live.map((i) => (
             <ItemCard
-              key={i.id} item={i} index={idx} links={links} onLinkClick={onLinkClick}
+              // `index` is the card's place among ALL roots, folded ones
+              // included: it is what a drop between two cards sends to
+              // the server, and the server counts every root.
+              key={i.id} item={i} index={tree.indexOf(i)} links={links} onLinkClick={onLinkClick}
               actions={actions} isOpen={isOpen} onToggle={toggleItem}
               drag={drag} onDragStart={(it) => setDrag({ id: it.id })}
               onDragEnd={() => setDrag(null)} onMove={moveItem}
@@ -184,6 +224,23 @@ export default function BacklogPanel({
               <Plus size={11} className="inline mr-1" />Add to the backlog
             </Button>
           </div>
+          {spent.length > 0 && (
+            <div className="flex flex-col gap-1.5 border-t border-border pt-1.5">
+              <button type="button" onClick={() => setShowSpent((v) => !v)} aria-expanded={showSpent}
+                className="flex items-center gap-1.5 text-left text-[0.7rem] font-display uppercase tracking-wider text-text-muted hover:text-gold">
+                {showSpent ? <ChevronDown size={11} /> : <ChevronRight size={11} />}
+                ✓ Done &amp; skipped ({spent.length})
+              </button>
+              {showSpent && spent.map((i) => (
+                <ItemCard
+                  key={i.id} item={i} index={tree.indexOf(i)} links={links} onLinkClick={onLinkClick}
+                  actions={actions} isOpen={isOpen} onToggle={toggleItem}
+                  drag={drag} onDragStart={(it) => setDrag({ id: it.id })}
+                  onDragEnd={() => setDrag(null)} onMove={moveItem}
+                />
+              ))}
+            </div>
+          )}
         </>
       )}
 

@@ -118,6 +118,14 @@ const EXEMPT = new Map([
    * anyone else simply does not match.
    */
   ['DELETE /api/tokens/:id', /WHERE id=\$1 AND user_id=\$2/],
+  /*
+   * Homebrew is a DM's library, owned by an ACCOUNT like a token, and for the
+   * same reason none of the campaign helpers apply. Each statement carries
+   * the owner: someone else's entry simply does not match. (The campaign
+   * routes that USE an entry go through dmOwnsCampaign as usual.)
+   */
+  ['PUT /api/homebrew/:id', /WHERE id=\$1 AND user_id=\$2[\s\S]*WHERE id=\$6 AND user_id=\$7/],
+  ['DELETE /api/homebrew/:id', /DELETE FROM homebrew_entries WHERE id=\$1 AND user_id=\$2/],
 ]);
 
 describe('every id-bearing route checks ownership', () => {

@@ -162,6 +162,18 @@ const STYLES = `
      indent and marker rather than relying on list semantics. */
   .body li { margin: 0 0 1.5mm 6mm; }
   .body a { color: #1b1b1b; text-decoration: underline; }
+  /* Tables from renderMd. Its Tailwind classes are inert here, so the grid,
+     the header shading and the column alignment are all asked for again. The
+     header repeats on every page a long table crosses, and a row is never cut
+     in half. On paper nothing scrolls, so the wrapper must not clip. */
+  .body .md-table { overflow: visible; margin: 2mm 0; }
+  .body table { width: 100%; border-collapse: collapse; font-size: 0.92em; }
+  .body th, .body td { border: 0.5pt solid #b8a888; padding: 1mm 1.5mm; vertical-align: top; text-align: left; }
+  .body th { background: #efe6d2; font-weight: bold; }
+  .body thead { display: table-header-group; }
+  .body tr { break-inside: avoid; page-break-inside: avoid; }
+  .body .text-center { text-align: center; }
+  .body .text-right { text-align: right; }
 
   /* No texture overlay, no opacity layer, no box-shadow anywhere: a partially
      transparent layer over content makes the print engine rasterise the text

@@ -1054,13 +1054,15 @@ describe("a session's in-game date, and what the timeline says is near it", () =
      * most relevant kind there is — a siege the party walked into is not
      * upcoming, it is happening.
      */
-    expect(up).toMatch(/\+ GREATEST\(e\.duration_days, 1\) - 1\) >= \$2/);
-    expect(up).toMatch(/e\.day_of_year\) <= \$3/);
+    expect(up).toMatch(/\$\{ABS\} \+ GREATEST\(e\.duration_days, 1\) - 1 >= \$2/);
+    expect(up).toMatch(/AND \$\{ABS\} <= \$3/);
   });
 
   it('and computes the absolute day rather than storing a second copy', () => {
-    // The same arithmetic absDay does on the client.
-    expect(up).toMatch(/\(\(e\.year - 1\) \* 365 \+ e\.day_of_year\)/);
+    // The same arithmetic absDay does on the client — checked against absDay
+    // itself, for both calendars, in sessionDates.test.js. This test once
+    // pinned `(year - 1) * 365 + day_of_year`, which was a day late.
+    expect(up).toMatch(/const ABS = eventAbsDaySql\(cal\)/);
   });
 
   it('an undated session is empty, not an error', () => {

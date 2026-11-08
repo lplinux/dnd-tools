@@ -13,6 +13,142 @@ PC Sheet / Journey Map / Manage Campaign fix batch that went with it.
 
 ---
 
+## Home grouping, Tools menu and DM Tips
+
+- [ ] **Log in as the DM** — the home page shows *DM tools*, *Player tools* and *Public tools*, in
+      that order. DM Tips is among the DM tools.
+- [ ] **Fold a group** with its heading, reload — it stays folded. A folded heading says how many
+      tools it hides.
+- [ ] **Log in as a player** — no DM group. **Log out** — only the public tools, with no heading.
+- [ ] **Open any tool** — the header has **Tools**, listing the same groups; the page you are on is
+      highlighted. Not on the home page or the public share pages.
+- [ ] **Open DM Tips** — four sections; the *What goes where* table scrolls sideways on a phone
+      rather than squashing. A player going to `/dm-tips` is sent home.
+
+## Timeline visibility in exported files
+
+- [ ] In Leruhy, note one revealed (👁) and one hidden event on a player's timeline, the World
+      timeline and the party lane. **Settings → Export**, then import the file as a new campaign —
+      each event is revealed or hidden exactly as before.
+- [ ] Import an **old** campaign file (from before this fix) — its events land hidden; nothing is
+      revealed by accident.
+- [ ] **As a player**, export your own timeline (⬇) — the file holds only the events you can see.
+      **As the DM**, the same export holds all of them, each with `visible_to_players`.
+- [ ] Import that DM file into a campaign (Manage Campaigns → Import → timeline) — the flags stay.
+
+## Character evolution in campaign files
+
+- [ ] **Settings → Export** Leruhy; open the file — a `character_paths` list, each card naming its
+      character (`player_ref`) or none for the party; sub-cards nested under their card.
+- [ ] Import that file as a **new campaign** — 🌱 Evolution has every character's cards, nested, with
+      their states and notes; party paths and teachers under *The party*.
+- [ ] **Export part… → Character evolution** — *Players* is ticked with it (it needs them).
+- [ ] Import into a campaign that lacks one of the characters — the toast names the cards it left
+      out, and none of them appears under *The party*.
+
+## Session dates and *Around this date*
+
+- [ ] **＋ New session** after a played one — it opens already dated the day that one ended, and
+      *⏳ Around this date* shows. In Leruhy: *Checking with the boss* (started that day, 20 days)
+      reads **today** / **under way**, not *in 1d*.
+- [ ] Mark it played and pick the finish date — the Today marker moves there; **Generate** the next
+      session — it starts on that same date.
+- [ ] Edit a session and clear its date — it stays undated (an explicit "no date" is kept).
+- [ ] An event that ended the day before the session is no longer listed.
+
+## Tables in Markdown, and journal groups by name
+
+- [ ] In a journal entry, write a table with a `[[Zyrina|the mage]]` link in one cell, a right-aligned
+      column (`--:`) and `\|` in a cell. It renders as a table; the link opens Zyrina's card; the
+      pipe shows as a pipe; the paragraphs above and below are not torn apart.
+- [ ] On a phone, a wide table scrolls sideways inside the entry, not the whole page.
+- [ ] Print the journal and the diary book with a table in them — grid lines, shaded header, the
+      header repeated if the table crosses a page, no row cut in half.
+- [ ] Home → ⓘ on PC Character Sheet: the *DM Notes* table in its docs is now a real table.
+- [ ] **Journal**, grouped by **Category**: the groups run A→Z, *Uncategorised* last; the entries in
+      each still read in in-game date order.
+
+## Finished backlog cards fold away
+
+- [ ] Open session 26 (still being prepared), backlog open. Mark a top-level card **Done** — asked
+      *Used this session?* **Move to session 26**: it leaves the backlog and appears under *The
+      session*, still Done, sub-cards and all.
+- [ ] Mark another **Done** and answer **No, keep it in the backlog** — it drops into the folded
+      **✓ Done & skipped** line; the heading count reads *(n · 1 done)*. Open the line: it is there.
+      Set it back to Ready — it returns to the live list.
+- [ ] Mark one **Skipped** — no question, straight into the folded line.
+- [ ] Mark a **sub-card** Done — no question, it stays inside its card.
+- [ ] On a **played** session, marking Done asks nothing.
+- [ ] Drag a live card between two others with folded cards around — it lands where you dropped it.
+
+## Encounter tab — stat blocks to read mid-fight
+
+- [ ] **Manage Campaigns → ⚔ Encounter → ＋ Add**: Vhessk, Ssharai, Grukhaa Red-Tooth, Nerida.
+      Only NPCs that have a stat block are offered, plus your homebrew creatures.
+- [ ] The numbers match the Oracle's Chamber page: Vhessk Perception +10 and Con +6 / Wis +7 /
+      Cha +5; Ssharai DC 12, +4; Nerida DC 15, +7, slots 4/3/3/1.
+- [ ] Keys **1–4** switch the left pane instantly; **Shift + 1** pins Vhessk on the right;
+      **← →** step through. Typing in the Add box does not switch anything.
+- [ ] Click a spell name — its card opens (a homebrew spell shows *Homebrew*).
+- [ ] **DM notes** start folded. **Full screen** works; reload — the line-up is still there.
+- [ ] On a phone: one column, the pinned sheet under the main one.
+
+## Homebrew creatures and the Items tab
+
+- [ ] **Homebrew → 🐉 Creatures → ＋ New** "Ash Wyrmling", Draft. Its stat sheet opens on the right
+      with the name filled in. Pull a monster from the SRD inside the sheet, change the CR, **💾
+      Save** — the list line shows *CR · type · alignment*.
+- [ ] **✎ Details** — rename it and add a balance note; the stat block is untouched.
+- [ ] Switch between two creatures with unsaved sheet edits — each opens its own saved sheet.
+- [ ] **Manage Campaigns → NPCs → ⚔** on an NPC with a stat block: *Start from one of your
+      creatures* → pick it — asked to replace; yes — the sheet now holds the creature, under the
+      NPC's name. On an NPC without one: no question.
+- [ ] **🗡️ Items** — your Item Cards library, editor and preview as on the Item Cards page, with
+      no second header. Make a card here: it is on the Item Cards page too. Homebrew's own Export /
+      Import are hidden on this tab.
+
+## Homebrew on sheets, export/import, and four fixes
+
+- [ ] **Reveal a homebrew spell in Leruhy.** As one of its players, PC Sheet → Stats → type its
+      name at its level: it is offered, marked *homebrew*. Add it — the chip's ⓘ and the name in
+      the spell list open its card. A spell used but *not* revealed is not offered.
+- [ ] **As the DM**, an NPC's stat block (Manage Campaigns → NPCs → ⚔) offers every spell Leruhy
+      uses, revealed or not. The public NPC Sheet offers none.
+- [ ] **Homebrew → ⬇ Export**, then **⬆ Import** the same file — nothing added, every name listed
+      as kept. Edit one, import again — your edit stays.
+- [ ] **Char Tree**: mark a connected NPC dead — a ☠ disc on its circle, *Dead* in its tooltip;
+      unknown shows ?. Both in the legend.
+- [ ] **PC Sheet → DM Notes**: a long note shows a few lines and **Read more**; a short one has no
+      button. **Show less** folds it again.
+- [ ] **Sessions**, scrolled so a section heading is under the header — open **Account** and
+      **Tools**: both menus are on top.
+
+## Homebrew — library and spells
+
+- [ ] **Home → DM tools → Homebrew.** Creatures, Items and Feats show as *coming*, not clickable.
+- [ ] **＋ New**, start from an SRD spell (Fire Bolt) — every field fills in, the name becomes
+      *Fire Bolt (homebrew)*, and *Based on the official Fire Bolt* appears. Save: it shows as the
+      same card the stat sheet uses.
+- [ ] Untick **M** — the material field greys out; saved, the card has no material.
+- [ ] A second spell with the same name is refused with a sentence, not an error.
+- [ ] **Campaigns** panel: tick *Uses it* on Leruhy — *Revealed* becomes tickable. As a player of
+      Leruhy nothing has changed yet (there is no player view yet; check `GET
+      /api/campaigns/9/homebrew` returns `[]` for them, and the spell once *Revealed*).
+- [ ] Delete a spell used by a campaign — the confirmation names the campaign.
+- [ ] On a phone: the list, then the spell full width with **‹ All** to go back.
+
+## Full screen, and making a journal entry public
+
+- [ ] **Manage Campaigns → 🗓 Sessions → Full screen** — the tab covers the page; the session on
+      screen and the open cards are still as they were. Edit a card: the dialog opens on top.
+      **Esc** with the dialog open closes only the dialog; **Esc** again leaves full screen.
+- [ ] **🌳 Char Tree → Full screen** — the tree fills the window and keeps its zoom; the lists
+      below scroll. Resize the window: the tree follows. Leave full screen: back to its usual size.
+- [ ] Switching tab or campaign leaves full screen. Other tabs have no Full screen button.
+- [ ] **As the DM, write an entry *Only Iris***. **As Iris**, it shows **📢 Make public**; confirm —
+      it loses its *Only you* tag. **As another player**, it is now there.
+- [ ] **As the DM**, it now reads as public, not *Only Iris*. No other player ever sees the button.
+
 ## Journal entries for one player
 
 - [ ] **As the DM, write a journal entry** and set *Who can read it* to **Only Iris**. It shows

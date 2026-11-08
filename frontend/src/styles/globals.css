@@ -448,3 +448,13 @@ mark.search-hit {
 @media print {
   .srd-info-term { border-bottom: none; cursor: default; }
 }
+
+/* Markdown tables (renderMd), printed from the app itself — the PC sheet's
+   PDF, a page's own print. On screen a wide table scrolls inside its
+   wrapper; on paper nothing scrolls, so the wrapper must not clip it, and a
+   row should not be cut across two pages. */
+@media print {
+  .md-table { overflow: visible !important; }
+  .md-table thead { display: table-header-group; }
+  .md-table tr { break-inside: avoid; }
+}

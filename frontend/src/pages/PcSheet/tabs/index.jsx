@@ -10,7 +10,7 @@
  *   DmNotesTab    — DM-only notes (add, toggle visibility, delete)
  */
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Eye, EyeOff } from 'lucide-react';
 
 import { Button, FormField, Markdown } from '@/components/ui';
@@ -173,12 +173,15 @@ export function CharacterTab({ charData, playerId, actions, publicLink }) {
 // edges that two copies would drift. All this tab decides is whose blob it is.
 // ─────────────────────────────────────────────────────────────────────────────
 
-export function StatsTab({ playerId, charData, onSaveStats }) {
+export function StatsTab({ playerId, campaignId, charData, onSaveStats }) {
   return (
     <StatsSheetFrame
       stats={charData?.stats ?? {}}
       onSave={onSaveStats}
       frameId={`player=${playerId}`}
+      // So the sheet's spell pickers offer this campaign's homebrew — the
+      // revealed spells only, for a player; the server decides which.
+      campaignId={campaignId}
       title="Stats Sheet"
     />
   );
@@ -463,6 +466,53 @@ export function PrivateTab({ charData, actions }) {
 // ─────────────────────────────────────────────────────────────────────────────
 // DmNotesTab
 // ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * One note's text, folded when it is long, with "Read more" to open it.
+ *
+ * Measured rather than counted: whether it overflows depends on the card's
+ * width and on how the Markdown renders (a list is taller than its
+ * characters suggest), so the test is the rendered height against the fold.
+ * A short note shows no button at all.
+ */
+const NOTE_FOLD_PX = 160;
+
+function NoteBody({ content }) {
+  const ref = useRef(null);
+  const [long, setLong] = useState(false);
+  const [open, setOpen] = useState(false);
+
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return undefined;
+    const measure = () => setLong(el.scrollHeight > NOTE_FOLD_PX + 8);
+    measure();
+    if (typeof ResizeObserver === 'undefined') return undefined;
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [content]);
+
+  const folded = long && !open;
+  return (
+    <div className="mb-1.5">
+      <div ref={ref} className="relative overflow-hidden"
+        style={folded ? { maxHeight: NOTE_FOLD_PX } : undefined}>
+        <Markdown className="text-[12px] leading-snug text-text">{content}</Markdown>
+        {folded && (
+          <div aria-hidden="true"
+            className="absolute inset-x-0 bottom-0 h-8 bg-gradient-to-t from-[var(--surface2)] to-transparent" />
+        )}
+      </div>
+      {long && (
+        <button type="button" onClick={() => setOpen((v) => !v)} aria-expanded={open}
+          className="text-[0.7rem] font-display uppercase tracking-wider text-gold hover:text-text mt-1">
+          {open ? 'Show less' : 'Read more'}
+        </button>
+      )}
+    </div>
+  );
+}
 export function DmNotesTab({ notes: rawNotes, isDM = true, actions }) {
   const confirm = useConfirm();
   const notes = rawNotes ?? [];
@@ -531,7 +581,7 @@ export function DmNotesTab({ notes: rawNotes, isDM = true, actions }) {
                   the longest things written in this app — plot hooks with a
                   list of leads under them — and it was the last big text box
                   still rendering its own asterisks. */}
-              <Markdown className="text-[12px] leading-snug text-text mb-1.5">{note.content}</Markdown>
+              <NoteBody content={note.content} />
               {isDM && (
                 <div className="flex items-center gap-1.5 flex-wrap">
                   <span className={`text-[9px] font-display tracking-wider rounded-sm px-1.5 py-0.5 ${note.dm_visible ? 'bg-[#2d3a1a] text-[#9fd49f]' : 'bg-[#3a1a1a] text-[#d49f9f]'}`}>

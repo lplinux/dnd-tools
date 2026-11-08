@@ -264,6 +264,9 @@
 }
 .npc-sheet .tag-opt { padding: 5px 10px; font-family: var(--fi); font-size: 12px; cursor: pointer; color: var(--ink); }
 .npc-sheet .tag-opt:hover, .npc-sheet .tag-opt.focused { background: var(--parch2); }
+/* "homebrew" beside a suggestion that is the DM's own rather than the SRD's. */
+.npc-sheet .tag-opt-badge { margin-left: 6px; font-size: 10.4px; font-style: italic; color: var(--ink-faded, #7a6a50); }
+.npc-sheet .spell-hb { margin-left: 4px; font-size: 10.4px; font-style: italic; opacity: .75; }
 
 /* Fields */
 .npc-sheet .field { margin-bottom: 8px; }

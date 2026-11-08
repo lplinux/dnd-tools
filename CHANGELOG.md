@@ -1,13 +1,42 @@
 # Changelog
 
-Notable changes to **dnd-tools**. The newest tag is `1.0.1`; anything above it is unreleased.
+Notable changes to **dnd-tools**. The newest tag is `1.1.0`; anything above it is unreleased.
 Longer write-ups of these entries are in this file's git history.
 
 ---
 
 ## [Unreleased]
 
+---
+
+## [1.1.0] – 2026-11-08 — Homebrew, the campaign backlog, and the table's own voice
+
 ### Added
+- **Tables in Markdown** — everywhere notes are written (diary, journal, session and backlog cards,
+  NPC and DM notes) and in the module docs. Wide ones scroll on a phone and print cleanly.
+- **⚔ Encounter** (Manage Campaigns): stat blocks to read mid-fight. Line up NPCs and homebrew
+  creatures, switch with a click or keys 1–9, pin a second one beside it (Shift + 1–9). Spell
+  names open their card. Not a tracker — initiative and hit points stay in your combat tool.
+- **Homebrew creatures**: stat blocks of your own, edited in the same sheet as NPCs (SRD import
+  included), used and revealed per campaign. An NPC's stat block can **start from one** of them.
+- **Item Cards inside Homebrew**: your item library is the Homebrew page's *Items* tab. The public
+  Item Cards page is unchanged.
+- **Homebrew spells on character sheets.** A campaign's revealed homebrew spells are offered in the
+  stat sheet's spell pickers (marked *homebrew*) and open their own card; the DM sees every spell
+  the campaign uses, on characters and NPC stat blocks alike.
+- **Homebrew export / import**: the whole library as one file, separate from campaign files.
+  Import adds new entries and keeps yours where a name already exists.
+- **The Char Tree marks dead (☠) and unknown (?) NPCs.**
+- **Long DM notes fold** behind *Read more*.
+- **Homebrew** (DM tools): your own spells in one library — start from an SRD spell, mark
+  them draft / playtest / final, keep private balance notes, and choose per campaign which use
+  them and which have revealed them to the players.
+- **DM Tips** (DM tools on the home page): what goes where — Sessions, Diary, Journal, Timeline —
+  who sees each, and a session from planning to publishing the diary.
+- **Full screen** for the Sessions and Char Tree tabs in Manage Campaigns (Esc to leave).
+- **A player can make public a journal entry written for them.** It then belongs to the whole
+  table; it cannot be made private again from their side.
+- **Tools menu** in the header of every page, to jump to another tool without going home.
 - **Campaign backlog** (🗓 Sessions tab, under the session). Ideas for no session in particular.
   **→ This session** moves a card, sub-cards and all, into the session on screen;
   **→ Backlog** on a session card sends it back.
@@ -33,6 +62,15 @@ Longer write-ups of these entries are in this file's git history.
   goes to the Trash), merge into it, or create a new one under another name.
 
 ### Changed
+- **A new session starts on the date the previous one ended** (or the Today marker), so *Around this
+  date* shows the timeline from the start. Marking it played still asks when it finished.
+- Journal groups are listed by name when grouped by **Category** too, not only by Location or author.
+- **Done and skipped backlog cards fold away** into a *✓ Done & skipped* line instead of showing
+  under every session. Marking one Done while a session is open asks whether to move it into that
+  session.
+- The Char Tree follows the window's size instead of staying at its first width.
+- **The home page groups the tools** into DM, Player and Public tools (and Admin). Each group
+  folds away, and stays folded on that browser.
 - Markdown renders in DM notes, inventory notes, timeline event descriptions, and a character's
   public and private information — on screen, in print and in search.
 - **Grant from library** is sorted by name, searchable, and shows an evolving item's tier.
@@ -40,9 +78,20 @@ Longer write-ups of these entries are in this file's git history.
 - Restoring a campaign from the Trash renames it if its name is taken.
 - **Session cards:** changing a card's state now changes its sub-cards too, for every state
   (before, only Done and Skipped did).
-- Campaign files are version 11 and may be partial. Older files still import.
+- Campaign files are version 13 and may be partial. Older files still import.
 
 ### Fixed
+- **Timeline events keep whether they were revealed** through campaign and timeline export/import.
+  Before, a restored campaign had every event hidden, including ones the table had already seen.
+  Files from before this fix still import, with their events hidden.
+- **A player's timeline export no longer includes events the DM has hidden from them.**
+- **Character evolution was missing from campaign exports**, so a backup restored without any learning
+  paths, teachers or homebrew ideas. It now travels with the campaign, and can be exported on its own
+  (*Export part… → Character evolution*). Importing into another campaign matches characters by name
+  and names any it could not place.
+- *Around this date* put every timeline event a day late — one starting that day showed as "in 1d" — and
+  drifted further each year on Gregorian campaigns.
+- The Account and Tools menus could open behind the Sessions section headings.
 - Closing an NPC's stat block turned the page black.
 - Importing into an existing campaign silently dropped NPC stat blocks and Char Tree
   connections. Stat blocks now merge; connections are reported as not merged.

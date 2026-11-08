@@ -124,7 +124,8 @@ describe('granting an item from the library', () => {
 
 describe('the last big text boxes render markdown', () => {
   const cases = [
-    ['DM notes',          'frontend/src/pages/PcSheet/tabs/index.jsx',   /<Markdown className="text-\[12px\][^"]*">\{note\.content\}<\/Markdown>/],
+    // Through NoteBody, which folds a long note behind "Read more".
+    ['DM notes',          'frontend/src/pages/PcSheet/tabs/index.jsx',   /<Markdown className="text-\[12px\][^"]*">\{content\}<\/Markdown>[\s\S]*<NoteBody content=\{note\.content\} \/>/],
     ['inventory notes',   'frontend/src/pages/PcSheet/tabs/InventoryTab.jsx', /<Markdown className="text-sm text-text-dim[^"]*">\{item\.notes\}<\/Markdown>/],
     ['timeline events',   'frontend/src/pages/Timeline/Modals.jsx',      /<Markdown>\{ev\.description\}<\/Markdown>/],
   ];

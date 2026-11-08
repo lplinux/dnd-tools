@@ -238,7 +238,11 @@ words. Your DM *can* delete an entry, so the campaign can be tidied.
 **For DMs:** you also get a **DM only** checkbox. An entry marked that way is invisible to
 players — it is filtered out of their request on the server, not merely hidden on their screen —
 so you can stage a document in the journal before the party has found it, then untick the box
-when they do. Those entries are outlined in gold so you can tell at a glance what the table
+when they do. An entry can also be shown to **one player** only.
+
+**An entry written just for you** is tagged *Only you*. **📢 Make public** shares it with the
+whole table — your choice, and one way: once public it is everyone's, and you cannot make it
+private again. Those entries are outlined in gold so you can tell at a glance what the table
 cannot see.
 
 The same journal is also a tab in **Manage Campaigns**, which is usually the better place to run

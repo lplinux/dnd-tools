@@ -101,7 +101,12 @@ const TRAY_KEY = 'ic-print-tray';
 // so it is made once rather than on every visit.
 const MIGRATED_KEY = 'ic-migrated';
 
-export default function ItemCards() {
+/**
+ * `embedded`: shown as the Items tab of Homebrew, under that page's header
+ * rather than its own. Nothing else changes — it is the same per-user
+ * library, so a card made in either place is in both.
+ */
+export default function ItemCards({ embedded = false }) {
   const [form, setForm] = useState(defaultForm);
   // The ten SRD weapon properties, for the comma-separated field below.
   const weaponProperties = useSrdNames('weapon-properties');
@@ -558,7 +563,7 @@ export default function ItemCards() {
         async
       />
 
-      <AppHeader icon="🗡️" name="Item Card Creator" />
+      {!embedded && <AppHeader icon="🗡️" name="Item Card Creator" />}
 
       {/* Two-column layout: form | preview */}
       <div className="flex-1 overflow-hidden grid grid-cols-1 lg:grid-cols-2 gap-4 p-4 min-h-0">

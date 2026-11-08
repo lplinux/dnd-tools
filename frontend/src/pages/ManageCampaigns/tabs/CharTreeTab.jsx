@@ -268,7 +268,10 @@ function buildNodes(players, relationships, npcs, crossConns) {
       nodes[`n_${n.id}`] = {
         x: -totalNpcW / 2 + ni * spacing, y: npcY,
         label: n.name, type: 'npc', r: NR,
-        tooltip: `NPC: ${n.name}`,
+        // Alive is the default and stays unmarked, as in the NPC list.
+        life: n.life_state === 'dead' || n.life_state === 'unknown' ? n.life_state : null,
+        tooltip: `NPC: ${n.name}${n.life_state === 'dead' ? '\nDead'
+          : n.life_state === 'unknown' ? '\nAlive or dead: unknown' : ''}`,
       };
     });
   }
@@ -344,6 +347,7 @@ function drawAll(canvas, nodes, relationships, crossConns, vp) {
   const C = {
     gold:    get('--gold',    '#c9a84c'),
     goldDim: get('--gold-dim','#7a6030'),
+    text:    get('--text',    '#e8dcc0'),
     textDim: get('--text-dim','#a09070'),
     border:  get('--border',  '#3d3220'),
     border2: get('--border2', '#554428'),
@@ -512,6 +516,28 @@ function drawAll(canvas, nodes, relationships, crossConns, vp) {
     ctx.fill();
     ctx.stroke();
 
+    // Life badge on an NPC: a small disc on the circle's upper right, ☠ for
+    // dead and ? for unknown — the same two marks the NPC list uses. Drawn
+    // on the circle rather than beside the name, so it survives the label
+    // being cut short.
+    if (n.life) {
+      const br = Math.max(4, 5.5 * sc);
+      const bx = sx(n.x) + r * 0.72, by = sy(n.y) - r * 0.72;
+      ctx.beginPath();
+      ctx.arc(bx, by, br, 0, Math.PI * 2);
+      ctx.fillStyle   = n.life === 'dead' ? '#7a1f1f' : (isLight ? '#d8d0c0' : '#3a3428');
+      ctx.strokeStyle = n.life === 'dead' ? '#e06060' : C.textDim;
+      ctx.lineWidth   = 1 * sc;
+      ctx.fill();
+      ctx.stroke();
+      ctx.font         = `bold ${Math.max(6, Math.round(7 * sc))}px sans-serif`;
+      ctx.fillStyle    = n.life === 'dead' ? '#ffd8d8' : C.text;
+      ctx.textAlign    = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(n.life === 'dead' ? '☠' : '?', bx, by + 0.5 * sc);
+      ctx.textBaseline = 'alphabetic';
+    }
+
     // Relation type micro-label (only family nodes, only if zoomed in)
     if (n.type === 'rel' && n.isFamily && n.relType && sc >= 0.55) {
       const smFs = Math.max(6, Math.round(7 * sc));
@@ -549,7 +575,11 @@ function hitTest(mx, my, nodes, vp) {
 // ─────────────────────────────────────────────────────────────────────────────
 // Canvas component
 // ─────────────────────────────────────────────────────────────────────────────
-function TreeCanvas({ players, relationships, npcs, crossConnections, hiddenPlayers }) {
+// The tree's height on the page; in full screen it takes the window instead,
+// less the bar above it and the tab's padding, and the lists below scroll.
+const TREE_H = 560;
+
+function TreeCanvas({ players, relationships, npcs, crossConnections, hiddenPlayers, fill = false }) {
   const wrapRef    = useRef(null);
   const canvasRef  = useRef(null);
   const tooltipRef = useRef(null);
@@ -586,7 +616,7 @@ function TreeCanvas({ players, relationships, npcs, crossConnections, hiddenPlay
     const c = canvasRef.current;
     const w = wrapRef.current;
     if (!c || !w) return;
-    const W = w.clientWidth, H = 560;
+    const W = w.clientWidth, H = w.clientHeight;
     c.width = W; c.height = H;
     nodesRef.current = buildNodes(vis.players, vis.relationships, npcs, vis.crossConnections);
     // Only auto-fit the first time this canvas mounts (initial load / campaign
@@ -598,6 +628,24 @@ function TreeCanvas({ players, relationships, npcs, crossConnections, hiddenPlay
     }
     redraw();
   }, [vis, npcs, redraw]);
+
+  /*
+   * Follow the box when it changes size — entering or leaving full screen,
+   * or the window being resized. The canvas only resizes; the zoom and pan
+   * stay where the DM left them.
+   */
+  useEffect(() => {
+    const c = canvasRef.current;
+    const w = wrapRef.current;
+    if (!c || !w || typeof ResizeObserver === 'undefined') return undefined;
+    const ro = new ResizeObserver(() => {
+      if (c.width === w.clientWidth && c.height === w.clientHeight) return;
+      c.width = w.clientWidth; c.height = w.clientHeight;
+      redraw();
+    });
+    ro.observe(w);
+    return () => ro.disconnect();
+  }, [redraw]);
 
   // React synthetic mouse events don't reliably expose offsetX/offsetY — derive
   // canvas-local coords from the bounding rect so pan + hit-testing stay correct.
@@ -690,7 +738,8 @@ function TreeCanvas({ players, relationships, npcs, crossConnections, hiddenPlay
   }, [zoomAtLocal]);
 
   return (
-    <div ref={wrapRef} className="relative" style={{ height: 560 }}>
+    <div ref={wrapRef} className="relative"
+      style={{ height: fill ? 'calc(100dvh - 6.5rem)' : TREE_H, minHeight: 320 }}>
       <canvas
         ref={canvasRef}
         className="block w-full cursor-grab active:cursor-grabbing"
@@ -869,7 +918,7 @@ function ConnModal({ open, onClose, onSave, editData, entityOptions }) {
 // ─────────────────────────────────────────────────────────────────────────────
 // Main exported tab
 // ─────────────────────────────────────────────────────────────────────────────
-export function CharTreeTab({ campaignId }) {
+export function CharTreeTab({ campaignId, fill = false }) {
   const { toast } = useToast();
   const confirm = useConfirm();
   const [data,      setData]      = useState(null);
@@ -987,6 +1036,7 @@ export function CharTreeTab({ campaignId }) {
         npcs={npcs}
         crossConnections={crossConnections}
         hiddenPlayers={hiddenPlayers}
+        fill={fill}
       />
 
       {/* One box, two lists. It narrows the player chips below AND the
@@ -1045,6 +1095,8 @@ export function CharTreeTab({ campaignId }) {
         <span><span className="inline-block w-2.5 h-2.5 rounded-full bg-[#2d3a1a] border border-[#7ab050] mr-1 align-middle"/>NPC</span>
         <span><span className="inline-block w-2.5 h-2.5 rounded-full bg-[#362206] border border-[#b07828] mr-1 align-middle"/>Family rel</span>
         <span><span className="inline-block w-2.5 h-2.5 rounded-full bg-[#062c1a] border border-[#288858] mr-1 align-middle"/>Social rel</span>
+        <span><span className="inline-flex items-center justify-center w-3.5 h-3.5 rounded-full bg-[#7a1f1f] border border-[#e06060] text-[#ffd8d8] text-[0.65rem] leading-none mr-1 align-middle">☠</span>Dead NPC</span>
+        <span><span className="inline-flex items-center justify-center w-3.5 h-3.5 rounded-full bg-surface3 border border-border2 text-text text-[0.65rem] leading-none mr-1 align-middle">?</span>Unknown</span>
         <span className="text-text-muted">Scroll to zoom · Drag to pan · Hover for details</span>
       </div>
 

@@ -1,0 +1,296 @@
+{
+ "Vhessk": {
+  "char_name": "Vhessk the Hollow Tide",
+  "race": "Sahuagin",
+  "sex": "Male",
+  "alignment": "Lawful Evil",
+  "char_class": "",
+  "subclass": "",
+  "level": "5",
+  "cr": "6",
+  "hp": "142",
+  "max_hp": "142",
+  "ac": "16",
+  "speed": "30 ft., swim 50 ft.",
+  "senses": "Darkvision 120 ft.; Passive Perception 20",
+  "langs": "Sahuagin, Aquan, Common",
+  "caster_type": "none",
+  "spell_ability": "",
+  "slot_reset": "Long Rest",
+  "abilities": {
+   "str": {
+    "score": 18,
+    "st_prof": false
+   },
+   "dex": {
+    "score": 14,
+    "st_prof": false
+   },
+   "con": {
+    "score": 16,
+    "st_prof": true
+   },
+   "int": {
+    "score": 14,
+    "st_prof": false
+   },
+   "wis": {
+    "score": 18,
+    "st_prof": true
+   },
+   "cha": {
+    "score": 14,
+    "st_prof": true
+   }
+  },
+  "skill_profs": {
+   "Perception": 2
+  },
+  "tags": {
+   "resist": [
+    "Cold",
+    "Lightning",
+    "Thunder"
+   ],
+   "immune": [],
+   "vuln": [],
+   "condimmune": [],
+   "damagetype": []
+  },
+  "personality": "The Wave Shaper, Tide Sovereign of the Szeth'Rathul. Hunched and twisted even by wave shaper standards.",
+  "spec_traits": "Legendary Resistance (3/Day). If he fails a saving throw, he can choose to succeed instead.\nBlood Frenzy. Advantage on melee attack rolls against any creature that doesn't have all its hit points.\nLimited Amphibiousness. Breathes air and water, but must submerge at least once every 4 hours.\nShark Telepathy. He can magically command any shark within 120 feet.\nTidal Ward. Water coils around him. The ground within 15 feet is difficult terrain for his enemies, and he has advantage on saves against being moved or knocked prone.",
+  "features": "AC 16 (coral carapace). HP 142 (19d8 + 57). Challenge 6 (2,300 XP), proficiency +3.",
+  "equipment": "Trident. Coral carapace.",
+  "actions": "Multiattack. Two Trident attacks and one Water Jet.\nTrident. Melee or Ranged Weapon Attack: +7 to hit, reach 5 ft. or range 20/60 ft. Hit: 11 (2d6 + 4) piercing plus 3 (1d6) cold.\nWater Jet. Ranged Spell Attack: +7 to hit, range 90 ft. Hit: 10 (3d6) cold, and a DC 15 Strength save or pushed 10 feet.\nWhirlpool (1/Day). Concentration, up to 10 minutes. He closes a fist and the water obeys. The water must be at least 50 feet square and 25 feet deep; a whirlpool forms at the centre of it, 5 feet wide at the base, up to 50 feet wide at the top, and 25 feet tall, lasting until he chooses a different effect or the spell ends.\n  Any creature in the water and within 25 feet of the whirlpool is pulled 10 feet toward it. When a creature enters the whirlpool for the first time on a turn, or ends its turn there, it makes a DC 15 Strength saving throw, taking 9 (2d8) bludgeoning damage on a failure or half as much on a success. A creature can swim away from the whirlpool only if it first takes an action to pull away and succeeds on a DC 15 Strength (Athletics) check.",
+  "bonus_actions": "",
+  "leg_actions": "Three per round, one at a time, at the end of another creature's turn.\nSurge. He swims up to his speed without provoking opportunity attacks.\nWater Jet (Costs 1). One Water Jet attack.\nUndertow (Costs 2). One creature within 30 ft. makes a DC 15 Strength save or is pulled 20 feet toward him and knocked prone.\nCall the Deep (Costs 3). Each enemy within 20 ft. makes a DC 15 Constitution save or takes 10 (3d6) cold and has its speed halved until the end of its next turn.",
+  "lair_actions": "",
+  "special_abilities": "THE DROWNED PACT — when he drops to 0 hit points, once only.\nHe dies, and then he stands up. He gains 20 temporary hit points that cannot be healed, restored or replenished by any means. When those are gone, he is gone. On standing, he immediately uses The Drowned Answer; after that he acts normally, legendary actions and all.\n\nTHE DROWNED ANSWER. He does not cast it. He opens his mouth and lets something else use it. The voice is not his.\nEverything that ever drowned in this lake surfaces at once — triton, sahuagin, fish, children. 60-foot radius centred on him. DC 15 Constitution, 21 (6d6) necrotic, half on a success. The water goes black and stays black.\nThe other sahuagin are not immune, and they will be horrified. This is not Sekolah's magic and every one of them knows it on sight.",
+  "dm_notes": ""
+ },
+ "Ssharai": {
+  "char_name": "Ssharai, the Drowned Mother",
+  "race": "Sahuagin",
+  "sex": "Female",
+  "alignment": "Lawful Evil",
+  "char_class": "",
+  "subclass": "",
+  "level": "4",
+  "cr": "2",
+  "hp": "33",
+  "max_hp": "33",
+  "ac": "12",
+  "speed": "30 ft., swim 40 ft.",
+  "senses": "Darkvision 120 ft.; Passive Perception 16",
+  "langs": "Sahuagin",
+  "caster_type": "full",
+  "spell_ability": "wis",
+  "slot_reset": "Long Rest",
+  "abilities": {
+   "str": {
+    "score": 13,
+    "st_prof": false
+   },
+   "dex": {
+    "score": 11,
+    "st_prof": false
+   },
+   "con": {
+    "score": 12,
+    "st_prof": false
+   },
+   "int": {
+    "score": 12,
+    "st_prof": false
+   },
+   "wis": {
+    "score": 14,
+    "st_prof": false
+   },
+   "cha": {
+    "score": 13,
+    "st_prof": false
+   }
+  },
+  "skill_profs": {
+   "Perception": 2,
+   "Religion": 1
+  },
+  "tags": {
+   "resist": [],
+   "immune": [],
+   "vuln": [],
+   "condimmune": [],
+   "damagetype": []
+  },
+  "personality": "Priestess of Sekolah. Believes every word she speaks for him — which is exactly what makes her arguable with.",
+  "spec_traits": "Blood Frenzy. Advantage on melee attack rolls against any creature that doesn't have all its hit points.\nLimited Amphibiousness. She can breathe air and water, but needs to be submerged at least once every 4 hours to avoid suffocating.\nShark Telepathy. She can magically command any shark within 120 feet of her, using a limited telepathy.",
+  "features": "Spellcasting. A 6th-level spellcaster; Wisdom, save DC 12, +4 to hit. Slots 4 / 3 / 3.\nAC 12 (natural armour). HP 33 (6d8 + 6). Challenge 2 (450 XP), proficiency +2.",
+  "spell_names": {
+   "0": "Guidance, Thaumaturgy",
+   "1": "Bless, Detect Magic, Guiding Bolt",
+   "2": "Hold Person, Spiritual Weapon",
+   "3": "Mass Healing Word, Tongues"
+  },
+  "equipment": "",
+  "actions": "Multiattack. Two melee attacks: one with her Bite and one with her Claws.\nBite. Melee Weapon Attack: +3 to hit, reach 5 ft., one target. Hit: 3 (1d4 + 1) piercing.\nClaws. Melee Weapon Attack: +3 to hit, reach 5 ft., one target. Hit: 3 (1d4 + 1) slashing.\nControl Water (1/Day). Concentration, up to 10 minutes. She takes hold of water she can see within 300 feet, in a cube up to 100 feet on a side, and chooses one of four effects. She can change the effect on a later turn.\n  Flood. Raise the water level by up to 20 feet, or — in a body at least 50 feet wide — send a 20-foot wave crashing in a direction she chooses: DC 12 Strength or be knocked prone and carried with it.\n  Part Water. Open a trench through the area, its sides walls of water.\n  Redirect Flow. Make flowing water run in a direction she chooses, even over obstacles, up walls and in other unlikely directions.\n  Whirlpool. Exactly as Vhessk's, using her DC 12.",
+  "dm_notes": "",
+  "bonus_actions": "",
+  "leg_actions": "",
+  "lair_actions": "",
+  "special_abilities": ""
+ },
+ "Nerida Stormtide": {
+  "char_name": "Nerida Stormtide",
+  "race": "Humanoid",
+  "sex": "Female",
+  "alignment": "Neutral Good",
+  "char_class": "",
+  "subclass": "",
+  "level": "7",
+  "cr": "4",
+  "hp": "45",
+  "max_hp": "45",
+  "ac": "14",
+  "speed": "30 ft., swim 40 ft.",
+  "senses": "Passive Perception 17",
+  "langs": "Common, Aquan, Primordial",
+  "caster_type": "full",
+  "spell_ability": "wis",
+  "slot_reset": "Long Rest",
+  "abilities": {
+   "str": {
+    "score": 9,
+    "st_prof": false
+   },
+   "dex": {
+    "score": 14,
+    "st_prof": false
+   },
+   "con": {
+    "score": 14,
+    "st_prof": false
+   },
+   "int": {
+    "score": 16,
+    "st_prof": false
+   },
+   "wis": {
+    "score": 18,
+    "st_prof": true
+   },
+   "cha": {
+    "score": 16,
+    "st_prof": true
+   }
+  },
+  "skill_profs": {
+   "Insight": 2,
+   "History": 1,
+   "Perception": 1
+  },
+  "tags": {
+   "resist": [
+    "Cold"
+   ],
+   "immune": [],
+   "vuln": [],
+   "condimmune": [],
+   "damagetype": []
+  },
+  "personality": "Oracle of Nathoud — the oracle who warned Nathoud's king that something was coming. Ally.",
+  "spec_traits": "Already Seen It (3/Day). She can't be surprised. When a creature she can see attacks her or an ally within 30 feet, she imposes disadvantage on that roll — she called the warning half a second early.\nForeseen, Not Fearless. Advantage on saves against being charmed or frightened. Not immunity: she has seen worse than you coming, but she is not unshakeable.\nThe Tide Remembers (1/Day). She asks the waters about one event that happened within Nathoud in the past 500 years. Images and feeling, never words.",
+  "features": "Spellcasting. Wisdom, save DC 15, +7 to hit; 7th-level caster, slots 4 / 3 / 3 / 1.\nTreat as Challenge 4.",
+  "spell_names": {
+   "0": "Guidance, Mending, Ray of Frost, Thaumaturgy",
+   "1": "Bane, Create or Destroy Water, Detect Magic, Healing Word",
+   "2": "Augury, Hold Person, Locate Object",
+   "3": "Clairvoyance, Sending, Water Walk",
+   "4": "Divination"
+  },
+  "equipment": "",
+  "actions": "Tidelash. Ranged Spell Attack: +7 to hit, range 60 ft. Hit: 9 (2d8) cold.\nTurn of the Tide (1/Day). Her eyes go white and for one heartbeat everyone near her sees a few seconds that have not happened yet. Each ally within 30 feet gains one foresight die: once in the next minute, after making a d20 roll — attack, check or save — but before learning whether it succeeded, they may reroll it and must use the new result. One reroll each; any still unspent fade when the minute ends.",
+  "dm_notes": "",
+  "bonus_actions": "",
+  "leg_actions": "",
+  "lair_actions": "",
+  "special_abilities": ""
+ },
+ "Pilika Greenbottle": {
+  "char_name": "Pilika Greenbottle",
+  "race": "Halfling",
+  "sex": "Female",
+  "alignment": "Chaotic Good",
+  "char_class": "Bard",
+  "subclass": "College of Lore",
+  "level": "7",
+  "cr": "",
+  "hp": "38",
+  "max_hp": "38",
+  "ac": "13",
+  "speed": "25 ft.",
+  "senses": "Passive Perception 11",
+  "langs": "Common, Halfling, Elvish",
+  "caster_type": "full",
+  "spell_ability": "cha",
+  "slot_reset": "Long Rest",
+  "abilities": {
+   "str": {
+    "score": 8,
+    "st_prof": false
+   },
+   "dex": {
+    "score": 16,
+    "st_prof": true
+   },
+   "con": {
+    "score": 12,
+    "st_prof": false
+   },
+   "int": {
+    "score": 12,
+    "st_prof": false
+   },
+   "wis": {
+    "score": 10,
+    "st_prof": false
+   },
+   "cha": {
+    "score": 18,
+    "st_prof": true
+   }
+  },
+  "skill_profs": {
+   "Performance": 2,
+   "Persuasion": 2,
+   "Deception": 1,
+   "Acrobatics": 1,
+   "Investigation": 1,
+   "Insight": 1
+  },
+  "tags": {
+   "resist": [],
+   "immune": [],
+   "vuln": [],
+   "condimmune": [],
+   "damagetype": []
+  },
+  "personality": "Met at the petrified village and again in the Great Wild Wood, where she and Seryla were heading to Laputa to research the ice. Asked to come to Nathoud. Ally.",
+  "spec_traits": "Jack of All Trades. +1 to any ability check she is not already proficient in.\nLucky. Reroll a natural 1 on an attack, check or save.\nBrave. Advantage against being frightened.\nHalfling Nimbleness. Can move through the space of any creature larger than her.\nSong of Rest (d8). Allies who spend a short rest with her regain an extra d8 when they spend Hit Dice.",
+  "features": "Spellcasting. Charisma, save DC 15, +7 to hit; slots 4 / 3 / 3 / 1. Ten prepared bard spells, plus two from Magical Discoveries (Beacon of Hope, Counterspell) — the College of Lore feature at 6th level, which takes two spells from the Cleric, Druid or Wizard lists. (Magical Secrets is the separate 10th-level feature; she does not have it.)\nCountercharm. Action. Until the end of her next turn, she and allies within 30 feet have advantage on saves against being frightened or charmed, for as long as she keeps performing.",
+  "spell_names": {
+   "0": "Vicious Mockery, Minor Illusion, Prestidigitation",
+   "1": "Healing Word, Faerie Fire, Dissonant Whispers, Heroism",
+   "2": "Enhance Ability, Invisibility, Shatter",
+   "3": "Hypnotic Pattern, Mass Healing Word, Counterspell",
+   "4": "Greater Invisibility, Beacon of Hope"
+  },
+  "equipment": "Normally studded leather (AC 15), an instrument and a component pouch. In the Oracle's Chamber she has lost everything she carried.",
+  "actions": "Vicious Mockery (Cantrip). One creature within 60 ft. that can hear her. DC 15 Wisdom save or 5 (2d4) psychic and disadvantage on its next attack roll before the end of its next turn.\nUnarmed Strike. +2 to hit, 1 bludgeoning. She has no weapon.",
+  "bonus_actions": "Bardic Inspiration (d8, 4/Short Rest). Bonus action. One creature other than herself within 60 feet who can hear her gains a d8 for 10 minutes, added to one attack roll, ability check or saving throw of its choice.\nCutting Words. Reaction, expending one Bardic Inspiration. When a creature within 60 feet that she can see makes an attack roll, ability check or damage roll, she subtracts a d8 from it — declared after the roll, before the outcome.",
+  "dm_notes": "",
+  "leg_actions": "",
+  "lair_actions": "",
+  "special_abilities": ""
+ }
+}

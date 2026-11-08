@@ -29,6 +29,7 @@ import { campaignsApi } from '@/api/campaigns';
 import { useToast } from '@/hooks/useToast';
 import CrossLinkPopover from '@/components/CrossLinkPopover';
 import { useConfirm } from '@/contexts/ConfirmContext';
+import { homebrewApi } from '@/api/homebrew';
 
 /**
  * Alive, dead, or nobody knows.
@@ -169,6 +170,34 @@ export default function NpcsTab({ npcs, locations = [], campaignId, actions }) {
     actions.patchNpc?.(sheetFor.id, { has_sheet: true });
     return r;
   }, [campaignId, sheetFor, actions]);
+
+  /*
+   * Your homebrew creatures, offered as a starting point for a stat block.
+   * Fetched when the dialog opens, not with the page: most visits to the
+   * NPC list never open one.
+   */
+  const [creatures, setCreatures] = useState([]);
+  useEffect(() => {
+    if (!sheetFor) return undefined;
+    let alive = true;
+    homebrewApi.list('creature')
+      .then((rows) => { if (alive) setCreatures((rows ?? []).sort((a, b) => a.name.localeCompare(b.name))); })
+      .catch(() => { if (alive) setCreatures([]); });
+    return () => { alive = false; };
+  }, [sheetFor]);
+
+  /** Copy a creature into this NPC's stat block — a copy, so the two can differ. */
+  async function startFromCreature(id) {
+    const c = creatures.find((x) => String(x.id) === String(id));
+    if (!c) return;
+    if (sheet?.exists && !await confirm(
+      `Replace ${sheetFor.name}'s stat block with a copy of ${c.name}?`,
+      { title: 'Start from a creature', confirmLabel: 'Replace' })) return;
+    try {
+      await saveSheet({ ...c.data, char_name: sheetFor.name });
+      toast(`${sheetFor.name} now starts from ${c.name}.`, 'success');
+    } catch (e) { toast(e.message, 'error'); }
+  }
 
   async function removeSheet() {
     if (!await confirm(`Delete ${sheetFor.name}'s stat block? The NPC stays.`,
@@ -503,11 +532,22 @@ export default function NpcsTab({ npcs, locations = [], campaignId, actions }) {
                 creature from the SRD inside the sheet rather than typing it.
               </p>
             )}
+            {creatures.length > 0 && (
+              <label className="flex items-center gap-2 text-xs text-text-dim flex-shrink-0">
+                Start from one of your creatures
+                <select value="" onChange={(e) => startFromCreature(e.target.value)}
+                  className="bg-surface2 border border-border2 text-text px-1.5 py-1 rounded-sm text-xs">
+                  <option value="">— pick a homebrew creature —</option>
+                  {creatures.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+                </select>
+              </label>
+            )}
             <div className="flex-1 min-h-0 border border-border rounded-sm overflow-hidden">
               <StatsSheetFrame
                 stats={sheet.stats}
                 onSave={saveSheet}
                 frameId={`npc=${sheetFor.id}`}
+                campaignId={campaignId}
                 title={`${sheetFor.name} stat block`}
                 autoHeight={false}
               />

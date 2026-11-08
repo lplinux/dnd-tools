@@ -397,6 +397,7 @@ export default function PcSheet() {
                 <StatsTab
                   key={currentPlayerId}
                   playerId={currentPlayerId}
+                  campaignId={currentCampaignId}
                   charData={charData}
                   onSaveStats={handleSaveStats}
                 />

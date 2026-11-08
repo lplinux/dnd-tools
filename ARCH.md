@@ -146,6 +146,11 @@ campaign_journal_entries
 `dm_only` — an older query, a bundle without the ref — therefore treats a one-player entry as
 hidden, and deleting the seat leaves it hidden too. It fails closed.
 
+The player an entry is for may **make it public** (`PATCH …/journal/:id/make-public`) — one way
+only, and only that: one conditional UPDATE to `dm_only = false, visible_to = NULL`, guarded on
+the entry still being `dm_only` and for one of the caller's own seats. They cannot edit it, and
+anything else is a 404 so the route confirms nothing the caller cannot already read.
+
 `category` is free text with a datalist of what the campaign already uses, exactly like the
 diary's — a table invents its own filing ("Documents", "Rumours", "People we met") rather than
 picking from a list somebody else wrote. Entries group under it in the UI.
@@ -198,6 +203,18 @@ campaign_session_items
 
 `campaign_id` is carried on the items as well as the session so the On-Going view is one
 indexed read rather than a join back through `campaign_sessions` for every row.
+
+**Homebrew** (`homebrew_entries`, `campaign_homebrew`) is a library owned by a **user**, not a
+campaign: one spell used at two tables is one row. A campaign points at the entries it uses, with
+`is_public` as the reveal — the same gate NPCs have — and a player's read filters on it in SQL and
+never selects `balance_note`. One table with a JSONB body per `kind`, rebuilt on every write by
+that kind's cleaner in `HOMEBREW_KINDS`, so unknown keys are dropped rather than stored; `kind`
+has no CHECK because adding one is a code change. A spell's body is the shape
+`data/spellDetails.js` reads SRD spells into, so `SpellCard` renders both.
+A stat sheet reaches a campaign's homebrew through `StatsSheetFrame`'s `campaignId`, passed to the
+iframe as `?campaign=`; the sheet fetches `/api/campaigns/:id/homebrew` (revealed only, for a
+player) and offers those names in its spell pickers. Sheets store names, never entry ids, which is
+why the library's export/import is separate from the campaign bundle and needs no id remapping.
 
 **The campaign backlog** (`campaign_pendings`) is the same card shape with no session and no
 section: things to use some day. Its own table rather than session cards with a NULL session,
@@ -477,6 +494,10 @@ per-timeline list, the party list and the public share — so a hidden event nev
 reaches the browser rather than merely going unrendered. A DM's new event starts
 **hidden**; an event a player writes on their own timeline starts visible, since
 defaulting that to hidden would stop a player seeing what they just typed.
+The flag travels as `visible_to_players` in every file an event is in — the campaign bundle (player
+and DM timelines, party events) and the single-timeline file — and an import reveals only on an
+explicit `true`, so a file from before it travelled lands hidden. The single-timeline export applies
+the same SQL filter as the entries route: a player's file never holds a hidden event.
 
 **Two kinds of share token.** `campaign_timeline_shares` grants the whole
 campaign (every player's timeline plus party events); `player_timeline_shares`

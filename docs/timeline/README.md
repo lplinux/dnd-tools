@@ -142,15 +142,21 @@ portable `type:'timeline'` file, named `timeline-<campaign>-<timeline>-<date>.js
 stored by **name + kind** (player / npc / relationship)
 and locations by name, so the file can be re-imported into any campaign.
 
+Each event carries **`visible_to_players`** — whether the DM has revealed it (👁). An event comes back
+revealed only when the file says `true`; a version-1 file has no flag, and its events import
+**hidden**, so an old file never shows the players anything they had not been shown. A **player's**
+export contains only the events they can see — never one the DM has kept hidden.
+
 ```json
 {
-  "version": 1, "type": "timeline",
+  "version": 2, "type": "timeline",
   "timeline": { "name": "Aldric's Journal" },
   "calendar_type": "harptos",
   "events": [
     {
       "title": "Yawning Portal Brawl", "description": "…", "location": "Waterdeep",
       "year": 1492, "day_of_year": 8, "duration_days": 1, "is_party": false,
+      "visible_to_players": true,
       "actors": [ { "name": "Aldric", "kind": "player" }, { "name": "Volo", "kind": "npc" } ]
     }
   ]

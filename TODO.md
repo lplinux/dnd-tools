@@ -62,8 +62,8 @@ Touch input and the two overflowing layouts are **done** — see `TOQA.md`. What
       is not usable. Probably wants a different presentation rather than a responsive fix.
 - [ ] **SplitView** — four iframes at ~195px each on a phone. Arguably should just say
       "desktop only" rather than be fixed.
-- [ ] Improve the home to group DM tools on one group and Players tools on another group.
-- [ ] Add information about How to use the different sections (llike what to put on Journal, what on Sessions, etc)
+- [x] Improve the home to group DM tools on one group and Players tools on another group.
+- [x] Add information about How to use the different sections (llike what to put on Journal, what on Sessions, etc) — the DM Tips page
 
 ---
 
@@ -77,18 +77,18 @@ is waiting on your QA is in `TOQA.md`.
 #### Homebrew
 
 A DM module for custom content: spells, creatures, items and the rest of the list below.
-**Not started; parked for now.**
+**Started:** the library, spells, and use/reveal per campaign. See `docs/homebrew/README.md`.
 
 **Decided: a library, not per campaign.** Entries belong to the DM and travel between
 campaigns, like item cards already do. Each campaign chooses which entries it uses. Per-campaign
 copies would turn one spell used at two tables into two copies that drift apart.
 
 **Data model (sketch)**
-- [ ] `homebrew_entries` — owned by a **user**: `kind`, `name`, `data JSONB`, `status`
+- [x] `homebrew_entries` — owned by a **user**: `kind`, `name`, `data JSONB`, `status`
       (draft / playtest / final), a private balance note, and `based_on` (the SRD entry it was
       copied from). One table with a JSON body per kind, each kind validated on write the way
       `validateStats` cleans a stat block — rather than a table per kind.
-- [ ] `campaign_homebrew` — which entries a campaign uses, and `is_public` (revealed to players),
+- [x] `campaign_homebrew` — which entries a campaign uses, and `is_public` (revealed to players),
       the same gate NPCs have.
 - [ ] Grants — an entry given to a character (a spell into their list, a feat, a gift). Could
       reuse Evolution's paths, whose **✨ Homebrew** items are free text today and would become
@@ -96,18 +96,18 @@ copies would turn one spell used at two tables into two copies that drift apart.
 - [ ] Version notes per entry ("v2 — damage lowered after session 25"), so players see what changed.
 
 **First slice**
-- [ ] **Spells**: level, school, casting time, range, components, duration, description, at
+- [x] **Spells**: level, school, casting time, range, components, duration, description, at
       higher levels — the shape `data/spellDetails.js` already reads SRD spells into, so a
       homebrew spell shows in the sheet's spell list and card the same way.
-- [ ] **Creatures**: reuse the stat-block editor (`StatsSheetFrame`) and `validateStats`. A
+- [x] **Creatures**: reuse the stat-block editor (`StatsSheetFrame`) and `validateStats`. A
       creature is a reusable template; an NPC's stat block can start as a copy of one.
-- [ ] **Item cards, embedded.** For a logged-in DM the Item Cards library becomes a tab here.
+- [x] **Item cards, embedded.** For a logged-in DM the Item Cards library becomes a tab here.
       It is already a per-user library, so this is mostly UI. The public `/item-cards` page stays
       as the standalone tool for anyone not logged in.
-- [ ] **Homebrew in every SRD picker**, marked *homebrew*: spells on the stat sheet, species,
+- [ ] **Homebrew in every SRD picker**, marked *homebrew*: *(spells done)* spells on the stat sheet, species,
       conditions, damage types, weapon properties. This is what makes it useful during play.
-- [ ] **Start from an official entry**: copy an SRD spell or monster and edit it.
-- [ ] **Reveal and grant**, per campaign.
+- [ ] **Start from an official entry**: copy an SRD spell or monster and edit it. *(Spells done. Creatures start from an SRD monster inside the sheet.)*
+- [ ] **Reveal and grant**, per campaign. *(Reveal done; grant to a character still to do.)*
 
 **Later — more kinds**
 - [ ] Subclasses (to allow import from non official)
@@ -121,12 +121,28 @@ copies would turn one spell used at two tables into two copies that drift apart.
 - [ ] Printable cards for spells and gifts, reusing the item-card print sheet
 - [ ] A balance check against the DMG guidelines (damage by spell level, CR from a stat block)
 - [ ] Included in campaign search
-- [ ] Export / import: inside the campaign file (only the entries that campaign uses) and as a
-      standalone library file for moving homebrew between DMs
+- [x] Export / import as a standalone library file. *Decided:* not inside the campaign file — a
+      sheet carries spell names only, and a name with no homebrew behind it shows no card.
 
 **Open questions**
 - [X] A homebrew entry with the same name as an SRD one: show both
 - [X] Can players propose homebrew? No
+
+#### Encounters — a full combat tracker (alternative, not planned)
+
+**Shieldmaiden runs combat today** (initiative, damage, conditions, states), so this stays an
+option, not a plan. What exists is the read-only **⚔ Encounter** tab: stat blocks two at a time,
+switched by key. If the tracker is ever wanted, it would build on that tab:
+
+- [ ] Encounters saved per campaign, optionally linked to a session's prep
+- [ ] Combatants from NPC stat blocks, homebrew creatures and the party; "×4" makes four copies,
+      each pointing at its stat block (fixes flow into the next fight), with only the fight's
+      own state stored: initiative, current/temp HP, conditions, death saves
+- [ ] Round and turn tracking; the current turn's stat block opens itself
+- [ ] X/day pips (Legendary Resistance, 1/Day actions), suggested from "(N/Day)" in the text
+- [ ] Encounter difficulty from CR and party level (XP, multiplier, thresholds)
+- [ ] A player view: initiative order and *bloodied* only, by link
+- [ ] A short combat log
 
 #### DM Notes
 

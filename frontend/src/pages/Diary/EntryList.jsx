@@ -48,6 +48,9 @@ export default function EntryList({
   entries, readOnly = false, showStatus = false,
   onEdit, onDelete, onSetStatus, emptyText = 'No entries yet.',
   meta = metaLine, can, accent,
+  // Anything else one entry offers, beside Edit and Delete — a node or null.
+  // The Journal uses it for "Make public"; nothing else needs it yet.
+  extra,
   // Cross-links. Absent everywhere except the Journal and the Diary, where
   // the body is read rather than skimmed — a [[Name]] in the card teaser
   // would just be noise, so `excerpt` strips it below.
@@ -69,6 +72,7 @@ export default function EntryList({
         {entries.map((e) => {
           const metaBits = meta(e);
           const may = rights(e);
+          const more = extra?.(e) ?? null;
           const published = e.status === 'published';
           return (
             <article
@@ -120,8 +124,9 @@ export default function EntryList({
                   </button>
                 ))}
 
-                {(may.edit || may.remove) && (
+                {(may.edit || may.remove || more) && (
                   <div className="flex gap-1 ml-auto">
+                    {more}
                     {may.edit && (
                       <Button variant="default" onClick={() => onEdit(e)} title="Edit">✎</Button>
                     )}
