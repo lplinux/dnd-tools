@@ -8,6 +8,9 @@ Longer write-ups of these entries are in this file's git history.
 ## [Unreleased]
 
 ### Added
+- **DM Tips** (DM tools on the home page): what goes where — Sessions, Diary, Journal, Timeline —
+  who sees each, and a session from planning to publishing the diary.
+- **Tools menu** in the header of every page, to jump to another tool without going home.
 - **Campaign backlog** (🗓 Sessions tab, under the session). Ideas for no session in particular.
   **→ This session** moves a card, sub-cards and all, into the session on screen;
   **→ Backlog** on a session card sends it back.
@@ -33,6 +36,8 @@ Longer write-ups of these entries are in this file's git history.
   goes to the Trash), merge into it, or create a new one under another name.
 
 ### Changed
+- **The home page groups the tools** into DM, Player and Public tools (and Admin). Each group
+  folds away, and stays folded on that browser.
 - Markdown renders in DM notes, inventory notes, timeline event descriptions, and a character's
   public and private information — on screen, in print and in search.
 - **Grant from library** is sorted by name, searchable, and shows an evolving item's tier.

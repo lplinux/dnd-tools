@@ -19,6 +19,7 @@ const PdfViewerPage = lazy(() => import('@/pages/PdfViewer'));
 const DiaryPage = lazy(() => import('@/pages/Diary'));
 const SplitViewPage = lazy(() => import('@/pages/SplitView'));
 const UserPanelPage = lazy(() => import('@/pages/UserPanel'));
+const DmTipsPage = lazy(() => import('@/pages/DmTips'));
 
 // Public token pages
 const PcPublicPage = lazy(() => import('@/pages/PcPublic'));
@@ -115,6 +116,14 @@ export default function App() {
           element={
             <ProtectedRoute roles={['dm']}>
               <JourneyMapPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="dm-tips"
+          element={
+            <ProtectedRoute roles={['dm']}>
+              <DmTipsPage />
             </ProtectedRoute>
           }
         />

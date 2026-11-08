@@ -3,7 +3,9 @@
  *
  * The landing page / module dashboard.
  *
- * - Shows all modules the current user can access as cards.
+ * - Shows the modules the current user can access as cards, grouped by who
+ *   they are for (DM, players, public, admin) — see data/modules.js.
+ * - Each group folds away, and stays folded on this browser.
  * - Unauthenticated users see public modules + a Login button.
  * - Clicking the ℹ️ button fetches and renders the module's README.md.
  * - Login opens a modal; on success the module grid re-renders for the new role.
@@ -11,7 +13,7 @@
 
 import { useState, useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { Info, ExternalLink } from 'lucide-react';
+import { Info, ExternalLink, ChevronDown, ChevronRight } from 'lucide-react';
 
 import AppHeader from '@/components/layout/AppHeader';
 import { Button, Modal, Spinner, FormField, Markdown } from '@/components/ui';
@@ -19,111 +21,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { useToast } from '@/hooks/useToast';
 import { docsApi } from '@/api/docs';
 import { safeNext } from '@/api/returnTo';
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Module definitions
-// Keep in sync with the route declarations in App.jsx
-// ─────────────────────────────────────────────────────────────────────────────
-const MODULES = [
-  {
-    key: 'npc',
-    icon: '🧙',
-    title: 'NPC Sheet',
-    desc: 'Create D&D 5e NPC stat blocks with automatic ability modifiers.',
-    url: '/npc-sheet',
-    access: 'public',
-    docs: 'npc-sheet',
-  },
-  {
-    key: 'items',
-    icon: '🗡️',
-    title: 'Item Cards',
-    desc: 'Create magic item cards with rarities and special abilities.',
-    url: '/item-cards',
-    access: 'public',
-    docs: 'item-cards',
-  },
-  {
-    key: 'split',
-    icon: '🪟',
-    title: 'Split View',
-    desc: 'View multiple tools side-by-side with custom layouts.',
-    url: '/split-view',
-    access: 'public',
-    docs: 'split-view',
-  },
-  {
-    key: 'timeline',
-    icon: '📜',
-    title: 'Timeline',
-    desc: 'Track campaign events across multiple calendar systems.',
-    url: '/timeline',
-    access: ['dm', 'player'],
-    docs: 'timeline',
-  },
-  {
-    key: 'pdf',
-    icon: '📖',
-    title: 'PDF Viewer',
-    desc: 'Access rulebooks and references with fullscreen support.',
-    url: '/pdf-viewer',
-    access: ['dm'],
-    docs: 'pdf-viewer',
-  },
-  {
-    key: 'pcsheet',
-    icon: '🧝',
-    title: 'PC Character Sheet',
-    desc: 'Manage your player character — story, traits, relationships, and private notes.',
-    url: '/pc-sheet',
-    access: ['dm', 'player'],
-    docs: 'pc-sheet',
-  },
-  {
-    key: 'campaigns',
-    icon: '🏰',
-    title: 'Manage Campaigns',
-    desc: 'Create and manage campaigns, players, and assignments.',
-    url: '/manage-campaigns',
-    access: ['dm'],
-    docs: 'manage-campaigns',
-  },
-  {
-    key: 'diary',
-    icon: '📔',
-    title: 'Campaign Diary',
-    desc: "Session summaries — your campaign diary, shareable by link, plus every player's private diary. (A player's own diary lives on their PC Sheet.)",
-    url: '/diary',
-    access: ['dm'],
-    docs: 'diary',
-  },
-  {
-    key: 'journeymap',
-    icon: '🗺️',
-    title: 'Journey Path Map',
-    desc: 'Draw party routes on a map. Track groups, set distances and see travel times.',
-    url: '/journey-map',
-    access: ['dm'],
-    docs: 'journey-map',
-  },
-  {
-    key: 'userpanel',
-    icon: '⚙️',
-    title: 'User Panel',
-    desc: 'Admin panel to manage users, roles, and permissions.',
-    url: '/user-panel',
-    access: ['admin'],
-    docs: 'user-panel',
-  },
-];
-
-/** Returns true if the module is accessible to the given user (or null = guest). */
-function canAccess(mod, user) {
-  if (mod.access === 'public') return true;
-  if (!user) return false;
-  if (Array.isArray(mod.access)) return mod.access.includes(user.role);
-  return mod.access.split(',').includes(user.role);
-}
+import { groupsFor } from '@/data/modules';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // DocsModal
@@ -246,33 +144,22 @@ function ModuleCard({ mod, onInfo }) {
             {mod.title}
           </h3>
         </div>
-        <button
-          onClick={() => onInfo(mod)}
-          className="text-text-muted hover:text-gold transition-colors"
-          title="Documentation"
-          aria-label={`Info about ${mod.title}`}
-        >
-          <Info size={15} />
-        </button>
+        {mod.docs && (
+          <button
+            onClick={() => onInfo(mod)}
+            className="text-text-muted hover:text-gold transition-colors"
+            title="Documentation"
+            aria-label={`Info about ${mod.title}`}
+          >
+            <Info size={15} />
+          </button>
+        )}
       </div>
 
       {/* Description */}
       <p className="px-4 pb-3 text-text-dim font-body text-sm flex-1 leading-relaxed">
         {mod.desc}
       </p>
-
-      {/* Access badge */}
-      <div className="px-4 pb-3">
-        {mod.access === 'public' ? (
-          <span className="text-[0.7rem] font-display uppercase tracking-wider text-text-muted border border-border px-1.5 py-0.5 rounded-sm">
-            🔓 Public
-          </span>
-        ) : (
-          <span className="text-[0.7rem] font-display uppercase tracking-wider text-text-muted border border-border px-1.5 py-0.5 rounded-sm">
-            🔐 {Array.isArray(mod.access) ? mod.access.join(' / ') : mod.access}
-          </span>
-        )}
-      </div>
 
       {/* Open button */}
       <div className="px-4 pb-4">
@@ -283,6 +170,20 @@ function ModuleCard({ mod, onInfo }) {
       </div>
     </div>
   );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Folded groups — a convenience, so per browser and allowed to be missing
+// ─────────────────────────────────────────────────────────────────────────────
+const FOLDED_KEY = 'home-folded-groups';
+
+function readFolded() {
+  try {
+    const v = JSON.parse(localStorage.getItem(FOLDED_KEY) ?? '[]');
+    return new Set(Array.isArray(v) ? v : []);
+  } catch {
+    return new Set();
+  }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -325,7 +226,16 @@ export default function Home() {
     }
   }
 
-  const visibleModules = MODULES.filter((m) => canAccess(m, user));
+  const groups = groupsFor(user);
+  const [folded, setFolded] = useState(readFolded);
+  function toggleGroup(id) {
+    setFolded((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      try { localStorage.setItem(FOLDED_KEY, JSON.stringify([...next])); } catch { /* private window */ }
+      return next;
+    });
+  }
 
   return (
     <>
@@ -334,10 +244,40 @@ export default function Home() {
 
       {/* Module grid */}
       <main className="flex-1 overflow-y-auto p-6">
-        <div className="max-w-5xl mx-auto grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          {visibleModules.map((mod) => (
-            <ModuleCard key={mod.key} mod={mod} onInfo={setDocsModule} />
-          ))}
+        <div className="max-w-5xl mx-auto flex flex-col gap-6">
+          {groups.map((g) => {
+            // A guest has one group; a heading that folds it away would only
+            // hide the whole page.
+            const foldable = groups.length > 1;
+            const open = !foldable || !folded.has(g.id);
+            return (
+              <section key={g.id} className="flex flex-col gap-3">
+                {foldable && (
+                  <button
+                    type="button"
+                    onClick={() => toggleGroup(g.id)}
+                    aria-expanded={open}
+                    className="flex items-baseline gap-2 text-left border-b border-[var(--gold-dim)] pb-1 group"
+                  >
+                    <span className="text-text-muted group-hover:text-gold self-center">
+                      {open ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                    </span>
+                    <h2 className="font-display uppercase tracking-widest text-gold text-sm">{g.title}</h2>
+                    <span className="text-text-muted text-xs font-body">
+                      {open ? g.blurb : `${g.modules.length} tool${g.modules.length === 1 ? '' : 's'}`}
+                    </span>
+                  </button>
+                )}
+                {open && (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                    {g.modules.map((mod) => (
+                      <ModuleCard key={mod.key} mod={mod} onInfo={setDocsModule} />
+                    ))}
+                  </div>
+                )}
+              </section>
+            );
+          })}
         </div>
       </main>
 

@@ -13,6 +13,18 @@ PC Sheet / Journey Map / Manage Campaign fix batch that went with it.
 
 ---
 
+## Home grouping, Tools menu and DM Tips
+
+- [ ] **Log in as the DM** — the home page shows *DM tools*, *Player tools* and *Public tools*, in
+      that order. DM Tips is among the DM tools.
+- [ ] **Fold a group** with its heading, reload — it stays folded. A folded heading says how many
+      tools it hides.
+- [ ] **Log in as a player** — no DM group. **Log out** — only the public tools, with no heading.
+- [ ] **Open any tool** — the header has **Tools**, listing the same groups; the page you are on is
+      highlighted. Not on the home page or the public share pages.
+- [ ] **Open DM Tips** — four sections; the *What goes where* table scrolls sideways on a phone
+      rather than squashing. A player going to `/dm-tips` is sent home.
+
 ## Journal entries for one player
 
 - [ ] **As the DM, write a journal entry** and set *Who can read it* to **Only Iris**. It shows

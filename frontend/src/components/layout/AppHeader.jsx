@@ -4,7 +4,11 @@
  * Standard application header used by every page.
  *
  * Layout:
- *   [Icon + Name] | [module slot (children)] → [← Back] [▾ Account]
+ *   [Icon + Name] | [module slot (children)] → [▦ Tools] [← Back] [▾ Account]
+ *
+ * The Tools menu lists every module this user can open, grouped as on the
+ * home page, so moving between tools does not mean going back to the index.
+ * Not shown on the home page itself, which is that list.
  *
  * The Account dropdown contains:
  *   - Username + role badge
@@ -19,18 +23,19 @@
  *   @param {string}        icon      - Emoji icon for the module
  *   @param {string}        name      - Module display name
  *   @param {string|false}  backHref  - URL for ← Back button. false = hide. Default "/"
- *   @param {boolean}       hideBack  - Alternative way to hide the back button
+ *   @param {boolean}       hideBack  - Hides the back button AND the Tools menu (home, share pages)
  *   @param {React.ReactNode} children - Module-specific controls (selects, buttons, etc.)
  */
 
 import { useRef, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { ChevronDown, LogOut, KeyRound, ArrowLeft, Terminal } from 'lucide-react';
+import { useLocation, useNavigate } from 'react-router-dom';
+import { ChevronDown, LogOut, KeyRound, ArrowLeft, Terminal, LayoutGrid } from 'lucide-react';
 
 import { useAuth }  from '@/hooks/useAuth';
 import { useTheme } from '@/hooks/useTheme';
 import { Button, Badge, FormField, Modal } from '@/components/ui';
 import ApiTokensPanel from '@/components/ApiTokensPanel';
+import { groupsFor } from '@/data/modules';
 
 /** Theme swatch button used inside the account dropdown */
 function ThemeSwatch({ id, label, swatch, active, onSelect }) {
@@ -174,6 +179,37 @@ function AccountMenu({ user, onClose, onOpenTokens }) {
   );
 }
 
+/** Every module this user can open, grouped as on the home page. */
+function ToolsMenu({ user, onClose }) {
+  const navigate = useNavigate();
+  const { pathname } = useLocation();
+  return (
+    <div className="absolute top-[calc(100%+6px)] right-0 z-50 bg-surface border border-border2 rounded-sm shadow-card min-w-[220px] max-h-[80vh] overflow-y-auto flex flex-col p-2">
+      {groupsFor(user).map((g) => (
+        <div key={g.id} className="flex flex-col py-1 first:pt-0">
+          <p className="font-display uppercase tracking-wider text-text-muted text-[0.65rem] px-1.5 pb-1">{g.title}</p>
+          {g.modules.map((m) => {
+            const here = pathname === m.url;
+            return (
+              <button
+                key={m.key}
+                type="button"
+                onClick={() => { onClose(); if (!here) navigate(m.url); }}
+                aria-current={here ? 'page' : undefined}
+                className={`flex items-center gap-2 text-left text-sm px-1.5 py-1 rounded-sm transition-colors
+                            ${here ? 'text-gold bg-surface3' : 'text-text-dim hover:text-gold hover:bg-surface2'}`}
+              >
+                <span className="w-5 text-center">{m.icon}</span>
+                {m.title}
+              </button>
+            );
+          })}
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export default function AppHeader({
   icon,
   name,
@@ -184,6 +220,7 @@ export default function AppHeader({
   const { user } = useAuth();
   const navigate = useNavigate();
   const [menuOpen, setMenuOpen] = useState(false);
+  const [toolsOpen, setToolsOpen] = useState(false);
   const [tokensOpen, setTokensOpen] = useState(false);
   const wrapRef = useRef(null);
 
@@ -217,6 +254,20 @@ export default function AppHeader({
 
       {/* Right: back + account */}
       <div className="flex items-center gap-2 ml-auto flex-shrink-0">
+        {!hideBack && (
+          <div className="relative">
+            <Button variant="default" onClick={() => setToolsOpen((o) => !o)} title="Go to another tool">
+              <LayoutGrid size={12} className="inline mr-1" />
+              Tools
+            </Button>
+            {toolsOpen && (
+              <>
+                <div className="fixed inset-0 z-40" onClick={() => setToolsOpen(false)} />
+                <ToolsMenu user={user} onClose={() => setToolsOpen(false)} />
+              </>
+            )}
+          </div>
+        )}
         {!hideBack && backHref !== false && (
           <Button variant="accent" onClick={handleBack}>
             <ArrowLeft size={12} className="inline mr-1" />

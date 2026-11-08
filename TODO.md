@@ -62,8 +62,8 @@ Touch input and the two overflowing layouts are **done** — see `TOQA.md`. What
       is not usable. Probably wants a different presentation rather than a responsive fix.
 - [ ] **SplitView** — four iframes at ~195px each on a phone. Arguably should just say
       "desktop only" rather than be fixed.
-- [ ] Improve the home to group DM tools on one group and Players tools on another group.
-- [ ] Add information about How to use the different sections (llike what to put on Journal, what on Sessions, etc)
+- [x] Improve the home to group DM tools on one group and Players tools on another group.
+- [x] Add information about How to use the different sections (llike what to put on Journal, what on Sessions, etc) — the DM Tips page
 
 ---
 
