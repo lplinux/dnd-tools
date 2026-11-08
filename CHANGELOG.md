@@ -1,11 +1,15 @@
 # Changelog
 
-Notable changes to **dnd-tools**. The newest tag is `1.0.1`; anything above it is unreleased.
+Notable changes to **dnd-tools**. The newest tag is `1.1.0`; anything above it is unreleased.
 Longer write-ups of these entries are in this file's git history.
 
 ---
 
 ## [Unreleased]
+
+---
+
+## [1.1.0] – 2026-11-08 — Homebrew, the campaign backlog, and the table's own voice
 
 ### Added
 - **Tables in Markdown** — everywhere notes are written (diary, journal, session and backlog cards,
