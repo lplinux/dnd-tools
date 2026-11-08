@@ -6983,18 +6983,49 @@ app.get('/api/campaigns/:campaignId/sessions', requireRole(['dm', 'admin']), asy
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+/**
+ * Where a new session starts in the world: where the last one ended.
+ *
+ * The latest earlier session that has a date — for a played one that is the
+ * day it FINISHED, which marking it played asks for — so a fresh prep opens
+ * already "around" the right date and the timeline's events show up in it.
+ * With no dated session before it, the campaign's Today marker; with
+ * neither, no date. `beforeNo` limits it to sessions numbered lower, so
+ * prepping session 30 ahead of 27 does not borrow a later date.
+ */
+async function startDayFor(db, campaignId, beforeNo) {
+  const prev = await db.query(
+    `SELECT in_game_day FROM campaign_sessions
+      WHERE campaign_id=$1 AND in_game_day IS NOT NULL
+        AND ($2::int IS NULL OR session_no IS NULL OR session_no < $2)
+      ORDER BY session_no DESC NULLS LAST, id DESC LIMIT 1`,
+    [campaignId, Number.isFinite(beforeNo) ? beforeNo : null],
+  );
+  if (prev.rows.length) return prev.rows[0].in_game_day;
+  const m = await db.query('SELECT today_marker FROM campaign_meta WHERE campaign_id=$1', [campaignId]);
+  // Stored as text (campaign_meta predates the integer days); a value that
+  // is not a day number means no date rather than a wrong one.
+  const marker = parseInt(m.rows[0]?.today_marker, 10);
+  return Number.isFinite(marker) && marker >= 0 ? marker : null;
+}
+
 app.post('/api/campaigns/:campaignId/sessions', requireRole(['dm', 'admin']), async (req, res) => {
   const { session_no: no, title, session_date: date, in_game_day: inGameDay } = req.body ?? {};
   try {
     if (!await dmOwnsCampaign(req.params.campaignId, req.session.userId, req.session.role))
       return res.status(403).json({ error: 'Access denied' });
     const n = parseInt(no, 10);
+    // A date sent — even null, "no date" — is the DM's. Only an omitted one
+    // starts where the previous session ended.
+    const day = Object.hasOwn(req.body ?? {}, 'in_game_day')
+      ? journalDay(inGameDay)
+      : await startDayFor(pool, req.params.campaignId, n);
     const r = await pool.query(
       `INSERT INTO campaign_sessions (campaign_id, created_by, session_no, title, session_date, in_game_day)
        VALUES ($1,$2,$3,$4,$5,$6) RETURNING *`,
       [req.params.campaignId, req.session.userId,
         Number.isFinite(n) ? n : null, journalStr(title, 255), date || null,
-        journalDay(inGameDay)],
+        day],
     );
     res.json(r.rows[0]);
   } catch (e) { res.status(500).json({ error: e.message }); }
@@ -7550,14 +7581,29 @@ app.patch('/api/campaigns/:campaignId/sessions/:sessionId/items/:itemId/move', r
  * walked into is not upcoming, it is happening — so the test is whether
  * [start, start+duration) meets the window at all.
  *
- * The absolute day is computed here rather than stored: `(year - 1) * 365 +
- * day_of_year` is the same arithmetic `absDay` does on the client, and
- * duplicating the column would be a second thing to keep in step.
+ * The absolute day is computed here rather than stored, by `eventAbsDaySql`
+ * — the same arithmetic as `absDay` in frontend/src/data/calendar.js, which
+ * is what produced the session's own in_game_day. It has to be EXACTLY the
+ * same: year 1, day 1 is day ZERO, and a Gregorian year counts its leap
+ * days. This query once used `(year - 1) * 365 + day_of_year`, which put
+ * every event a day late (one starting on the session's own day showed as
+ * "in 1 day") and, on a Gregorian campaign, a quarter-day more each year.
  *
  * DM-only, like the rest of the Sessions tab. It reads every timeline in
  * the campaign — party, DM and player — because the DM prepping a night
  * wants all of it, and says which each came from.
  */
+/**
+ * SQL for an event's absolute day, mirroring `absDay` on the client. The
+ * calendar decides the formula; it is one of two fixed strings, never input.
+ */
+function eventAbsDaySql(calendarType) {
+  if (calendarType === 'harptos') return '((e.year - 1) * 365 + e.day_of_year - 1)';
+  // Gregorian: 365 a year plus the leap days before it. Years are >= 1, so
+  // integer division here is the floor the client uses.
+  return '(365 * (e.year - 1) + (e.year - 1) / 4 - (e.year - 1) / 100 + (e.year - 1) / 400 + e.day_of_year - 1)';
+}
+
 app.get('/api/campaigns/:campaignId/sessions/:sessionId/upcoming', requireRole(['dm', 'admin']), async (req, res) => {
   const { campaignId, sessionId } = req.params;
   const asked = parseInt(req.query.days, 10);
@@ -7574,18 +7620,21 @@ app.get('/api/campaigns/:campaignId/sessions/:sessionId/upcoming', requireRole([
 
     const from = session.in_game_day;
     const to = from + window;
+    const cal = (await pool.query('SELECT calendar_type FROM campaign_meta WHERE campaign_id=$1', [campaignId]))
+      .rows[0]?.calendar_type || 'harptos';
+    const ABS = eventAbsDaySql(cal);
     const r = await pool.query(
       `SELECT e.id, e.title, e.description, e.location, e.year, e.day_of_year,
               e.duration_days, e.is_party,
-              ((e.year - 1) * 365 + e.day_of_year) AS abs_day,
+              ${ABS} AS abs_day,
               p.player_name, t.name AS timeline_name
          FROM player_timeline_entries e
          LEFT JOIN campaign_players p ON p.id = e.player_id
          LEFT JOIN player_timelines t ON t.id = e.timeline_id
         WHERE e.campaign_id = $1
           -- Overlap: the event's span meets [from, to].
-          AND ((e.year - 1) * 365 + e.day_of_year) <= $3
-          AND ((e.year - 1) * 365 + e.day_of_year + GREATEST(e.duration_days, 1) - 1) >= $2
+          AND ${ABS} <= $3
+          AND ${ABS} + GREATEST(e.duration_days, 1) - 1 >= $2
         ORDER BY abs_day ASC, e.created_at ASC
         LIMIT 100`,
       [campaignId, from, to],
@@ -7632,9 +7681,12 @@ app.post('/api/campaigns/:campaignId/sessions/:sessionId/generate-next', require
       [campaignId],
     )).rows[0].n;
     const made = (await client.query(
-      `INSERT INTO campaign_sessions (campaign_id, created_by, session_no, status)
-       VALUES ($1,$2,$3,'prepared') RETURNING *`,
-      [campaignId, req.session.userId, Number(top) + 1],
+      // Starts the day this one ended — its own date when it has one (marking
+      // it played just asked for it), otherwise whatever came before.
+      `INSERT INTO campaign_sessions (campaign_id, created_by, session_no, status, in_game_day)
+       VALUES ($1,$2,$3,'prepared',$4) RETURNING *`,
+      [campaignId, req.session.userId, Number(top) + 1,
+        src.in_game_day ?? await startDayFor(client, campaignId, Number(top) + 1)],
     )).rows[0];
 
     // ── Where we left off: the outcome, as one piece of prose ──

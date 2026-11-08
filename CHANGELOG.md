@@ -58,6 +58,8 @@ Longer write-ups of these entries are in this file's git history.
   goes to the Trash), merge into it, or create a new one under another name.
 
 ### Changed
+- **A new session starts on the date the previous one ended** (or the Today marker), so *Around this
+  date* shows the timeline from the start. Marking it played still asks when it finished.
 - Journal groups are listed by name when grouped by **Category** too, not only by Location or author.
 - **Done and skipped backlog cards fold away** into a *✓ Done & skipped* line instead of showing
   under every session. Marking one Done while a session is open asks whether to move it into that
@@ -75,6 +77,8 @@ Longer write-ups of these entries are in this file's git history.
 - Campaign files are version 11 and may be partial. Older files still import.
 
 ### Fixed
+- *Around this date* put every timeline event a day late — one starting that day showed as "in 1d" — and
+  drifted further each year on Gregorian campaigns.
 - The Account and Tools menus could open behind the Sessions section headings.
 - Closing an NPC's stat block turned the page black.
 - Importing into an existing campaign silently dropped NPC stat blocks and Char Tree

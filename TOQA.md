@@ -25,6 +25,16 @@ PC Sheet / Journey Map / Manage Campaign fix batch that went with it.
 - [ ] **Open DM Tips** — four sections; the *What goes where* table scrolls sideways on a phone
       rather than squashing. A player going to `/dm-tips` is sent home.
 
+## Session dates and *Around this date*
+
+- [ ] **＋ New session** after a played one — it opens already dated the day that one ended, and
+      *⏳ Around this date* shows. In Leruhy: *Checking with the boss* (started that day, 20 days)
+      reads **today** / **under way**, not *in 1d*.
+- [ ] Mark it played and pick the finish date — the Today marker moves there; **Generate** the next
+      session — it starts on that same date.
+- [ ] Edit a session and clear its date — it stays undated (an explicit "no date" is kept).
+- [ ] An event that ended the day before the session is no longer listed.
+
 ## Tables in Markdown, and journal groups by name
 
 - [ ] In a journal entry, write a table with a `[[Zyrina|the mage]]` link in one cell, a right-aligned
